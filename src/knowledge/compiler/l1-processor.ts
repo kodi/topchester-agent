@@ -3,6 +3,7 @@ import { mkdir, open, readFile, readdir, realpath, rm, stat, writeFile } from "n
 import { dirname, join, relative } from "node:path";
 import { ZodError } from "zod";
 import { type ModelTextResult } from "../../model/index.js";
+import { type KnowledgeProgressReporter } from "../progress.js";
 import { l1FileEntrySchemaPath, parseL1FileEntry, type L1FileEntry } from "./l1-entry.js";
 import { createL1QueueFile, l1QueueFileSchema, type L1QueueFailure, type L1QueueItem } from "./l1.js";
 import { getL1FileEntryPath, normalizeL1FilePath } from "./path-encoding.js";
@@ -34,6 +35,7 @@ export interface ProcessL1QueueOptions {
   manifestPath: string;
   gitignoreFiles: string[];
   model: L1SummaryModel;
+  onProgress?: KnowledgeProgressReporter;
   now?: () => Date;
 }
 
@@ -59,7 +61,14 @@ export async function processL1Queue(options: ProcessL1QueueOptions): Promise<Pr
   await removeOrphanedL1Entries(options.kbPath, new Set(queuedFiles.map((item) => item.path)));
 
   for (const [index, item] of queuedFiles.entries()) {
+    options.onProgress?.({
+      message: formatL1ProgressMessage("Processing L1 files", index, queuedFiles.length, item.path),
+    });
+
     if (item.status === "completed" && (await hasCurrentEntry(options.kbPath, item))) {
+      options.onProgress?.({
+        message: formatL1ProgressMessage("Processing L1 files", index + 1, queuedFiles.length, item.path),
+      });
       continue;
     }
 
@@ -74,11 +83,22 @@ export async function processL1Queue(options: ProcessL1QueueOptions): Promise<Pr
     }
 
     await persistQueue(options.queuePath, queuedFiles, now().toISOString());
+    options.onProgress?.({
+      message: formatL1ProgressMessage("Processing L1 files", index + 1, queuedFiles.length, item.path),
+    });
   }
 
   const summary = await summarizeL1Queue(options.kbPath, queuedFiles);
   await writeManifest(options, summary, now().toISOString());
   return { queuedFiles, summary };
+}
+
+function formatL1ProgressMessage(label: string, completed: number, total: number, path: string): string {
+  const percent = total === 0 ? 100 : Math.floor((completed / total) * 100);
+  const width = 20;
+  const filled = total === 0 ? width : Math.floor((completed / total) * width);
+  const bar = `${"█".repeat(filled)}${"░".repeat(width - filled)}`;
+  return `${label} [${bar}] ${completed}/${total} (${percent}%) ${path}`;
 }
 
 export async function processL1QueueItem(options: ProcessL1QueueItemOptions): Promise<ProcessL1QueueItemResult> {
@@ -491,18 +511,14 @@ async function hasCurrentEntry(kbPath: string, item: L1QueueItem): Promise<boole
 
 async function removeOrphanedL1Entries(kbPath: string, currentPaths: Set<string>): Promise<void> {
   const entriesDir = join(kbPath, "l1-files");
-  const entries = await readdir(entriesDir).catch((error: unknown) => {
+  const entryPaths = await listL1EntryJsonFiles(entriesDir).catch((error: unknown) => {
     if (isNodeErrorCode(error, "ENOENT")) {
       return [];
     }
     throw error;
   });
 
-  for (const entryName of entries) {
-    if (!entryName.endsWith(".json")) {
-      continue;
-    }
-    const entryPath = join(entriesDir, entryName);
+  for (const entryPath of entryPaths) {
     try {
       const entry = parseL1FileEntry(JSON.parse(await readFile(entryPath, "utf8")));
       if (!currentPaths.has(entry.path)) {
@@ -512,6 +528,22 @@ async function removeOrphanedL1Entries(kbPath: string, currentPaths: Set<string>
       await rm(entryPath, { force: true });
     }
   }
+}
+
+async function listL1EntryJsonFiles(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const filePaths: string[] = [];
+
+  for (const entry of entries) {
+    const entryPath = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      filePaths.push(...(await listL1EntryJsonFiles(entryPath)));
+    } else if (entry.isFile() && entry.name.endsWith(".json")) {
+      filePaths.push(entryPath);
+    }
+  }
+
+  return filePaths;
 }
 
 async function summarizeL1Queue(kbPath: string, queuedFiles: L1QueueItem[]): Promise<L1QueueProcessingSummary> {

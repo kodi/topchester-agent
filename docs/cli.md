@@ -62,7 +62,7 @@ Current behavior:
 Slash commands:
 
 - `/kb init` — creates Topchester project folders and prints what was created or already present. Shows a simple progress line while it runs.
-- `/kb compile` — reads `.gitignore` files, lists project files, and processes them into L1 file entries with the configured `kb.summarize` model. Shows a simple progress line while it runs.
+- `/kb compile` — reads `.gitignore` files, lists project files, and processes them into L1 file entries with the configured `kb.summarize` model. Shows L1 processing counts and percentage while it runs.
 - `/kb reset` — deletes the configured knowledge folder and local cache folder so the project can start clean. Shows a simple progress line while it runs.
 - `/kb status` — prints the same simple workspace KB status as `topchester kb status` inside the chat thread.
 
@@ -109,7 +109,7 @@ Current behavior:
 - Processes the L1 queue with the configured `kb.summarize` model purpose. If `kb.summarize` is not configured, it uses the configured `fallback` model if one exists.
 - Writes one current L1 JSON entry per successfully processed file under `topchester-kb/l1-files/`.
 - Writes `topchester-kb/manifest.json` with the queued file count, gitignore files read, and L1 outcome counts.
-- Prints progress while reading ignore files, listing files, queueing L1 work, processing L1 entries, and writing output, with updates no more than every 5 seconds in the CLI and rotating progress text in the TUI.
+- Prints progress while reading ignore files, listing files, queueing L1 work, processing L1 entries, and writing output. During L1 processing, the CLI shows a progress bar, completed/total count, percentage, and current file path.
 - Prints the workspace path, gitignore file count, queue path, manifest path, queued count, completed count, failed count, changed count, missing count, current L1 entry count, and final state.
 - Exits successfully only when every in-scope file has a current L1 entry. Per-file failed, changed, or missing outcomes print a partial state and set a non-success automation exit code. Fatal setup or model configuration errors fail before claiming L1 entries are current.
 

@@ -135,6 +135,28 @@ describe("knowledge compiler inventory", () => {
     expect(isPartialKnowledgeCompileResult(result)).toBe(false);
   });
 
+  it("reports per-file L1 progress with counts and percentage", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "src", "one.ts"), "export const one = 1;\n");
+    await writeFile(join(workspace, "src", "two.ts"), "export const two = 2;\n");
+    await initializeKnowledgeBase(workspace);
+    const messages: string[] = [];
+
+    await compileKnowledgeBase(workspace, {
+      model: fakeL1Model(),
+      onProgress: (event) => messages.push(event.message),
+    });
+
+    expect(messages).toContain("Queued 2 project files for L1...");
+    expect(messages.some((message) => message.includes("Processing L1 files") && message.includes("0/2 (0%)"))).toBe(
+      true
+    );
+    expect(messages.some((message) => message.includes("Processing L1 files") && message.includes("2/2 (100%)"))).toBe(
+      true
+    );
+  });
+
   it("reports partial compile state when L1 processing has per-file failures", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-"));
     await mkdir(join(workspace, "src"), { recursive: true });

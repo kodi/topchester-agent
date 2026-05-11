@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createL1QueueFile,
@@ -17,9 +17,9 @@ import {
   type L1SummaryModel,
 } from "../src/knowledge/compiler/l1-processor.js";
 import {
-  encodeL1FileEntryFileName,
   getL1FileEntryPath,
-  mapL1FileEntryFileNames,
+  getL1FileEntryRelativePath,
+  mapL1FileEntryRelativePaths,
   normalizeL1FilePath,
 } from "../src/knowledge/compiler/path-encoding.js";
 
@@ -190,31 +190,34 @@ describe("L1 file entry contracts", () => {
   });
 });
 
-describe("L1 path encoding", () => {
-  it("encodes file paths into stable L1 entry filenames", () => {
+describe("L1 path mapping", () => {
+  it("maps file paths into stable mirrored L1 entry paths", () => {
     const filePath = "src/server/routes/users.ts";
-    const fileName = encodeL1FileEntryFileName(filePath);
+    const entryPath = getL1FileEntryRelativePath(filePath);
 
-    expect(encodeL1FileEntryFileName(filePath)).toBe(fileName);
-    expect(fileName).toMatch(/^[a-f0-9]{16}-src%2Fserver%2Froutes%2Fusers\.ts\.json$/);
-    expect(fileName).not.toContain("/");
-    expect(fileName).not.toContain("\\");
-    expect(getL1FileEntryPath("/repo/topchester-kb", filePath)).toBe(join("/repo/topchester-kb", "l1-files", fileName));
+    expect(getL1FileEntryRelativePath(filePath)).toBe(entryPath);
+    expect(entryPath).toBe("src/server/routes/users.ts.json");
+    expect(entryPath).not.toContain("\\");
+    expect(getL1FileEntryPath("/repo/topchester-kb", filePath)).toBe(
+      join("/repo/topchester-kb", "l1-files", "src", "server", "routes", "users.ts.json")
+    );
   });
 
-  it("keeps collision-prone paths on separate L1 entry filenames", () => {
-    const paths = ["src/a/b.ts", "src%2Fa/b.ts", "src/a%2Fb.ts", "src/a_b.ts", "src/A/b.ts", "src:a/b.ts"];
-    const fileNames = paths.map((path) => encodeL1FileEntryFileName(path));
-    const fileNameMap = mapL1FileEntryFileNames(paths);
+  it("keeps distinct paths on separate mirrored L1 entry paths", () => {
+    const paths = ["src/a/b.ts", "src%2Fa/b.ts", "src/a%2Fb.ts", "src/a_b.ts", "src:module/file.ts"];
+    const entryPaths = paths.map((path) => getL1FileEntryRelativePath(path));
+    const entryPathMap = mapL1FileEntryRelativePaths(paths);
 
-    expect(new Set(fileNames).size).toBe(paths.length);
-    expect([...fileNameMap.values()]).toEqual(fileNames);
-    expect(new Set(fileNames.map((fileName) => fileName.toLowerCase())).size).toBe(paths.length);
-    for (const fileName of fileNames) {
-      expect(fileName).toMatch(/\.json$/);
-      expect(fileName).not.toContain("/");
-      expect(fileName).not.toContain("\\");
+    expect(new Set(entryPaths).size).toBe(paths.length);
+    expect([...entryPathMap.values()]).toEqual(entryPaths);
+    for (const path of entryPaths) {
+      expect(path).toMatch(/\.json$/);
+      expect(path).not.toContain("\\");
     }
+  });
+
+  it("rejects mirrored L1 entry paths that collide on case-insensitive filesystems", () => {
+    expect(() => mapL1FileEntryRelativePaths(["src/a/b.ts", "src/A/b.ts"])).toThrow();
   });
 
   it("rejects unsafe source paths before building L1 entry paths", () => {
@@ -237,14 +240,14 @@ describe("L1 path encoding", () => {
 
     for (const unsafePath of unsafePaths) {
       expect(() => normalizeL1FilePath(unsafePath)).toThrow();
-      expect(() => encodeL1FileEntryFileName(unsafePath)).toThrow();
+      expect(() => getL1FileEntryRelativePath(unsafePath)).toThrow();
       expect(() => getL1FileEntryPath("/repo/topchester-kb", unsafePath)).toThrow();
     }
   });
 
-  it("still encodes valid POSIX workspace-relative paths", () => {
+  it("still accepts valid POSIX workspace-relative paths", () => {
     expect(normalizeL1FilePath("./src/server/routes/users.ts")).toBe("src/server/routes/users.ts");
-    expect(encodeL1FileEntryFileName("src:module/file.ts")).toMatch(/^[a-f0-9]{16}-src%3Amodule%2Ffile\.ts\.json$/);
+    expect(getL1FileEntryRelativePath("src:module/file.ts")).toBe("src:module/file.ts.json");
   });
 });
 
@@ -559,7 +562,7 @@ describe("durable L1 queue processing", () => {
     const queuePath = join(cachePath, "l1-queue.json");
     const manifestPath = join(kbPath, "manifest.json");
     await mkdir(cachePath, { recursive: true });
-    await mkdir(join(kbPath, "l1-files"), { recursive: true });
+    await mkdir(dirname(getL1FileEntryPath(kbPath, "src/unchanged.ts")), { recursive: true });
     await writeFile(
       getL1FileEntryPath(kbPath, "src/unchanged.ts"),
       `${JSON.stringify(
@@ -625,7 +628,7 @@ describe("durable L1 queue processing", () => {
     const queuePath = join(cachePath, "l1-queue.json");
     const manifestPath = join(kbPath, "manifest.json");
     await mkdir(cachePath, { recursive: true });
-    await mkdir(join(kbPath, "l1-files"), { recursive: true });
+    await mkdir(dirname(getL1FileEntryPath(kbPath, "src/orphan.ts")), { recursive: true });
     await writeFile(
       getL1FileEntryPath(kbPath, "src/orphan.ts"),
       `${JSON.stringify(makeValidL1Entry({ id: "file:src/orphan.ts", path: "src/orphan.ts" }), null, 2)}\n`

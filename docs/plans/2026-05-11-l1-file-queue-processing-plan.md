@@ -71,7 +71,7 @@ Implementation shape:
    - call `modelGateway.generateText({ purpose: "kb.summarize" })`,
    - parse and validate model JSON,
    - overwrite deterministic fields from trusted queue/current file data,
-   - write `topchester-kb/l1-files/<encoded-path>.json`,
+   - write `topchester-kb/l1-files/<source/path>.json`,
    - persist queue item status after each file.
 4. Manifest records queued/completed/failed/changed counts.
 
@@ -138,8 +138,8 @@ The processor needs stable data shapes, statuses, and output paths before queue 
 - Add L1 queue file and queue item types.
 - Add queue statuses: `queued`, `in_progress`, `completed`, `failed`, `changed`, `missing_file`.
 - Add L1 file entry schema/type with the fields from `docs/KNOWLEDGE.md`.
-- Add path encoding helper for writing entries under `topchester-kb/l1-files/`.
-- Add collision tests for encoded paths.
+- Add safe path-mapping helper for writing mirrored entries under `topchester-kb/l1-files/`.
+- Add collision tests for mirrored paths.
 
 ### Expected output
 

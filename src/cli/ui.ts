@@ -42,7 +42,7 @@ export const ui = {
           latest = message;
         }),
       () => latest,
-      5000,
+      80,
       true
     );
   },
@@ -60,9 +60,12 @@ async function withStatusLine<T>(
       return action();
     }
 
-    const timer = setInterval(() => {
-      stderr.write(`${getText()}\n`);
-    }, progressEveryMs);
+    const timer = setInterval(
+      () => {
+        stderr.write(`${getText()}\n`);
+      },
+      Math.max(progressEveryMs, 5000)
+    );
 
     try {
       return await action();
@@ -77,7 +80,7 @@ async function withStatusLine<T>(
   stderr.write(`${color(frames[index], "cyan")} ${getText()}`);
   const timer = setInterval(() => {
     index = (index + 1) % frames.length;
-    stderr.write(`\r${color(frames[index], "cyan")} ${getText()}`);
+    stderr.write(`\r\u001b[2K${color(frames[index], "cyan")} ${getText()}`);
   }, progressEveryMs);
 
   try {

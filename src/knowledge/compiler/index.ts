@@ -83,6 +83,7 @@ export async function compileKnowledgeBase(
         manifestPath,
         gitignoreFiles: inventory.gitignoreFiles,
         model: options.model,
+        onProgress: options.onProgress,
       })
     : undefined;
 

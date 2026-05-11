@@ -442,8 +442,12 @@ topchester-kb/
     feature-entry.v1.schema.json
     edge.v1.schema.json
   l1-files/
-    src__server__routes__users.ts.json
-    src__server__services__user-service.ts.json
+    src/
+      server/
+        routes/
+          users.ts.json
+        services/
+          user-service.ts.json
   l2-modules/
     server.users.json
     ui.profile.json
