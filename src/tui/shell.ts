@@ -1,4 +1,4 @@
-import { matchesKey, ProcessTerminal, TUI } from "@earendil-works/pi-tui";
+import { isKeyRelease, isKeyRepeat, matchesKey, ProcessTerminal, TUI } from "@earendil-works/pi-tui";
 import { type AgentRuntimeEvent } from "../agent/events.js";
 import { TopchesterAgentRuntime, type AgentRuntime } from "../agent/runtime.js";
 import { type AppContext } from "../app/context.js";
@@ -51,30 +51,22 @@ export class TopchesterTuiShell implements TuiShell {
       void this.submitSlashCommand(app, tui, command);
     });
 
-    let exitPending = false;
     tui.addChild(app);
     tui.setFocus(app);
-    tui.addInputListener((data) => {
-      if (matchesKey(data, "ctrl+c")) {
-        if (exitPending) {
+    tui.addInputListener(
+      createExitConfirmationInputListener({
+        setNoticeLine: (line) => {
+          app.setNoticeLine(line);
+        },
+        requestRender: () => {
+          tui.requestRender();
+        },
+        exit: () => {
           exit();
           process.exit(0);
-        }
-
-        exitPending = true;
-        app.setEphemeralLine("press Ctrl-C again to exit.");
-        tui.requestRender();
-        return { consume: true };
-      }
-
-      if (exitPending) {
-        exitPending = false;
-        app.setEphemeralLine(undefined);
-        tui.requestRender();
-      }
-
-      return undefined;
-    });
+        },
+      })
+    );
     tui.start();
     void this.checkAgent(app, tui);
   }
@@ -178,4 +170,60 @@ export class TopchesterTuiShell implements TuiShell {
       }
     }
   }
+}
+
+export interface ExitConfirmationOptions {
+  setNoticeLine(line: string | undefined): void;
+  requestRender(): void;
+  exit(): void;
+  timeoutMs?: number;
+}
+
+export function createExitConfirmationInputListener(options: ExitConfirmationOptions) {
+  const timeoutMs = options.timeoutMs ?? 2500;
+  let exitPending = false;
+  let exitPendingUntil = 0;
+  let clearTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const clearExitNotice = () => {
+    clearTimer = undefined;
+    exitPending = false;
+    exitPendingUntil = 0;
+    options.setNoticeLine(undefined);
+    options.requestRender();
+  };
+
+  return (data: string) => {
+    if ((isKeyRelease(data) || isKeyRepeat(data)) && matchesKey(data, "ctrl+c")) {
+      return { consume: true };
+    }
+
+    if (!matchesKey(data, "ctrl+c")) {
+      return undefined;
+    }
+
+    if (exitPending && Date.now() <= exitPendingUntil) {
+      if (clearTimer) {
+        clearTimeout(clearTimer);
+        clearTimer = undefined;
+      }
+
+      options.exit();
+      return { consume: true };
+    }
+
+    exitPending = true;
+    exitPendingUntil = Date.now() + timeoutMs;
+    options.setNoticeLine("press Ctrl-C again to exit.");
+    options.requestRender();
+
+    if (clearTimer) {
+      clearTimeout(clearTimer);
+    }
+
+    clearTimer = setTimeout(clearExitNotice, timeoutMs);
+    clearTimer.unref?.();
+
+    return { consume: true };
+  };
 }

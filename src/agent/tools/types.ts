@@ -1,0 +1,39 @@
+import { type z } from "zod";
+
+export interface ToolContext {
+  workspaceRoot: string;
+  pathEnv?: string;
+}
+
+export interface ToolCall<Name extends string = string, Args = unknown> {
+  tool: Name;
+  args: Args;
+}
+
+export interface ToolResult<Name extends string = string> {
+  tool: Name;
+  path?: string;
+  content: string;
+  command?: string;
+  warning?: string;
+}
+
+export interface ToolDefinition<Name extends string, Args, Result extends ToolResult<Name> = ToolResult<Name>> {
+  name: Name;
+  description: string;
+  prompt: string;
+  argsSchema: z.ZodType<Args>;
+  execute(context: ToolContext, args: Args): Promise<Result>;
+}
+
+export type ToolCallForDefinition<Definition> =
+  Definition extends ToolDefinition<infer Name, infer Args, infer _Result> ? ToolCall<Name, Args> : never;
+
+export type ToolResultForDefinition<Definition> =
+  Definition extends ToolDefinition<infer _Name, infer _Args, infer Result> ? Result : never;
+
+export function defineTool<const Name extends string, Args, Result extends ToolResult<Name>>(
+  definition: ToolDefinition<Name, Args, Result>
+): ToolDefinition<Name, Args, Result> {
+  return definition;
+}

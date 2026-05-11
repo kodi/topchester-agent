@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ChatLayout,
   BusyIndicator,
@@ -6,6 +6,7 @@ import {
   exitAlternateScreen,
   getKnowledgeStatusMessages,
 } from "../src/tui/index.js";
+import { createExitConfirmationInputListener } from "../src/tui/shell.js";
 import { agentMessage, modalMessage, systemMessage } from "../src/tui/messages.js";
 import { type Terminal } from "@earendil-works/pi-tui";
 
@@ -64,6 +65,108 @@ describe("TUI rendering", () => {
 
     expect(output).toContain(" ⠋ Calling agent.fast...");
     expect(output).toContain("│ > press Esc to stop");
+  });
+
+  it("renders exit notice separately from busy ephemeral rows", () => {
+    const app = new ChatLayout(new FakeTerminal(), [systemMessage("Welcome")], "repo", "model [provider]");
+    app.setEphemeralLine("⠋ Calling agent.fast...");
+    app.setNoticeLine("press Ctrl-C again to exit.");
+
+    const output = app.render(60).join("\n");
+
+    expect(output).toContain(" ⠋ Calling agent.fast...");
+    expect(output).toContain(" press Ctrl-C again to exit.");
+  });
+
+  it("exits on the second Ctrl-C without clearing on terminal responses", () => {
+    vi.useFakeTimers();
+    let notice: string | undefined;
+    let renderCount = 0;
+    let exitCount = 0;
+    const listener = createExitConfirmationInputListener({
+      timeoutMs: 2500,
+      setNoticeLine: (line) => {
+        notice = line;
+      },
+      requestRender: () => {
+        renderCount += 1;
+      },
+      exit: () => {
+        exitCount += 1;
+      },
+    });
+
+    try {
+      expect(listener("\u0003")).toEqual({ consume: true });
+      expect(notice).toBe("press Ctrl-C again to exit.");
+      expect(exitCount).toBe(0);
+
+      expect(listener("\u001b[6;20;10t")).toBeUndefined();
+      expect(notice).toBe("press Ctrl-C again to exit.");
+
+      expect(listener("\u0003")).toEqual({ consume: true });
+      expect(exitCount).toBe(1);
+      expect(renderCount).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not exit from a Kitty Ctrl-C key release", () => {
+    vi.useFakeTimers();
+    let notice: string | undefined;
+    let exitCount = 0;
+    const listener = createExitConfirmationInputListener({
+      timeoutMs: 2500,
+      setNoticeLine: (line) => {
+        notice = line;
+      },
+      requestRender: () => {},
+      exit: () => {
+        exitCount += 1;
+      },
+    });
+
+    try {
+      expect(listener("\u001b[99;5:1u")).toEqual({ consume: true });
+      expect(listener("\u001b[99;5:3u")).toEqual({ consume: true });
+
+      expect(notice).toBe("press Ctrl-C again to exit.");
+      expect(exitCount).toBe(0);
+
+      expect(listener("\u001b[99;5:1u")).toEqual({ consume: true });
+      expect(exitCount).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the Ctrl-C exit notice after the timeout", () => {
+    vi.useFakeTimers();
+    let notice: string | undefined;
+    let exitCount = 0;
+    const listener = createExitConfirmationInputListener({
+      timeoutMs: 2500,
+      setNoticeLine: (line) => {
+        notice = line;
+      },
+      requestRender: () => {},
+      exit: () => {
+        exitCount += 1;
+      },
+    });
+
+    try {
+      listener("\u0003");
+      vi.advanceTimersByTime(2500);
+
+      expect(notice).toBeUndefined();
+
+      listener("\u0003");
+      expect(exitCount).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders agent message metadata under the agent response", () => {

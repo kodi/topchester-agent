@@ -29,6 +29,7 @@ export class ChatLayout implements Component, Focusable {
   private readonly input = new Input();
   private status = "ready";
   private ephemeralLine: string | undefined;
+  private noticeLine: string | undefined;
   private promptHint: string | undefined;
   private cancelPending: (() => void) | undefined;
   private submitMessage: ((message: string) => void) | undefined;
@@ -72,6 +73,10 @@ export class ChatLayout implements Component, Focusable {
 
   setEphemeralLine(line: string | undefined): void {
     this.ephemeralLine = line;
+  }
+
+  setNoticeLine(line: string | undefined): void {
+    this.noticeLine = line;
   }
 
   setPromptHint(hint: string | undefined): void {
@@ -170,6 +175,10 @@ export class ChatLayout implements Component, Focusable {
 
     if (this.ephemeralLine) {
       lines.push(...this.renderThreadMessageLines([this.ephemeralLine], innerWidth, width, false));
+    }
+
+    if (this.noticeLine) {
+      lines.push(...this.renderThreadMessageLines([this.noticeLine], innerWidth, width, false));
     }
 
     return lines;

@@ -2,7 +2,13 @@ import { chmod, mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { grepWorkspace, parseToolCall, readWorkspaceFile } from "../src/agent/tools.js";
+import {
+  executeToolCall,
+  getToolPromptLines,
+  grepWorkspace,
+  parseToolCall,
+  readWorkspaceFile,
+} from "../src/agent/tools.js";
 
 describe("agent tools", () => {
   it("parses read_file tool calls from JSON", () => {
@@ -24,6 +30,35 @@ describe("agent tools", () => {
       tool: "grep",
       args: { pattern: "needle", path: "src" },
     });
+  });
+
+  it("rejects unknown tools and invalid tool args", () => {
+    expect(parseToolCall('{"tool":"unknown","args":{}}')).toBeUndefined();
+    expect(parseToolCall('{"tool":"read_file","args":{"path":123}}')).toBeUndefined();
+    expect(parseToolCall('{"tool":"grep","args":{"path":"src"}}')).toBeUndefined();
+  });
+
+  it("executes parsed tool calls through the registry", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await writeFile(join(workspace, "package.json"), '{"name":"real"}\n');
+    const call = parseToolCall('{"tool":"read_file","args":{"path":"package.json"}}');
+
+    if (!call) {
+      throw new Error("Expected read_file tool call to parse.");
+    }
+
+    await expect(executeToolCall(workspace, call)).resolves.toEqual({
+      tool: "read_file",
+      path: "package.json",
+      content: '{"name":"real"}\n',
+    });
+  });
+
+  it("gets model prompt lines from the tool registry", () => {
+    expect(getToolPromptLines()).toEqual([
+      'read_file: read a UTF-8 file inside the workspace. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
+      'grep: search text inside the workspace. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
+    ]);
   });
 
   it("reads files scoped to the workspace", async () => {
