@@ -29,6 +29,10 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
     value: "/kb status",
     description: "show project knowledge base status",
   },
+  {
+    value: "/kb init",
+    description: "start project knowledge base setup",
+  },
 ];
 
 export const slashCommands: SlashCommand[] = [
@@ -94,7 +98,13 @@ function executeKbCommand(args: string[], context: SlashCommandContext): SlashCo
     return { messages: formatKnowledgeStatus(getKnowledgeStatus(context.workspaceRoot)) };
   }
 
-  return { messages: ["Usage: /kb status"] };
+  if (subcommand === "init") {
+    return {
+      messages: ["KB init: not implemented yet", `workspace: ${context.workspaceRoot}`],
+    };
+  }
+
+  return { messages: ["Usage: /kb init or /kb status"] };
 }
 
 export function formatKnowledgeStatus(status: KnowledgeStatus): string[] {

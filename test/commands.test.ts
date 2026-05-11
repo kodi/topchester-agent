@@ -29,11 +29,25 @@ describe("slash commands", () => {
         value: "/kb status",
         description: "show project knowledge base status",
       },
+      {
+        value: "/kb init",
+        description: "start project knowledge base setup",
+      },
     ]);
     expect(getSlashCommandSuggestions("/k")).toEqual([
       {
         value: "/kb status",
         description: "show project knowledge base status",
+      },
+      {
+        value: "/kb init",
+        description: "start project knowledge base setup",
+      },
+    ]);
+    expect(getSlashCommandSuggestions("/kb i")).toEqual([
+      {
+        value: "/kb init",
+        description: "start project knowledge base setup",
       },
     ]);
     expect(getSlashCommandSuggestions("/nope")).toEqual([]);
@@ -41,8 +55,14 @@ describe("slash commands", () => {
   });
 
   it("reports /kb usage for unknown KB subcommands", async () => {
+    await expect(executeSlashCommand("/kb nope", { workspaceRoot: "/repo" })).resolves.toEqual({
+      messages: ["Usage: /kb init or /kb status"],
+    });
+  });
+
+  it("executes /kb init as a placeholder", async () => {
     await expect(executeSlashCommand("/kb init", { workspaceRoot: "/repo" })).resolves.toEqual({
-      messages: ["Usage: /kb status"],
+      messages: ["KB init: not implemented yet", "workspace: /repo"],
     });
   });
 

@@ -9,6 +9,8 @@ Read these first:
 - `docs/SESSIONS.md` — project-local session storage and event log decisions.
 - `docs/cli.md` — CLI command inventory and behavior notes.
 
+If `AGENTS.override.md` exists, read it after this file for local-only instructions.
+
 Core invariant: Agent and KB are one system. Do not design or implement a normal coding path that bypasses `.agents/topchester-kb/`.
 
 CLI modifications should update `docs/cli.md` in the same change so command behavior stays tracked.

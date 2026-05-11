@@ -216,6 +216,79 @@ Topchester should be organized around these responsibilities:
    - Keeps canonical KB state in the committed KB directory and generated cache/index state in `.agents/topchester-kb-cache/`.
    - Keeps transient UI state separate from workspace/agent/KB state.
 
+## Runtime Client Boundary
+
+Topchester should not let the TUI grow into the agent engine.
+
+The core runtime should expose a small command/event boundary:
+
+```text
+client command
+  -> runtime command handler
+  -> KB-aware agent loop
+  -> typed runtime events
+  -> TUI, CLI, GUI, IDE, or session log consumer
+```
+
+Initial command types:
+
+- submit a user message,
+- run a slash command,
+- check agent/model readiness,
+- check KB status,
+- cancel the active turn.
+
+Initial event types:
+
+- status changed,
+- system or assistant message,
+- tool call started,
+- tool result received,
+- KB status observed,
+- user choice requested,
+- turn finished or failed.
+
+This is enough structure to keep rendering code out of the runtime and runtime policy out of rendering code.
+
+Do not add a big global event bus in V0. A global bus can make small apps feel clean at first, but it hides ownership when every module can publish anything. Start with typed runtime events and explicit subscribers. The session event log should be the durable event stream; the in-process event path should stay narrow and boring.
+
+If plugins, background jobs, or multiple clients need fan-out later, add a scoped event hub around the runtime/session boundary. Keep events named, versioned, and tied to the session log shape.
+
+## Future GUI / IDE Path
+
+The TUI should be only one client of the same KB-aware runtime.
+
+Short term:
+
+- TUI calls the runtime in-process.
+- Runtime emits typed events.
+- TUI maps those events to chat rows, modals, spinners, and status lines.
+- Sessions append the same important events to `.agents/topchester/sessions/<session-id>/events.jsonl`.
+
+Future local GUI:
+
+- Run the same runtime behind a local app server.
+- Prefer JSON-RPC 2.0 for command/response calls because the KB service already uses JSON-RPC.
+- Use server-sent events, WebSocket notifications, or JSONL over stdio for streamed runtime events.
+- Keep transport details outside the agent loop.
+
+Future VS Code / IDE extension:
+
+- Start by launching or connecting to a local Topchester runtime server for the workspace.
+- Send editor context as explicit inputs: selected text, open file paths, file references, and requested approval mode.
+- Render runtime events as IDE UI: chat, inline diffs, approvals, status, and KB warnings.
+- Never let the extension bypass the project KB checks. It is a client, not a second engine.
+
+The rough shape should be:
+
+```text
+TUI / GUI / IDE
+  -> Topchester runtime API
+  -> KB service + agent loop + tool layer
+  -> runtime events
+  -> session event log + active client
+```
+
 ## Runtime Loop Sketch
 
 A normal Topchester task should roughly follow this loop:

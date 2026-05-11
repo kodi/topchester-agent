@@ -6,3 +6,4 @@ coverage/
 .claude/
 .DS_Store
 .env
+AGENTS.override.md

@@ -54,6 +54,7 @@ Current behavior:
 
 Slash commands:
 
+- `/kb init` — prints a placeholder message that KB initialization is not implemented yet.
 - `/kb status` — prints the same simple workspace KB status as `topchester kb status` inside the chat thread.
 
 ### `topchester dev`
