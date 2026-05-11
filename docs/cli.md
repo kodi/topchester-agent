@@ -32,9 +32,10 @@ Status: minimal TUI shell.
 Current behavior:
 
 - Opens a generic chat-style TUI when running in an interactive terminal.
-- Uses the terminal alternate screen and captures mouse wheel events for in-app history scrolling.
+- Uses the terminal alternate screen without mouse capture, so terminal text selection keeps working.
+- Pressing `Ctrl-C` once shows `press Ctrl-C again to exit.` as a temporary message; pressing `Ctrl-C` again right away exits.
 - Shows a scrolling thread area on top with startup context.
-- Supports mouse wheel, `PageUp`/`PageDown`, and `Home`/`End` for chat history scrolling.
+- Supports terminal alternate-scroll wheel events, `PageUp`/`PageDown`, and `Home`/`End` for chat history scrolling.
 - Shows an unlabeled input box below the thread.
 - Shows a status line below the prompt box with `ready`, the current folder name, and the active model as `model [provider]`.
 - Tracks chat rows as `System`, `You`, and `Agent` messages, and sends user messages to the configured `agent.primary` model.

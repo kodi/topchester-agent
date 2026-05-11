@@ -45,10 +45,8 @@ export class TopchesterTuiShell implements TuiShell {
 
     const terminal = new ProcessTerminal();
     enterAlternateScreen(terminal);
-    enableMouseTracking(terminal);
     const tui = new TUI(terminal, true);
     const exit = () => {
-      disableMouseTracking(terminal);
       tui.stop();
       exitAlternateScreen(terminal);
     };
@@ -63,12 +61,26 @@ export class TopchesterTuiShell implements TuiShell {
       void this.submitSlashCommand(app, tui, command);
     });
 
+    let exitPending = false;
     tui.addChild(app);
     tui.setFocus(app);
     tui.addInputListener((data) => {
       if (matchesKey(data, "ctrl+c")) {
-        exit();
-        process.exit(0);
+        if (exitPending) {
+          exit();
+          process.exit(0);
+        }
+
+        exitPending = true;
+        app.setEphemeralLine("press Ctrl-C again to exit.");
+        tui.requestRender();
+        return { consume: true };
+      }
+
+      if (exitPending) {
+        exitPending = false;
+        app.setEphemeralLine(undefined);
+        tui.requestRender();
       }
 
       return undefined;
@@ -315,14 +327,6 @@ export function enterAlternateScreen(terminal: Pick<Terminal, "write" | "clearSc
 
 export function exitAlternateScreen(terminal: Pick<Terminal, "write">): void {
   terminal.write("\u001b[?1049l");
-}
-
-export function enableMouseTracking(terminal: Pick<Terminal, "write">): void {
-  terminal.write("\u001b[?1000h\u001b[?1006h");
-}
-
-export function disableMouseTracking(terminal: Pick<Terminal, "write">): void {
-  terminal.write("\u001b[?1006l\u001b[?1000l");
 }
 
 export class ChatLayout implements Component, Focusable {
@@ -593,6 +597,16 @@ export class ChatLayout implements Component, Focusable {
   private handleThreadScrollInput(data: string): boolean {
     const pageSize = Math.max(1, Math.floor(this.terminal.rows / 2));
     const wheel = parseMouseWheel(data);
+
+    if (isUpKey(data)) {
+      this.threadScrollOffset += 3;
+      return true;
+    }
+
+    if (isDownKey(data)) {
+      this.threadScrollOffset = Math.max(0, this.threadScrollOffset - 3);
+      return true;
+    }
 
     if (wheel === "up") {
       this.threadScrollOffset += 3;

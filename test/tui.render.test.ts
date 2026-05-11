@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   ChatLayout,
   BusyIndicator,
-  disableMouseTracking,
-  enableMouseTracking,
   enterAlternateScreen,
   exitAlternateScreen,
   getKnowledgeStatusMessages,
@@ -45,15 +43,6 @@ describe("TUI rendering", () => {
 
     expect(terminal.writes).toEqual(["\u001b[?1049h", "\u001b[?1049l"]);
     expect(terminal.clearCount).toBe(1);
-  });
-
-  it("enables and disables mouse tracking", () => {
-    const terminal = new FakeTerminal();
-
-    enableMouseTracking(terminal);
-    disableMouseTracking(terminal);
-
-    expect(terminal.writes).toEqual(["\u001b[?1000h\u001b[?1006h", "\u001b[?1006l\u001b[?1000l"]);
   });
 
   it("renders the prompt box and status line", () => {
@@ -110,7 +99,7 @@ describe("TUI rendering", () => {
     expect(lines[firstIndex + 1]?.trim()).toBe("");
   });
 
-  it("scrolls chat history inside the TUI with page keys and mouse wheel", () => {
+  it("scrolls chat history inside the TUI with page keys and alternate-scroll arrows", () => {
     const terminal = new FakeTerminal();
     terminal.rows = 7;
     const app = new ChatLayout(
@@ -134,16 +123,16 @@ describe("TUI rendering", () => {
 
     expect(bottomAgainOutput).toContain("Message 12");
 
-    app.handleInput("\u001b[<64;1;1M");
-    const wheelScrolledOutput = app.render(60).join("\n");
+    app.handleInput("\u001b[A");
+    const arrowScrolledOutput = app.render(60).join("\n");
 
-    expect(wheelScrolledOutput).not.toContain("Message 12");
-    expect(wheelScrolledOutput).toContain("Message 10");
+    expect(arrowScrolledOutput).not.toContain("Message 12");
+    expect(arrowScrolledOutput).toContain("Message 10");
 
-    app.handleInput("\u001b[<65;1;1M");
-    const wheelBottomOutput = app.render(60).join("\n");
+    app.handleInput("\u001b[B");
+    const arrowBottomOutput = app.render(60).join("\n");
 
-    expect(wheelBottomOutput).toContain("Message 12");
+    expect(arrowBottomOutput).toContain("Message 12");
   });
 
   it("appends user messages and calls the submit handler", () => {
