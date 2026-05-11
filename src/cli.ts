@@ -4,6 +4,7 @@ import { isAbsolute, resolve } from "node:path";
 import { Command } from "commander";
 import { createAppContext } from "./app/context.js";
 import { ui } from "./cli/ui.js";
+import { formatKnowledgeInitResult, initializeKnowledgeBase } from "./knowledge/init.js";
 import { getKnowledgeStatus } from "./knowledge/status.js";
 import { TopchesterTuiShell } from "./tui/index.js";
 
@@ -37,11 +38,11 @@ const kbCommand = program.command("kb").description("knowledge base commands");
 kbCommand
   .command("init")
   .description("initialize a project knowledge base")
-  .action(() => {
+  .action(async () => {
     const context = createContextFromOptions();
+    const result = await initializeKnowledgeBase(context.workspaceRoot);
 
-    console.log("KB init: not implemented yet");
-    console.log(`workspace: ${context.workspaceRoot}`);
+    console.log(formatKnowledgeInitResult(result).join("\n"));
   });
 
 kbCommand
@@ -89,6 +90,9 @@ function printStartupSummary(context: ReturnType<typeof createAppContext>) {
   console.log(`default model purpose: ${context.config.models?.defaultPurpose ?? "agent.primary"}`);
   if (context.devFlags.size > 0) {
     console.log(`dev flags: ${[...context.devFlags].join(", ")}`);
+  }
+  if (context.logFilePath) {
+    console.log(`log file: ${context.logFilePath}`);
   }
 
   if (Object.keys(assignments).length === 0) {

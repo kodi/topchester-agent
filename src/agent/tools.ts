@@ -1,5 +1,12 @@
 export { executeToolCall, type ExecuteToolCallOptions } from "./tools/executor.js";
 export {
+  findFileTool,
+  findWorkspaceFilesByName,
+  type FindFileToolArgs,
+  type FindFileToolCall,
+  type FindFileToolResult,
+} from "./tools/find-file.js";
+export {
   grepTool,
   grepWorkspace,
   type GrepToolArgs,

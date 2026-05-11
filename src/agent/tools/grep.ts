@@ -4,6 +4,7 @@ import { access } from "node:fs/promises";
 import { delimiter, isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
+import { type Logger } from "pino";
 
 export const grepArgsSchema = z.object({
   pattern: z.string(),
@@ -16,6 +17,7 @@ export type GrepToolResult = ToolResult<"grep">;
 
 export interface GrepWorkspaceOptions {
   pathEnv?: string;
+  logger?: Logger;
 }
 
 export const grepTool = defineTool({
@@ -24,7 +26,8 @@ export const grepTool = defineTool({
   prompt:
     'grep: search text inside the workspace. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
   argsSchema: grepArgsSchema,
-  execute: (context, args) => grepWorkspace(context.workspaceRoot, args, { pathEnv: context.pathEnv }),
+  execute: (context, args) =>
+    grepWorkspace(context.workspaceRoot, args, { pathEnv: context.pathEnv, logger: context.logger }),
 });
 
 export async function grepWorkspace(
@@ -61,7 +64,26 @@ export async function grepWorkspace(
           scopedPath.relativePath,
         ]
       : ["-R", "-n", "--", args.pattern, scopedPath.relativePath];
+  options.logger?.debug(
+    {
+      event: "grep_executable",
+      command: executable.name,
+      path: scopedPath.relativePath,
+    },
+    "grep executable selected"
+  );
   const result = await runCommand(executable.path, commandArgs, scopedPath.workspaceRoot);
+
+  options.logger?.debug(
+    {
+      event: "grep_command_result",
+      command: executable.name,
+      exitCode: result.exitCode,
+      stdoutLength: result.stdout.length,
+      stderrLength: result.stderr.length,
+    },
+    "grep command result"
+  );
 
   if (result.exitCode > 1) {
     throw new Error(

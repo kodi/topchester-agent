@@ -1,8 +1,10 @@
 import { type z } from "zod";
+import { type Logger } from "pino";
 
 export interface ToolContext {
   workspaceRoot: string;
   pathEnv?: string;
+  logger?: Logger;
 }
 
 export interface ToolCall<Name extends string = string, Args = unknown> {

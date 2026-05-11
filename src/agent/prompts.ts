@@ -7,6 +7,7 @@ export function getChatSystemPrompt(): string {
     ...getToolPromptLines(),
     "Use read_file when the user asks to inspect or show a specific file.",
     "Use grep when the user asks to find text, symbols, usages, functions, classes, or files by content.",
+    "Use find_file when the user asks to find or locate files by name or fuzzy path.",
     "Do not make up file contents or search results.",
   ].join("\n");
 }

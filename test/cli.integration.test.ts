@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -15,6 +15,8 @@ async function runCli(args: string[], cwd: string) {
     env: {
       ...process.env,
       TOPCHESTER_CONFIG: "",
+      TOPCHESTER_LOG_FILE: "",
+      TOPCHESTER_LOG_LEVEL: "",
     },
   });
 }
@@ -95,6 +97,20 @@ describe("CLI integration", () => {
     expect(stdout).toContain(`workspace: ${fixture.workspace}`);
     expect(stdout).toContain(`knowledge folder: ${join(fixture.workspace, "topchester-kb")} [missing] (default)`);
     expect(stdout).toContain("state: no knowledge base found yet");
+  });
+
+  it("initializes project knowledge folders", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout } = await runCli(["--workspace", fixture.workspace, "kb", "init"], fixture.root);
+
+    expect(stdout).toContain("KB init");
+    expect(stdout).toContain(`workspace: ${fixture.workspace}`);
+    expect(stdout).toContain(`created: ${join(fixture.workspace, ".agents/topchester")}`);
+    expect(stdout).toContain(`created: ${join(fixture.workspace, "topchester-kb")}`);
+    await expect(stat(join(fixture.workspace, ".agents/topchester"))).resolves.toMatchObject({});
+    await expect(stat(join(fixture.workspace, ".agents/topchester/logs"))).resolves.toMatchObject({});
+    await expect(stat(join(fixture.workspace, "topchester-kb"))).resolves.toMatchObject({});
   });
 
   it("reports present KB status", async () => {

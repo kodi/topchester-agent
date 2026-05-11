@@ -1,11 +1,15 @@
 import { ModelGateway, type ModelGatewayConfig } from "../model/index.js";
 import { loadTopchesterConfig, type TopchesterConfig } from "../config/index.js";
+import { createTopchesterLogger } from "../logging/index.js";
+import { type Logger } from "pino";
 
 export interface AppContext {
   workspaceRoot: string;
   config: TopchesterConfig;
   modelGateway: ModelGateway;
   devFlags: Set<string>;
+  logger: Logger;
+  logFilePath?: string;
 }
 
 export interface CreateAppContextOptions {
@@ -17,12 +21,15 @@ export interface CreateAppContextOptions {
 export function createAppContext(options: CreateAppContextOptions): AppContext {
   const config = loadTopchesterConfig(options);
   const modelGateway = new ModelGateway(normalizeModelGatewayConfig(config));
+  const loggerInfo = createTopchesterLogger(options.workspaceRoot);
 
   return {
     workspaceRoot: options.workspaceRoot,
     config,
     modelGateway,
     devFlags: new Set(options.devFlags ?? []),
+    logger: loggerInfo.logger,
+    logFilePath: loggerInfo.logFilePath,
   };
 }
 

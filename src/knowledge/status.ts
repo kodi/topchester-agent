@@ -1,5 +1,5 @@
 import { existsSync, statSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { resolveWorkspacePath } from "../app/paths.js";
 
 export interface KnowledgeStatus {
   workspaceRoot: string;
@@ -35,10 +35,6 @@ export function getKnowledgeStatus(workspaceRoot: string): KnowledgeStatus {
     kbPathSource,
     cachePathSource,
   };
-}
-
-function resolveWorkspacePath(workspaceRoot: string, path: string): string {
-  return isAbsolute(path) ? path : resolve(workspaceRoot, path);
 }
 
 function safeStat(path: string) {

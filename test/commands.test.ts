@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -60,10 +60,19 @@ describe("slash commands", () => {
     });
   });
 
-  it("executes /kb init as a placeholder", async () => {
-    await expect(executeSlashCommand("/kb init", { workspaceRoot: "/repo" })).resolves.toEqual({
-      messages: ["KB init: not implemented yet", "workspace: /repo"],
-    });
+  it("executes /kb init and creates project folders", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+
+    const result = await executeSlashCommand("/kb init", { workspaceRoot: workspace });
+
+    expect(result.messages).toContain("KB init");
+    expect(result.messages).toContain(`workspace: ${workspace}`);
+    expect(result.messages).toContain(`created: ${join(workspace, ".agents/topchester")}`);
+    expect(result.messages).toContain(`created: ${join(workspace, ".agents/topchester/sessions")}`);
+    expect(result.messages).toContain(`created: ${join(workspace, ".agents/topchester/logs")}`);
+    expect(result.messages).toContain(`created: ${join(workspace, "topchester-kb")}`);
+    expect(result.messages).toContain(`created: ${join(workspace, ".agents/topchester-kb-cache")}`);
+    await expect(stat(join(workspace, ".agents/topchester"))).resolves.toMatchObject({});
   });
 
   it("formats missing KB status", () => {

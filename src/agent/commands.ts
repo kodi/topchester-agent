@@ -1,3 +1,4 @@
+import { formatKnowledgeInitResult, initializeKnowledgeBase } from "../knowledge/init.js";
 import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js";
 
 export interface SlashCommandContext {
@@ -91,7 +92,7 @@ export function getSlashCommandSuggestions(input: string): SlashCommandSuggestio
   return slashCommandSuggestions.filter((suggestion) => suggestion.value.toLowerCase().startsWith(query));
 }
 
-function executeKbCommand(args: string[], context: SlashCommandContext): SlashCommandResult {
+async function executeKbCommand(args: string[], context: SlashCommandContext): Promise<SlashCommandResult> {
   const subcommand = args[0];
 
   if (subcommand === "status") {
@@ -99,9 +100,7 @@ function executeKbCommand(args: string[], context: SlashCommandContext): SlashCo
   }
 
   if (subcommand === "init") {
-    return {
-      messages: ["KB init: not implemented yet", `workspace: ${context.workspaceRoot}`],
-    };
+    return { messages: formatKnowledgeInitResult(await initializeKnowledgeBase(context.workspaceRoot)) };
   }
 
   return { messages: ["Usage: /kb init or /kb status"] };

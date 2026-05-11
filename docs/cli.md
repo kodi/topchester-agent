@@ -14,6 +14,13 @@ This document tracks implemented and planned `topchester` CLI commands. Any CLI 
 
 - `disable-kb-check-modal` — still checks and prints KB status during startup, but does not show the missing-KB modal.
 
+## Logging
+
+- `TOPCHESTER_LOG_LEVEL=debug` writes structured JSON logs to `.agents/topchester/logs/topchester.log`.
+- `TOPCHESTER_LOG_FILE=<path>` overrides the log file path. Relative paths are resolved from the workspace root.
+- `debug` logs tool calls, tool result metadata, and model response metadata. `trace` also logs full model/tool response text.
+- Logging is file-only and does not write to the TUI.
+
 ## Output style
 
 - User-facing CLI output should use plain language.
@@ -54,7 +61,7 @@ Current behavior:
 
 Slash commands:
 
-- `/kb init` — prints a placeholder message that KB initialization is not implemented yet.
+- `/kb init` — creates Topchester project folders and prints what was created or already present.
 - `/kb status` — prints the same simple workspace KB status as `topchester kb status` inside the chat thread.
 
 ### `topchester dev`
@@ -81,8 +88,8 @@ Intended behavior:
 
 Current behavior:
 
-- Prints `KB init: not implemented yet`.
-- Prints the workspace path.
+- Creates `.agents/topchester/`, `.agents/topchester/sessions/`, `.agents/topchester/logs/`, the configured knowledge folder, and the configured local cache folder.
+- Prints the workspace path and which folders were created or already existed.
 
 ### `topchester kb compile`
 

@@ -59,8 +59,31 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     const meta = formatAgentMessageMeta(result.modelId, durationMs);
     const toolCall = parseToolCall(result.text);
 
+    this.context.logger.debug(
+      {
+        event: "model_response",
+        purpose: "agent.primary",
+        modelId: result.modelId,
+        durationMs,
+        textLength: result.text.length,
+        hasToolCall: Boolean(toolCall),
+      },
+      "model response"
+    );
+    this.context.logger.trace(
+      {
+        event: "model_response_text",
+        purpose: "agent.primary",
+        modelId: result.modelId,
+        text: result.text,
+      },
+      "model response text"
+    );
+
     if (toolCall) {
-      const toolResult = await executeToolCall(this.context.workspaceRoot, toolCall);
+      const toolResult = await executeToolCall(this.context.workspaceRoot, toolCall, {
+        logger: this.context.logger,
+      });
       const finalStartedAt = Date.now();
       const finalResult = await this.context.modelGateway.generateText({
         purpose: "agent.primary",
@@ -68,8 +91,32 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         prompt: `${prompt}\n\n${formatToolResultForPrompt(toolResult)}\n\nAnswer the user's request using the tool result above. Do not guess.`,
         abortSignal,
       });
-      const finalDurationMs = durationMs + Date.now() - finalStartedAt;
+      const finalModelDurationMs = Date.now() - finalStartedAt;
+      const finalDurationMs = durationMs + finalModelDurationMs;
       const finalMeta = formatAgentMessageMeta(finalResult.modelId, finalDurationMs);
+
+      this.context.logger.debug(
+        {
+          event: "model_response",
+          purpose: "agent.primary",
+          modelId: finalResult.modelId,
+          durationMs: finalModelDurationMs,
+          totalDurationMs: finalDurationMs,
+          textLength: finalResult.text.length,
+          afterTool: toolCall.tool,
+        },
+        "model response after tool"
+      );
+      this.context.logger.trace(
+        {
+          event: "model_response_text",
+          purpose: "agent.primary",
+          modelId: finalResult.modelId,
+          afterTool: toolCall.tool,
+          text: finalResult.text,
+        },
+        "model response text after tool"
+      );
 
       return [
         agentEvent.toolCall(toolCall, formatToolCallMessage(toolCall)),
@@ -137,6 +184,8 @@ function formatToolCallMessage(call: ToolCall): string {
       return `Tool read_file: ${call.args.path}`;
     case "grep":
       return `Tool grep: ${call.args.pattern} in ${call.args.path ?? "."}`;
+    case "find_file":
+      return `Tool find_file: ${call.args.query} in ${call.args.path}`;
   }
 }
 

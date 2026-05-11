@@ -1,14 +1,16 @@
-import { chmod, mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   executeToolCall,
+  findWorkspaceFilesByName,
   getToolPromptLines,
   grepWorkspace,
   parseToolCall,
   readWorkspaceFile,
 } from "../src/agent/tools.js";
+import { createTopchesterLogger } from "../src/logging/index.js";
 
 describe("agent tools", () => {
   it("parses read_file tool calls from JSON", () => {
@@ -32,10 +34,18 @@ describe("agent tools", () => {
     });
   });
 
+  it("parses find_file tool calls from JSON", () => {
+    expect(parseToolCall('{"tool":"find_file","args":{"query":"runtime"}}')).toEqual({
+      tool: "find_file",
+      args: { query: "runtime", path: ".", limit: 50 },
+    });
+  });
+
   it("rejects unknown tools and invalid tool args", () => {
     expect(parseToolCall('{"tool":"unknown","args":{}}')).toBeUndefined();
     expect(parseToolCall('{"tool":"read_file","args":{"path":123}}')).toBeUndefined();
     expect(parseToolCall('{"tool":"grep","args":{"path":"src"}}')).toBeUndefined();
+    expect(parseToolCall('{"tool":"find_file","args":{"query":""}}')).toBeUndefined();
   });
 
   it("executes parsed tool calls through the registry", async () => {
@@ -58,7 +68,38 @@ describe("agent tools", () => {
     expect(getToolPromptLines()).toEqual([
       'read_file: read a UTF-8 file inside the workspace. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
       'grep: search text inside the workspace. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
+      'find_file: find files by fuzzy name inside the workspace. To use it, reply with only JSON: {"tool":"find_file","args":{"query":"runtime"}}',
     ]);
+  });
+
+  it("logs tool calls and result metadata without debug-level content", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const logFile = join(workspace, "tool.log");
+    await writeFile(join(workspace, "package.json"), '{"name":"real"}\n');
+    const call = parseToolCall('{"tool":"read_file","args":{"path":"package.json"}}');
+
+    if (!call) {
+      throw new Error("Expected read_file tool call to parse.");
+    }
+
+    await withEnv({ TOPCHESTER_LOG_LEVEL: "debug", TOPCHESTER_LOG_FILE: logFile }, async () => {
+      const { logger } = createTopchesterLogger(workspace);
+
+      await executeToolCall(workspace, call, { logger });
+
+      const logLines = (await readFile(logFile, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+
+      expect(logLines).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ event: "tool_call", tool: "read_file" }),
+          expect.objectContaining({ event: "tool_result", tool: "read_file", contentLength: 16 }),
+        ])
+      );
+      expect(JSON.stringify(logLines)).not.toContain('{"name":"real"}');
+    });
   });
 
   it("reads files scoped to the workspace", async () => {
@@ -130,9 +171,114 @@ describe("agent tools", () => {
       "grep can only search inside the workspace"
     );
   });
+
+  it("finds fuzzy file name matches relative to the workspace", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-tools-bin-"));
+    await mkdir(join(workspace, "src", "agent"), { recursive: true });
+    await mkdir(join(workspace, "docs"), { recursive: true });
+    await writeFile(join(workspace, "src", "agent", "runtime.ts"), "");
+    await writeFile(join(workspace, "src", "agent", "runtime-events.ts"), "");
+    await writeFile(join(workspace, "docs", "architecture.md"), "");
+
+    const result = await findWorkspaceFilesByName(
+      workspace,
+      { query: "rntime", path: ".", limit: 10 },
+      { pathEnv: bin }
+    );
+
+    expect(result).toEqual({
+      tool: "find_file",
+      path: ".",
+      content: ["src/agent/runtime.ts", "src/agent/runtime-events.ts"].join("\n"),
+    });
+  });
+
+  it("uses rg to list find_file candidates before the TypeScript fallback", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-tools-bin-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "src", "runtime-native.ts"), "");
+    await writeExecutable(join(bin, "rg"), "printf 'src/runtime-native.ts\\n'");
+
+    const result = await findWorkspaceFilesByName(
+      workspace,
+      { query: "runtime native", path: ".", limit: 10 },
+      { pathEnv: bin }
+    );
+
+    expect(result.content).toBe("src/runtime-native.ts");
+  });
+
+  it("scopes find_file to a workspace path and applies the result limit", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-tools-bin-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await mkdir(join(workspace, "test"), { recursive: true });
+    await writeFile(join(workspace, "src", "runtime.ts"), "");
+    await writeFile(join(workspace, "src", "runtime-events.ts"), "");
+    await writeFile(join(workspace, "test", "runtime.test.ts"), "");
+
+    const result = await findWorkspaceFilesByName(
+      workspace,
+      { query: "runtime", path: "src", limit: 1 },
+      { pathEnv: bin }
+    );
+
+    expect(result).toEqual({
+      tool: "find_file",
+      path: "src",
+      content: "src/runtime.ts",
+    });
+  });
+
+  it("ignores heavy generated dependency folders while finding files", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-tools-bin-"));
+    await mkdir(join(workspace, "node_modules"), { recursive: true });
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "node_modules", "runtime.ts"), "");
+    await writeFile(join(workspace, "src", "runtime.ts"), "");
+
+    const result = await findWorkspaceFilesByName(
+      workspace,
+      { query: "runtime", path: ".", limit: 10 },
+      { pathEnv: bin }
+    );
+
+    expect(result.content).toBe("src/runtime.ts");
+  });
+
+  it("rejects find_file paths outside the workspace", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+
+    await expect(findWorkspaceFilesByName(workspace, { query: "package", path: "..", limit: 10 })).rejects.toThrow(
+      "find_file can only search inside the workspace"
+    );
+  });
 });
 
 async function writeExecutable(path: string, body: string): Promise<void> {
   await writeFile(path, `#!/bin/sh\n${body}\n`);
   await chmod(path, 0o755);
+}
+
+async function withEnv(env: Record<string, string>, run: () => Promise<void>): Promise<void> {
+  const previous = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
+
+  try {
+    for (const [key, value] of Object.entries(env)) {
+      process.env[key] = value;
+    }
+
+    await run();
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
 }
