@@ -241,7 +241,7 @@ Slice 2.
 
 ## Slice 4: CLI and Slash Command Wiring
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 ### Goal
 
@@ -272,6 +272,8 @@ The processor should be proven by tests before it becomes the default user-facin
 pnpm test test/commands.test.ts test/cli.integration.test.ts test/knowledge-compiler.test.ts test/knowledge-l1-processor.test.ts
 pnpm typecheck
 ```
+
+Completed in Slice 4 with CLI and slash command model-backed L1 compile wiring, L1 outcome summaries, partial exit semantics, missing setup/model failure coverage, slash command suggestions/progress wording, `docs/cli.md` updates, and the assigned Slice 4 validators.
 
 ### Dependencies
 

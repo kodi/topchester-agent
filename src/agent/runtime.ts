@@ -134,6 +134,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
   async submitSlashCommand(command: string): Promise<AgentRuntimeEvent[]> {
     const result = await executeSlashCommand(command, {
       workspaceRoot: this.context.workspaceRoot,
+      modelGateway: this.context.modelGateway,
     });
 
     return [agentEvent.systemMessage(result.messages.join("\n")), agentEvent.status("ready")];

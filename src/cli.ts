@@ -4,7 +4,11 @@ import { isAbsolute, resolve } from "node:path";
 import { Command } from "commander";
 import { createAppContext } from "./app/context.js";
 import { ui } from "./cli/ui.js";
-import { compileKnowledgeBase, formatKnowledgeCompileResult } from "./knowledge/compiler/index.js";
+import {
+  compileKnowledgeBase,
+  formatKnowledgeCompileResult,
+  isPartialKnowledgeCompileResult,
+} from "./knowledge/compiler/index.js";
 import { formatKnowledgeInitResult, initializeKnowledgeBase } from "./knowledge/init.js";
 import { formatKnowledgeResetResult, resetKnowledgeBase } from "./knowledge/reset.js";
 import { getKnowledgeStatus } from "./knowledge/status.js";
@@ -54,11 +58,18 @@ kbCommand
   .description("compile the project knowledge base")
   .action(async () => {
     const context = createContextFromOptions();
-    const result = await ui.progress("Listing project files for L1...", (report) =>
-      compileKnowledgeBase(context.workspaceRoot, { onProgress: (event) => report(event.message) })
+    const result = await ui.progress("Processing L1 file entries...", (report) =>
+      compileKnowledgeBase(context.workspaceRoot, {
+        model: context.modelGateway,
+        requireModel: true,
+        onProgress: (event) => report(event.message),
+      })
     );
 
     console.log(formatKnowledgeCompileResult(result).join("\n"));
+    if (isPartialKnowledgeCompileResult(result)) {
+      process.exitCode = 2;
+    }
   });
 
 kbCommand

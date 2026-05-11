@@ -31,7 +31,7 @@ describe("slash commands", () => {
       },
       {
         value: "/kb compile",
-        description: "list project files and queue L1 work",
+        description: "process project files into L1 entries",
       },
       {
         value: "/kb init",
@@ -49,7 +49,7 @@ describe("slash commands", () => {
       },
       {
         value: "/kb compile",
-        description: "list project files and queue L1 work",
+        description: "process project files into L1 entries",
       },
       {
         value: "/kb init",
@@ -115,6 +115,50 @@ describe("slash commands", () => {
     expect(result.messages).toContain("state: project knowledge base was reset");
     await expect(stat(kbPath)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(stat(cachePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("executes /kb compile through the model-backed L1 pipeline", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await executeSlashCommand("/kb init", { workspaceRoot: workspace });
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+
+    const result = await executeSlashCommand("/kb compile", {
+      workspaceRoot: workspace,
+      modelGateway: {
+        async generateText() {
+          return {
+            text: JSON.stringify({
+              language: "typescript",
+              summary: "Describes the entry file.",
+              responsibilities: ["Export a test value."],
+              symbols: [],
+              imports: [],
+              exports: ["value"],
+              module_ids: [],
+              feature_ids: [],
+              test_ids: [],
+              evidence: [{ kind: "path", value: "src/index.ts" }],
+              confidence: "medium",
+            }),
+            providerId: "fake",
+            modelId: "fake-l1",
+            purpose: "kb.summarize" as const,
+          };
+        },
+      },
+    });
+
+    expect(result.messages).toContain("KB compile");
+    expect(result.messages).toContain("queued: 1");
+    expect(result.messages).toContain("completed: 1");
+    expect(result.messages).toContain("state: L1 entries are ready and current");
+  });
+
+  it("surfaces /kb compile setup and model failures as chat messages", async () => {
+    await expect(executeSlashCommand("/kb compile", { workspaceRoot: "/repo" })).resolves.toEqual({
+      messages: ['No model configured for purpose "kb.summarize"; L1 entries were not processed.'],
+    });
   });
 
   it("formats missing KB status", () => {

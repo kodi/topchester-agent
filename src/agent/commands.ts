@@ -1,10 +1,12 @@
 import { compileKnowledgeBase, formatKnowledgeCompileResult } from "../knowledge/compiler/index.js";
+import { type L1SummaryModel } from "../knowledge/compiler/l1-processor.js";
 import { formatKnowledgeInitResult, initializeKnowledgeBase } from "../knowledge/init.js";
 import { formatKnowledgeResetResult, resetKnowledgeBase } from "../knowledge/reset.js";
 import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js";
 
 export interface SlashCommandContext {
   workspaceRoot: string;
+  modelGateway?: L1SummaryModel;
 }
 
 export interface SlashCommandResult {
@@ -34,7 +36,7 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
   },
   {
     value: "/kb compile",
-    description: "list project files and queue L1 work",
+    description: "process project files into L1 entries",
   },
   {
     value: "/kb init",
@@ -114,7 +116,19 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
   }
 
   if (subcommand === "compile") {
-    return { messages: formatKnowledgeCompileResult(await compileKnowledgeBase(context.workspaceRoot)) };
+    if (!context.modelGateway) {
+      return { messages: ['No model configured for purpose "kb.summarize"; L1 entries were not processed.'] };
+    }
+
+    try {
+      return {
+        messages: formatKnowledgeCompileResult(
+          await compileKnowledgeBase(context.workspaceRoot, { model: context.modelGateway, requireModel: true })
+        ),
+      };
+    } catch (error) {
+      return { messages: [`KB compile failed: ${error instanceof Error ? error.message : "Unknown error."}`] };
+    }
   }
 
   if (subcommand === "reset") {

@@ -3,12 +3,44 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { compileKnowledgeBase } from "../src/knowledge/compiler/index.js";
+import {
+  compileKnowledgeBase,
+  formatKnowledgeCompileResult,
+  isPartialKnowledgeCompileResult,
+} from "../src/knowledge/compiler/index.js";
 import { listProjectFilesForL1 } from "../src/knowledge/compiler/inventory.js";
+import { getL1FileEntryPath } from "../src/knowledge/compiler/path-encoding.js";
 import { initializeKnowledgeBase } from "../src/knowledge/init.js";
 
 const envKeys = ["TOPCHESTER_KB_DIR", "TOPCHESTER_KB_CACHE_DIR"] as const;
 const originalEnv = new Map(envKeys.map((key) => [key, process.env[key]]));
+
+function fakeL1Model(summary = "Summarizes the source file.") {
+  return {
+    calls: [] as string[],
+    async generateText(request: { prompt: string }) {
+      this.calls.push(request.prompt);
+      return {
+        text: JSON.stringify({
+          language: "typescript",
+          summary,
+          responsibilities: ["Describe the file for the project knowledge base."],
+          symbols: [],
+          imports: [],
+          exports: [],
+          module_ids: [],
+          feature_ids: [],
+          test_ids: [],
+          evidence: [{ kind: "path", value: "model-path" }],
+          confidence: "medium",
+        }),
+        providerId: "fake",
+        modelId: "fake-l1",
+        purpose: "kb.summarize" as const,
+      };
+    },
+  };
+}
 
 afterEach(async () => {
   for (const key of envKeys) {
@@ -79,6 +111,47 @@ describe("knowledge compiler inventory", () => {
     expect(result.queuedFiles.find((file) => file.path === "src/index.ts")?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(queue.queuedFiles).toEqual(result.queuedFiles);
     expect(manifest.queuedFileCount).toBe(2);
+  });
+
+  it("processes queued files into model-backed L1 entries and reports current counts", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+    await initializeKnowledgeBase(workspace);
+    const model = fakeL1Model();
+
+    const result = await compileKnowledgeBase(workspace, { model });
+    const entry = JSON.parse(
+      await readFile(getL1FileEntryPath(join(workspace, "topchester-kb"), "src/index.ts"), "utf8")
+    );
+
+    expect(model.calls).toHaveLength(1);
+    expect(entry.path).toBe("src/index.ts");
+    expect(entry.scan_status).toBe("current");
+    expect(entry.summary).toBe("Summarizes the source file.");
+    expect(result.l1).toEqual({ queued: 0, completed: 1, failed: 0, changed: 0, missing: 0, currentEntries: 1 });
+    expect(formatKnowledgeCompileResult(result)).toContain("completed: 1");
+    expect(formatKnowledgeCompileResult(result)).toContain("state: L1 entries are ready and current");
+    expect(isPartialKnowledgeCompileResult(result)).toBe(false);
+  });
+
+  it("reports partial compile state when L1 processing has per-file failures", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+    await initializeKnowledgeBase(workspace);
+
+    const result = await compileKnowledgeBase(workspace, {
+      model: {
+        async generateText() {
+          return { text: "not json", providerId: "fake", modelId: "fake-l1", purpose: "kb.summarize" as const };
+        },
+      },
+    });
+
+    expect(result.l1).toMatchObject({ queued: 0, completed: 0, failed: 1, changed: 0, missing: 0 });
+    expect(formatKnowledgeCompileResult(result)).toContain("state: partial L1 compile; some files need attention");
+    expect(isPartialKnowledgeCompileResult(result)).toBe(true);
   });
 
   it("compiles empty in-scope work into valid zero-count queue and manifest artifacts", async () => {

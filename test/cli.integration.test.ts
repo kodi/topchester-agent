@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -143,5 +143,42 @@ describe("CLI integration", () => {
     expect(stdout).toContain("state: project knowledge base was reset");
     await expect(stat(kbPath)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(stat(cachePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("fails compile clearly before init without writing L1 artifacts", async () => {
+    const fixture = await makeFixture();
+    await mkdir(fixture.workspace, { recursive: true });
+    await writeFile(join(fixture.workspace, "index.ts"), "export const value = 1;\n");
+
+    await expect(
+      runCli(["--config", fixture.config, "--workspace", fixture.workspace, "kb", "compile"], fixture.root)
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("Run `topchester kb init` before compiling the project knowledge base."),
+    });
+    await expect(stat(join(fixture.workspace, ".agents/topchester-kb-cache/l1-queue.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(stat(join(fixture.workspace, "topchester-kb/manifest.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("fails compile clearly when no kb.summarize model or fallback is configured", async () => {
+    const fixture = await makeFixture();
+    const badConfig = join(fixture.root, "bad-config.yaml");
+    await writeFile(
+      badConfig,
+      ["models:", "  assignments:", "    agent.primary:", "      name: fake-model"].join("\n")
+    );
+    await mkdir(fixture.workspace, { recursive: true });
+    await writeFile(join(fixture.workspace, "index.ts"), "export const value = 1;\n");
+    await runCli(["--workspace", fixture.workspace, "kb", "init"], fixture.root);
+
+    await expect(
+      runCli(["--config", badConfig, "--workspace", fixture.workspace, "kb", "compile"], fixture.root)
+    ).rejects.toMatchObject({
+      message: expect.stringContaining('No model configured for purpose "kb.summarize".'),
+    });
+    await expect(readdir(join(fixture.workspace, "topchester-kb/l1-files"))).resolves.toEqual([]);
   });
 });
