@@ -231,7 +231,7 @@ function normalizeL1FileEntry(
   }
 
   return parseL1FileEntry({
-    ...value,
+    ...normalizeModelOwnedL1Fields(value, deterministic.path),
     $schema: l1FileEntrySchemaPath,
     id: `file:${deterministic.path}`,
     layer: "L1",
@@ -241,6 +241,98 @@ function normalizeL1FileEntry(
     size_bytes: deterministic.sizeBytes,
     last_scanned_at: deterministic.scannedAt,
     scan_status: "current",
+  });
+}
+
+function normalizeModelOwnedL1Fields(value: object, path: string): Record<string, unknown> {
+  const record = value as Record<string, unknown>;
+  return {
+    ...record,
+    responsibilities: normalizeStringArray(record.responsibilities),
+    symbols: normalizeSymbols(record.symbols, path),
+    imports: normalizePrefixedIds(record.imports, "file:"),
+    exports: normalizeStringArray(record.exports),
+    module_ids: normalizePrefixedIds(record.module_ids, "module:"),
+    feature_ids: normalizePrefixedIds(record.feature_ids, "feature:"),
+    test_ids: normalizePrefixedIds(record.test_ids, "file:"),
+    evidence: normalizeEvidence(record.evidence),
+  };
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function normalizePrefixedIds(value: unknown, prefix: string): string[] {
+  return normalizeStringArray(value).filter((item) => item.startsWith(prefix));
+}
+
+function normalizeEvidence(value: unknown): Array<{ kind: string; value: string }> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return [];
+    }
+    const record = item as Record<string, unknown>;
+    if (typeof record.kind !== "string" || record.kind.trim().length === 0) {
+      return [];
+    }
+    if (typeof record.value !== "string" || record.value.trim().length === 0) {
+      return [];
+    }
+    return [{ kind: record.kind, value: record.value }];
+  });
+}
+
+function normalizeSymbols(value: unknown, path: string | undefined): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    if (typeof item === "string") {
+      const name = item.trim();
+      if (!name || !path) {
+        return [];
+      }
+      return [
+        {
+          id: `symbol:${path}#${name}`,
+          kind: "symbol",
+          name,
+          exported: false,
+          summary: `Symbol named ${name}.`,
+        },
+      ];
+    }
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return [];
+    }
+    const record = item as Record<string, unknown>;
+    const rawId = typeof record.id === "string" && record.id.startsWith("symbol:") ? record.id : undefined;
+    const name =
+      typeof record.name === "string" && record.name.trim().length > 0
+        ? record.name
+        : rawId?.slice(rawId.lastIndexOf("#") + 1);
+    if (!name || !path) {
+      return [];
+    }
+    return [
+      {
+        id: rawId ?? `symbol:${path}#${name}`,
+        kind: typeof record.kind === "string" && record.kind.trim().length > 0 ? record.kind : "symbol",
+        name,
+        exported: typeof record.exported === "boolean" ? record.exported : false,
+        summary:
+          typeof record.summary === "string" && record.summary.trim().length > 0
+            ? record.summary
+            : `Symbol named ${name}.`,
+      },
+    ];
   });
 }
 

@@ -307,6 +307,67 @@ describe("single-file L1 processing", () => {
     expect(entry.scan_status).toBe("current");
   });
 
+  it("normalizes common loose model arrays into schema-valid semantic fields", async () => {
+    const content = "export function clsx() { return '' }\n";
+    const workspaceRoot = await makeWorkspace({ "src/index.js": content });
+    const kbPath = join(workspaceRoot, "topchester-kb");
+    const model = makeFakeModel(
+      JSON.stringify(
+        makeValidL1Entry({
+          id: "file:wrong.js",
+          path: "wrong.js",
+          symbols: [{ name: "clsx", description: "extra field" }, "toVal", { id: "symbol:src/index.js#derived" }],
+          imports: ["node:fs", "file:src/lite.js", ""],
+          exports: [{ name: "default" }, "clsx"],
+          module_ids: ["runtime", "module:runtime"],
+          feature_ids: ["classes", "feature:class-names"],
+          test_ids: ["handles strings", "file:test/index.js"],
+          evidence: ["src/index.js", { kind: "path", value: "src/index.js" }, { kind: "", value: "ignored" }],
+        })
+      )
+    );
+
+    const result = await processL1QueueItem({
+      workspaceRoot,
+      kbPath,
+      item: makeQueueItem("src/index.js", content),
+      model,
+      now: fixedNow,
+    });
+
+    expect(result.item.status).toBe("completed");
+    const entry = l1FileEntrySchema.parse(JSON.parse(await readFile(result.entryPath!, "utf8")));
+    expect(entry.symbols).toEqual([
+      {
+        id: "symbol:src/index.js#clsx",
+        kind: "symbol",
+        name: "clsx",
+        exported: false,
+        summary: "Symbol named clsx.",
+      },
+      {
+        id: "symbol:src/index.js#toVal",
+        kind: "symbol",
+        name: "toVal",
+        exported: false,
+        summary: "Symbol named toVal.",
+      },
+      {
+        id: "symbol:src/index.js#derived",
+        kind: "symbol",
+        name: "derived",
+        exported: false,
+        summary: "Symbol named derived.",
+      },
+    ]);
+    expect(entry.imports).toEqual(["file:src/lite.js"]);
+    expect(entry.exports).toEqual(["clsx"]);
+    expect(entry.module_ids).toEqual(["module:runtime"]);
+    expect(entry.feature_ids).toEqual(["feature:class-names"]);
+    expect(entry.test_ids).toEqual(["file:test/index.js"]);
+    expect(entry.evidence).toEqual([{ kind: "path", value: "src/index.js" }]);
+  });
+
   it("fails safely for invalid, empty, and semantically incomplete model output", async () => {
     const content = "export const value = true;\n";
     const invalidCases = ["not json", "", JSON.stringify({ summary: "" })];
