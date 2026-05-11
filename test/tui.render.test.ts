@@ -161,6 +161,53 @@ describe("TUI rendering", () => {
     expect(submitted).toBe("hello");
   });
 
+  it("routes slash commands to the command handler", () => {
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    let submittedCommand = "";
+    let submittedMessage = "";
+    app.setSubmitCommand((command) => {
+      submittedCommand = command;
+    });
+    app.setSubmitMessage((message) => {
+      submittedMessage = message;
+    });
+    app.setInputValue("/kb status");
+
+    app.handleInput("\n");
+    const output = app.render(60).join("\n");
+
+    expect(output).toContain(" You: /kb status");
+    expect(submittedCommand).toBe("/kb status");
+    expect(submittedMessage).toBe("");
+  });
+
+  it("shows slash command suggestions while typing a command prefix", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 14;
+    const app = new ChatLayout(terminal, [], "repo", "model [provider]");
+    app.setInputValue("/k");
+
+    const output = app.render(80).join("\n");
+
+    expect(output).toContain("slash commands");
+    expect(output).toContain("> /kb status — show project knowledge base status");
+    expect(output).toContain("Tab complete · ↑↓ choose");
+  });
+
+  it("completes the active slash command suggestion with Tab", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 14;
+    const app = new ChatLayout(terminal, [], "repo", "model [provider]");
+    app.setInputValue("/k");
+
+    app.handleInput("\t");
+    const output = app.render(80).join("\n");
+
+    expect(output).toContain("│ > /kb status");
+    expect(output).toContain("/kb status\u001b[7m");
+    expect(output).not.toContain("/\u001b[7mkb status");
+  });
+
   it("renders user messages with top and bottom padding", () => {
     const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
     app.setInputValue("hello");

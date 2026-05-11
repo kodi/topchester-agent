@@ -38,6 +38,8 @@ Current behavior:
 - Shows an unlabeled input box below the thread.
 - Shows a status line below the prompt box with `ready`, the current folder name, and the active model as `model [provider]`.
 - Tracks chat rows as `System`, `You`, and `Agent` messages, and sends user messages to the configured `agent.primary` model.
+- Intercepts slash commands before chat, starting with `/kb status`.
+- Shows slash command suggestions when the prompt starts with `/`; `Tab` completes the selected suggestion.
 - Shows a temporary thinking row while waiting for chat responses.
 - Checks the configured `agent.fast` model on startup in interactive mode and prints `Agent: ready` when the model responds.
 - Skips the startup check with a plain message if the agent takes too long.
@@ -46,6 +48,10 @@ Current behavior:
 - Shows a temporary spinner row in the chat area while the engine is busy, with copy that says what is happening.
 - Shows `press Esc to stop` inside the prompt box while the startup agent check is running.
 - Prints a static version of the same layout when output is not interactive.
+
+Slash commands:
+
+- `/kb status` — prints the same simple workspace KB status as `topchester kb status` inside the chat thread.
 
 ### `topchester dev`
 

@@ -10,6 +10,7 @@ import {
   type Terminal,
 } from "@earendil-works/pi-tui";
 import { basename } from "node:path";
+import { executeSlashCommand, getSlashCommandSuggestions, type SlashCommandSuggestion } from "../agent/commands.js";
 import { checkAgentReady } from "../agent/health.js";
 import { executeToolCall, parseToolCall, type ToolResult } from "../agent/tools.js";
 import { type AppContext } from "../app/context.js";
@@ -57,6 +58,9 @@ export class TopchesterTuiShell implements TuiShell {
     });
     app.setSubmitMessage((message) => {
       void this.submitChatMessage(app, tui, message);
+    });
+    app.setSubmitCommand((command) => {
+      void this.submitSlashCommand(app, tui, command);
     });
 
     tui.addChild(app);
@@ -194,6 +198,23 @@ export class TopchesterTuiShell implements TuiShell {
       tui.requestRender();
     }
   }
+
+  private async submitSlashCommand(app: ChatLayout, tui: TUI, command: string): Promise<void> {
+    try {
+      const result = await executeSlashCommand(command, {
+        workspaceRoot: this.context.workspaceRoot,
+      });
+
+      app.addMessage(systemMessage(result.messages.join("\n")));
+      app.setStatus("ready");
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      app.addMessage(systemMessage(`Command failed: ${errorMessage}`));
+      app.setStatus("command failed");
+    } finally {
+      tui.requestRender();
+    }
+  }
 }
 
 export function getKnowledgeStatusMessages(status: KnowledgeStatus, devFlags = new Set<string>()): ChatMessage[] {
@@ -311,7 +332,9 @@ export class ChatLayout implements Component, Focusable {
   private promptHint: string | undefined;
   private cancelPending: (() => void) | undefined;
   private submitMessage: ((message: string) => void) | undefined;
+  private submitCommand: ((command: string) => void) | undefined;
   private activeModalActionIndex = 0;
+  private activeSlashSuggestionIndex = 0;
   private threadScrollOffset = 0;
 
   constructor(
@@ -326,7 +349,11 @@ export class ChatLayout implements Component, Focusable {
         const message = value.trim();
         this.addMessage(userMessage(message));
         this.input.setValue("");
-        this.submitMessage?.(message);
+        if (message.startsWith("/")) {
+          this.submitCommand?.(message);
+        } else {
+          this.submitMessage?.(message);
+        }
       }
     };
   }
@@ -361,6 +388,10 @@ export class ChatLayout implements Component, Focusable {
 
   setSubmitMessage(submit: ((message: string) => void) | undefined): void {
     this.submitMessage = submit;
+  }
+
+  setSubmitCommand(submit: ((command: string) => void) | undefined): void {
+    this.submitCommand = submit;
   }
 
   setInputValue(value: string): void {
@@ -402,6 +433,10 @@ export class ChatLayout implements Component, Focusable {
     }
 
     if (this.handleModalInput(data)) {
+      return;
+    }
+
+    if (this.handleSlashSuggestionInput(data)) {
       return;
     }
 
@@ -474,7 +509,40 @@ export class ChatLayout implements Component, Focusable {
       : truncateToWidth(renderInputWithoutPrompt(this.input, innerWidth), innerWidth, "…", true);
     const status = truncateToWidth(formatStatusLine(this.folderName, this.modelLabel, this.status), width, "…", true);
 
-    return [top, `│ ${prefix}${inputLine} │`, bottom, status];
+    return [...this.renderSlashSuggestions(width), top, `│ ${prefix}${inputLine} │`, bottom, status];
+  }
+
+  private renderSlashSuggestions(width: number): string[] {
+    const suggestions = this.getSlashSuggestions();
+
+    if (suggestions.length === 0 || this.promptHint) {
+      return [];
+    }
+
+    this.activeSlashSuggestionIndex = Math.min(this.activeSlashSuggestionIndex, suggestions.length - 1);
+
+    const innerWidth = Math.max(1, width - 4);
+    const visibleSuggestions = suggestions.slice(0, 6);
+    const lines = [
+      ui.label("slash commands"),
+      ...visibleSuggestions.map((suggestion, index) => {
+        const marker = index === this.activeSlashSuggestionIndex ? ">" : " ";
+        const text = `${marker} ${suggestion.value} — ${suggestion.description}`;
+
+        return truncateToWidth(text, innerWidth, "…", true);
+      }),
+      ui.label("Tab complete · ↑↓ choose"),
+    ];
+    const maxLineWidth = Math.max(...lines.map(stripAnsi).map((line) => line.length), 1);
+    const boxWidth = Math.min(innerWidth, maxLineWidth);
+    const top = `╭${"─".repeat(boxWidth + 2)}╮`;
+    const bottom = `╰${"─".repeat(boxWidth + 2)}╯`;
+
+    return [
+      top,
+      ...lines.map((line) => `│ ${line}${" ".repeat(Math.max(0, boxWidth - stripAnsi(line).length))} │`),
+      bottom,
+    ];
   }
 
   private renderModalHelp(width: number): string[] {
@@ -557,6 +625,46 @@ export class ChatLayout implements Component, Focusable {
     }
 
     return false;
+  }
+
+  private handleSlashSuggestionInput(data: string): boolean {
+    const suggestions = this.getSlashSuggestions();
+
+    if (suggestions.length === 0) {
+      this.activeSlashSuggestionIndex = 0;
+      return false;
+    }
+
+    if (isUpKey(data)) {
+      this.activeSlashSuggestionIndex = (this.activeSlashSuggestionIndex - 1 + suggestions.length) % suggestions.length;
+      return true;
+    }
+
+    if (isDownKey(data)) {
+      this.activeSlashSuggestionIndex = (this.activeSlashSuggestionIndex + 1) % suggestions.length;
+      return true;
+    }
+
+    if (isTabKey(data)) {
+      this.completeSlashSuggestion(suggestions);
+      return true;
+    }
+
+    if (isEnterKey(data) && this.input.getValue().trim() !== suggestions[this.activeSlashSuggestionIndex]?.value) {
+      this.completeSlashSuggestion(suggestions);
+      return true;
+    }
+
+    return false;
+  }
+
+  private completeSlashSuggestion(suggestions: SlashCommandSuggestion[]): void {
+    this.input.setValue(suggestions[this.activeSlashSuggestionIndex]?.value ?? this.input.getValue());
+    this.input.handleInput("\u001b[F");
+  }
+
+  private getSlashSuggestions(): SlashCommandSuggestion[] {
+    return getSlashCommandSuggestions(this.input.getValue());
   }
 
   private getActiveModal(): Extract<ChatMessage, { kind: "modal" }> | undefined {
@@ -672,6 +780,14 @@ function isDownKey(data: string): boolean {
   return matchesKey(data, "down") || data === "\u001b[B";
 }
 
+function isEnterKey(data: string): boolean {
+  return matchesKey(data, "enter") || data === "\n" || data === "\r";
+}
+
+function isTabKey(data: string): boolean {
+  return matchesKey(data, "tab") || data === "\t";
+}
+
 function isPageUpKey(data: string): boolean {
   return data === "\u001b[5~";
 }
@@ -711,6 +827,23 @@ function getWheelDirection(button: number): "up" | "down" | undefined {
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function stripAnsi(text: string): string {
+  let plain = "";
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charCodeAt(index) === 27 && text[index + 1] === "[") {
+      index += 2;
+      while (index < text.length && text[index] !== "m") {
+        index += 1;
+      }
+      continue;
+    }
+
+    plain += text[index];
+  }
+
+  return plain;
 }
 
 export interface BusyIndicatorOptions {
