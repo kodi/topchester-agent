@@ -1,7 +1,11 @@
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { l1QueueFileSchema, l1QueueStatuses } from "../src/knowledge/compiler/l1.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { l1QueueFileSchema, l1QueueStatuses, type L1QueueItem } from "../src/knowledge/compiler/l1.js";
 import { l1FileEntrySchema, l1FileScanStatuses } from "../src/knowledge/compiler/l1-entry.js";
+import { parseL1ModelJson, processL1QueueItem, type L1SummaryModel } from "../src/knowledge/compiler/l1-processor.js";
 import {
   encodeL1FileEntryFileName,
   getL1FileEntryPath,
@@ -10,6 +14,12 @@ import {
 } from "../src/knowledge/compiler/path-encoding.js";
 
 const sha256 = `sha256:${"a".repeat(64)}`;
+const fixedNow = () => new Date("2026-05-11T00:00:00.000Z");
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
 
 function makeValidL1Entry(overrides: Record<string, unknown> = {}) {
   return {
@@ -55,6 +65,45 @@ function makeValidL1Entry(overrides: Record<string, unknown> = {}) {
     ],
     confidence: "medium",
     ...overrides,
+  };
+}
+
+async function makeWorkspace(files: Record<string, string>): Promise<string> {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "topchester-l1-"));
+  tempDirs.push(workspaceRoot);
+
+  for (const [path, content] of Object.entries(files)) {
+    const fullPath = join(workspaceRoot, path);
+    await mkdir(join(fullPath, ".."), { recursive: true });
+    await writeFile(fullPath, content, { flush: true });
+  }
+
+  return workspaceRoot;
+}
+
+function hashContent(content: string): string {
+  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+}
+
+function makeQueueItem(path: string, content: string, overrides: Partial<L1QueueItem> = {}): L1QueueItem {
+  return {
+    id: `file:${path}`,
+    path,
+    sizeBytes: Buffer.byteLength(content),
+    hash: hashContent(content),
+    status: "queued",
+    ...overrides,
+  };
+}
+
+function makeFakeModel(text: string): L1SummaryModel & { calls: Array<{ system: string; prompt: string }> } {
+  const calls: Array<{ system: string; prompt: string }> = [];
+  return {
+    calls,
+    async generateText(request) {
+      calls.push({ system: request.system, prompt: request.prompt });
+      return { text, providerId: "fake", modelId: "fake-l1", purpose: "kb.summarize" };
+    },
   };
 }
 
@@ -167,5 +216,163 @@ describe("L1 path encoding", () => {
   it("still encodes valid POSIX workspace-relative paths", () => {
     expect(normalizeL1FilePath("./src/server/routes/users.ts")).toBe("src/server/routes/users.ts");
     expect(encodeL1FileEntryFileName("src:module/file.ts")).toMatch(/^[a-f0-9]{16}-src%3Amodule%2Ffile\.ts\.json$/);
+  });
+});
+
+describe("single-file L1 processing", () => {
+  it("writes one current entry from a valid fake model response", async () => {
+    const content = "export function greet(name: string) { return `hi ${name}`; }\n";
+    const workspaceRoot = await makeWorkspace({ "src/greet.ts": content });
+    const kbPath = join(workspaceRoot, "topchester-kb");
+    const model = makeFakeModel(JSON.stringify(makeValidL1Entry({ path: "src/greet.ts", id: "file:src/greet.ts" })));
+
+    const result = await processL1QueueItem({
+      workspaceRoot,
+      kbPath,
+      item: makeQueueItem("src/greet.ts", content),
+      model,
+      now: fixedNow,
+    });
+
+    expect(result.item.status).toBe("completed");
+    expect(model.calls).toHaveLength(1);
+    expect(model.calls[0]?.prompt).toContain("src/greet.ts");
+    expect(result.entryPath).toBe(getL1FileEntryPath(kbPath, "src/greet.ts"));
+    const entry = l1FileEntrySchema.parse(JSON.parse(await readFile(result.entryPath!, "utf8")));
+    expect(entry.scan_status).toBe("current");
+    expect(entry.summary).toContain("Defines HTTP routes");
+  });
+
+  it("overrides deterministic fields even when the model lies", async () => {
+    const content = "export const answer = 42;\n";
+    const workspaceRoot = await makeWorkspace({ "src/answer.ts": content });
+    const kbPath = join(workspaceRoot, "topchester-kb");
+    const model = makeFakeModel(
+      JSON.stringify(
+        makeValidL1Entry({
+          id: "file:wrong.ts",
+          path: "wrong.ts",
+          content_hash: `sha256:${"b".repeat(64)}`,
+          size_bytes: 999,
+          last_scanned_at: "1999-01-01T00:00:00Z",
+          scan_status: "invalid",
+        })
+      )
+    );
+
+    const result = await processL1QueueItem({
+      workspaceRoot,
+      kbPath,
+      item: makeQueueItem("src/answer.ts", content),
+      model,
+      now: fixedNow,
+    });
+
+    expect(result.item.status).toBe("completed");
+    const entry = l1FileEntrySchema.parse(JSON.parse(await readFile(result.entryPath!, "utf8")));
+    expect(entry.id).toBe("file:src/answer.ts");
+    expect(entry.path).toBe("src/answer.ts");
+    expect(entry.content_hash).toBe(hashContent(content));
+    expect(entry.size_bytes).toBe(Buffer.byteLength(content));
+    expect(entry.last_scanned_at).toBe("2026-05-11T00:00:00.000Z");
+    expect(entry.scan_status).toBe("current");
+  });
+
+  it("fails safely for invalid, empty, and semantically incomplete model output", async () => {
+    const content = "export const value = true;\n";
+    const invalidCases = ["not json", "", JSON.stringify({ summary: "" })];
+
+    for (const [index, text] of invalidCases.entries()) {
+      const workspaceRoot = await makeWorkspace({ "src/value.ts": content });
+      const result = await processL1QueueItem({
+        workspaceRoot,
+        kbPath: join(workspaceRoot, "topchester-kb"),
+        item: makeQueueItem("src/value.ts", content),
+        model: makeFakeModel(text),
+        now: fixedNow,
+      });
+
+      expect(result.item.status, `case ${index}`).toBe("failed");
+      expect(result.entryPath).toBeUndefined();
+      expect(result.item.failure?.message).not.toContain(content);
+      expect(result.item.failure?.failedAt).toBe("2026-05-11T00:00:00.000Z");
+    }
+  });
+
+  it("extracts one JSON object from wrappers and rejects ambiguous or missing JSON", () => {
+    const entry = makeValidL1Entry();
+
+    expect(parseL1ModelJson(`Here is the entry:\n\`\`\`json\n${JSON.stringify(entry)}\n\`\`\``)).toEqual(entry);
+    expect(parseL1ModelJson(`prose before\n${JSON.stringify(entry)}\nprose after`)).toEqual(entry);
+    expect(() => parseL1ModelJson(`${JSON.stringify(entry)}\n${JSON.stringify(entry)}`)).toThrow(/ambiguous/i);
+    expect(() => parseL1ModelJson("no json here")).toThrow(/did not contain/i);
+  });
+
+  it("stores useful sanitized failure metadata without raw secret sentinels", async () => {
+    const content = "export const secret = false;\n";
+    const workspaceRoot = await makeWorkspace({ "src/secret.ts": content });
+    const model: L1SummaryModel = {
+      async generateText() {
+        throw new Error("provider failed with SECRET_SENTINEL_DO_NOT_WRITE and sk-testsecret");
+      },
+    };
+
+    const result = await processL1QueueItem({
+      workspaceRoot,
+      kbPath: join(workspaceRoot, "topchester-kb"),
+      item: makeQueueItem("src/secret.ts", content),
+      model,
+      now: fixedNow,
+    });
+
+    expect(result.item.status).toBe("failed");
+    expect(result.item.failure?.code).toBe("processing_error");
+    expect(result.item.failure?.message).toContain("[redacted]");
+    expect(JSON.stringify(result.item)).not.toContain("SECRET_SENTINEL_DO_NOT_WRITE");
+    expect(JSON.stringify(result.item)).not.toContain("sk-testsecret");
+  });
+
+  it("marks changed and deleted queued files without writing current entries", async () => {
+    const originalContent = "export const before = 1;\n";
+    const workspaceRoot = await makeWorkspace({ "src/changed.ts": "export const after = 2;\n" });
+    const missingWorkspaceRoot = await makeWorkspace({});
+
+    const changed = await processL1QueueItem({
+      workspaceRoot,
+      kbPath: join(workspaceRoot, "topchester-kb"),
+      item: makeQueueItem("src/changed.ts", originalContent),
+      model: makeFakeModel(JSON.stringify(makeValidL1Entry())),
+      now: fixedNow,
+    });
+    const missing = await processL1QueueItem({
+      workspaceRoot: missingWorkspaceRoot,
+      kbPath: join(missingWorkspaceRoot, "topchester-kb"),
+      item: makeQueueItem("src/missing.ts", originalContent),
+      model: makeFakeModel(JSON.stringify(makeValidL1Entry())),
+      now: fixedNow,
+    });
+
+    expect(changed.item.status).toBe("changed");
+    expect(changed.entryPath).toBeUndefined();
+    expect(missing.item.status).toBe("missing_file");
+    expect(missing.entryPath).toBeUndefined();
+  });
+
+  it("fails oversized files clearly without writing placeholder current entries", async () => {
+    const content = "x".repeat(256 * 1024 + 1);
+    const workspaceRoot = await makeWorkspace({ "src/huge.txt": content });
+
+    const result = await processL1QueueItem({
+      workspaceRoot,
+      kbPath: join(workspaceRoot, "topchester-kb"),
+      item: makeQueueItem("src/huge.txt", content),
+      model: makeFakeModel(JSON.stringify(makeValidL1Entry())),
+      now: fixedNow,
+    });
+
+    expect(result.item.status).toBe("failed");
+    expect(result.item.failure?.code).toBe("file_too_large");
+    expect(result.item.failure?.message).toContain("too large");
+    expect(result.entryPath).toBeUndefined();
   });
 });

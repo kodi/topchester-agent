@@ -162,7 +162,7 @@ None.
 
 ## Slice 2: Single-File L1 Processing
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 ### Goal
 
@@ -192,6 +192,8 @@ Single-file ingestion proves the core model/parse/validate/write path before add
 pnpm test test/knowledge-l1-processor.test.ts
 pnpm typecheck
 ```
+
+Completed in Slice 2 with a focused single-file L1 processor, fake-model tests for valid output, deterministic field overrides, JSON wrapper extraction, invalid/ambiguous/empty output, changed/missing files, oversized files, sanitized failure metadata, `pnpm test test/knowledge-l1-processor.test.ts`, and `pnpm typecheck`.
 
 ### Dependencies
 

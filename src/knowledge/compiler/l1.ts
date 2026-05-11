@@ -6,6 +6,14 @@ export const l1QueueStatuses = ["queued", "in_progress", "completed", "failed", 
 
 export const l1QueueStatusSchema = z.enum(l1QueueStatuses);
 
+export const l1QueueFailureSchema = z
+  .object({
+    code: z.string().min(1),
+    message: z.string().min(1),
+    failedAt: isoUtcTimestampSchema,
+  })
+  .strict();
+
 export const l1QueueItemSchema = z
   .object({
     id: l1FileIdSchema,
@@ -13,6 +21,7 @@ export const l1QueueItemSchema = z
     sizeBytes: z.number().int().nonnegative(),
     hash: sha256HashSchema,
     status: l1QueueStatusSchema,
+    failure: l1QueueFailureSchema.optional(),
   })
   .strict()
   .refine((item) => item.id === `file:${item.path}`, {
@@ -29,6 +38,7 @@ export const l1QueueFileSchema = z
   .strict();
 
 export type L1QueueStatus = (typeof l1QueueStatuses)[number];
+export type L1QueueFailure = z.infer<typeof l1QueueFailureSchema>;
 export type L1QueueItem = z.infer<typeof l1QueueItemSchema>;
 export type L1QueueFile = z.infer<typeof l1QueueFileSchema>;
 
