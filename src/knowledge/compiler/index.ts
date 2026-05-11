@@ -2,15 +2,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getKnowledgeStatus } from "../status.js";
 import { type KnowledgeProgressReporter } from "../progress.js";
-import { listProjectFilesForL1, type InventoryFile } from "./inventory.js";
+import { listProjectFilesForL1 } from "./inventory.js";
+import { createL1QueueFile, createL1QueueItem, type L1QueueItem } from "./l1.js";
 
 export interface KnowledgeCompiler {
   compile(): Promise<KnowledgeCompileResult>;
-}
-
-export interface L1QueueItem extends InventoryFile {
-  id: string;
-  status: "queued";
 }
 
 export interface KnowledgeCompileResult {
@@ -38,28 +34,14 @@ export async function compileKnowledgeBase(
   options.onProgress?.({ message: "Reading .gitignore files and listing project files..." });
   const inventory = await listProjectFilesForL1(workspaceRoot);
   options.onProgress?.({ message: `Queued ${inventory.files.length} project files for L1...` });
-  const queuedFiles = inventory.files.map((file) => ({
-    ...file,
-    id: `file:${file.path}`,
-    status: "queued" as const,
-  }));
+  const queuedFiles = inventory.files.map(createL1QueueItem);
   const queuePath = join(status.cachePath, "l1-queue.json");
   const manifestPath = join(status.kbPath, "manifest.json");
   const generatedAt = new Date().toISOString();
+  const queue = createL1QueueFile(queuedFiles, generatedAt);
 
   options.onProgress?.({ message: "Writing L1 queue and manifest..." });
-  await writeFile(
-    queuePath,
-    `${JSON.stringify(
-      {
-        layer: "L1",
-        generatedAt,
-        queuedFiles,
-      },
-      null,
-      2
-    )}\n`
-  );
+  await writeFile(queuePath, `${JSON.stringify(queue, null, 2)}\n`);
   await writeFile(
     manifestPath,
     `${JSON.stringify(
