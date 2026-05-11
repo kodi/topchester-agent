@@ -143,6 +143,10 @@ describe("L1 path encoding", () => {
     const unsafePaths = [
       "",
       "/absolute/path.ts",
+      "C:/absolute/path.ts",
+      "C:relative/path.ts",
+      "./C:/absolute/path.ts",
+      "./C:relative/path.ts",
       ".",
       "..",
       "../outside.ts",
@@ -158,5 +162,10 @@ describe("L1 path encoding", () => {
       expect(() => encodeL1FileEntryFileName(unsafePath)).toThrow();
       expect(() => getL1FileEntryPath("/repo/topchester-kb", unsafePath)).toThrow();
     }
+  });
+
+  it("still encodes valid POSIX workspace-relative paths", () => {
+    expect(normalizeL1FilePath("./src/server/routes/users.ts")).toBe("src/server/routes/users.ts");
+    expect(encodeL1FileEntryFileName("src:module/file.ts")).toMatch(/^[a-f0-9]{16}-src%3Amodule%2Ffile\.ts\.json$/);
   });
 });

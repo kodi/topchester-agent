@@ -43,6 +43,7 @@ export function normalizeL1FilePath(filePath: string): string {
 
   if (
     !normalizedPath ||
+    /^[A-Za-z]:/.test(normalizedPath) ||
     normalizedPath.startsWith("/") ||
     normalizedPath.includes("\0") ||
     normalizedPath.includes("\\") ||
