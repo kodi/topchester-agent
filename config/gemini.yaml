@@ -6,13 +6,13 @@ models:
     agent.fast:
       name: google/gemini-2.5-flash-lite
     kb.scan:
-      name: google/gemini-2.5-flash-lite
+      name: google/gemini-3-flash-preview
     kb.summarize:
-      name: google/gemini-2.5-flash-lite
+      name: google/gemini-3-flash-preview
     kb.extract:
-      name: google/gemini-2.5-flash-lite
+      name: google/gemini-3-flash-preview
     kb.embed:
-      name: google/gemini-2.5-flash-lite
+      name: google/gemini-3-flash-preview
     fallback:
       name: google/gemini-2.5-flash-lite
   providers:

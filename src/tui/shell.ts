@@ -159,7 +159,12 @@ export class TopchesterTuiShell implements TuiShell {
     tui.requestRender();
 
     try {
-      this.applyRuntimeEvents(app, await this.runtime.submitSlashCommand(command));
+      this.applyRuntimeEvents(
+        app,
+        await this.runtime.submitSlashCommand(command, (event) => {
+          busy.setActivity(event.message);
+        })
+      );
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       app.addMessage(systemMessage(`Command failed: ${errorMessage}`));

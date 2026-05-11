@@ -3,7 +3,7 @@ import { mkdir, open, readFile, readdir, realpath, rm, stat, writeFile } from "n
 import { dirname, join, relative } from "node:path";
 import { ZodError } from "zod";
 import { type ModelTextResult } from "../../model/index.js";
-import { type KnowledgeProgressReporter } from "../progress.js";
+import { formatCountProgress, type KnowledgeProgressReporter } from "../progress.js";
 import { l1FileEntrySchemaPath, parseL1FileEntry, type L1FileEntry } from "./l1-entry.js";
 import { createL1QueueFile, l1QueueFileSchema, type L1QueueFailure, type L1QueueItem } from "./l1.js";
 import { getL1FileEntryPath, normalizeL1FilePath } from "./path-encoding.js";
@@ -94,11 +94,7 @@ export async function processL1Queue(options: ProcessL1QueueOptions): Promise<Pr
 }
 
 function formatL1ProgressMessage(label: string, completed: number, total: number, path: string): string {
-  const percent = total === 0 ? 100 : Math.floor((completed / total) * 100);
-  const width = 20;
-  const filled = total === 0 ? width : Math.floor((completed / total) * width);
-  const bar = `${"█".repeat(filled)}${"░".repeat(width - filled)}`;
-  return `${label} [${bar}] ${completed}/${total} (${percent}%) ${path}`;
+  return formatCountProgress(label, completed, total, path);
 }
 
 export async function processL1QueueItem(options: ProcessL1QueueItemOptions): Promise<ProcessL1QueueItemResult> {

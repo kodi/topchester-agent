@@ -16,6 +16,7 @@ export class BusyIndicator {
   private timer: NodeJS.Timeout | undefined;
   private index = 0;
   private ticks = 0;
+  private activityOverride: string | undefined;
 
   constructor(
     private readonly app: ChatLayout,
@@ -45,7 +46,18 @@ export class BusyIndicator {
     this.app.setEphemeralLine(undefined);
   }
 
+  setActivity(activity: string): void {
+    this.activityOverride = activity;
+    this.render();
+    this.tui.requestRender();
+  }
+
   private render(): void {
+    if (this.activityOverride) {
+      this.app.setEphemeralLine(`${this.frames[this.index]} ${this.activityOverride}`);
+      return;
+    }
+
     const activityEveryMs = this.options.activityEveryMs ?? 1200;
     const activityIndex = Math.floor((this.ticks * 80) / activityEveryMs) % this.options.activities.length;
     this.app.setEphemeralLine(`${this.frames[this.index]} ${this.options.activities[activityIndex]}`);

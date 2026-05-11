@@ -1,12 +1,14 @@
 import { compileKnowledgeBase, formatKnowledgeCompileResult } from "../knowledge/compiler/index.js";
 import { type L1SummaryModel } from "../knowledge/compiler/l1-processor.js";
 import { formatKnowledgeInitResult, initializeKnowledgeBase } from "../knowledge/init.js";
+import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
 import { formatKnowledgeResetResult, resetKnowledgeBase } from "../knowledge/reset.js";
 import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js";
 
 export interface SlashCommandContext {
   workspaceRoot: string;
   modelGateway?: L1SummaryModel;
+  onProgress?: KnowledgeProgressReporter;
 }
 
 export interface SlashCommandResult {
@@ -123,7 +125,11 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
     try {
       return {
         messages: formatKnowledgeCompileResult(
-          await compileKnowledgeBase(context.workspaceRoot, { model: context.modelGateway, requireModel: true })
+          await compileKnowledgeBase(context.workspaceRoot, {
+            model: context.modelGateway,
+            requireModel: true,
+            onProgress: context.onProgress,
+          })
         ),
       };
     } catch (error) {

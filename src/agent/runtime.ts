@@ -6,6 +6,7 @@ import { getChatSystemPrompt } from "./prompts.js";
 import { executeToolCall, parseToolCall, type ToolCall, type ToolResult } from "./tools.js";
 import { type AppContext } from "../app/context.js";
 import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js";
+import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
 
 export interface AgentRuntime {
   checkAgent(abortSignal?: AbortSignal): Promise<AgentRuntimeEvent[]>;
@@ -15,7 +16,7 @@ export interface AgentRuntime {
     message: string,
     abortSignal?: AbortSignal
   ): Promise<AgentRuntimeEvent[]>;
-  submitSlashCommand(command: string): Promise<AgentRuntimeEvent[]>;
+  submitSlashCommand(command: string, onProgress?: KnowledgeProgressReporter): Promise<AgentRuntimeEvent[]>;
 }
 
 export class TopchesterAgentRuntime implements AgentRuntime {
@@ -131,10 +132,11 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     ];
   }
 
-  async submitSlashCommand(command: string): Promise<AgentRuntimeEvent[]> {
+  async submitSlashCommand(command: string, onProgress?: KnowledgeProgressReporter): Promise<AgentRuntimeEvent[]> {
     const result = await executeSlashCommand(command, {
       workspaceRoot: this.context.workspaceRoot,
       modelGateway: this.context.modelGateway,
+      onProgress,
     });
 
     return [agentEvent.systemMessage(result.messages.join("\n")), agentEvent.status("ready")];
