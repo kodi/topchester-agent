@@ -27,7 +27,7 @@ export const topchesterConfigSchema = z.object({
   models: z
     .object({
       defaultPurpose: modelPurposeSchema.optional(),
-      assignments: z.record(modelPurposeSchema, z.string()).optional(),
+      assignments: z.partialRecord(modelPurposeSchema, z.string()).optional(),
       providers: z.record(z.string(), providerSchema).optional(),
     })
     .optional(),

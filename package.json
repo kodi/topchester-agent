@@ -15,8 +15,9 @@
     "format-check": "oxfmt . --check",
     "format:check": "pnpm format-check",
     "lint": "oxlint",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "check": "pnpm typecheck && pnpm format-check && pnpm lint"
+    "check": "pnpm typecheck && pnpm format-check && pnpm lint && pnpm test"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.47",
@@ -32,7 +33,8 @@
     "oxfmt": "^0.48.0",
     "oxlint": "^1.63.0",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
   },
   "engines": {
     "node": ">=24",

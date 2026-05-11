@@ -1,0 +1,16 @@
+models:
+  defaultPurpose: agent.primary
+  assignments:
+    agent.primary: google/gemini-2.5-flash-lite
+    agent.fast: google/gemini-2.5-flash-lite
+    kb.scan: google/gemini-2.5-flash-lite
+    kb.summarize: google/gemini-2.5-flash-lite
+    kb.extract: google/gemini-2.5-flash-lite
+    kb.embed: google/gemini-2.5-flash-lite
+    fallback: google/gemini-2.5-flash-lite
+  providers:
+    google:
+      type: openai-compatible
+      baseURL: https://generativelanguage.googleapis.com/v1beta/openai
+      apiKeyEnv: GEMINI_API_KEY
+      supportsStructuredOutputs: true

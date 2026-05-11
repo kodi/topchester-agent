@@ -2,6 +2,9 @@
 node = "24"
 "npm:pnpm" = "11"
 
+[env]
+_.file = ".env"
+
 [tasks.typecheck]
 dir = "{{config_root}}"
 run = "pnpm run typecheck"
