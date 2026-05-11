@@ -1,4 +1,6 @@
+import { compileKnowledgeBase, formatKnowledgeCompileResult } from "../knowledge/compiler/index.js";
 import { formatKnowledgeInitResult, initializeKnowledgeBase } from "../knowledge/init.js";
+import { formatKnowledgeResetResult, resetKnowledgeBase } from "../knowledge/reset.js";
 import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js";
 
 export interface SlashCommandContext {
@@ -31,8 +33,16 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
     description: "show project knowledge base status",
   },
   {
+    value: "/kb compile",
+    description: "list project files and queue L1 work",
+  },
+  {
     value: "/kb init",
     description: "start project knowledge base setup",
+  },
+  {
+    value: "/kb reset",
+    description: "delete the local knowledge base and cache",
   },
 ];
 
@@ -103,7 +113,15 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
     return { messages: formatKnowledgeInitResult(await initializeKnowledgeBase(context.workspaceRoot)) };
   }
 
-  return { messages: ["Usage: /kb init or /kb status"] };
+  if (subcommand === "compile") {
+    return { messages: formatKnowledgeCompileResult(await compileKnowledgeBase(context.workspaceRoot)) };
+  }
+
+  if (subcommand === "reset") {
+    return { messages: formatKnowledgeResetResult(await resetKnowledgeBase(context.workspaceRoot)) };
+  }
+
+  return { messages: ["Usage: /kb init, /kb compile, /kb reset, or /kb status"] };
 }
 
 export function formatKnowledgeStatus(status: KnowledgeStatus): string[] {

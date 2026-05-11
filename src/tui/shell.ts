@@ -148,6 +148,16 @@ export class TopchesterTuiShell implements TuiShell {
   }
 
   private async submitSlashCommand(app: ChatLayout, tui: TUI, command: string): Promise<void> {
+    const busy = new BusyIndicator(app, tui, {
+      status: "running command",
+      promptHint: "working...",
+      activities: getSlashCommandActivities(command),
+      activityEveryMs: 5000,
+    });
+
+    busy.start();
+    tui.requestRender();
+
     try {
       this.applyRuntimeEvents(app, await this.runtime.submitSlashCommand(command));
     } catch (error) {
@@ -155,6 +165,7 @@ export class TopchesterTuiShell implements TuiShell {
       app.addMessage(systemMessage(`Command failed: ${errorMessage}`));
       app.setStatus("command failed");
     } finally {
+      busy.stop();
       tui.requestRender();
     }
   }
@@ -170,6 +181,23 @@ export class TopchesterTuiShell implements TuiShell {
       }
     }
   }
+}
+
+function getSlashCommandActivities(command: string): string[] {
+  if (command.startsWith("/kb compile")) {
+    return [
+      "Checking project knowledge folders...",
+      "Reading .gitignore files...",
+      "Listing project files...",
+      "Queueing L1 work...",
+    ];
+  }
+
+  if (command.startsWith("/kb reset")) {
+    return ["Checking project knowledge paths...", "Removing knowledge folder...", "Removing local cache folder..."];
+  }
+
+  return ["Running command...", "Preparing project knowledge folders...", "Writing project knowledge folders..."];
 }
 
 export interface ExitConfirmationOptions {

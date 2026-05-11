@@ -30,27 +30,63 @@ export const ui = {
     return color(text, "bgSoftGray");
   },
   async spinner<T>(text: string, action: () => T | Promise<T>): Promise<T> {
-    if (!shouldUseColor()) {
+    return withStatusLine(text, action, undefined, 80, false);
+  },
+  async progress<T>(text: string, action: (report: (message: string) => void) => T | Promise<T>): Promise<T> {
+    let latest = text;
+
+    return withStatusLine(
+      text,
+      () =>
+        action((message) => {
+          latest = message;
+        }),
+      () => latest,
+      5000,
+      true
+    );
+  },
+};
+
+async function withStatusLine<T>(
+  text: string,
+  action: () => T | Promise<T>,
+  getText: () => string = () => text,
+  progressEveryMs = 80,
+  emitPlainProgress = false
+): Promise<T> {
+  if (!shouldUseColor()) {
+    if (!emitPlainProgress) {
       return action();
     }
 
-    const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    let index = 0;
-
-    stderr.write(`${color(frames[index], "cyan")} ${text}`);
     const timer = setInterval(() => {
-      index = (index + 1) % frames.length;
-      stderr.write(`\r${color(frames[index], "cyan")} ${text}`);
-    }, 80);
+      stderr.write(`${getText()}\n`);
+    }, progressEveryMs);
 
     try {
       return await action();
     } finally {
       clearInterval(timer);
-      stderr.write(`\r\u001b[2K`);
     }
-  },
-};
+  }
+
+  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  let index = 0;
+
+  stderr.write(`${color(frames[index], "cyan")} ${getText()}`);
+  const timer = setInterval(() => {
+    index = (index + 1) % frames.length;
+    stderr.write(`\r${color(frames[index], "cyan")} ${getText()}`);
+  }, progressEveryMs);
+
+  try {
+    return await action();
+  } finally {
+    clearInterval(timer);
+    stderr.write(`\r\u001b[2K`);
+  }
+}
 
 export function color(text: string, colorName: keyof typeof colors): string {
   if (!shouldUseColor()) {

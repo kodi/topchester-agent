@@ -4,6 +4,7 @@ export interface BusyIndicatorOptions {
   status: string;
   promptHint: string;
   activities: string[];
+  activityEveryMs?: number;
 }
 
 interface RenderRequester {
@@ -45,7 +46,8 @@ export class BusyIndicator {
   }
 
   private render(): void {
-    const activityIndex = Math.floor(this.ticks / 15) % this.options.activities.length;
+    const activityEveryMs = this.options.activityEveryMs ?? 1200;
+    const activityIndex = Math.floor((this.ticks * 80) / activityEveryMs) % this.options.activities.length;
     this.app.setEphemeralLine(`${this.frames[this.index]} ${this.options.activities[activityIndex]}`);
   }
 }

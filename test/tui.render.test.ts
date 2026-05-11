@@ -51,7 +51,8 @@ describe("TUI rendering", () => {
 
     const output = app.render(60).join("\n");
 
-    expect(output).toContain(" System: Welcome");
+    expect(output).toContain(" ✦ System:");
+    expect(output).toContain("   Welcome");
     expect(output).toContain("│ >");
     expect(output).toContain("status: ready · folder: repo · model: model [provider]");
   });
@@ -194,12 +195,14 @@ describe("TUI rendering", () => {
     );
 
     const lines = app.render(60);
-    const firstIndex = lines.findIndex((line) => line.includes("System: First"));
+    const firstIndex = lines.findIndex((line) => line.includes("System:"));
+    const firstBodyIndex = lines.findIndex((line) => line.includes("First"));
     const secondIndex = lines.findIndex((line) => line.includes("Second"));
 
     expect(firstIndex).toBeGreaterThanOrEqual(0);
-    expect(secondIndex).toBe(firstIndex + 2);
-    expect(lines[firstIndex + 1]?.trim()).toBe("");
+    expect(firstBodyIndex).toBe(firstIndex + 1);
+    expect(secondIndex).toBe(firstBodyIndex + 2);
+    expect(lines[firstBodyIndex + 1]?.trim()).toBe("");
   });
 
   it("renders multiline agent Markdown without prefix indentation", () => {
@@ -235,7 +238,7 @@ describe("TUI rendering", () => {
     const scrolledOutput = app.render(60).join("\n");
 
     expect(scrolledOutput).not.toContain("Message 12");
-    expect(scrolledOutput).toContain("Message 10");
+    expect(scrolledOutput).toContain("Message 11");
 
     app.handleInput("\u001b[6~");
     const bottomAgainOutput = app.render(60).join("\n");
@@ -246,7 +249,7 @@ describe("TUI rendering", () => {
     const arrowScrolledOutput = app.render(60).join("\n");
 
     expect(arrowScrolledOutput).not.toContain("Message 12");
-    expect(arrowScrolledOutput).toContain("Message 10");
+    expect(arrowScrolledOutput).toContain("Message 11");
 
     app.handleInput("\u001b[B");
     const arrowBottomOutput = app.render(60).join("\n");

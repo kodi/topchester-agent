@@ -1,5 +1,6 @@
 import { mkdir, stat } from "node:fs/promises";
 import { getTopchesterLogsPath, getTopchesterSessionsPath, getTopchesterStatePath } from "../app/paths.js";
+import { type KnowledgeProgressReporter } from "./progress.js";
 import { getKnowledgeStatus } from "./status.js";
 
 export interface KnowledgeInitResult {
@@ -8,19 +9,29 @@ export interface KnowledgeInitResult {
   existingPaths: string[];
 }
 
-export async function initializeKnowledgeBase(workspaceRoot: string): Promise<KnowledgeInitResult> {
+export async function initializeKnowledgeBase(
+  workspaceRoot: string,
+  options: { onProgress?: KnowledgeProgressReporter } = {}
+): Promise<KnowledgeInitResult> {
+  options.onProgress?.({ message: "Checking project knowledge folders..." });
   const status = getKnowledgeStatus(workspaceRoot);
   const paths = [
     getTopchesterStatePath(workspaceRoot),
     getTopchesterSessionsPath(workspaceRoot),
     getTopchesterLogsPath(workspaceRoot),
     status.kbPath,
+    `${status.kbPath}/l1-files`,
+    `${status.kbPath}/l2-modules`,
+    `${status.kbPath}/l3-features`,
+    `${status.kbPath}/graph`,
+    `${status.kbPath}/reviews`,
     status.cachePath,
   ];
   const createdPaths: string[] = [];
   const existingPaths: string[] = [];
 
   for (const path of paths) {
+    options.onProgress?.({ message: `Preparing ${path}...` });
     if (await directoryExists(path)) {
       existingPaths.push(path);
       continue;

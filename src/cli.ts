@@ -4,7 +4,9 @@ import { isAbsolute, resolve } from "node:path";
 import { Command } from "commander";
 import { createAppContext } from "./app/context.js";
 import { ui } from "./cli/ui.js";
+import { compileKnowledgeBase, formatKnowledgeCompileResult } from "./knowledge/compiler/index.js";
 import { formatKnowledgeInitResult, initializeKnowledgeBase } from "./knowledge/init.js";
+import { formatKnowledgeResetResult, resetKnowledgeBase } from "./knowledge/reset.js";
 import { getKnowledgeStatus } from "./knowledge/status.js";
 import { TopchesterTuiShell } from "./tui/index.js";
 
@@ -40,7 +42,9 @@ kbCommand
   .description("initialize a project knowledge base")
   .action(async () => {
     const context = createContextFromOptions();
-    const result = await initializeKnowledgeBase(context.workspaceRoot);
+    const result = await ui.progress("Preparing project knowledge folders...", (report) =>
+      initializeKnowledgeBase(context.workspaceRoot, { onProgress: (event) => report(event.message) })
+    );
 
     console.log(formatKnowledgeInitResult(result).join("\n"));
   });
@@ -48,11 +52,25 @@ kbCommand
 kbCommand
   .command("compile")
   .description("compile the project knowledge base")
-  .action(() => {
+  .action(async () => {
     const context = createContextFromOptions();
+    const result = await ui.progress("Listing project files for L1...", (report) =>
+      compileKnowledgeBase(context.workspaceRoot, { onProgress: (event) => report(event.message) })
+    );
 
-    console.log("KB compile: not implemented yet");
-    console.log(`workspace: ${context.workspaceRoot}`);
+    console.log(formatKnowledgeCompileResult(result).join("\n"));
+  });
+
+kbCommand
+  .command("reset")
+  .description("delete the local project knowledge base and cache")
+  .action(async () => {
+    const context = createContextFromOptions();
+    const result = await ui.progress("Resetting project knowledge base...", (report) =>
+      resetKnowledgeBase(context.workspaceRoot, { onProgress: (event) => report(event.message) })
+    );
+
+    console.log(formatKnowledgeResetResult(result).join("\n"));
   });
 
 kbCommand

@@ -61,7 +61,9 @@ Current behavior:
 
 Slash commands:
 
-- `/kb init` — creates Topchester project folders and prints what was created or already present.
+- `/kb init` — creates Topchester project folders and prints what was created or already present. Shows a simple progress line while it runs.
+- `/kb compile` — reads `.gitignore` files, lists project files, and queues L1 file work. Shows a simple progress line while it runs.
+- `/kb reset` — deletes the configured knowledge folder and local cache folder so the project can start clean. Shows a simple progress line while it runs.
 - `/kb status` — prints the same simple workspace KB status as `topchester kb status` inside the chat thread.
 
 ### `topchester dev`
@@ -88,24 +90,42 @@ Intended behavior:
 
 Current behavior:
 
-- Creates `.agents/topchester/`, `.agents/topchester/sessions/`, `.agents/topchester/logs/`, the configured knowledge folder, and the configured local cache folder.
+- Creates `.agents/topchester/`, `.agents/topchester/sessions/`, `.agents/topchester/logs/`, the configured knowledge folder, baseline knowledge subfolders (`l1-files/`, `l2-modules/`, `l3-features/`, `graph/`, `reviews/`), and the configured local cache folder.
+- Prints progress while checking and creating folders, with updates no more than every 5 seconds in the CLI and rotating progress text in the TUI.
 - Prints the workspace path and which folders were created or already existed.
 
 ### `topchester kb compile`
 
 Compiles the project knowledge base.
 
-Status: placeholder.
-
-Intended behavior:
-
-- Scan the current codebase and generate or update KB contents.
-- Run against an existing initialized KB.
+Status: implemented, initial L1 queue only.
 
 Current behavior:
 
-- Prints `KB compile: not implemented yet`.
-- Prints the workspace path.
+- Requires `topchester kb init` to have created the knowledge folder first.
+- Reads `.gitignore` files from the workspace, including nested `.gitignore` files.
+- Lists project files that are not ignored and skips heavy generated folders such as `.git/`, `node_modules/`, `dist/`, `coverage/`, `topchester-kb/`, `.agents/topchester/`, and `.agents/topchester-kb-cache/`.
+- Queues each listed file for L1 processing in `.agents/topchester-kb-cache/l1-queue.json`.
+- Writes `topchester-kb/manifest.json` with the queued file count and gitignore files read.
+- Prints progress while reading ignore files, listing files, queueing L1 work, and writing output, with updates no more than every 5 seconds in the CLI and rotating progress text in the TUI.
+- Prints the workspace path, queued file count, gitignore file count, queue path, and manifest path.
+
+### `topchester kb reset`
+
+Deletes the local project knowledge base and cache.
+
+Status: implemented.
+
+Current behavior:
+
+- Deletes the configured knowledge folder and configured local cache folder.
+- Uses the same paths as `topchester kb status`:
+  - Knowledge folder default: `topchester-kb/`
+  - Local cache folder default: `.agents/topchester-kb-cache/`
+  - Environment overrides: `TOPCHESTER_KB_DIR` and `TOPCHESTER_KB_CACHE_DIR`
+- Prints each removed path, or `already missing` for paths that were not present.
+- Refuses to delete the workspace root or a filesystem root if a path is misconfigured.
+- After reset, run `topchester kb init` to start clean.
 
 ### `topchester kb status`
 

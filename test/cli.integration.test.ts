@@ -125,4 +125,23 @@ describe("CLI integration", () => {
     );
     expect(stdout).toContain("state: knowledge base found");
   });
+
+  it("resets project knowledge folders", async () => {
+    const fixture = await makeFixture();
+    const kbPath = join(fixture.workspace, "topchester-kb");
+    const cachePath = join(fixture.workspace, ".agents/topchester-kb-cache");
+    await mkdir(kbPath, { recursive: true });
+    await mkdir(cachePath, { recursive: true });
+    await writeFile(join(kbPath, "manifest.json"), "{}\n");
+    await writeFile(join(cachePath, "l1-queue.json"), "[]\n");
+
+    const { stdout } = await runCli(["--workspace", fixture.workspace, "kb", "reset"], fixture.root);
+
+    expect(stdout).toContain("KB reset");
+    expect(stdout).toContain(`removed: ${kbPath}`);
+    expect(stdout).toContain(`removed: ${cachePath}`);
+    expect(stdout).toContain("state: project knowledge base was reset");
+    await expect(stat(kbPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(cachePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
 });

@@ -57,6 +57,10 @@ export function renderChatMessage(message: ChatMessage, options: RenderChatMessa
     return renderUserMessage(lines);
   }
 
+  if (message.kind === "system") {
+    return renderSystemMessage(lines);
+  }
+
   const prefix = getPrefix(message.kind);
   const rendered =
     prefix.length === 0
@@ -75,6 +79,12 @@ function renderUserMessage(lines: string[]): string[] {
   const rendered = lines.map((line, index) => `${index === 0 ? prefix : " ".repeat(prefix.length)}${line}`);
 
   return ["", ...rendered, ""];
+}
+
+function renderSystemMessage(lines: string[]): string[] {
+  const bodyPrefix = "  ";
+
+  return [`${ui.ok("✦")} ${ui.label("System")}:`, ...lines.map((line) => `${bodyPrefix}${line}`)];
 }
 
 function getPrefix(kind: TextChatMessage["kind"]): string {

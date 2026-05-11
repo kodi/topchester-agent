@@ -44,7 +44,7 @@ export function getStartupThreadMessages(context: AppContext): ChatMessage[] {
   lines.push("");
   lines.push("Ask Topchester what you want to change.");
 
-  return lines.map(systemMessage);
+  return [systemMessage(lines.join("\n"))];
 }
 
 export function renderStaticLayout(messages: ChatMessage[], folderName = "", modelLabel = ""): string {

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -30,8 +30,16 @@ describe("slash commands", () => {
         description: "show project knowledge base status",
       },
       {
+        value: "/kb compile",
+        description: "list project files and queue L1 work",
+      },
+      {
         value: "/kb init",
         description: "start project knowledge base setup",
+      },
+      {
+        value: "/kb reset",
+        description: "delete the local knowledge base and cache",
       },
     ]);
     expect(getSlashCommandSuggestions("/k")).toEqual([
@@ -40,8 +48,16 @@ describe("slash commands", () => {
         description: "show project knowledge base status",
       },
       {
+        value: "/kb compile",
+        description: "list project files and queue L1 work",
+      },
+      {
         value: "/kb init",
         description: "start project knowledge base setup",
+      },
+      {
+        value: "/kb reset",
+        description: "delete the local knowledge base and cache",
       },
     ]);
     expect(getSlashCommandSuggestions("/kb i")).toEqual([
@@ -50,13 +66,19 @@ describe("slash commands", () => {
         description: "start project knowledge base setup",
       },
     ]);
+    expect(getSlashCommandSuggestions("/kb r")).toEqual([
+      {
+        value: "/kb reset",
+        description: "delete the local knowledge base and cache",
+      },
+    ]);
     expect(getSlashCommandSuggestions("/nope")).toEqual([]);
     expect(getSlashCommandSuggestions("hello")).toEqual([]);
   });
 
   it("reports /kb usage for unknown KB subcommands", async () => {
     await expect(executeSlashCommand("/kb nope", { workspaceRoot: "/repo" })).resolves.toEqual({
-      messages: ["Usage: /kb init or /kb status"],
+      messages: ["Usage: /kb init, /kb compile, /kb reset, or /kb status"],
     });
   });
 
@@ -71,8 +93,28 @@ describe("slash commands", () => {
     expect(result.messages).toContain(`created: ${join(workspace, ".agents/topchester/sessions")}`);
     expect(result.messages).toContain(`created: ${join(workspace, ".agents/topchester/logs")}`);
     expect(result.messages).toContain(`created: ${join(workspace, "topchester-kb")}`);
+    expect(result.messages).toContain(`created: ${join(workspace, "topchester-kb/l1-files")}`);
     expect(result.messages).toContain(`created: ${join(workspace, ".agents/topchester-kb-cache")}`);
     await expect(stat(join(workspace, ".agents/topchester"))).resolves.toMatchObject({});
+  });
+
+  it("executes /kb reset and removes knowledge folders", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    const kbPath = join(workspace, "topchester-kb");
+    const cachePath = join(workspace, ".agents/topchester-kb-cache");
+    await mkdir(kbPath, { recursive: true });
+    await mkdir(cachePath, { recursive: true });
+    await writeFile(join(kbPath, "manifest.json"), "{}\n");
+    await writeFile(join(cachePath, "l1-queue.json"), "[]\n");
+
+    const result = await executeSlashCommand("/kb reset", { workspaceRoot: workspace });
+
+    expect(result.messages).toContain("KB reset");
+    expect(result.messages).toContain(`removed: ${kbPath}`);
+    expect(result.messages).toContain(`removed: ${cachePath}`);
+    expect(result.messages).toContain("state: project knowledge base was reset");
+    await expect(stat(kbPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(cachePath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("formats missing KB status", () => {
