@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { mkdir, open, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { ZodError } from "zod";
 import { type ModelTextResult } from "../../model/index.js";
 import { l1FileEntrySchemaPath, parseL1FileEntry, type L1FileEntry } from "./l1-entry.js";
-import { type L1QueueFailure, type L1QueueItem } from "./l1.js";
+import { createL1QueueFile, l1QueueFileSchema, type L1QueueFailure, type L1QueueItem } from "./l1.js";
 import { getL1FileEntryPath, normalizeL1FilePath } from "./path-encoding.js";
 
 const MAX_L1_PROMPT_FILE_BYTES = 256 * 1024;
@@ -25,6 +25,60 @@ export interface ProcessL1QueueItemResult {
   item: L1QueueItem;
   entry?: L1FileEntry;
   entryPath?: string;
+}
+
+export interface ProcessL1QueueOptions {
+  workspaceRoot: string;
+  kbPath: string;
+  queuePath: string;
+  manifestPath: string;
+  gitignoreFiles: string[];
+  model: L1SummaryModel;
+  now?: () => Date;
+}
+
+export interface L1QueueProcessingSummary {
+  queued: number;
+  completed: number;
+  failed: number;
+  changed: number;
+  missing: number;
+  currentEntries: number;
+}
+
+export interface ProcessL1QueueResult {
+  queuedFiles: L1QueueItem[];
+  summary: L1QueueProcessingSummary;
+}
+
+export async function processL1Queue(options: ProcessL1QueueOptions): Promise<ProcessL1QueueResult> {
+  const now = options.now ?? (() => new Date());
+  const queue = l1QueueFileSchema.parse(JSON.parse(await readFile(options.queuePath, "utf8")));
+  let queuedFiles = queue.queuedFiles.map(validateQueueItemPath);
+
+  await removeOrphanedL1Entries(options.kbPath, new Set(queuedFiles.map((item) => item.path)));
+
+  for (const [index, item] of queuedFiles.entries()) {
+    if (item.status === "completed" && (await hasCurrentEntry(options.kbPath, item))) {
+      continue;
+    }
+
+    queuedFiles[index] = markInProgress(item);
+    await persistQueue(options.queuePath, queuedFiles, now().toISOString());
+
+    if (await hasCurrentEntry(options.kbPath, item)) {
+      queuedFiles[index] = markTerminal(item, "completed");
+    } else {
+      const result = await processL1QueueItem({ ...options, item, now });
+      queuedFiles[index] = result.item;
+    }
+
+    await persistQueue(options.queuePath, queuedFiles, now().toISOString());
+  }
+
+  const summary = await summarizeL1Queue(options.kbPath, queuedFiles);
+  await writeManifest(options, summary, now().toISOString());
+  return { queuedFiles, summary };
 }
 
 export async function processL1QueueItem(options: ProcessL1QueueItemOptions): Promise<ProcessL1QueueItemResult> {
@@ -262,6 +316,11 @@ function markTerminal(item: L1QueueItem, status: "completed" | "changed" | "miss
   return { ...rest, status };
 }
 
+function markInProgress(item: L1QueueItem): L1QueueItem {
+  const { failure: _failure, ...rest } = item;
+  return { ...rest, status: "in_progress" };
+}
+
 function failItem(item: L1QueueItem, code: string, message: string, failedAt: string): L1QueueItem {
   return { ...item, status: "failed", failure: sanitizeFailure({ code, message, failedAt }) };
 }
@@ -312,5 +371,95 @@ function isInsideDirectory(directory: string, target: string): boolean {
   const relativePath = relative(directory, target);
   return (
     relativePath === "" || (!relativePath.startsWith("..") && !relativePath.startsWith("/") && relativePath !== "..")
+  );
+}
+
+function validateQueueItemPath(item: L1QueueItem): L1QueueItem {
+  const normalizedPath = normalizeL1FilePath(item.path);
+  if (item.path !== normalizedPath || item.id !== `file:${normalizedPath}`) {
+    throw new Error(`Invalid persisted L1 queue item path: ${item.path}`);
+  }
+  return item;
+}
+
+async function persistQueue(queuePath: string, queuedFiles: L1QueueItem[], generatedAt: string): Promise<void> {
+  const queue = createL1QueueFile(queuedFiles, generatedAt);
+  await writeFile(queuePath, `${JSON.stringify(queue, null, 2)}\n`);
+}
+
+async function hasCurrentEntry(kbPath: string, item: L1QueueItem): Promise<boolean> {
+  try {
+    const entryPath = getL1FileEntryPath(kbPath, item.path);
+    const entry = parseL1FileEntry(JSON.parse(await readFile(entryPath, "utf8")));
+    return entry.scan_status === "current" && entry.path === item.path && entry.content_hash === item.hash;
+  } catch {
+    return false;
+  }
+}
+
+async function removeOrphanedL1Entries(kbPath: string, currentPaths: Set<string>): Promise<void> {
+  const entriesDir = join(kbPath, "l1-files");
+  const entries = await readdir(entriesDir).catch((error: unknown) => {
+    if (isNodeErrorCode(error, "ENOENT")) {
+      return [];
+    }
+    throw error;
+  });
+
+  for (const entryName of entries) {
+    if (!entryName.endsWith(".json")) {
+      continue;
+    }
+    const entryPath = join(entriesDir, entryName);
+    try {
+      const entry = parseL1FileEntry(JSON.parse(await readFile(entryPath, "utf8")));
+      if (!currentPaths.has(entry.path)) {
+        await rm(entryPath, { force: true });
+      }
+    } catch {
+      await rm(entryPath, { force: true });
+    }
+  }
+}
+
+async function summarizeL1Queue(kbPath: string, queuedFiles: L1QueueItem[]): Promise<L1QueueProcessingSummary> {
+  let currentEntries = 0;
+  for (const item of queuedFiles) {
+    if (await hasCurrentEntry(kbPath, item)) {
+      currentEntries += 1;
+    }
+  }
+
+  return {
+    queued: queuedFiles.filter((item) => item.status === "queued" || item.status === "in_progress").length,
+    completed: queuedFiles.filter((item) => item.status === "completed").length,
+    failed: queuedFiles.filter((item) => item.status === "failed").length,
+    changed: queuedFiles.filter((item) => item.status === "changed").length,
+    missing: queuedFiles.filter((item) => item.status === "missing_file").length,
+    currentEntries,
+  };
+}
+
+async function writeManifest(
+  options: ProcessL1QueueOptions,
+  summary: L1QueueProcessingSummary,
+  generatedAt: string
+): Promise<void> {
+  await writeFile(
+    options.manifestPath,
+    `${JSON.stringify(
+      {
+        name: "topchester-kb",
+        version: 1,
+        generatedAt,
+        workspaceRoot: options.workspaceRoot,
+        l1QueuePath: options.queuePath,
+        queuedFileCount: summary.queued + summary.completed + summary.failed + summary.changed + summary.missing,
+        l1: summary,
+        gitignoreFiles: options.gitignoreFiles,
+      },
+      null,
+      2
+    )}\n`
   );
 }

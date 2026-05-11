@@ -14,6 +14,10 @@ export interface InventoryResult {
   files: InventoryFile[];
 }
 
+export interface InventoryOptions {
+  excludedPaths?: string[];
+}
+
 interface IgnoreRule {
   baseDir: string;
   pattern: string;
@@ -72,11 +76,15 @@ const BINARY_FILE_NAMES = new Set([".ds_store"]);
 const BINARY_SNIFF_BYTES = 4096;
 const BINARY_CONTROL_BYTE_RATIO_THRESHOLD = 0.3;
 
-export async function listProjectFilesForL1(workspaceRoot: string): Promise<InventoryResult> {
-  const rules = await loadGitignoreRules(workspaceRoot);
+export async function listProjectFilesForL1(
+  workspaceRoot: string,
+  options: InventoryOptions = {}
+): Promise<InventoryResult> {
+  const excludedDirs = buildExcludedDirs(workspaceRoot, options.excludedPaths ?? []);
+  const rules = await loadGitignoreRules(workspaceRoot, excludedDirs);
   const files: InventoryFile[] = [];
 
-  await walkDirectory(workspaceRoot, workspaceRoot, rules, files);
+  await walkDirectory(workspaceRoot, workspaceRoot, rules, files, excludedDirs);
 
   files.sort((a, b) => a.path.localeCompare(b.path));
 
@@ -90,9 +98,9 @@ export async function listProjectFilesForL1(workspaceRoot: string): Promise<Inve
   };
 }
 
-async function loadGitignoreRules(workspaceRoot: string): Promise<IgnoreRule[]> {
+async function loadGitignoreRules(workspaceRoot: string, excludedDirs: Set<string>): Promise<IgnoreRule[]> {
   const gitignorePaths: string[] = [];
-  await collectGitignorePaths(workspaceRoot, workspaceRoot, gitignorePaths);
+  await collectGitignorePaths(workspaceRoot, workspaceRoot, gitignorePaths, excludedDirs);
 
   const rules: IgnoreRule[] = [];
   for (const gitignorePath of gitignorePaths.sort()) {
@@ -109,7 +117,12 @@ async function loadGitignoreRules(workspaceRoot: string): Promise<IgnoreRule[]> 
   return rules;
 }
 
-async function collectGitignorePaths(workspaceRoot: string, dir: string, gitignorePaths: string[]): Promise<void> {
+async function collectGitignorePaths(
+  workspaceRoot: string,
+  dir: string,
+  gitignorePaths: string[],
+  excludedDirs: Set<string>
+): Promise<void> {
   const entries = await readdir(dir, { withFileTypes: true });
 
   for (const entry of entries) {
@@ -121,11 +134,11 @@ async function collectGitignorePaths(workspaceRoot: string, dir: string, gitigno
       continue;
     }
 
-    if (!entry.isDirectory() || shouldSkipDirectoryByDefault(relativePath)) {
+    if (!entry.isDirectory() || shouldSkipDirectoryByDefault(relativePath, excludedDirs)) {
       continue;
     }
 
-    await collectGitignorePaths(workspaceRoot, absolutePath, gitignorePaths);
+    await collectGitignorePaths(workspaceRoot, absolutePath, gitignorePaths, excludedDirs);
   }
 }
 
@@ -133,7 +146,8 @@ async function walkDirectory(
   workspaceRoot: string,
   dir: string,
   rules: IgnoreRule[],
-  files: InventoryFile[]
+  files: InventoryFile[],
+  excludedDirs: Set<string>
 ): Promise<void> {
   const entries = await readdir(dir, { withFileTypes: true });
 
@@ -142,13 +156,16 @@ async function walkDirectory(
     const relativePath = toPosixPath(relative(workspaceRoot, absolutePath));
 
     if (entry.isDirectory()) {
-      if (!shouldSkipDirectoryByDefault(relativePath) && !isIgnored(workspaceRoot, absolutePath, true, rules)) {
-        await walkDirectory(workspaceRoot, absolutePath, rules, files);
+      if (
+        !shouldSkipDirectoryByDefault(relativePath, excludedDirs) &&
+        !isIgnored(workspaceRoot, absolutePath, true, rules, excludedDirs)
+      ) {
+        await walkDirectory(workspaceRoot, absolutePath, rules, files, excludedDirs);
       }
       continue;
     }
 
-    if (!entry.isFile() || isIgnored(workspaceRoot, absolutePath, false, rules)) {
+    if (!entry.isFile() || isIgnored(workspaceRoot, absolutePath, false, rules, excludedDirs)) {
       continue;
     }
 
@@ -240,7 +257,13 @@ function parseGitignoreLine(baseDir: string, rawLine: string): IgnoreRule | unde
   return { baseDir, pattern: line, negated, directoryOnly };
 }
 
-function isIgnored(workspaceRoot: string, absolutePath: string, isDirectory: boolean, rules: IgnoreRule[]): boolean {
+function isIgnored(
+  workspaceRoot: string,
+  absolutePath: string,
+  isDirectory: boolean,
+  rules: IgnoreRule[],
+  excludedDirs: Set<string>
+): boolean {
   let ignored = false;
 
   for (const rule of rules) {
@@ -261,7 +284,7 @@ function isIgnored(workspaceRoot: string, absolutePath: string, isDirectory: boo
   }
 
   const workspaceRelativePath = toPosixPath(relative(workspaceRoot, absolutePath));
-  return shouldSkipDirectoryByDefault(workspaceRelativePath) && isDirectory;
+  return shouldSkipDirectoryByDefault(workspaceRelativePath, excludedDirs) && isDirectory;
 }
 
 function matchesRule(relativePath: string, pattern: string): boolean {
@@ -307,11 +330,11 @@ function escapeRegexChar(value: string): string {
   return /[.+^${}()|[\]\\]/.test(value) ? `\\${value}` : value;
 }
 
-function shouldSkipDirectoryByDefault(relativePath: string): boolean {
-  return (
-    DEFAULT_EXCLUDED_DIRS.has(relativePath) ||
-    [...DEFAULT_EXCLUDED_DIRS].some((dir) => relativePath.startsWith(`${dir}/`))
-  );
+function shouldSkipDirectoryByDefault(
+  relativePath: string,
+  excludedDirs: Set<string> = DEFAULT_EXCLUDED_DIRS
+): boolean {
+  return excludedDirs.has(relativePath) || [...excludedDirs].some((dir) => relativePath.startsWith(`${dir}/`));
 }
 
 function toPosixPath(path: string): string {
@@ -320,4 +343,18 @@ function toPosixPath(path: string): string {
 
 function unique(value: string, index: number, array: string[]): boolean {
   return array.indexOf(value) === index;
+}
+
+function buildExcludedDirs(workspaceRoot: string, excludedPaths: string[]): Set<string> {
+  const dirs = new Set(DEFAULT_EXCLUDED_DIRS);
+
+  for (const excludedPath of excludedPaths) {
+    const workspaceRelativePath = toPosixPath(relative(workspaceRoot, excludedPath));
+    if (!workspaceRelativePath || workspaceRelativePath === "." || workspaceRelativePath.startsWith("../")) {
+      continue;
+    }
+    dirs.add(workspaceRelativePath);
+  }
+
+  return dirs;
 }

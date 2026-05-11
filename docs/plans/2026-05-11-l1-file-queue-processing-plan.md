@@ -201,7 +201,7 @@ Slice 1.
 
 ## Slice 3: Durable Queue Processing and Resume
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 ### Goal
 
@@ -232,6 +232,8 @@ Full queue processing should be crash-safe before it is wired into the user-faci
 pnpm test test/knowledge-l1-processor.test.ts test/knowledge-compiler.test.ts
 pnpm typecheck
 ```
+
+Completed in Slice 3 with durable full-queue processing, per-item queue persistence, resume/idempotency for current and in-progress items, stale entry regeneration, manifest L1 counts, generated artifact exclusion for default/configured paths, orphan L1 entry cleanup, persisted queue validation, empty-workspace coverage, targeted tests, and `pnpm typecheck`.
 
 ### Dependencies
 

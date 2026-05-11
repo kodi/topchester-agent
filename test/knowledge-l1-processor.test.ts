@@ -1,11 +1,21 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { l1QueueFileSchema, l1QueueStatuses, type L1QueueItem } from "../src/knowledge/compiler/l1.js";
+import {
+  createL1QueueFile,
+  l1QueueFileSchema,
+  l1QueueStatuses,
+  type L1QueueItem,
+} from "../src/knowledge/compiler/l1.js";
 import { l1FileEntrySchema, l1FileScanStatuses } from "../src/knowledge/compiler/l1-entry.js";
-import { parseL1ModelJson, processL1QueueItem, type L1SummaryModel } from "../src/knowledge/compiler/l1-processor.js";
+import {
+  parseL1ModelJson,
+  processL1Queue,
+  processL1QueueItem,
+  type L1SummaryModel,
+} from "../src/knowledge/compiler/l1-processor.js";
 import {
   encodeL1FileEntryFileName,
   getL1FileEntryPath,
@@ -105,6 +115,25 @@ function makeFakeModel(text: string): L1SummaryModel & { calls: Array<{ system: 
       return { text, providerId: "fake", modelId: "fake-l1", purpose: "kb.summarize" };
     },
   };
+}
+
+function makeSequenceModel(texts: string[]): L1SummaryModel & { calls: Array<{ system: string; prompt: string }> } {
+  const calls: Array<{ system: string; prompt: string }> = [];
+  return {
+    calls,
+    async generateText(request) {
+      calls.push({ system: request.system, prompt: request.prompt });
+      const text = texts.shift();
+      if (text === undefined) {
+        throw new Error("No fake response left");
+      }
+      return { text, providerId: "fake", modelId: "fake-l1", purpose: "kb.summarize" };
+    },
+  };
+}
+
+async function writeQueue(queuePath: string, items: L1QueueItem[]): Promise<void> {
+  await writeFile(queuePath, `${JSON.stringify(createL1QueueFile(items, "2026-05-11T00:00:00.000Z"), null, 2)}\n`);
 }
 
 describe("L1 queue contracts", () => {
@@ -398,5 +427,210 @@ describe("single-file L1 processing", () => {
     expect(result.item.failure?.code).toBe("file_too_large");
     expect(result.item.failure?.message).toContain("too large");
     expect(result.entryPath).toBeUndefined();
+  });
+});
+
+describe("durable L1 queue processing", () => {
+  it("persists completed work, continues after failures, and writes matching manifest counts", async () => {
+    const workspaceRoot = await makeWorkspace({
+      "src/a.ts": "export const a = 1;\n",
+      "src/b.ts": "export const b = 2;\n",
+      "src/c.ts": "export const c = 3;\n",
+    });
+    const kbPath = join(workspaceRoot, "topchester-kb");
+    const cachePath = join(workspaceRoot, ".agents/topchester-kb-cache");
+    const queuePath = join(cachePath, "l1-queue.json");
+    const manifestPath = join(kbPath, "manifest.json");
+    await mkdir(cachePath, { recursive: true });
+    await writeQueue(queuePath, [
+      makeQueueItem("src/a.ts", "export const a = 1;\n"),
+      makeQueueItem("src/b.ts", "export const b = 2;\n"),
+      makeQueueItem("src/c.ts", "export const c = 3;\n"),
+    ]);
+    const model = makeSequenceModel([
+      JSON.stringify(makeValidL1Entry({ id: "file:src/a.ts", path: "src/a.ts" })),
+      "",
+      JSON.stringify(makeValidL1Entry({ id: "file:src/c.ts", path: "src/c.ts" })),
+    ]);
+
+    const result = await processL1Queue({
+      workspaceRoot,
+      kbPath,
+      queuePath,
+      manifestPath,
+      gitignoreFiles: [],
+      model,
+      now: fixedNow,
+    });
+
+    expect(result.queuedFiles.map((item) => item.status)).toEqual(["completed", "failed", "completed"]);
+    expect(result.summary).toMatchObject({
+      queued: 0,
+      completed: 2,
+      failed: 1,
+      changed: 0,
+      missing: 0,
+      currentEntries: 2,
+    });
+    expect(
+      l1FileEntrySchema.parse(JSON.parse(await readFile(getL1FileEntryPath(kbPath, "src/a.ts"), "utf8"))).path
+    ).toBe("src/a.ts");
+    expect(
+      l1FileEntrySchema.parse(JSON.parse(await readFile(getL1FileEntryPath(kbPath, "src/c.ts"), "utf8"))).path
+    ).toBe("src/c.ts");
+    const persistedQueue = l1QueueFileSchema.parse(JSON.parse(await readFile(queuePath, "utf8")));
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    expect(persistedQueue.queuedFiles.map((item) => item.status)).toEqual(["completed", "failed", "completed"]);
+    expect(manifest.l1).toEqual(result.summary);
+  });
+
+  it("skips valid current entries, regenerates stale entries, and resumes in-progress items", async () => {
+    const unchanged = "export const unchanged = true;\n";
+    const changed = "export const changed = true;\n";
+    const resumed = "export const resumed = true;\n";
+    const workspaceRoot = await makeWorkspace({
+      "src/unchanged.ts": unchanged,
+      "src/changed.ts": changed,
+      "src/resumed.ts": resumed,
+    });
+    const kbPath = join(workspaceRoot, "topchester-kb");
+    const cachePath = join(workspaceRoot, ".agents/topchester-kb-cache");
+    const queuePath = join(cachePath, "l1-queue.json");
+    const manifestPath = join(kbPath, "manifest.json");
+    await mkdir(cachePath, { recursive: true });
+    await mkdir(join(kbPath, "l1-files"), { recursive: true });
+    await writeFile(
+      getL1FileEntryPath(kbPath, "src/unchanged.ts"),
+      `${JSON.stringify(
+        makeValidL1Entry({
+          id: "file:src/unchanged.ts",
+          path: "src/unchanged.ts",
+          content_hash: hashContent(unchanged),
+          size_bytes: Buffer.byteLength(unchanged),
+        }),
+        null,
+        2
+      )}\n`
+    );
+    await writeFile(
+      getL1FileEntryPath(kbPath, "src/changed.ts"),
+      `${JSON.stringify(
+        makeValidL1Entry({
+          id: "file:src/changed.ts",
+          path: "src/changed.ts",
+          content_hash: hashContent("old"),
+        }),
+        null,
+        2
+      )}\n`
+    );
+    await writeQueue(queuePath, [
+      makeQueueItem("src/unchanged.ts", unchanged, { status: "completed" }),
+      makeQueueItem("src/changed.ts", changed, { status: "completed" }),
+      makeQueueItem("src/resumed.ts", resumed, { status: "in_progress" }),
+    ]);
+    const model = makeSequenceModel([
+      JSON.stringify(makeValidL1Entry({ id: "file:src/changed.ts", path: "src/changed.ts" })),
+      JSON.stringify(makeValidL1Entry({ id: "file:src/resumed.ts", path: "src/resumed.ts" })),
+    ]);
+
+    const result = await processL1Queue({
+      workspaceRoot,
+      kbPath,
+      queuePath,
+      manifestPath,
+      gitignoreFiles: [],
+      model,
+      now: fixedNow,
+    });
+
+    expect(model.calls).toHaveLength(2);
+    expect(model.calls[0]?.prompt).toContain("src/changed.ts");
+    expect(result.queuedFiles.map((item) => item.status)).toEqual(["completed", "completed", "completed"]);
+    const changedEntry = l1FileEntrySchema.parse(
+      JSON.parse(await readFile(getL1FileEntryPath(kbPath, "src/changed.ts"), "utf8"))
+    );
+    expect(changedEntry.content_hash).toBe(hashContent(changed));
+  });
+
+  it("handles changed, missing, and orphaned current entries without counting stale files current", async () => {
+    const original = "export const before = 1;\n";
+    const workspaceRoot = await makeWorkspace({
+      "src/changed.ts": "export const after = 2;\n",
+      "src/kept.ts": "export const kept = true;\n",
+    });
+    const kbPath = join(workspaceRoot, "topchester-kb");
+    const cachePath = join(workspaceRoot, ".agents/topchester-kb-cache");
+    const queuePath = join(cachePath, "l1-queue.json");
+    const manifestPath = join(kbPath, "manifest.json");
+    await mkdir(cachePath, { recursive: true });
+    await mkdir(join(kbPath, "l1-files"), { recursive: true });
+    await writeFile(
+      getL1FileEntryPath(kbPath, "src/orphan.ts"),
+      `${JSON.stringify(makeValidL1Entry({ id: "file:src/orphan.ts", path: "src/orphan.ts" }), null, 2)}\n`
+    );
+    await writeQueue(queuePath, [
+      makeQueueItem("src/changed.ts", original),
+      makeQueueItem("src/missing.ts", original),
+      makeQueueItem("src/kept.ts", "export const kept = true;\n"),
+    ]);
+
+    const result = await processL1Queue({
+      workspaceRoot,
+      kbPath,
+      queuePath,
+      manifestPath,
+      gitignoreFiles: [],
+      model: makeFakeModel(JSON.stringify(makeValidL1Entry({ id: "file:src/kept.ts", path: "src/kept.ts" }))),
+      now: fixedNow,
+    });
+
+    expect(result.queuedFiles.map((item) => item.status)).toEqual(["changed", "missing_file", "completed"]);
+    expect(result.summary).toMatchObject({ completed: 1, changed: 1, missing: 1, currentEntries: 1 });
+    await expect(readFile(getL1FileEntryPath(kbPath, "src/orphan.ts"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("rejects tampered persisted queues before workspace reads or writes", async () => {
+    const workspaceRoot = await makeWorkspace({ "src/safe.ts": "export const safe = true;\n" });
+    const kbPath = join(workspaceRoot, "topchester-kb");
+    const cachePath = join(workspaceRoot, ".agents/topchester-kb-cache");
+    const queuePath = join(cachePath, "l1-queue.json");
+    const manifestPath = join(kbPath, "manifest.json");
+    await mkdir(cachePath, { recursive: true });
+    await writeFile(
+      queuePath,
+      `${JSON.stringify(
+        {
+          layer: "L1",
+          generatedAt: "2026-05-11T00:00:00.000Z",
+          queuedFiles: [
+            {
+              id: "file:../outside.ts",
+              path: "../outside.ts",
+              sizeBytes: 1,
+              hash: hashContent("x"),
+              status: "queued",
+            },
+          ],
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    await expect(
+      processL1Queue({
+        workspaceRoot,
+        kbPath,
+        queuePath,
+        manifestPath,
+        gitignoreFiles: [],
+        model: makeFakeModel(JSON.stringify(makeValidL1Entry())),
+        now: fixedNow,
+      })
+    ).rejects.toThrow();
+    await expect(readdir(join(kbPath, "l1-files"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 });

@@ -1,11 +1,25 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { compileKnowledgeBase } from "../src/knowledge/compiler/index.js";
 import { listProjectFilesForL1 } from "../src/knowledge/compiler/inventory.js";
 import { initializeKnowledgeBase } from "../src/knowledge/init.js";
+
+const envKeys = ["TOPCHESTER_KB_DIR", "TOPCHESTER_KB_CACHE_DIR"] as const;
+const originalEnv = new Map(envKeys.map((key) => [key, process.env[key]]));
+
+afterEach(async () => {
+  for (const key of envKeys) {
+    const value = originalEnv.get(key);
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+});
 
 describe("knowledge compiler inventory", () => {
   it("reads root and nested gitignore files before queueing L1 files", async () => {
@@ -65,5 +79,47 @@ describe("knowledge compiler inventory", () => {
     expect(result.queuedFiles.find((file) => file.path === "src/index.ts")?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(queue.queuedFiles).toEqual(result.queuedFiles);
     expect(manifest.queuedFileCount).toBe(2);
+  });
+
+  it("compiles empty in-scope work into valid zero-count queue and manifest artifacts", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-"));
+    await initializeKnowledgeBase(workspace);
+
+    const result = await compileKnowledgeBase(workspace);
+    const queue = JSON.parse(await readFile(result.queuePath, "utf8"));
+    const manifest = JSON.parse(await readFile(result.manifestPath, "utf8"));
+    const l1Entries = await readdir(join(workspace, "topchester-kb", "l1-files"));
+
+    expect(result.queuedFiles).toEqual([]);
+    expect(queue.queuedFiles).toEqual([]);
+    expect(manifest.queuedFileCount).toBe(0);
+    expect(manifest.l1).toEqual({ queued: 0, completed: 0, failed: 0, changed: 0, missing: 0, currentEntries: 0 });
+    expect(l1Entries).toEqual([]);
+  });
+
+  it("excludes default and configured generated KB/cache artifact paths from inventory", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-"));
+    process.env.TOPCHESTER_KB_DIR = "custom-kb";
+    process.env.TOPCHESTER_KB_CACHE_DIR = "custom-cache";
+    await initializeKnowledgeBase(workspace);
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await mkdir(join(workspace, "topchester-kb"), { recursive: true });
+    await mkdir(join(workspace, ".agents", "topchester-kb-cache"), { recursive: true });
+    await mkdir(join(workspace, ".agents", "topchester"), { recursive: true });
+    await mkdir(join(workspace, "custom-kb", "l1-files"), { recursive: true });
+    await mkdir(join(workspace, "custom-cache"), { recursive: true });
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+    await writeFile(join(workspace, "topchester-kb", "generated.json"), "{}\n");
+    await writeFile(join(workspace, ".agents", "topchester-kb-cache", "queue.json"), "{}\n");
+    await writeFile(join(workspace, ".agents", "topchester", "state.json"), "{}\n");
+    await writeFile(join(workspace, "custom-kb", "manifest.json"), "{}\n");
+    await writeFile(join(workspace, "custom-cache", "l1-queue.json"), "{}\n");
+
+    const result = await compileKnowledgeBase(workspace);
+
+    expect(result.queuePath).toBe(join(workspace, "custom-cache", "l1-queue.json"));
+    expect(result.manifestPath).toBe(join(workspace, "custom-kb", "manifest.json"));
+    expect(result.queuedFiles.map((file) => file.path)).toEqual(["src/index.ts"]);
+    await rm(workspace, { recursive: true, force: true });
   });
 });
