@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, open, readFile, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, open, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { dirname, join, relative } from "node:path";
 import { ZodError } from "zod";
 import { type ModelTextResult } from "../../model/index.js";
 import { l1FileEntrySchemaPath, parseL1FileEntry, type L1FileEntry } from "./l1-entry.js";
@@ -33,7 +33,23 @@ export async function processL1QueueItem(options: ProcessL1QueueItemOptions): Pr
 
   try {
     const normalizedPath = normalizeL1FilePath(options.item.path);
-    const absolutePath = join(options.workspaceRoot, normalizedPath);
+    const realWorkspaceRoot = await realpath(options.workspaceRoot);
+    const queuedPath = join(realWorkspaceRoot, normalizedPath);
+    const absolutePath = await realpath(queuedPath).catch((error: unknown) => {
+      if (isNodeErrorCode(error, "ENOENT")) {
+        return undefined;
+      }
+      throw error;
+    });
+
+    if (!absolutePath) {
+      return { item: markTerminal(options.item, "missing_file") };
+    }
+
+    if (!isInsideDirectory(realWorkspaceRoot, absolutePath)) {
+      return { item: markTerminal(options.item, "changed") };
+    }
+
     const fileStat = await stat(absolutePath).catch((error: unknown) => {
       if (isNodeErrorCode(error, "ENOENT")) {
         return undefined;
@@ -290,4 +306,11 @@ function classifyFailure(error: unknown): string {
 
 function isNodeErrorCode(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+function isInsideDirectory(directory: string, target: string): boolean {
+  const relativePath = relative(directory, target);
+  return (
+    relativePath === "" || (!relativePath.startsWith("..") && !relativePath.startsWith("/") && relativePath !== "..")
+  );
 }

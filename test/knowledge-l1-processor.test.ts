@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -356,6 +356,30 @@ describe("single-file L1 processing", () => {
     expect(changed.entryPath).toBeUndefined();
     expect(missing.item.status).toBe("missing_file");
     expect(missing.entryPath).toBeUndefined();
+  });
+
+  it("marks symlink escapes changed before model calls or current entry writes", async () => {
+    const content = "export const outside = true;\n";
+    const workspaceRoot = await makeWorkspace({});
+    const outsideRoot = await makeWorkspace({ "outside.ts": content });
+    const kbPath = join(workspaceRoot, "topchester-kb");
+    const model = makeFakeModel(JSON.stringify(makeValidL1Entry()));
+
+    await mkdir(join(workspaceRoot, "src"), { recursive: true });
+    await symlink(join(outsideRoot, "outside.ts"), join(workspaceRoot, "src/link.ts"));
+
+    const result = await processL1QueueItem({
+      workspaceRoot,
+      kbPath,
+      item: makeQueueItem("src/link.ts", content),
+      model,
+      now: fixedNow,
+    });
+
+    expect(result.item.status).toBe("changed");
+    expect(model.calls).toHaveLength(0);
+    expect(result.entryPath).toBeUndefined();
+    await expect(readFile(getL1FileEntryPath(kbPath, "src/link.ts"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("fails oversized files clearly without writing placeholder current entries", async () => {
