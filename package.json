@@ -1,22 +1,22 @@
 {
   "name": "topchester-ai",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": false,
   "description": "Terminal-native TUI coding agent tightly coupled to a project knowledge base.",
   "license": "MIT",
   "bin": {
-    "topchester": "./dist/cli.mjs"
+    "topchester": "dist/cli.mjs"
   },
   "files": [
     "dist"
   ],
   "type": "module",
   "scripts": {
-    "prepare": "lefthook install",
     "build": "tsdown src/cli.ts --format esm --dts --out-dir dist --clean --sourcemap",
     "dev": "tsx src/cli.ts dev --config config/example.yaml",
     "format": "oxfmt .",
     "format-check": "oxfmt . --check",
+    "hooks:install": "lefthook install",
     "format:check": "pnpm format-check",
     "lint": "oxlint",
     "test": "vitest run",
