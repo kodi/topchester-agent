@@ -428,7 +428,9 @@ This is close enough to triples to support graph traversal, but more practical t
 
 ## Canonical File Layout
 
-Proposed repo layout:
+Current L1 compiler output is implemented under `topchester-kb/l1-files/`.
+The L2, L3, graph, scan, and service/API pieces below are the target layout for later
+compiler stages; they are not produced as semantic output by the current L1 compile.
 
 ```text
 topchester-kb/
@@ -439,13 +441,13 @@ topchester-kb/
     module-entry.v1.schema.json
     feature-entry.v1.schema.json
     edge.v1.schema.json
-  files/
+  l1-files/
     src__server__routes__users.ts.json
     src__server__services__user-service.ts.json
-  modules/
+  l2-modules/
     server.users.json
     ui.profile.json
-  features/
+  l3-features/
     authentication.json
     authentication.login.json
     authentication.password-reset.json

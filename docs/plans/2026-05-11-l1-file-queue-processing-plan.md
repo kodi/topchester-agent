@@ -281,7 +281,7 @@ Slice 3.
 
 ## Slice 5: End-to-End Compile Check on a Small Repo
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 ### Goal
 
@@ -310,13 +310,15 @@ topchester-dev --config config/gemini.yaml --workspace ~/data/github/clsx --dev 
 pnpm check
 ```
 
+Completed in Slice 5 with the real clsx compile validation, generated L1 entry/count inspection, rerun stability checks, and final `pnpm check`.
+
 ### Dependencies
 
 Slice 4 and a configured KB model/API key.
 
 ## Slice 6: Cleanup and Documentation Alignment
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 ### Goal
 
@@ -340,8 +342,11 @@ Once L1 processing works, docs and naming should stop disagreeing before later c
 ### Verification
 
 ```bash
-pnpm format-check
+pnpm check
+topchester-dev --config config/gemini.yaml --workspace ~/data/github/clsx --dev disable-kb-check-modal kb compile
 ```
+
+Completed in Slice 6 by aligning `docs/KNOWLEDGE.md` with the implemented `topchester-kb/l1-files/` L1 output path and keeping L2/L3/graph/service language clearly scoped as future target work.
 
 ### Dependencies
 
