@@ -39,6 +39,8 @@ Current behavior:
 - Shows an unlabeled input box below the thread.
 - Shows a status line below the prompt box with `ready`, the current folder name, and the active model as `model [provider]`.
 - Tracks chat rows as `System`, `You`, and `Agent` messages, and sends user messages to the configured `agent.primary` model.
+- Lets the model use workspace-scoped tools: `read_file` and `grep`.
+- `grep` uses `rg` when available, falls back to `grep`, and reports a warning if neither command is installed.
 - Intercepts slash commands before chat, starting with `/kb status`.
 - Shows slash command suggestions when the prompt starts with `/`; `Tab` completes the selected suggestion.
 - Shows a temporary thinking row while waiting for chat responses.
