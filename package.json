@@ -4,6 +4,10 @@
   "private": false,
   "description": "Terminal-native TUI coding agent tightly coupled to a project knowledge base.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kodi/topchester-agent"
+  },
   "bin": {
     "topchester": "dist/cli.mjs"
   },
