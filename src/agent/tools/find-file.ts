@@ -2,6 +2,7 @@ import { execFile as execFileNode } from "node:child_process";
 import { constants } from "node:fs";
 import { access, readdir } from "node:fs/promises";
 import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
+import { type Logger } from "pino";
 import { z } from "zod";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
 
@@ -17,6 +18,7 @@ export type FindFileToolResult = ToolResult<"find_file">;
 
 export interface FindWorkspaceFilesByNameOptions {
   pathEnv?: string;
+  logger?: Logger;
 }
 
 interface FileMatch {
@@ -42,7 +44,8 @@ export const findFileTool = defineTool({
   prompt:
     'find_file: find files by fuzzy name inside the workspace. To use it, reply with only JSON: {"tool":"find_file","args":{"query":"runtime"}}',
   argsSchema: findFileArgsSchema,
-  execute: (context, args) => findWorkspaceFilesByName(context.workspaceRoot, args, { pathEnv: context.pathEnv }),
+  execute: (context, args) =>
+    findWorkspaceFilesByName(context.workspaceRoot, args, { pathEnv: context.pathEnv, logger: context.logger }),
 });
 
 export async function findWorkspaceFilesByName(
@@ -80,17 +83,31 @@ async function collectWorkspaceFiles(
   relativeStartPath: string,
   options: FindWorkspaceFilesByNameOptions
 ): Promise<string[]> {
-  return (
-    (await collectWorkspaceFilesWithNativeCommand(workspaceRoot, relativeStartPath, options.pathEnv)) ??
-    collectWorkspaceFilesWithNode(workspaceRoot, startPath)
+  const nativeFiles = await collectWorkspaceFilesWithNativeCommand(workspaceRoot, relativeStartPath, options);
+
+  if (nativeFiles) {
+    return nativeFiles;
+  }
+
+  options.logger?.debug(
+    {
+      event: "native_tool_selected",
+      tool: "find_file",
+      nativeTool: "node",
+      path: relativeStartPath,
+    },
+    "native tool selected"
   );
+
+  return collectWorkspaceFilesWithNode(workspaceRoot, startPath);
 }
 
 async function collectWorkspaceFilesWithNativeCommand(
   workspaceRoot: string,
   relativeStartPath: string,
-  pathEnv = process.env.PATH ?? ""
+  options: FindWorkspaceFilesByNameOptions
 ): Promise<string[] | undefined> {
+  const pathEnv = options.pathEnv ?? process.env.PATH ?? "";
   const collectors: NativeCollectorFactory[] = [createRipgrepCollector, createFdCollector, createFindCollector];
 
   for (const createCollector of collectors) {
@@ -100,7 +117,35 @@ async function collectWorkspaceFilesWithNativeCommand(
       continue;
     }
 
+    options.logger?.debug(
+      {
+        event: "native_tool_selected",
+        tool: "find_file",
+        nativeTool: collector.name,
+        path: relativeStartPath,
+      },
+      "native tool selected"
+    );
     const result = await runCommand(collector.command, collector.args, workspaceRoot);
+    options.logger?.debug(
+      {
+        event: "find_file_command_result",
+        command: collector.name,
+        exitCode: result.exitCode,
+        stdoutLength: result.stdout.length,
+        stderrLength: result.stderr.length,
+      },
+      "find_file command result"
+    );
+    options.logger?.trace(
+      {
+        event: "find_file_command_output",
+        command: collector.name,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      },
+      "find_file command output"
+    );
 
     if (result.exitCode === 0) {
       return normalizeCommandFileList(workspaceRoot, result.stdout);
@@ -139,6 +184,7 @@ async function collectWorkspaceFilesWithNode(workspaceRoot: string, startPath: s
 }
 
 interface NativeCollector {
+  name: string;
   command: string;
   args: string[];
 }
@@ -156,19 +202,23 @@ async function createRipgrepCollector(
   }
 
   return {
+    name: "rg",
     command,
     args: ["--files", "--hidden", ...ignoredDirectoryGlobArgs(), "--", relativeStartPath],
   };
 }
 
 async function createFdCollector(pathEnv: string, relativeStartPath: string): Promise<NativeCollector | undefined> {
-  const command = (await findExecutable("fd", pathEnv)) ?? (await findExecutable("fdfind", pathEnv));
+  const fdCommand = await findExecutable("fd", pathEnv);
+  const fdfindCommand = fdCommand ? undefined : await findExecutable("fdfind", pathEnv);
+  const command = fdCommand ?? fdfindCommand;
 
   if (!command) {
     return undefined;
   }
 
   return {
+    name: fdCommand ? "fd" : "fdfind",
     command,
     args: ["--type", "f", "--hidden", "--color", "never", ...ignoredDirectoryExcludeArgs(), ".", relativeStartPath],
   };
@@ -182,6 +232,7 @@ async function createFindCollector(pathEnv: string, relativeStartPath: string): 
   }
 
   return {
+    name: "find",
     command,
     args: [relativeStartPath, "(", ...ignoredDirectoryFindPruneArgs(), ")", "-prune", "-o", "-type", "f", "-print"],
   };

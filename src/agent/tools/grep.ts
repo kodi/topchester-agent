@@ -2,9 +2,9 @@ import { execFile as execFileNode } from "node:child_process";
 import { constants } from "node:fs";
 import { access } from "node:fs/promises";
 import { delimiter, isAbsolute, join, relative, resolve } from "node:path";
+import { type Logger } from "pino";
 import { z } from "zod";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
-import { type Logger } from "pino";
 
 export const grepArgsSchema = z.object({
   pattern: z.string(),
@@ -40,6 +40,15 @@ export async function grepWorkspace(
 
   if (!executable) {
     const warning = "grep could not run because neither rg nor grep is available on PATH.";
+    options.logger?.debug(
+      {
+        event: "native_tool_unavailable",
+        tool: "grep",
+        candidates: ["rg", "grep"],
+        path: scopedPath.relativePath,
+      },
+      "native tool unavailable"
+    );
 
     return {
       tool: "grep",
@@ -66,11 +75,12 @@ export async function grepWorkspace(
       : ["-R", "-n", "--", args.pattern, scopedPath.relativePath];
   options.logger?.debug(
     {
-      event: "grep_executable",
-      command: executable.name,
+      event: "native_tool_selected",
+      tool: "grep",
+      nativeTool: executable.name,
       path: scopedPath.relativePath,
     },
-    "grep executable selected"
+    "native tool selected"
   );
   const result = await runCommand(executable.path, commandArgs, scopedPath.workspaceRoot);
 
@@ -83,6 +93,15 @@ export async function grepWorkspace(
       stderrLength: result.stderr.length,
     },
     "grep command result"
+  );
+  options.logger?.trace(
+    {
+      event: "grep_command_output",
+      command: executable.name,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    },
+    "grep command output"
   );
 
   if (result.exitCode > 1) {

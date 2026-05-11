@@ -137,6 +137,34 @@ describe("agent tools", () => {
     expect(result.content).toBe("src/file.ts:1:needle from rg");
   });
 
+  it("logs grep native command selection and trace output", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const logFile = join(workspace, "tool.log");
+    const bin = await mkdtemp(join(tmpdir(), "topchester-tools-bin-"));
+    await mkdir(join(workspace, "src"));
+    await writeFile(join(workspace, "src", "file.ts"), "needle\n");
+    await writeExecutable(join(bin, "rg"), "printf 'src/file.ts:1:needle from rg\\n'");
+
+    await withEnv({ TOPCHESTER_LOG_LEVEL: "trace", TOPCHESTER_LOG_FILE: logFile }, async () => {
+      const { logger } = createTopchesterLogger(workspace);
+
+      await grepWorkspace(workspace, { pattern: "needle", path: "src" }, { pathEnv: bin, logger });
+
+      const logLines = await readJsonLogLines(logFile);
+
+      expect(logLines).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ event: "native_tool_selected", tool: "grep", nativeTool: "rg" }),
+          expect.objectContaining({
+            event: "grep_command_output",
+            command: "rg",
+            stdout: "src/file.ts:1:needle from rg\n",
+          }),
+        ])
+      );
+    });
+  });
+
   it("falls back to grep when rg is not available", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
     const bin = await mkdtemp(join(tmpdir(), "topchester-tools-bin-"));
@@ -196,18 +224,27 @@ describe("agent tools", () => {
 
   it("uses rg to list find_file candidates before the TypeScript fallback", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const logFile = join(workspace, "tool.log");
     const bin = await mkdtemp(join(tmpdir(), "topchester-tools-bin-"));
     await mkdir(join(workspace, "src"), { recursive: true });
     await writeFile(join(workspace, "src", "runtime-native.ts"), "");
     await writeExecutable(join(bin, "rg"), "printf 'src/runtime-native.ts\\n'");
 
-    const result = await findWorkspaceFilesByName(
-      workspace,
-      { query: "runtime native", path: ".", limit: 10 },
-      { pathEnv: bin }
-    );
+    await withEnv({ TOPCHESTER_LOG_LEVEL: "debug", TOPCHESTER_LOG_FILE: logFile }, async () => {
+      const { logger } = createTopchesterLogger(workspace);
+      const result = await findWorkspaceFilesByName(
+        workspace,
+        { query: "runtime native", path: ".", limit: 10 },
+        { pathEnv: bin, logger }
+      );
 
-    expect(result.content).toBe("src/runtime-native.ts");
+      expect(result.content).toBe("src/runtime-native.ts");
+      await expect(readJsonLogLines(logFile)).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ event: "native_tool_selected", tool: "find_file", nativeTool: "rg" }),
+        ])
+      );
+    });
   });
 
   it("scopes find_file to a workspace path and applies the result limit", async () => {
@@ -261,6 +298,13 @@ describe("agent tools", () => {
 async function writeExecutable(path: string, body: string): Promise<void> {
   await writeFile(path, `#!/bin/sh\n${body}\n`);
   await chmod(path, 0o755);
+}
+
+async function readJsonLogLines(path: string): Promise<Record<string, unknown>[]> {
+  return (await readFile(path, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 async function withEnv(env: Record<string, string>, run: () => Promise<void>): Promise<void> {

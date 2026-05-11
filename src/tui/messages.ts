@@ -58,8 +58,10 @@ export function renderChatMessage(message: ChatMessage, options: RenderChatMessa
   }
 
   const prefix = getPrefix(message.kind);
-
-  const rendered = lines.map((line, index) => `${index === 0 ? prefix : " ".repeat(prefix.length)}${line}`);
+  const rendered =
+    prefix.length === 0
+      ? lines
+      : lines.map((line, index) => `${index === 0 ? prefix : " ".repeat(prefix.length)}${line}`);
 
   if (message.meta) {
     rendered.push(ui.label(message.meta));
@@ -78,7 +80,7 @@ function renderUserMessage(lines: string[]): string[] {
 function getPrefix(kind: TextChatMessage["kind"]): string {
   switch (kind) {
     case "agent":
-      return `${ui.ok("Agent")}: `;
+      return "";
     case "user":
       return `${ui.label("You")}: `;
     case "system":

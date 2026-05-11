@@ -179,7 +179,7 @@ describe("TUI rendering", () => {
 
     const output = app.render(60).join("\n");
 
-    expect(output).toContain(" Agent: Sure, I can help.");
+    expect(output).toContain(" Sure, I can help.");
     expect(output).toContain(" qwen/qwen3-coder:free · 1.4 sec");
   });
 
@@ -195,11 +195,27 @@ describe("TUI rendering", () => {
 
     const lines = app.render(60);
     const firstIndex = lines.findIndex((line) => line.includes("System: First"));
-    const secondIndex = lines.findIndex((line) => line.includes("Agent: Second"));
+    const secondIndex = lines.findIndex((line) => line.includes("Second"));
 
     expect(firstIndex).toBeGreaterThanOrEqual(0);
     expect(secondIndex).toBe(firstIndex + 2);
     expect(lines[firstIndex + 1]?.trim()).toBe("");
+  });
+
+  it("renders multiline agent Markdown without prefix indentation", () => {
+    const app = new ChatLayout(
+      new FakeTerminal(),
+      [agentMessage("- package.json | ./package.json | 3\n- readme.md | ./readme.md | 1")],
+      "repo",
+      "model [provider]"
+    );
+
+    const output = app.render(80).join("\n");
+
+    expect(output).toContain(" - package.json | ./package.json | 3");
+    expect(output).toContain(" - readme.md | ./readme.md | 1");
+    expect(output).not.toContain("Agent:");
+    expect(output).not.toContain("       - readme.md");
   });
 
   it("scrolls chat history inside the TUI with page keys and alternate-scroll arrows", () => {
