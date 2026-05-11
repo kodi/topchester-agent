@@ -1,0 +1,8 @@
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+.agents/topchester-kb-cache/
+.claude/
+.DS_Store
+.env

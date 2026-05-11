@@ -69,17 +69,25 @@ Use generated runtime indexes for speed.
 
 Recommended split:
 
-- Canonical source of truth: `.agents/topchester-kb/` directory of structured JSON and JSONL files, committed with the project.
-- Runtime cache: `.agents/topchester-kb-cache/` SQLite/FTS/vector/cache files generated from `.agents/topchester-kb/`, ignored by git.
+- Canonical source of truth: `topchester-kb/` directory of structured JSON and JSONL files at the project root, committed with the project.
+- Runtime cache: `.agents/topchester-kb-cache/` SQLite/FTS/vector/cache files generated from the canonical KB, ignored by git.
 - API server: loads canonical KB, builds indexes, exposes query/context/drift endpoints.
 - Knowledge Compiler: produces and updates KB entries from code.
 
-Why `.agents/topchester-kb/`:
+Why not keep the canonical KB under `.agents/` by default:
 
-- It is project-local and commit-friendly.
-- It follows the cross-agent convention used by `skills.sh` for many agents (`.agents/skills/`) rather than tying us to one vendor-specific directory.
-- It keeps Topchester's KB separate from OpenCode's own `.opencode/` config and from generic project files.
-- The directory name `topchester-kb` makes the artifact explicit and grep-able.
+- `.agents/` is a good home for generated SQLite/cache files because it is agent-local runtime state.
+- In real repositories, dot-directories and agent-runtime directories are often ignored or omitted from packaging/review by default.
+- The canonical KB is intended to be committed, diffed, validated in CI, and visible to humans and agents, so a project-root `topchester-kb/` directory is more explicit.
+- The directory name `topchester-kb` remains vendor-specific enough to avoid colliding with generic project files and easy to grep for.
+
+Path configuration:
+
+- Default canonical KB path: `topchester-kb/`.
+- Environment override: `TOPCHESTER_KB_DIR`, resolved relative to the workspace root unless absolute.
+- Default generated cache path: `.agents/topchester-kb-cache/`.
+- Optional cache override: `TOPCHESTER_KB_CACHE_DIR`, resolved relative to the workspace root unless absolute.
+- If the default KB path is missing but `TOPCHESTER_KB_DIR` is set and valid, Topchester should use the override and surface the resolved path in status output.
 
 Do not make an opaque database the canonical KB at first.
 
@@ -92,7 +100,7 @@ These are decisions from the early product/design discussion:
 - First supported target repositories: TypeScript/JavaScript projects.
 - API shape: local HTTP JSON-RPC as the core API, with MCP exposed as a layer/adapter on top.
 - Feature model: hierarchical, not flat. Features may have parent/child relationships and graph relationships.
-- Canonical KB path: `.agents/topchester-kb/` unless we later discover a better standard.
+- Canonical KB path: `topchester-kb/` by default, overrideable with `TOPCHESTER_KB_DIR`.
 - Drift enforcement: non-strict warning mode first. The agent warns clearly when KB is stale, but does not block coding tasks yet.
 - Scanner/generator name: call the full KB generation system the **Knowledge Compiler**. The deterministic file/hash/symbol scan is only one phase inside it.
 - V0 file inclusion policy: include everything that can change the product or the agent's understanding of the product: source, config, package manifests, lockfiles, schemas, migrations, scripts, tests, and docs. Exclude generated code/build output/vendor/cache artifacts by default.
@@ -423,32 +431,31 @@ This is close enough to triples to support graph traversal, but more practical t
 Proposed repo layout:
 
 ```text
-.agents/
-  topchester-kb/
-    README.md
-    manifest.json
-    schema/
-      file-entry.v1.schema.json
-      module-entry.v1.schema.json
-      feature-entry.v1.schema.json
-      edge.v1.schema.json
-    files/
-      src__server__routes__users.ts.json
-      src__server__services__user-service.ts.json
-    modules/
-      server.users.json
-      ui.profile.json
-    features/
-      authentication.json
-      authentication.login.json
-      authentication.password-reset.json
-      user-profile.json
-      user-profile.avatar-upload.json
-    graph/
-      edges.jsonl
-    scans/
-      initial-scan.json
-      latest.json
+topchester-kb/
+  README.md
+  manifest.json
+  schema/
+    file-entry.v1.schema.json
+    module-entry.v1.schema.json
+    feature-entry.v1.schema.json
+    edge.v1.schema.json
+  files/
+    src__server__routes__users.ts.json
+    src__server__services__user-service.ts.json
+  modules/
+    server.users.json
+    ui.profile.json
+  features/
+    authentication.json
+    authentication.login.json
+    authentication.password-reset.json
+    user-profile.json
+    user-profile.avatar-upload.json
+  graph/
+    edges.jsonl
+  scans/
+    initial-scan.json
+    latest.json
 ```
 
 Generated runtime files should not be committed:
@@ -571,7 +578,7 @@ Deterministic scanner:
 - Classify by language/type.
 - Detect package manifests, build files, test files, docs, routes, schemas, migrations, config.
 - Compute file hashes.
-- Produce `.agents/topchester-kb/scans/initial-scan.json`.
+- Produce `topchester-kb/scans/initial-scan.json` by default.
 
 For massive repos, V0 should favor visibility over cleverness: tell the user the repo is large, show the likely cost/time risk, and continue with staged compilation if requested. Longer-term optimizations can include package-level shards, background Knowledge Compiler jobs, lazy L3 feature extraction, and cheaper/faster model passes.
 
@@ -943,7 +950,7 @@ Possible rules:
 
 Generated KB files should not require human semantic review in PRs.
 
-If `.agents/topchester-kb/` plaintext files change because the Knowledge Compiler regenerated them, the default policy is to accept the generated output. Reviewers should review the product code and compiler implementation, not hand-edit or bikeshed generated KB diffs.
+If canonical KB plaintext files change because the Knowledge Compiler regenerated them, the default policy is to accept the generated output. Reviewers should review the product code and compiler implementation, not hand-edit or bikeshed generated KB diffs.
 
 Recommended checks are mechanical, not semantic:
 
@@ -978,7 +985,7 @@ The `@earendil-works/pi-tui` package appears to provide a TypeScript TUI foundat
 Resolved for V0:
 
 1. First target repositories: TypeScript/JavaScript.
-2. Canonical KB path: `.agents/topchester-kb/`.
+2. Canonical KB path: `topchester-kb/` by default, overrideable with `TOPCHESTER_KB_DIR`.
 3. Runtime generated cache path: `.agents/topchester-kb-cache/`, ignored by git.
 4. API: HTTP JSON-RPC core, MCP adapter/layer on top.
 5. Feature model: hierarchical features plus graph relationships.
@@ -1001,7 +1008,7 @@ Implementation details to refine before hardening:
 
 A practical first version could be:
 
-1. Canonical `.agents/topchester-kb/` directory with JSON files for L1/L2/L3 and JSONL edges.
+1. Canonical `topchester-kb/` directory with JSON files for L1/L2/L3 and JSONL edges.
 2. JSON Schema validation.
 3. TypeScript/JavaScript-first, framework-neutral Knowledge Compiler with git-tracked file inventory, repo-size detection, framework/package/version metadata detection, and hash computation.
 4. L1 entries for every in-scope product-affecting file, including source, config, package metadata, lockfiles, schemas, migrations, scripts, tests, and docs.

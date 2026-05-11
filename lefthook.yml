@@ -1,0 +1,6 @@
+pre-commit:
+  commands:
+    oxfmt:
+      glob: "*.{js,jsx,ts,tsx,json,jsonc,css,html,yml,yaml}"
+      run: pnpm exec oxfmt --write {staged_files}
+      stage_fixed: true

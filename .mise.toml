@@ -1,0 +1,18 @@
+[tools]
+node = "24"
+"npm:pnpm" = "11"
+
+[tasks.typecheck]
+dir = "{{config_root}}"
+run = "pnpm run typecheck"
+
+[tasks.format-check]
+dir = "{{config_root}}"
+run = "pnpm run format-check"
+
+[tasks.lint]
+dir = "{{config_root}}"
+run = "pnpm run lint"
+
+[tasks.local-ci]
+depends = ["typecheck", "format-check", "lint"]

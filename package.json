@@ -1,0 +1,42 @@
+{
+  "name": "topchester-agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Terminal-native TUI coding agent tightly coupled to a project knowledge base.",
+  "license": "MIT",
+  "bin": {
+    "topchester": "./dist/cli.js"
+  },
+  "type": "module",
+  "scripts": {
+    "prepare": "lefthook install",
+    "dev": "tsx src/cli.ts dev --config config/example.yaml",
+    "format": "oxfmt .",
+    "format-check": "oxfmt . --check",
+    "format:check": "pnpm format-check",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm typecheck && pnpm format-check && pnpm lint"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^2.0.47",
+    "@earendil-works/pi-tui": "^0.74.0",
+    "ai": "^6.0.177",
+    "commander": "^14.0.3",
+    "yaml": "^2.8.4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.3",
+    "lefthook": "^2.1.6",
+    "oxfmt": "^0.48.0",
+    "oxlint": "^1.63.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=11"
+  },
+  "packageManager": "pnpm@11.0.8"
+}
