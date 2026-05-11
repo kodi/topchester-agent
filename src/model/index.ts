@@ -19,9 +19,15 @@ export interface OpenAICompatibleProviderConfig {
   supportsStructuredOutputs?: boolean;
 }
 
+export interface ModelConfig {
+  name: string;
+  provider?: string;
+}
+
 export interface ModelGatewayConfig {
   defaultPurpose: ModelPurpose;
-  models: Partial<Record<ModelPurpose, string>>;
+  models: Partial<Record<ModelPurpose, ModelConfig>>;
+  defaultProvider?: string;
   providers: Record<string, OpenAICompatibleProviderConfig>;
 }
 
@@ -52,13 +58,19 @@ export class ModelGateway {
     modelId: string;
     purpose: ModelPurpose;
   } {
-    const modelRef = this.#config.models[purpose] ?? this.#config.models.fallback;
+    const modelConfig = this.#config.models[purpose] ?? this.#config.models.fallback;
 
-    if (!modelRef) {
+    if (!modelConfig) {
       throw new Error(`No model configured for purpose "${purpose}".`);
     }
 
-    const { providerId, modelId } = parseModelRef(modelRef);
+    const providerId = modelConfig.provider ?? this.#config.defaultProvider;
+
+    if (!providerId) {
+      throw new Error(`No provider configured for model "${modelConfig.name}".`);
+    }
+
+    const modelId = modelConfig.name;
     const providerConfig = this.#config.providers[providerId];
 
     if (!providerConfig) {
@@ -109,22 +121,6 @@ export class ModelGateway {
 
     yield* result.textStream;
   }
-}
-
-function parseModelRef(modelRef: string): {
-  providerId: string;
-  modelId: string;
-} {
-  const separatorIndex = modelRef.indexOf("/");
-
-  if (separatorIndex <= 0 || separatorIndex === modelRef.length - 1) {
-    throw new Error(`Model ref "${modelRef}" must use "provider/model" format.`);
-  }
-
-  return {
-    providerId: modelRef.slice(0, separatorIndex),
-    modelId: modelRef.slice(separatorIndex + 1),
-  };
 }
 
 function resolveApiKey(config: OpenAICompatibleProviderConfig): string | undefined {

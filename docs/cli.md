@@ -6,8 +6,13 @@ This document tracks implemented and planned `topchester` CLI commands. Any CLI 
 
 - `-c, --config <path>` — explicit config file path.
 - `--workspace <path>` — workspace root. Defaults to the current working directory.
+- `--dev <flag>` — development-only UI/runtime flag. Can be repeated, for example `--dev disable-kb-check-modal --dev do-something-other`.
 - `-V, --version` — print the CLI version.
 - `-h, --help` — print help.
+
+## Development flags
+
+- `disable-kb-check-modal` — still checks and prints KB status during startup, but does not show the missing-KB modal.
 
 ## Output style
 
@@ -27,12 +32,17 @@ Status: minimal TUI shell.
 Current behavior:
 
 - Opens a generic chat-style TUI when running in an interactive terminal.
+- Uses the terminal alternate screen and captures mouse wheel events for in-app history scrolling.
 - Shows a scrolling thread area on top with startup context.
+- Supports mouse wheel, `PageUp`/`PageDown`, and `Home`/`End` for chat history scrolling.
 - Shows an unlabeled input box below the thread.
 - Shows a status line below the prompt box with `ready`, the current folder name, and the active model as `model [provider]`.
-- Tracks chat rows as `System`, `You`, and `Agent` messages.
+- Tracks chat rows as `System`, `You`, and `Agent` messages, and sends user messages to the configured `agent.primary` model.
+- Shows a temporary thinking row while waiting for chat responses.
 - Checks the configured `agent.fast` model on startup in interactive mode and prints `Agent: ready` when the model responds.
 - Skips the startup check with a plain message if the agent takes too long.
+- Checks KB status after the agent is ready.
+- Shows a warning modal with setup choices when no KB folder exists, or when the KB path is not a folder.
 - Shows a temporary spinner row in the chat area while the engine is busy, with copy that says what is happening.
 - Shows `press Esc to stop` inside the prompt box while the startup agent check is running.
 - Prints a static version of the same layout when output is not interactive.

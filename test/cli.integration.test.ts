@@ -30,9 +30,12 @@ async function makeFixture() {
       "models:",
       "  defaultPurpose: agent.primary",
       "  assignments:",
-      "    agent.primary: openrouter/qwen/qwen3-coder:free",
-      "    fallback: openrouter/qwen/qwen3-coder:free",
+      "    agent.primary:",
+      "      name: qwen/qwen3-coder:free",
+      "    fallback:",
+      "      name: qwen/qwen3-coder:free",
       "  providers:",
+      "    default: openrouter",
       "    openrouter:",
       "      type: openai-compatible",
       "      baseURL: https://openrouter.ai/api/v1",
@@ -52,7 +55,8 @@ describe("CLI integration", () => {
 
     expect(stdout).toContain("Topchester");
     expect(stdout).toContain(`workspace: ${fixture.root}`);
-    expect(stdout).toContain("agent.primary: openrouter/qwen/qwen3-coder:free");
+    expect(stdout).toContain("agent.primary: qwen/qwen3-coder:free");
+    expect(stdout).toContain("default: openrouter");
     expect(stdout).toContain("openrouter: openai-compatible https://openrouter.ai/api/v1 auth=env:OPENROUTER_API_KEY");
     expect(stdout).toContain("│ >");
     expect(stdout).toContain(
@@ -67,8 +71,19 @@ describe("CLI integration", () => {
     const { stdout } = await runCli(["--config", relativeConfig, "--workspace", fixture.workspace], fixture.root);
 
     expect(stdout).toContain(`workspace: ${fixture.workspace}`);
-    expect(stdout).toContain("agent.primary: openrouter/qwen/qwen3-coder:free");
+    expect(stdout).toContain("agent.primary: qwen/qwen3-coder:free");
     expect(stdout).not.toContain("model assignments: none configured");
+  });
+
+  it("accepts repeatable dev flags", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout } = await runCli(
+      ["--config", fixture.config, "--dev", "disable-kb-check-modal", "--dev", "do-something-other", "dev"],
+      fixture.root
+    );
+
+    expect(stdout).toContain("dev flags: disable-kb-check-modal, do-something-other");
   });
 
   it("reports missing KB status with explicit workspace", async () => {

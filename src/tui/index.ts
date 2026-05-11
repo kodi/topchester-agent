@@ -11,10 +11,19 @@ import {
 } from "@earendil-works/pi-tui";
 import { basename } from "node:path";
 import { checkAgentReady } from "../agent/health.js";
+import { executeToolCall, parseToolCall, type ToolResult } from "../agent/tools.js";
 import { type AppContext } from "../app/context.js";
 import { ui } from "../cli/ui.js";
+import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js";
 import { type ModelPurpose } from "../model/index.js";
-import { agentMessage, renderChatMessage, systemMessage, userMessage, type ChatMessage } from "./messages.js";
+import {
+  agentMessage,
+  modalMessage,
+  renderChatMessage,
+  systemMessage,
+  userMessage,
+  type ChatMessage,
+} from "./messages.js";
 
 export interface TuiShell {
   render(): Promise<void>;
@@ -34,14 +43,27 @@ export class TopchesterTuiShell implements TuiShell {
     }
 
     const terminal = new ProcessTerminal();
+    enterAlternateScreen(terminal);
+    enableMouseTracking(terminal);
     const tui = new TUI(terminal, true);
-    const app = new ChatLayout(terminal, messages, folderName, modelLabel);
+    const exit = () => {
+      disableMouseTracking(terminal);
+      tui.stop();
+      exitAlternateScreen(terminal);
+    };
+    const app = new ChatLayout(terminal, messages, folderName, modelLabel, () => {
+      exit();
+      process.exit(0);
+    });
+    app.setSubmitMessage((message) => {
+      void this.submitChatMessage(app, tui, message);
+    });
 
     tui.addChild(app);
     tui.setFocus(app);
     tui.addInputListener((data) => {
       if (matchesKey(data, "ctrl+c")) {
-        tui.stop();
+        exit();
         process.exit(0);
       }
 
@@ -94,8 +116,118 @@ export class TopchesterTuiShell implements TuiShell {
       busy.stop();
     }
 
+    if (app.isReady()) {
+      this.checkKnowledgeBase(app);
+    }
+
     tui.requestRender();
   }
+
+  private checkKnowledgeBase(app: ChatLayout): void {
+    const status = getKnowledgeStatus(this.context.workspaceRoot);
+
+    for (const message of getKnowledgeStatusMessages(status, this.context.devFlags)) {
+      app.addMessage(message);
+    }
+  }
+
+  private async submitChatMessage(app: ChatLayout, tui: TUI, message: string): Promise<void> {
+    const busy = new BusyIndicator(app, tui, {
+      status: "thinking",
+      promptHint: "press Esc to stop",
+      activities: ["Thinking...", "Calling model...", "Writing response..."],
+    });
+    const abortController = new AbortController();
+    let cancelled = false;
+
+    app.setCancelPending(() => {
+      cancelled = true;
+      abortController.abort();
+    });
+    busy.start();
+    tui.requestRender();
+
+    try {
+      const startedAt = Date.now();
+      const result = await this.context.modelGateway.generateText({
+        purpose: "agent.primary",
+        system: getChatSystemPrompt(),
+        prompt: app.getConversationPrompt(message),
+        abortSignal: abortController.signal,
+      });
+      const durationMs = Date.now() - startedAt;
+      const meta = formatAgentMessageMeta(result.modelId, durationMs);
+      const toolCall = parseToolCall(result.text);
+
+      if (toolCall) {
+        app.addMessage(systemMessage(`Tool read_file: ${toolCall.args.path}`));
+        const toolResult = await executeToolCall(this.context.workspaceRoot, toolCall);
+        const finalStartedAt = Date.now();
+        const finalResult = await this.context.modelGateway.generateText({
+          purpose: "agent.primary",
+          system: getChatSystemPrompt(),
+          prompt: `${app.getConversationPrompt(message)}\n\n${formatToolResultForPrompt(toolResult)}\n\nAnswer the user's request using the tool result above. Do not guess.`,
+          abortSignal: abortController.signal,
+        });
+        const finalDurationMs = durationMs + Date.now() - finalStartedAt;
+        const finalMeta = formatAgentMessageMeta(finalResult.modelId, finalDurationMs);
+
+        app.addMessage(agentMessage(finalResult.text.trim() || "I got an empty response from the model.", finalMeta));
+        app.setStatus("ready");
+        return;
+      }
+
+      app.addMessage(agentMessage(result.text.trim() || "I got an empty response from the model.", meta));
+      app.setStatus("ready");
+    } catch (error) {
+      if (cancelled) {
+        app.addMessage(systemMessage("Response stopped."));
+        app.setStatus("ready");
+      } else {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        app.addMessage(systemMessage(`Chat failed: ${errorMessage}`));
+        app.setStatus("chat failed");
+      }
+    } finally {
+      app.setCancelPending(undefined);
+      busy.stop();
+      tui.requestRender();
+    }
+  }
+}
+
+export function getKnowledgeStatusMessages(status: KnowledgeStatus, devFlags = new Set<string>()): ChatMessage[] {
+  const messages: ChatMessage[] = [
+    systemMessage(
+      `KB status: ${formatPathStatus(status.kbPath, status.kbExists, status.kbIsDirectory)} (${status.kbPathSource})`
+    ),
+  ];
+
+  if (devFlags.has("disable-kb-check-modal")) {
+    return messages;
+  }
+
+  if (!status.kbExists) {
+    messages.push(
+      modalMessage({
+        tone: "warning",
+        title: "No KB found",
+        body: "Topchester needs a project knowledge base before normal coding can start.",
+        actions: [{ label: "Create KB now", value: "/kb init" }, { label: "Exit" }],
+      })
+    );
+  } else if (!status.kbIsDirectory) {
+    messages.push(
+      modalMessage({
+        tone: "warning",
+        title: "KB path is not a folder",
+        body: `This path exists but is not a folder:\n${status.kbPath}`,
+        actions: [{ label: "Exit" }],
+      })
+    );
+  }
+
+  return messages;
 }
 
 export function getStartupThreadMessages(context: AppContext): ChatMessage[] {
@@ -111,16 +243,25 @@ export function getStartupThreadMessages(context: AppContext): ChatMessage[] {
     lines.push(`${ui.label("model assignments")}: none configured`);
   } else {
     lines.push(`${ui.label("model assignments")}:`);
-    for (const [purpose, modelRef] of Object.entries(assignments)) {
-      lines.push(`  ${purpose}: ${modelRef}`);
+    for (const [purpose, model] of Object.entries(assignments)) {
+      const provider = model.provider ? ` [${model.provider}]` : "";
+      lines.push(`  ${purpose}: ${model.name}${provider}`);
     }
   }
 
-  if (Object.keys(providers).length === 0) {
+  const namedProviders = Object.entries(providers).filter(([providerId]) => providerId !== "default");
+
+  if (namedProviders.length === 0) {
     lines.push(`${ui.label("providers")}: none configured`);
   } else {
     lines.push(`${ui.label("providers")}:`);
-    for (const [providerId, provider] of Object.entries(providers)) {
+    if (typeof providers.default === "string") {
+      lines.push(`  default: ${providers.default}`);
+    }
+    for (const [providerId, provider] of namedProviders) {
+      if (typeof provider === "string") {
+        continue;
+      }
       const auth = provider.apiKeyEnv ? `env:${provider.apiKeyEnv}` : provider.apiKey ? "inline" : "none";
       lines.push(`  ${providerId}: ${provider.type} ${provider.baseURL} auth=${auth}`);
     }
@@ -133,7 +274,7 @@ export function getStartupThreadMessages(context: AppContext): ChatMessage[] {
 }
 
 function renderStaticLayout(messages: ChatMessage[], folderName = "", modelLabel = ""): string {
-  const threadLines = messages.flatMap(renderChatMessage);
+  const threadLines = messages.flatMap((message) => renderChatMessage(message));
   const status = formatStatusLine(folderName, modelLabel);
 
   return [
@@ -146,34 +287,64 @@ function renderStaticLayout(messages: ChatMessage[], folderName = "", modelLabel
   ].join("\n");
 }
 
-class ChatLayout implements Component, Focusable {
+export function enterAlternateScreen(terminal: Pick<Terminal, "write" | "clearScreen">): void {
+  terminal.write("\u001b[?1049h");
+  terminal.clearScreen();
+}
+
+export function exitAlternateScreen(terminal: Pick<Terminal, "write">): void {
+  terminal.write("\u001b[?1049l");
+}
+
+export function enableMouseTracking(terminal: Pick<Terminal, "write">): void {
+  terminal.write("\u001b[?1000h\u001b[?1006h");
+}
+
+export function disableMouseTracking(terminal: Pick<Terminal, "write">): void {
+  terminal.write("\u001b[?1006l\u001b[?1000l");
+}
+
+export class ChatLayout implements Component, Focusable {
   private readonly input = new Input();
   private status = "ready";
   private ephemeralLine: string | undefined;
   private promptHint: string | undefined;
   private cancelPending: (() => void) | undefined;
+  private submitMessage: ((message: string) => void) | undefined;
+  private activeModalActionIndex = 0;
+  private threadScrollOffset = 0;
 
   constructor(
     private readonly terminal: Terminal,
     private readonly messages: ChatMessage[],
     private readonly folderName: string,
-    private readonly modelLabel: string
+    private readonly modelLabel: string,
+    private readonly exitAgent: () => void = () => {}
   ) {
     this.input.onSubmit = (value) => {
       if (value.trim().length > 0) {
-        this.addMessage(userMessage(value));
-        this.addMessage(agentMessage("chat is not wired yet"));
+        const message = value.trim();
+        this.addMessage(userMessage(message));
         this.input.setValue("");
+        this.submitMessage?.(message);
       }
     };
   }
 
   addMessage(message: ChatMessage): void {
     this.messages.push(message);
+    this.threadScrollOffset = 0;
+    if (message.kind === "modal") {
+      this.activeModalActionIndex = 0;
+    }
   }
 
   setStatus(status: string): void {
     this.status = status;
+  }
+
+  isReady(): boolean {
+    return this.status === "ready";
   }
 
   setEphemeralLine(line: string | undefined): void {
@@ -186,6 +357,34 @@ class ChatLayout implements Component, Focusable {
 
   setCancelPending(cancel: (() => void) | undefined): void {
     this.cancelPending = cancel;
+  }
+
+  setSubmitMessage(submit: ((message: string) => void) | undefined): void {
+    this.submitMessage = submit;
+  }
+
+  setInputValue(value: string): void {
+    this.input.setValue(value);
+  }
+
+  getConversationPrompt(latestMessage: string): string {
+    const turns = this.messages.flatMap((message) => {
+      if (message.kind === "user") {
+        return [`User: ${message.text}`];
+      }
+
+      if (message.kind === "agent" && message.text !== "ready") {
+        return [`Assistant: ${message.text}`];
+      }
+
+      return [];
+    });
+
+    if (turns.at(-1) !== `User: ${latestMessage}`) {
+      turns.push(`User: ${latestMessage}`);
+    }
+
+    return turns.join("\n\n");
   }
 
   get focused(): boolean {
@@ -202,6 +401,14 @@ class ChatLayout implements Component, Focusable {
       return;
     }
 
+    if (this.handleModalInput(data)) {
+      return;
+    }
+
+    if (this.handleThreadScrollInput(data)) {
+      return;
+    }
+
     this.input.handleInput(data);
   }
 
@@ -211,9 +418,14 @@ class ChatLayout implements Component, Focusable {
 
   render(width: number): string[] {
     const safeWidth = Math.max(20, width);
-    const footerLines = this.renderPrompt(safeWidth);
+    const footerLines = this.getActiveModal() ? this.renderModalHelp(safeWidth) : this.renderPrompt(safeWidth);
     const threadHeight = Math.max(1, this.terminal.rows - footerLines.length);
-    const threadLines = this.renderThread(safeWidth).slice(-threadHeight);
+    const allThreadLines = this.renderThread(safeWidth);
+    const maxScrollOffset = Math.max(0, allThreadLines.length - threadHeight);
+    this.threadScrollOffset = Math.min(this.threadScrollOffset, maxScrollOffset);
+    const end = allThreadLines.length - this.threadScrollOffset;
+    const start = Math.max(0, end - threadHeight);
+    const threadLines = allThreadLines.slice(start, end);
 
     return [...padLines(threadLines, threadHeight, safeWidth), ...footerLines];
   }
@@ -221,18 +433,34 @@ class ChatLayout implements Component, Focusable {
   private renderThread(width: number): string[] {
     const innerWidth = Math.max(1, width - 2);
 
-    const lines = this.messages.flatMap(renderChatMessage);
+    const activeModalIndex = this.getActiveModalIndex();
+    const lines = this.messages.flatMap((message, index) => {
+      const messageLines = renderChatMessage(message, {
+        selectedActionIndex: index === activeModalIndex ? this.activeModalActionIndex : undefined,
+      });
+      const spacer = index === this.messages.length - 1 ? [] : [padThreadLine("", innerWidth, width)];
+
+      return [...this.renderThreadMessageLines(messageLines, innerWidth, width, message.kind === "user"), ...spacer];
+    });
 
     if (this.ephemeralLine) {
-      lines.push(this.ephemeralLine);
+      lines.push(...this.renderThreadMessageLines([this.ephemeralLine], innerWidth, width, false));
     }
 
+    return lines;
+  }
+
+  private renderThreadMessageLines(lines: string[], innerWidth: number, width: number, highlight: boolean): string[] {
     return lines.flatMap((line) => {
+      const styleLine = (value: string) => (highlight ? ui.softBackground(value) : value);
+
       if (line.length === 0) {
-        return [padThreadLine("", innerWidth, width)];
+        return [styleLine(padThreadLine("", innerWidth, width))];
       }
 
-      return wrapTextWithAnsi(line, innerWidth).map((wrappedLine) => padThreadLine(wrappedLine, innerWidth, width));
+      return wrapTextWithAnsi(line, innerWidth).map((wrappedLine) =>
+        styleLine(padThreadLine(wrappedLine, innerWidth, width))
+      );
     });
   }
 
@@ -248,6 +476,96 @@ class ChatLayout implements Component, Focusable {
 
     return [top, `│ ${prefix}${inputLine} │`, bottom, status];
   }
+
+  private renderModalHelp(width: number): string[] {
+    const help = "↑↓ navigate   Enter select   Esc cancel";
+    const status = formatStatusLine(this.folderName, this.modelLabel, this.status);
+
+    return [truncateToWidth(`  ${help}`, width, "…", true), truncateToWidth(`  ${status}`, width, "…", true)];
+  }
+
+  private handleModalInput(data: string): boolean {
+    const activeModal = this.getActiveModal();
+
+    if (!activeModal) {
+      return false;
+    }
+
+    if (isUpKey(data)) {
+      this.activeModalActionIndex =
+        (this.activeModalActionIndex - 1 + activeModal.actions.length) % activeModal.actions.length;
+      return true;
+    }
+
+    if (isDownKey(data)) {
+      this.activeModalActionIndex = (this.activeModalActionIndex + 1) % activeModal.actions.length;
+      return true;
+    }
+
+    if (matchesKey(data, "enter") || data === "\n" || data === "\r") {
+      const action = activeModal.actions[this.activeModalActionIndex];
+      if (action.label === "Exit") {
+        this.exitAgent();
+        return true;
+      }
+
+      this.addMessage(userMessage(action.value ?? action.label));
+      this.submitMessage?.(action.value ?? action.label);
+      return true;
+    }
+
+    if (matchesKey(data, "escape")) {
+      this.addMessage(userMessage("Cancel"));
+      return true;
+    }
+
+    return false;
+  }
+
+  private handleThreadScrollInput(data: string): boolean {
+    const pageSize = Math.max(1, Math.floor(this.terminal.rows / 2));
+    const wheel = parseMouseWheel(data);
+
+    if (wheel === "up") {
+      this.threadScrollOffset += 3;
+      return true;
+    }
+
+    if (wheel === "down") {
+      this.threadScrollOffset = Math.max(0, this.threadScrollOffset - 3);
+      return true;
+    }
+
+    if (isPageUpKey(data)) {
+      this.threadScrollOffset += pageSize;
+      return true;
+    }
+
+    if (isPageDownKey(data)) {
+      this.threadScrollOffset = Math.max(0, this.threadScrollOffset - pageSize);
+      return true;
+    }
+
+    if (isHomeKey(data)) {
+      this.threadScrollOffset = Number.MAX_SAFE_INTEGER;
+      return true;
+    }
+
+    if (isEndKey(data)) {
+      this.threadScrollOffset = 0;
+      return true;
+    }
+
+    return false;
+  }
+
+  private getActiveModal(): Extract<ChatMessage, { kind: "modal" }> | undefined {
+    return this.messages[this.getActiveModalIndex()] as Extract<ChatMessage, { kind: "modal" }> | undefined;
+  }
+
+  private getActiveModalIndex(): number {
+    return this.messages[this.messages.length - 1]?.kind === "modal" ? this.messages.length - 1 : -1;
+  }
 }
 
 function getFolderName(path: string): string {
@@ -261,22 +579,75 @@ function formatStatusLine(folderName: string, modelLabel: string, status = "read
   return `${ui.label("status")}: ${status}${folder}${model}`;
 }
 
+function formatPathStatus(path: string, exists: boolean, isDirectory: boolean): string {
+  if (!exists) {
+    return `${path} ${ui.warn("[missing]")}`;
+  }
+
+  if (!isDirectory) {
+    return `${path} ${ui.error("[not a folder]")}`;
+  }
+
+  return `${path} ${ui.ok("[ok]")}`;
+}
+
+function getChatSystemPrompt(): string {
+  return [
+    "You are Topchester, a plain-spoken terminal coding agent. Answer the user directly and concisely.",
+    "You have one tool available:",
+    'read_file: read a UTF-8 file inside the workspace. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
+    "Use read_file when the user asks to inspect or show a file. Do not make up file contents.",
+  ].join("\n");
+}
+
+function formatToolResultForPrompt(result: ToolResult): string {
+  return [`Tool result from ${result.tool}(${JSON.stringify(result.path)}):`, "```", result.content, "```"].join("\n");
+}
+
+function formatAgentMessageMeta(model: string, durationMs: number): string {
+  return `${model} · ${formatDuration(durationMs)}`;
+}
+
+function formatDuration(durationMs: number): string {
+  const totalSeconds = Math.max(0, durationMs / 1000);
+
+  if (totalSeconds < 10) {
+    return `${formatNumber(totalSeconds, 1)} sec`;
+  }
+
+  if (totalSeconds < 60) {
+    return `${Math.round(totalSeconds)} sec`;
+  }
+
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = Math.round(totalSeconds % 60);
+
+  if (seconds === 0) {
+    return `${minutes} min`;
+  }
+
+  return `${minutes} min ${seconds} sec`;
+}
+
+function formatNumber(value: number, fractionDigits: number): string {
+  return value.toLocaleString("en", {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  });
+}
+
 function getModelLabel(context: AppContext): string {
   const purpose = context.config.models?.defaultPurpose ?? "agent.primary";
-  const modelRef =
+  const model =
     context.config.models?.assignments?.[purpose as ModelPurpose] ?? context.config.models?.assignments?.fallback;
 
-  if (!modelRef) {
+  if (!model) {
     return "not set";
   }
 
-  const separatorIndex = modelRef.indexOf("/");
+  const provider = model.provider ?? context.config.models?.providers?.default;
 
-  if (separatorIndex <= 0 || separatorIndex === modelRef.length - 1) {
-    return modelRef;
-  }
-
-  return `${modelRef.slice(separatorIndex + 1)} [${modelRef.slice(0, separatorIndex)}]`;
+  return typeof provider === "string" ? `${model.name} [${provider}]` : model.name;
 }
 
 function padLines(lines: string[], height: number, width: number): string[] {
@@ -293,13 +664,66 @@ function renderInputWithoutPrompt(input: Input, width: number): string {
   return (input.render(width + 2)[0] ?? "").replace(/^> /, "");
 }
 
-interface BusyIndicatorOptions {
+function isUpKey(data: string): boolean {
+  return matchesKey(data, "up") || data === "\u001b[A";
+}
+
+function isDownKey(data: string): boolean {
+  return matchesKey(data, "down") || data === "\u001b[B";
+}
+
+function isPageUpKey(data: string): boolean {
+  return data === "\u001b[5~";
+}
+
+function isPageDownKey(data: string): boolean {
+  return data === "\u001b[6~";
+}
+
+function isHomeKey(data: string): boolean {
+  return matchesKey(data, "home") || data === "\u001b[H" || data === "\u001b[1~";
+}
+
+function isEndKey(data: string): boolean {
+  return matchesKey(data, "end") || data === "\u001b[F" || data === "\u001b[4~";
+}
+
+function parseMouseWheel(data: string): "up" | "down" | undefined {
+  const sgrMatch = data.match(new RegExp(`^${escapeRegex("\u001b")}${escapeRegex("[<")}(\\d+);\\d+;\\d+M$`));
+  if (sgrMatch) {
+    return getWheelDirection(Number(sgrMatch[1]));
+  }
+
+  if (data.startsWith("\u001b[M") && data.length >= 6) {
+    return getWheelDirection(data.charCodeAt(3) - 32);
+  }
+
+  return undefined;
+}
+
+function getWheelDirection(button: number): "up" | "down" | undefined {
+  if ((button & 64) !== 64) {
+    return undefined;
+  }
+
+  return (button & 1) === 0 ? "up" : "down";
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export interface BusyIndicatorOptions {
   status: string;
   promptHint: string;
   activities: string[];
 }
 
-class BusyIndicator {
+interface RenderRequester {
+  requestRender(): void;
+}
+
+export class BusyIndicator {
   private readonly frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   private timer: NodeJS.Timeout | undefined;
   private index = 0;
@@ -307,7 +731,7 @@ class BusyIndicator {
 
   constructor(
     private readonly app: ChatLayout,
-    private readonly tui: TUI,
+    private readonly tui: RenderRequester,
     private readonly options: BusyIndicatorOptions
   ) {}
 

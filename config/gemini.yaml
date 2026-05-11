@@ -1,16 +1,27 @@
 models:
   defaultPurpose: agent.primary
   assignments:
-    agent.primary: google/gemini-2.5-flash-lite
-    agent.fast: google/gemini-2.5-flash-lite
-    kb.scan: google/gemini-2.5-flash-lite
-    kb.summarize: google/gemini-2.5-flash-lite
-    kb.extract: google/gemini-2.5-flash-lite
-    kb.embed: google/gemini-2.5-flash-lite
-    fallback: google/gemini-2.5-flash-lite
+    agent.primary:
+      name: google/gemini-2.5-flash-lite
+    agent.fast:
+      name: google/gemini-2.5-flash-lite
+    kb.scan:
+      name: google/gemini-2.5-flash-lite
+    kb.summarize:
+      name: google/gemini-2.5-flash-lite
+    kb.extract:
+      name: google/gemini-2.5-flash-lite
+    kb.embed:
+      name: google/gemini-2.5-flash-lite
+    fallback:
+      name: google/gemini-2.5-flash-lite
   providers:
-    google:
+    default: openrouter
+    openrouter:
       type: openai-compatible
-      baseURL: https://generativelanguage.googleapis.com/v1beta/openai
-      apiKeyEnv: GEMINI_API_KEY
+      baseURL: https://openrouter.ai/api/v1
+      apiKeyEnv: OPENROUTER_API_KEY
       supportsStructuredOutputs: true
+      headers:
+        HTTP-Referer: https://topchester.com
+        X-Title: Topchester

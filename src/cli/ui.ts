@@ -1,6 +1,7 @@
 import { stderr, stdout } from "node:process";
 
 const colors = {
+  bgSoftGray: "\u001b[48;5;236m",
   cyan: "\u001b[36m",
   dim: "\u001b[2m",
   green: "\u001b[32m",
@@ -24,6 +25,9 @@ export const ui = {
   },
   error(text: string): string {
     return color(text, "red");
+  },
+  softBackground(text: string): string {
+    return color(text, "bgSoftGray");
   },
   async spinner<T>(text: string, action: () => T | Promise<T>): Promise<T> {
     if (!shouldUseColor()) {

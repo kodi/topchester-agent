@@ -1,19 +1,27 @@
 models:
   defaultPurpose: agent.primary
   assignments:
-    agent.primary: openrouter/qwen/qwen3-coder:free
-    agent.fast: openrouter/qwen/qwen3-coder:free
-    kb.scan: openrouter/qwen/qwen3-coder:free
-    kb.summarize: openrouter/qwen/qwen3-coder:free
-    kb.extract: openrouter/qwen/qwen3-coder:free
-    kb.embed: openrouter/qwen/qwen3-coder:free
-    fallback: openrouter/qwen/qwen3-coder:free
+    agent.primary:
+      name: qwen/qwen3-coder:free
+    agent.fast:
+      name: qwen/qwen3-coder:free
+    kb.scan:
+      name: qwen/qwen3-coder:free
+    kb.summarize:
+      name: qwen/qwen3-coder:free
+    kb.extract:
+      name: qwen/qwen3-coder:free
+    kb.embed:
+      name: qwen/qwen3-coder:free
+    fallback:
+      name: qwen/qwen3-coder:free
   providers:
+    default: openrouter
     openrouter:
       type: openai-compatible
       baseURL: https://openrouter.ai/api/v1
       apiKeyEnv: OPENROUTER_API_KEY
       supportsStructuredOutputs: true
       headers:
-        HTTP-Referer: https://topchester.dev
+        HTTP-Referer: https://topchester.com
         X-Title: Topchester

@@ -13,7 +13,8 @@ program.name("topchester").description("KB-first terminal coding agent").version
 
 program
   .option("-c, --config <path>", "explicit config file path")
-  .option("--workspace <path>", "workspace root", cwd());
+  .option("--workspace <path>", "workspace root", cwd())
+  .option("--dev <flag>", "enable a development flag", collectDevFlag, []);
 
 program.action(async () => {
   const context = createContextFromOptions();
@@ -86,21 +87,33 @@ function printStartupSummary(context: ReturnType<typeof createAppContext>) {
 
   console.log(`workspace: ${context.workspaceRoot}`);
   console.log(`default model purpose: ${context.config.models?.defaultPurpose ?? "agent.primary"}`);
+  if (context.devFlags.size > 0) {
+    console.log(`dev flags: ${[...context.devFlags].join(", ")}`);
+  }
 
   if (Object.keys(assignments).length === 0) {
     console.log("model assignments: none configured");
   } else {
     console.log("model assignments:");
-    for (const [purpose, modelRef] of Object.entries(assignments)) {
-      console.log(`  ${purpose}: ${modelRef}`);
+    for (const [purpose, model] of Object.entries(assignments)) {
+      const provider = model.provider ? ` [${model.provider}]` : "";
+      console.log(`  ${purpose}: ${model.name}${provider}`);
     }
   }
 
-  if (Object.keys(providers).length === 0) {
+  const namedProviders = Object.entries(providers).filter(([providerId]) => providerId !== "default");
+
+  if (namedProviders.length === 0) {
     console.log("providers: none configured");
   } else {
     console.log("providers:");
-    for (const [providerId, provider] of Object.entries(providers)) {
+    if (typeof providers.default === "string") {
+      console.log(`  default: ${providers.default}`);
+    }
+    for (const [providerId, provider] of namedProviders) {
+      if (typeof provider === "string") {
+        continue;
+      }
       const auth = provider.apiKeyEnv ? `env:${provider.apiKeyEnv}` : provider.apiKey ? "inline" : "none";
       console.log(`  ${providerId}: ${provider.type} ${provider.baseURL} auth=${auth}`);
     }
@@ -108,12 +121,17 @@ function printStartupSummary(context: ReturnType<typeof createAppContext>) {
 }
 
 function createContextFromOptions() {
-  const options = program.opts<{ config?: string; workspace: string }>();
+  const options = program.opts<{ config?: string; workspace: string; dev: string[] }>();
 
   return createAppContext({
     workspaceRoot: options.workspace,
     configPath: options.config && (isAbsolute(options.config) ? options.config : resolve(cwd(), options.config)),
+    devFlags: options.dev,
   });
+}
+
+function collectDevFlag(flag: string, flags: string[]): string[] {
+  return [...flags, flag];
 }
 
 function formatPathStatus(path: string, exists: boolean, isDirectory: boolean): string {

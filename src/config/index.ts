@@ -23,12 +23,23 @@ const providerSchema = z.object({
   supportsStructuredOutputs: z.boolean().optional(),
 });
 
+const modelAssignmentSchema = z.object({
+  name: z.string(),
+  provider: z.string().optional(),
+});
+
+const providersSchema = z
+  .object({
+    default: z.string().optional(),
+  })
+  .catchall(providerSchema.or(z.string()));
+
 export const topchesterConfigSchema = z.object({
   models: z
     .object({
       defaultPurpose: modelPurposeSchema.optional(),
-      assignments: z.partialRecord(modelPurposeSchema, z.string()).optional(),
-      providers: z.record(z.string(), providerSchema).optional(),
+      assignments: z.partialRecord(modelPurposeSchema, modelAssignmentSchema).optional(),
+      providers: providersSchema.optional(),
     })
     .optional(),
 });
