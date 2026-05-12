@@ -181,6 +181,10 @@ export class TopchesterTuiShell implements TuiShell {
         app.setStatus(event.status);
       }
 
+      if (event.type === "knowledge_status") {
+        app.setKnowledgeStatus(event.status);
+      }
+
       for (const message of renderRuntimeEvent(event)) {
         app.addMessage(message);
       }

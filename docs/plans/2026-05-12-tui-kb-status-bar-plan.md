@@ -77,7 +77,7 @@ Dependencies: None.
 
 ### Slice 2: Runtime Event Plumbing
 
-Status: `[ ]` Not started
+Status: `[x]` Complete
 
 Goal: Persist KB status events into `ChatLayout` footer state.
 
@@ -182,7 +182,8 @@ Manual check after implementation:
 
 - 2026-05-12: Plan created. User chose footer segment, path health only, visible warning behavior, `kb: ready` wording, refresh after startup and KB commands, and `docs/plans/` as the plan location.
 - 2026-05-12: Slice 1 complete. Added the optional KB footer status contract and compact formatter in the TUI layer. Verified with `pnpm test test/tui.render.test.ts` and `pnpm typecheck`.
+- 2026-05-12: Slice 2 complete. `ChatLayout` stores the compact KB footer label and runtime `knowledge_status` events update it while still rendering the existing KB status message/modal. Verified with `pnpm test test/tui.render.test.ts`.
 
 ## Next Slice
 
-Start Slice 2 by storing formatted KB status on `ChatLayout` and updating it from `knowledge_status` runtime events.
+Start Slice 3 by refreshing `getKnowledgeStatus(workspaceRoot)` after `/kb init`, `/kb reset`, `/kb compile`, and `/kb status`.

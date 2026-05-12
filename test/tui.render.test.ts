@@ -85,6 +85,25 @@ describe("TUI rendering", () => {
     expect(output).toContain("status: ready · folder: repo · model: model [provider]");
   });
 
+  it("renders stored KB status in the footer", () => {
+    const app = new ChatLayout(new FakeTerminal(), [systemMessage("Welcome")], "repo", "model [provider]");
+
+    app.setKnowledgeStatus({
+      workspaceRoot: "/repo",
+      kbPath: "/repo/topchester-kb",
+      cachePath: "/repo/.agents/topchester-kb-cache",
+      kbExists: true,
+      kbIsDirectory: true,
+      cacheExists: false,
+      cacheIsDirectory: false,
+      kbPathSource: "default",
+      cachePathSource: "default",
+    });
+    const output = app.render(80).join("\n");
+
+    expect(output).toContain("status: ready · folder: repo · model: model [provider] · kb: ready");
+  });
+
   it("renders busy state as an ephemeral chat line with a prompt hint", () => {
     const app = new ChatLayout(new FakeTerminal(), [systemMessage("Welcome")], "repo", "model [provider]");
     app.setEphemeralLine("⠋ Calling agent.fast...");

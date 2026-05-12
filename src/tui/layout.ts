@@ -10,6 +10,7 @@ import {
 import { getSlashCommandSuggestions, type SlashCommandSuggestion } from "../agent/commands.js";
 import { type ConversationTurn } from "../agent/conversation.js";
 import { ui } from "../cli/ui.js";
+import { type KnowledgeStatus } from "../knowledge/status.js";
 import { renderChatMessage, userMessage, type ChatMessage } from "./messages.js";
 import {
   isDownKey,
@@ -22,12 +23,13 @@ import {
   isUpKey,
   parseMouseWheel,
 } from "./keys.js";
-import { formatStatusLine } from "./status.js";
+import { formatKnowledgeFooterStatus, formatStatusLine } from "./status.js";
 import { padLines, padThreadLine, stripAnsi } from "./text.js";
 
 export class ChatLayout implements Component, Focusable {
   private readonly input = new Input();
   private status = "ready";
+  private knowledgeStatus: string | undefined;
   private ephemeralLine: string | undefined;
   private noticeLine: string | undefined;
   private promptHint: string | undefined;
@@ -65,6 +67,10 @@ export class ChatLayout implements Component, Focusable {
 
   setStatus(status: string): void {
     this.status = status;
+  }
+
+  setKnowledgeStatus(status: KnowledgeStatus): void {
+    this.knowledgeStatus = formatKnowledgeFooterStatus(status);
   }
 
   isReady(): boolean {
@@ -206,7 +212,12 @@ export class ChatLayout implements Component, Focusable {
     const inputLine = this.promptHint
       ? truncateToWidth(ui.label(this.promptHint), innerWidth, "…", true)
       : truncateToWidth(renderInputWithoutPrompt(this.input, innerWidth), innerWidth, "…", true);
-    const status = truncateToWidth(formatStatusLine(this.folderName, this.modelLabel, this.status), width, "…", true);
+    const status = truncateToWidth(
+      formatStatusLine(this.folderName, this.modelLabel, this.status, this.knowledgeStatus),
+      width,
+      "…",
+      true
+    );
 
     return [...this.renderSlashSuggestions(width), top, `│ ${prefix}${inputLine} │`, bottom, status];
   }
@@ -246,7 +257,7 @@ export class ChatLayout implements Component, Focusable {
 
   private renderModalHelp(width: number): string[] {
     const help = "↑↓ navigate   Enter select   Esc cancel";
-    const status = formatStatusLine(this.folderName, this.modelLabel, this.status);
+    const status = formatStatusLine(this.folderName, this.modelLabel, this.status, this.knowledgeStatus);
 
     return [truncateToWidth(`  ${help}`, width, "…", true), truncateToWidth(`  ${status}`, width, "…", true)];
   }
