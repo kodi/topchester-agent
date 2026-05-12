@@ -41,7 +41,19 @@ topchester kb init
 topchester kb compile
 topchester kb status
 topchester kb reset
+
+topchester
+topchester --resume latest
+topchester --resume <session-id>
 ```
+
+## Sessions
+
+Running `topchester` starts a fresh project-local session by default. Session data is stored under `.agents/topchester/sessions/<session-id>/`, including `metadata.json` and an append-only `events.jsonl` log.
+
+Use `topchester --resume latest` to continue the newest session, or `topchester --resume <session-id>` to continue a specific session. Resume restores the visible history and appends new events to the same log.
+
+`.agents/topchester/sessions/` is local session data and should not be committed.
 
 ## Configuration
 
