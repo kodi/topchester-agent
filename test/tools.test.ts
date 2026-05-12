@@ -16,6 +16,7 @@ import {
 import { editFileArgsSchema } from "../src/agent/tools/edit-file.js";
 import { getChatSystemPrompt } from "../src/agent/prompts.js";
 import { createTopchesterLogger } from "../src/logging/index.js";
+import { clearSessionOverlay, getSessionOverlayState } from "../src/knowledge/session-overlay.js";
 
 describe("agent tools", () => {
   it("parses read_file tool calls from JSON", () => {
@@ -405,6 +406,7 @@ describe("agent tools", () => {
   it("returns before and after hashes for successful edits", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
     const file = join(workspace, "example.txt");
+    clearSessionOverlay(workspace);
     await writeFile(file, "old\n");
     const beforeHash = hashContent("old\n");
 
@@ -418,6 +420,55 @@ describe("agent tools", () => {
     expect(result.afterHash).toBe(hashContent("new\n"));
     expect(result.diff).toContain("-old");
     expect(result.diff).toContain("+new");
+    expect(result.kbState).toBe("needs_sync");
+    expect(result.editEvent).toMatchObject({
+      kind: "file_edit",
+      source: "agent",
+      path: "example.txt",
+      beforeHash,
+      afterHash: hashContent("new\n"),
+      firstChangedLine: 1,
+      diffSummary: "+1/-1",
+    });
+  });
+
+  it("marks edited files dirty in the session overlay", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const file = join(workspace, "example.txt");
+    clearSessionOverlay(workspace);
+    await writeFile(file, "old\n");
+
+    await editWorkspaceFile(workspace, {
+      path: "example.txt",
+      edits: [{ old_text: "old\n", new_text: "new\n" }],
+    });
+
+    expect(getSessionOverlayState(workspace)).toMatchObject({
+      drift: "dirty_known",
+      kbState: "needs_sync",
+      needsSync: true,
+      dirtyFiles: [
+        {
+          path: "example.txt",
+          source: "agent",
+          drift: "dirty_known",
+          kbState: "needs_sync",
+          l1State: "stale",
+          derivedState: "suspect",
+          afterHash: hashContent("new\n"),
+          firstChangedLine: 1,
+          editCount: 1,
+        },
+      ],
+      editEvents: [
+        {
+          kind: "file_edit",
+          source: "agent",
+          path: "example.txt",
+          diffSummary: "+1/-1",
+        },
+      ],
+    });
   });
 
   it("does not partially write when an edit fails", async () => {

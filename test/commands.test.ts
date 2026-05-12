@@ -260,6 +260,7 @@ describe("slash commands", () => {
     );
     expect(prompts[1]).toContain('Tool result from edit_file "example.txt":');
     expect(prompts[1]).toContain("after_hash: sha256:");
+    expect(prompts[1]).toContain("kb_state: needs_sync");
     expect(prompts[1]).toContain("first_changed_line: 1");
     expect(prompts[1]).toContain("```diff");
     expect(prompts[1]).toContain("-enabled=false");

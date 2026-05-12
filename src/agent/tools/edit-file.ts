@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { rename, rm, stat, writeFile, readFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
+import { type Logger } from "pino";
 import { z } from "zod";
+import { recordAgentFileEdit, type FileEditEvent } from "../../knowledge/session-overlay.js";
 import { enqueueFileMutation } from "./file-mutation-queue.js";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
 
@@ -26,6 +28,8 @@ export interface EditFileToolResult extends ToolResult<"edit_file"> {
   afterHash: string;
   bytesChanged: number;
   firstChangedLine: number;
+  kbState: "needs_sync";
+  editEvent: FileEditEvent;
 }
 
 export interface ApplyEditResult {
@@ -40,7 +44,7 @@ export const editFileTool = defineTool({
   prompt:
     'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_hash":"sha256:optional-current-file-hash","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
   argsSchema: editFileArgsSchema,
-  execute: (context, args) => editWorkspaceFile(context.workspaceRoot, args),
+  execute: (context, args) => editWorkspaceFile(context.workspaceRoot, args, { logger: context.logger }),
 });
 
 interface MatchedEdit {
@@ -53,7 +57,15 @@ interface MatchedEdit {
 
 type LineEnding = "lf" | "crlf";
 
-export async function editWorkspaceFile(workspaceRoot: string, args: EditFileToolArgs): Promise<EditFileToolResult> {
+export interface EditWorkspaceFileOptions {
+  logger?: Logger;
+}
+
+export async function editWorkspaceFile(
+  workspaceRoot: string,
+  args: EditFileToolArgs,
+  options: EditWorkspaceFileOptions = {}
+): Promise<EditFileToolResult> {
   const scopedPath = resolveWorkspaceScopedPath(workspaceRoot, args.path);
 
   return enqueueFileMutation(scopedPath.path, async () => {
@@ -71,11 +83,33 @@ export async function editWorkspaceFile(workspaceRoot: string, args: EditFileToo
     const afterHash = hashBytes(afterBytes);
 
     await writeFileAtomically(scopedPath.path, afterBytes, fileStat.mode);
+    const editEvent: FileEditEvent = {
+      kind: "file_edit",
+      source: "agent",
+      path: scopedPath.relativePath,
+      beforeHash,
+      afterHash,
+      firstChangedLine: result.firstChangedLine,
+      diffSummary: summarizeDiff(result.diff),
+      timestamp: new Date().toISOString(),
+    };
+    const overlayState = recordAgentFileEdit(workspaceRoot, editEvent);
+
+    options.logger?.debug(
+      {
+        event: "file_edit",
+        ...editEvent,
+        kbState: overlayState.kbState,
+        dirtyFileCount: overlayState.dirtyFiles.length,
+      },
+      "file edit"
+    );
 
     const content = [
       `Edited ${scopedPath.relativePath}`,
       `before_hash: ${beforeHash}`,
       `after_hash: ${afterHash}`,
+      `kb_state: ${overlayState.kbState}`,
       `first_changed_line: ${result.firstChangedLine}`,
       result.diff,
     ].join("\n");
@@ -89,6 +123,8 @@ export async function editWorkspaceFile(workspaceRoot: string, args: EditFileToo
       afterHash,
       bytesChanged: afterBytes.length - beforeBytes.length,
       firstChangedLine: result.firstChangedLine,
+      kbState: "needs_sync",
+      editEvent,
     };
   });
 }
@@ -178,6 +214,25 @@ async function writeFileAtomically(path: string, content: Buffer, mode: number):
 
 function hashBytes(bytes: Buffer): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+function summarizeDiff(diff: string): string {
+  let added = 0;
+  let removed = 0;
+
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---")) {
+      continue;
+    }
+
+    if (line.startsWith("+")) {
+      added += 1;
+    } else if (line.startsWith("-")) {
+      removed += 1;
+    }
+  }
+
+  return `+${added}/-${removed}`;
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

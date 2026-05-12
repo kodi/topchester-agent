@@ -22,7 +22,7 @@ export async function executeToolCall(
     logger: options.logger,
   };
 
-  options.logger?.debug({ event: "tool_call", tool: call.tool, args: call.args }, "tool call");
+  options.logger?.debug({ event: "tool_call", tool: call.tool, args: summarizeToolArgs(call) }, "tool call");
 
   try {
     const result = await definition.execute(context, call.args);
@@ -37,6 +37,7 @@ export async function executeToolCall(
         warning: result.warning,
         durationMs,
         contentLength: result.content.length,
+        ...summarizeToolResult(result),
       },
       "tool result"
     );
@@ -63,4 +64,33 @@ export async function executeToolCall(
     );
     throw error;
   }
+}
+
+function summarizeToolArgs(call: ToolCall): unknown {
+  if (call.tool !== "edit_file") {
+    return call.args;
+  }
+
+  return {
+    path: call.args.path,
+    editCount: call.args.edits.length,
+    oldTextLengths: call.args.edits.map((edit) => edit.old_text.length),
+    newTextLengths: call.args.edits.map((edit) => edit.new_text.length),
+    expectedHashProvided: Boolean(call.args.expected_hash),
+  };
+}
+
+function summarizeToolResult(result: ToolResult): Record<string, unknown> {
+  if (result.tool !== "edit_file") {
+    return {};
+  }
+
+  return {
+    beforeHash: result.beforeHash,
+    afterHash: result.afterHash,
+    bytesChanged: result.bytesChanged,
+    firstChangedLine: result.firstChangedLine,
+    kbState: result.kbState,
+    editEvent: result.editEvent,
+  };
 }

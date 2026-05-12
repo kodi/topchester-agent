@@ -1,7 +1,8 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { executeToolCall, parseToolCall } from "../src/agent/tools.js";
 import { createTopchesterLogger } from "../src/logging/index.js";
 
 describe("logging", () => {
@@ -41,6 +42,63 @@ describe("logging", () => {
       expect(lines).toEqual(
         expect.arrayContaining([expect.objectContaining({ event: "test_event", msg: "debug line" })])
       );
+    });
+  });
+
+  it("logs edit_file metadata without debug-level edit text", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-logging-"));
+    await writeFile(join(workspace, "example.txt"), "secret=old\n");
+
+    await withEnv({ TOPCHESTER_LOG_LEVEL: "debug", TOPCHESTER_LOG_FILE: "" }, async () => {
+      const loggerInfo = createTopchesterLogger(workspace);
+      const call = parseToolCall(
+        '{"tool":"edit_file","args":{"path":"example.txt","edits":[{"old_text":"secret=old\\n","new_text":"secret=new\\n"}]}}'
+      );
+
+      if (!call) {
+        throw new Error("Expected edit_file tool call to parse.");
+      }
+
+      await executeToolCall(workspace, call, { logger: loggerInfo.logger });
+
+      const logFilePath = loggerInfo.logFilePath;
+
+      if (!logFilePath) {
+        throw new Error("Expected logger to create a log file path.");
+      }
+
+      const logText = await readFile(logFilePath, "utf8");
+      const logLines = logText
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+      expect(logLines).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "tool_call",
+            tool: "edit_file",
+            args: expect.objectContaining({ path: "example.txt", editCount: 1 }),
+          }),
+          expect.objectContaining({
+            event: "file_edit",
+            path: "example.txt",
+            beforeHash: expect.stringMatching(/^sha256:/),
+            afterHash: expect.stringMatching(/^sha256:/),
+            kbState: "needs_sync",
+            diffSummary: "+1/-1",
+          }),
+          expect.objectContaining({
+            event: "tool_result",
+            tool: "edit_file",
+            beforeHash: expect.stringMatching(/^sha256:/),
+            afterHash: expect.stringMatching(/^sha256:/),
+            kbState: "needs_sync",
+          }),
+        ])
+      );
+      expect(logText).not.toContain("secret=old");
+      expect(logText).not.toContain("secret=new");
     });
   });
 });

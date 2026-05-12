@@ -329,7 +329,7 @@ Dependencies: Slice 2.
 
 ### Slice 4: KB and Session Dirty-State Hooks
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Make successful edits visible to Topchester's KB/runtime state.
 
@@ -425,7 +425,8 @@ Manual checks after implementation:
 - 2026-05-12: Slice 1 added a pure edit engine in `src/agent/tools/edit-file.ts`; verification passed with `pnpm test test/tools.test.ts` and `pnpm typecheck`.
 - 2026-05-12: Slice 2 wired `edit_file` as a workspace-scoped tool with same-directory temp writes, per-file mutation serialization, expected-hash checks, diff/hash metadata, and registry execution. Verification passed with `pnpm test test/tools.test.ts`, `pnpm typecheck`, and `pnpm format-check`.
 - 2026-05-12: Slice 3 added edit-specific prompt guidance, `read_file` hash metadata, compact edit result formatting for the final model prompt, and runtime coverage for edit tool-call labels/results. Verification passed with `pnpm test test/tools.test.ts test/tui.render.test.ts test/commands.test.ts`, `pnpm typecheck`, and `pnpm format-check`.
+- 2026-05-12: Slice 4 added an in-memory session overlay for edit events and dirty-known KB state, marks edited files `needs_sync` with stale L1/suspect derived markers, and sanitizes edit debug logs so old/new text is not logged at debug level. Verification passed with `pnpm test test/tools.test.ts test/logging.test.ts`, `pnpm test test/commands.test.ts`, `pnpm typecheck`, and `pnpm format-check`.
 
 ## Next Slice
 
-Slice 4: KB and Session Dirty-State Hooks.
+Slice 5: Documentation and Checklist Update.

@@ -206,6 +206,7 @@ function formatToolResultForPrompt(result: ToolResult): string {
       `Tool result from ${result.tool}${path}:`,
       `before_hash: ${result.beforeHash}`,
       `after_hash: ${result.afterHash}`,
+      `kb_state: ${result.kbState}`,
       `bytes_changed: ${result.bytesChanged}`,
       `first_changed_line: ${result.firstChangedLine}`,
       "```diff",
