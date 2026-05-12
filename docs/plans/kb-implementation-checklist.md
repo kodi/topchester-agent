@@ -163,7 +163,7 @@ Track implementation of the global knowledge base feature from current L1 suppor
 
 ## TUI Integration
 
-- [x] Show KB path health/status in TUI footer
+- [x] Show KB ready/empty/missing/path-conflict state in TUI footer
 - [ ] Show compile progress
 - [ ] Show L1 file processing progress
 - [ ] Add feature map view
