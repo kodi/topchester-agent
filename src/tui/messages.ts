@@ -1,4 +1,5 @@
 import { ui } from "../cli/ui.js";
+import { renderMarkdown } from "./markdown.js";
 
 export type ChatMessageKind = "system" | "user" | "agent" | "modal";
 
@@ -41,6 +42,7 @@ export function modalMessage(message: Omit<ChatModalMessage, "kind">): ChatMessa
 
 export interface RenderChatMessageOptions {
   selectedActionIndex?: number;
+  width?: number;
 }
 
 export function renderChatMessage(message: ChatMessage, options: RenderChatMessageOptions = {}): string[] {
@@ -52,7 +54,10 @@ export function renderChatMessage(message: ChatMessage, options: RenderChatMessa
     return [""];
   }
 
-  const lines = message.text.split("\n");
+  const lines =
+    message.kind === "agent" && options.width !== undefined
+      ? renderMarkdown(message.text, Math.max(1, options.width - getPrefix(message.kind).length))
+      : message.text.split("\n");
 
   if (message.kind === "user") {
     return renderUserMessage(lines);

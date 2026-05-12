@@ -173,6 +173,7 @@ export class ChatLayout implements Component, Focusable {
     const lines = this.messages.flatMap((message, index) => {
       const messageLines = renderChatMessage(message, {
         selectedActionIndex: index === activeModalIndex ? this.activeModalActionIndex : undefined,
+        width: innerWidth,
       });
       const spacer = index === this.messages.length - 1 ? [] : [padThreadLine("", width)];
 

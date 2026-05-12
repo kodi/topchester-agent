@@ -567,6 +567,56 @@ describe("TUI rendering", () => {
     expect(output).not.toContain("       - readme.md");
   });
 
+  it("renders agent fenced code blocks without fence markers", () => {
+    const app = new ChatLayout(
+      new FakeTerminal(),
+      [agentMessage("```typescript\nconst answer: number = 42;\n```")],
+      "repo",
+      "model [provider]"
+    );
+
+    const output = app.render(80).join("\n");
+
+    expect(output).toContain("const answer: number = 42;");
+    expect(output).not.toContain("│ const answer");
+    expect(output).not.toContain("```");
+  });
+
+  it("colors agent fenced code blocks when color is enabled", () => {
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+
+    try {
+      const app = new ChatLayout(
+        new FakeTerminal(),
+        [agentMessage("```typescript\nconst answer: number = 42;\n```")],
+        "repo",
+        "model [provider]"
+      );
+
+      const output = app.render(80).join("\n");
+
+      expect(output).toContain("\u001b[48;5;236m");
+      expect(output).toContain("\u001b[");
+      expect(output).toContain("const");
+      expect(output).not.toContain("│ const");
+      expect(output).not.toContain("```");
+    } finally {
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
+  });
+
   it("scrolls chat history inside the TUI with page keys and alternate-scroll arrows", () => {
     const terminal = new FakeTerminal();
     terminal.rows = 7;
