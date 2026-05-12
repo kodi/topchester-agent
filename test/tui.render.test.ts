@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -17,10 +17,19 @@ import {
   getStartupThreadMessages,
 } from "../src/tui/index.js";
 import { getKnowledgeStatus } from "../src/knowledge/status.js";
-import { createExitConfirmationInputListener } from "../src/tui/shell.js";
+import {
+  TopchesterTuiShell,
+  createExitConfirmationInputListener,
+  persistMessagesWithWarning,
+  runtimeEventToSessionPayload,
+  slashCommandToSessionPayload,
+} from "../src/tui/shell.js";
 import { agentMessage, modalMessage, renderChatMessage, systemMessage, userMessage } from "../src/tui/messages.js";
 import { type Terminal } from "@earendil-works/pi-tui";
 import { type AppContext } from "../src/app/context.js";
+import { getTopchesterSessionsPath } from "../src/app/paths.js";
+import { agentEvent } from "../src/agent/events.js";
+import { type SessionHandle } from "../src/session/store.js";
 
 class FakeTerminal implements Terminal {
   columns = 60;
@@ -845,4 +854,151 @@ describe("TUI rendering", () => {
 
     expect(exited).toBe(true);
   });
+
+  it("persists fresh static startup rows in visible order", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tui-session-"));
+    const context = createTestContext(workspace);
+    const messages = [systemMessage("Startup one"), systemMessage("Startup two")];
+
+    await new TopchesterTuiShell(context, undefined, { initialMessages: messages }).render();
+
+    const sessionDirs = await readSessionDirs(workspace);
+    expect(sessionDirs).toHaveLength(1);
+    const lines = await readSessionLines(workspace, sessionDirs[0]!);
+    expect(lines.map((line) => ({ kind: line.kind, role: line.role, text: line.text }))).toEqual([
+      { kind: "message", role: "system", text: "Startup one" },
+      { kind: "message", role: "system", text: "Startup two" },
+    ]);
+  });
+
+  it("converts runtime events to structured persisted payloads", () => {
+    const status = {
+      workspaceRoot: "/repo",
+      kbPath: "/repo/topchester-kb",
+      cachePath: "/repo/.agents/topchester-kb-cache",
+      kbExists: false,
+      kbIsDirectory: false,
+      cacheExists: false,
+      cacheIsDirectory: false,
+      kbPathSource: "default" as const,
+      cachePathSource: "default" as const,
+    };
+
+    expect(runtimeEventToSessionPayload(agentEvent.assistantMessage("Done", "model · 1 sec"))).toEqual({
+      kind: "message",
+      role: "assistant",
+      text: "Done",
+      meta: "model · 1 sec",
+    });
+    expect(
+      runtimeEventToSessionPayload(
+        agentEvent.toolCall({ tool: "read_file", args: { path: "README.md" } }, "Tool read_file: README.md")
+      )
+    ).toEqual({
+      kind: "tool_call",
+      label: "Tool read_file: README.md",
+      call: { tool: "read_file", args: { path: "README.md" } },
+    });
+    expect(runtimeEventToSessionPayload(agentEvent.knowledgeStatus(status))).toEqual({
+      kind: "knowledge_status",
+      status,
+    });
+    expect(
+      runtimeEventToSessionPayload(
+        agentEvent.choice({ tone: "warning", title: "No KB found", body: "Create one?", actions: [{ label: "Exit" }] })
+      )
+    ).toEqual({
+      kind: "choice",
+      tone: "warning",
+      title: "No KB found",
+      body: "Create one?",
+      actions: [{ label: "Exit" }],
+    });
+    expect(runtimeEventToSessionPayload(agentEvent.status("ready"))).toEqual({
+      kind: "status",
+      status: "ready",
+    });
+  });
+
+  it("marks slash-command submissions as visible-only command input", () => {
+    expect(slashCommandToSessionPayload("/kb status")).toEqual({
+      kind: "message",
+      role: "user",
+      text: "/kb status",
+      meta: { source: "slash_command", visibleOnly: true },
+    });
+  });
+
+  it("warns once when startup persistence fails without recursively persisting the warning", async () => {
+    const messages = [systemMessage("Startup one"), systemMessage("Startup two")];
+    let appendCalls = 0;
+    const session = {
+      async append() {
+        appendCalls += 1;
+        throw new Error("disk is full");
+      },
+    } as unknown as SessionHandle;
+
+    await persistMessagesWithWarning(session, messages);
+
+    expect(appendCalls).toBe(1);
+    expect(messages.flatMap((message) => ("text" in message ? [message.text] : []))).toEqual([
+      "Startup one",
+      "Startup two",
+      "Session save failed: disk is full",
+    ]);
+  });
+
+  it("keeps ChatLayout and AgentRuntime free of session persistence ownership", async () => {
+    const [layoutSource, runtimeSource] = await Promise.all([
+      readFile(join(process.cwd(), "src/tui/layout.ts"), "utf8"),
+      readFile(join(process.cwd(), "src/agent/runtime.ts"), "utf8"),
+    ]);
+
+    expect(layoutSource).not.toMatch(
+      /node:fs|from ".*session|append\(|loadSession|createSession|getTopchesterSessionsPath/u
+    );
+    expect(runtimeSource).not.toMatch(
+      /node:fs|from ".*session|append\(|loadSession|createSession|getTopchesterSessionsPath/u
+    );
+  });
 });
+
+function createTestContext(workspaceRoot: string): AppContext {
+  return {
+    workspaceRoot,
+    config: {},
+    devFlags: new Set(["disable-kb-check-modal"]),
+    modelGateway: {
+      async generateText() {
+        return {
+          text: "ready",
+          providerId: "fake",
+          modelId: "fake-agent",
+          purpose: "agent.primary" as const,
+        };
+      },
+    } as unknown as AppContext["modelGateway"],
+    logger: {
+      debug() {},
+      trace() {},
+      info() {},
+      warn() {},
+      error() {},
+    } as unknown as AppContext["logger"],
+  };
+}
+
+async function readSessionDirs(workspace: string): Promise<string[]> {
+  const { readdir } = await import("node:fs/promises");
+  return (await readdir(getTopchesterSessionsPath(workspace))).sort();
+}
+
+async function readSessionLines(workspace: string, sessionId: string): Promise<Array<Record<string, unknown>>> {
+  const raw = await readFile(join(getTopchesterSessionsPath(workspace), sessionId, "events.jsonl"), "utf8");
+  return raw
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
