@@ -8,6 +8,8 @@ import { type AppContext } from "../app/context.js";
 import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js";
 import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
 
+const MAX_TOOL_CALLS_PER_TURN = 8;
+
 export interface AgentRuntime {
   checkAgent(abortSignal?: AbortSignal): Promise<AgentRuntimeEvent[]>;
   checkKnowledgeBase(): AgentRuntimeEvent[];
@@ -49,85 +51,82 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     abortSignal?: AbortSignal
   ): Promise<AgentRuntimeEvent[]> {
     const prompt = buildConversationPrompt(conversation, message);
-    const startedAt = Date.now();
-    const result = await this.context.modelGateway.generateText({
-      purpose: "agent.primary",
-      system: getChatSystemPrompt(),
-      prompt,
-      abortSignal,
-    });
-    const durationMs = Date.now() - startedAt;
-    const meta = formatAgentMessageMeta(result.modelId, durationMs);
-    const toolCall = parseToolCall(result.text);
+    const events: AgentRuntimeEvent[] = [];
+    let nextPrompt = prompt;
+    let totalDurationMs = 0;
+    let lastModelId = "model";
+    let afterTool: ToolCall["tool"] | undefined;
 
-    this.context.logger.debug(
-      {
-        event: "model_response",
-        purpose: "agent.primary",
-        modelId: result.modelId,
-        durationMs,
-        textLength: result.text.length,
-        hasToolCall: Boolean(toolCall),
-      },
-      "model response"
-    );
-    this.context.logger.trace(
-      {
-        event: "model_response_text",
-        purpose: "agent.primary",
-        modelId: result.modelId,
-        text: result.text,
-      },
-      "model response text"
-    );
-
-    if (toolCall) {
-      const toolResult = await executeToolCall(this.context.workspaceRoot, toolCall, {
-        logger: this.context.logger,
-      });
-      const finalStartedAt = Date.now();
-      const finalResult = await this.context.modelGateway.generateText({
+    for (let toolCalls = 0; toolCalls <= MAX_TOOL_CALLS_PER_TURN; toolCalls += 1) {
+      const startedAt = Date.now();
+      const result = await this.context.modelGateway.generateText({
         purpose: "agent.primary",
         system: getChatSystemPrompt(),
-        prompt: `${prompt}\n\n${formatToolResultForPrompt(toolResult)}\n\nAnswer the user's request using the tool result above. Do not guess.`,
+        prompt: nextPrompt,
         abortSignal,
       });
-      const finalModelDurationMs = Date.now() - finalStartedAt;
-      const finalDurationMs = durationMs + finalModelDurationMs;
-      const finalMeta = formatAgentMessageMeta(finalResult.modelId, finalDurationMs);
+      const durationMs = Date.now() - startedAt;
+      const toolCall = parseToolCall(result.text);
+      totalDurationMs += durationMs;
+      lastModelId = result.modelId;
 
       this.context.logger.debug(
         {
           event: "model_response",
           purpose: "agent.primary",
-          modelId: finalResult.modelId,
-          durationMs: finalModelDurationMs,
-          totalDurationMs: finalDurationMs,
-          textLength: finalResult.text.length,
-          afterTool: toolCall.tool,
+          modelId: result.modelId,
+          durationMs,
+          totalDurationMs,
+          textLength: result.text.length,
+          hasToolCall: Boolean(toolCall),
+          afterTool,
         },
-        "model response after tool"
+        afterTool ? "model response after tool" : "model response"
       );
       this.context.logger.trace(
         {
           event: "model_response_text",
           purpose: "agent.primary",
-          modelId: finalResult.modelId,
-          afterTool: toolCall.tool,
-          text: finalResult.text,
+          modelId: result.modelId,
+          afterTool,
+          text: result.text,
         },
-        "model response text after tool"
+        afterTool ? "model response text after tool" : "model response text"
       );
 
-      return [
-        agentEvent.toolCall(toolCall, formatToolCallMessage(toolCall)),
-        agentEvent.assistantMessage(finalResult.text.trim() || "I got an empty response from the model.", finalMeta),
-        agentEvent.status("ready"),
-      ];
+      if (!toolCall) {
+        events.push(
+          agentEvent.assistantMessage(
+            result.text.trim() || "I got an empty response from the model.",
+            formatAgentMessageMeta(result.modelId, totalDurationMs)
+          ),
+          agentEvent.status("ready")
+        );
+        return events;
+      }
+
+      if (toolCalls === MAX_TOOL_CALLS_PER_TURN) {
+        events.push(
+          agentEvent.systemMessage(`Stopped after ${MAX_TOOL_CALLS_PER_TURN} tool calls in one turn.`),
+          agentEvent.status("ready")
+        );
+        return events;
+      }
+
+      const toolResult = await executeToolCall(this.context.workspaceRoot, toolCall, {
+        logger: this.context.logger,
+      });
+      events.push(agentEvent.toolCall(toolCall, formatToolCallMessage(toolCall)));
+      afterTool = toolCall.tool;
+      nextPrompt = `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\nContinue the user's request using the tool result above. If another tool is needed, reply with only that tool JSON. Otherwise answer the user. Do not guess.`;
     }
 
     return [
-      agentEvent.assistantMessage(result.text.trim() || "I got an empty response from the model.", meta),
+      ...events,
+      agentEvent.assistantMessage(
+        "I stopped because the tool loop ended unexpectedly.",
+        formatAgentMessageMeta(lastModelId, totalDurationMs)
+      ),
       agentEvent.status("ready"),
     ];
   }

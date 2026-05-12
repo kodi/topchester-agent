@@ -267,6 +267,72 @@ describe("slash commands", () => {
     expect(prompts[1]).toContain("+enabled=true");
     expect(prompts[1]).not.toContain("Edited example.txt");
   });
+
+  it("continues executing tool calls until the model gives a final answer", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    await writeFile(join(workspace, "test-foo.ts"), 'console.log("hello");\n');
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (prompts.length === 1) {
+            return {
+              text: JSON.stringify({ tool: "find_file", args: { query: "test-foo.ts" } }),
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          if (prompts.length === 2) {
+            return {
+              text: JSON.stringify({ tool: "read_file", args: { path: "test-foo.ts" } }),
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          if (prompts.length === 3) {
+            return {
+              text: JSON.stringify({
+                tool: "edit_file",
+                args: {
+                  path: "test-foo.ts",
+                  edits: [{ old_text: 'console.log("hello");\n', new_text: 'console.log("HELLO, WORLD!!!!");\n' }],
+                },
+              }),
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          return {
+            text: "Updated test-foo.ts.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], 'change the console log text to say "HELLO, WORLD!!!!"');
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "tool_call", label: "Tool find_file: test-foo.ts in ." }),
+        expect.objectContaining({ type: "tool_call", label: "Tool read_file: test-foo.ts" }),
+        expect.objectContaining({ type: "tool_call", label: "Tool edit_file: test-foo.ts" }),
+        expect.objectContaining({ type: "message", role: "assistant", text: "Updated test-foo.ts." }),
+      ])
+    );
+    expect(prompts).toHaveLength(4);
+  });
 });
 
 function createTestContext(workspaceRoot: string): AppContext {
