@@ -6,6 +6,7 @@ This document tracks implemented and planned `topchester` CLI commands. Any CLI 
 
 - `-c, --config <path>` — explicit config file path.
 - `--workspace <path>` — workspace root. Defaults to the current working directory.
+- `--resume <session>` — resume a project-local session. Use `latest` or an exact lowercase session ID.
 - `--dev <flag>` — development-only UI/runtime flag. Can be repeated, for example `--dev disable-kb-check-modal --dev do-something-other`.
 - `-V, --version` — print the CLI version.
 - `-h, --help` — print help.
@@ -39,6 +40,10 @@ Status: minimal TUI shell.
 Current behavior:
 
 - Opens a generic chat-style TUI when running in an interactive terminal.
+- Creates a fresh project-local session by default under `.agents/topchester/sessions/`. It does not auto-resume old sessions.
+- `--resume latest` restores the newest project-local session. `--resume <session-id>` restores that exact session.
+- Resumed sessions keep using the selected session log. New saved events append to that log instead of creating a replacement session.
+- Missing, malformed, invalid, traversal, or no-session resume targets fail before the TUI/static layout opens, with plain error text.
 - Uses the terminal alternate screen without mouse capture, so terminal text selection keeps working.
 - Pressing `Ctrl-C` once shows `press Ctrl-C again to exit.` as a temporary message; pressing `Ctrl-C` again right away exits.
 - Shows a scrolling thread area on top with startup context.

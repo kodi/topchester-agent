@@ -12,6 +12,7 @@ import {
 import { formatKnowledgeInitResult, initializeKnowledgeBase } from "./knowledge/init.js";
 import { formatKnowledgeResetResult, resetKnowledgeBase } from "./knowledge/reset.js";
 import { getKnowledgeStatus } from "./knowledge/status.js";
+import { loadSession, loadSessionForAppend, rehydrateSession } from "./session/store.js";
 import { TopchesterTuiShell } from "./tui/index.js";
 
 const program = new Command();
@@ -21,12 +22,28 @@ program.name("topchester").description("KB-first terminal coding agent").version
 program
   .option("-c, --config <path>", "explicit config file path")
   .option("--workspace <path>", "workspace root", cwd())
+  .option("--resume <session>", "resume a project session: latest or an exact session id")
   .option("--dev <flag>", "enable a development flag", collectDevFlag, []);
 
 program.action(async () => {
   const context = createContextFromOptions();
+  const options = program.opts<{ resume?: string }>();
 
-  await new TopchesterTuiShell(context).render();
+  try {
+    if (options.resume) {
+      const loaded = await loadSession(context.workspaceRoot, options.resume);
+      const session = await loadSessionForAppend(context.workspaceRoot, loaded.sessionId);
+      const rehydrated = rehydrateSession(loaded.events);
+
+      await new TopchesterTuiShell(context, undefined, { session, initialMessages: rehydrated.messages }).render();
+      return;
+    }
+
+    await new TopchesterTuiShell(context).render();
+  } catch (error) {
+    console.error(formatStartupError(error));
+    process.exitCode = 1;
+  }
 });
 
 program
@@ -161,6 +178,19 @@ function createContextFromOptions() {
     configPath: options.config && (isAbsolute(options.config) ? options.config : resolve(cwd(), options.config)),
     devFlags: options.dev,
   });
+}
+
+function formatStartupError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    message.includes("Could not read session metadata") ||
+    message.includes("Could not read session event") ||
+    message.includes("ENOENT")
+  ) {
+    return message.includes("metadata.json") || message.includes("events.jsonl") ? message : "Session not found";
+  }
+
+  return message;
 }
 
 function collectDevFlag(flag: string, flags: string[]): string[] {

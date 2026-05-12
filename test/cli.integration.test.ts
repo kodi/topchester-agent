@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readdir, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { createSession, type SessionHandle } from "../src/session/store.js";
 
 const execFileAsync = promisify(execFile);
 const cliPath = join(process.cwd(), "src/cli.ts");
@@ -49,6 +50,14 @@ async function makeFixture() {
 }
 
 describe("CLI integration", () => {
+  it("lists resume as a top-level help option", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout } = await runCli(["--help"], fixture.root);
+
+    expect(stdout).toContain("--resume <session>");
+  });
+
   it("uses the current directory as the default workspace", async () => {
     const fixture = await makeFixture();
     await writeFile(join(fixture.root, "marker.txt"), "");
@@ -74,9 +83,111 @@ describe("CLI integration", () => {
     expect(stdout).toContain("Topchester");
     await expect(stat(join(fixture.workspace, ".agents", "topchester"))).resolves.toMatchObject({});
     await expect(stat(join(fixture.workspace, ".agents", "topchester", "sessions"))).resolves.toMatchObject({});
+    const sessionIds = await readdir(join(fixture.workspace, ".agents", "topchester", "sessions"));
+    expect(sessionIds).toHaveLength(1);
+    const events = await readSessionEvents(fixture.workspace, sessionIds[0]!);
+    expect(events).toContain("Ask Topchester what you want to change.");
     await expect(stat(join(fixture.workspace, "topchester-kb"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(stat(join(fixture.workspace, ".agents", "topchester-kb-cache"))).rejects.toMatchObject({
       code: "ENOENT",
+    });
+  });
+
+  it("starts fresh by default instead of resuming an old session", async () => {
+    const fixture = await makeFixture();
+    const oldSession = await seedSession(fixture.workspace, "old unique row");
+    const oldEventsBefore = await readFile(oldSession.eventsPath, "utf8");
+
+    const { stdout } = await runCli(["--config", fixture.config, "--workspace", fixture.workspace], fixture.root);
+
+    expect(stdout).not.toContain("old unique row");
+    expect(await readFile(oldSession.eventsPath, "utf8")).toBe(oldEventsBefore);
+    const sessionIds = await readdir(join(fixture.workspace, ".agents", "topchester", "sessions"));
+    expect(sessionIds).toHaveLength(2);
+    expect(sessionIds).toContain(oldSession.sessionId);
+  });
+
+  it("resumes latest session in static mode", async () => {
+    const fixture = await makeFixture();
+    const older = await seedSession(fixture.workspace, "older unique row");
+    const latest = await seedSession(fixture.workspace, "latest unique row");
+    const olderEventsBefore = await readFile(older.eventsPath, "utf8");
+    const latestEventsBefore = await readFile(latest.eventsPath, "utf8");
+
+    const { stdout } = await runCli(
+      ["--config", fixture.config, "--workspace", fixture.workspace, "--resume", "latest"],
+      fixture.root
+    );
+
+    expect(stdout).toContain("latest unique row");
+    expect(stdout).not.toContain("older unique row");
+    expect(await readFile(older.eventsPath, "utf8")).toBe(olderEventsBefore);
+    expect(await readFile(latest.eventsPath, "utf8")).toBe(latestEventsBefore);
+    await expect(readdir(join(fixture.workspace, ".agents", "topchester", "sessions"))).resolves.toHaveLength(2);
+  });
+
+  it("resumes an exact session id in static mode", async () => {
+    const fixture = await makeFixture();
+    const exact = await seedSession(fixture.workspace, "exact unique row");
+    const other = await seedSession(fixture.workspace, "other unique row");
+
+    const { stdout } = await runCli(
+      ["--config", fixture.config, "--workspace", fixture.workspace, "--resume", exact.sessionId],
+      fixture.root
+    );
+
+    expect(stdout).toContain("exact unique row");
+    expect(stdout).not.toContain("other unique row");
+    await expect(readdir(join(fixture.workspace, ".agents", "topchester", "sessions"))).resolves.toHaveLength(2);
+    expect(await readSessionEvents(fixture.workspace, other.sessionId)).toContain("other unique row");
+  });
+
+  it("fails missing and empty latest resume targets before startup", async () => {
+    const fixture = await makeFixture();
+    const missingId = "019b0da2-0000-7000-8000-000000000099";
+
+    await expect(runCli(["--workspace", fixture.workspace, "--resume", missingId], fixture.root)).rejects.toMatchObject(
+      {
+        stderr: expect.stringContaining("Session not found"),
+      }
+    );
+    await expect(runCli(["--workspace", fixture.workspace, "--resume", "latest"], fixture.root)).rejects.toMatchObject({
+      stderr: expect.stringContaining("No sessions found"),
+    });
+    await expect(stat(join(fixture.workspace, ".agents", "topchester", "sessions", missingId))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("fails invalid resume values before startup with plain copy", async () => {
+    const fixture = await makeFixture();
+    const invalidValues = [
+      "not-a-uuid",
+      "019b0da2-0000-7000-8000",
+      "019B0DA2-0000-7000-8000-000000000099",
+      "../x",
+      join(fixture.root, "x"),
+    ];
+
+    for (const value of invalidValues) {
+      await expect(runCli(["--workspace", fixture.workspace, "--resume", value], fixture.root)).rejects.toMatchObject({
+        stderr: expect.stringContaining("Session id must be an exact lowercase UUIDv7"),
+      });
+    }
+  });
+
+  it("fails malformed resumed sessions before startup with a line-specific plain error", async () => {
+    const fixture = await makeFixture();
+    const session = await seedSession(fixture.workspace, "broken unique row");
+    await writeFile(
+      session.eventsPath,
+      '{"version":1,"id":1,"ts":"2026-01-01T00:00:00.000Z","kind":"message","role":"user","text":"ok"}\nnot json\n'
+    );
+
+    await expect(
+      runCli(["--workspace", fixture.workspace, "--resume", session.sessionId], fixture.root)
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining(`Could not read session event in ${session.eventsPath} line 2: invalid JSON`),
     });
   });
 
@@ -218,3 +329,13 @@ describe("CLI integration", () => {
     await expect(readdir(join(fixture.workspace, "topchester-kb/l1-files"))).resolves.toEqual([]);
   });
 });
+
+async function seedSession(workspace: string, text: string): Promise<SessionHandle> {
+  const session = await createSession(workspace);
+  await session.append({ kind: "message", role: "user", text });
+  return session;
+}
+
+async function readSessionEvents(workspace: string, sessionId: string): Promise<string> {
+  return readFile(join(workspace, ".agents", "topchester", "sessions", sessionId, "events.jsonl"), "utf8");
+}

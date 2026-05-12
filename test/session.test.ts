@@ -85,7 +85,7 @@ describe("session store", () => {
     await localSession.append({ kind: "message", role: "user", text: "from this workspace" });
 
     await expect(resolveLatestSessionId(workspace)).resolves.toBe(localSession.sessionId);
-    await expect(loadSession(workspace, otherSession.sessionId)).rejects.toThrow(/Could not read session metadata/u);
+    await expect(loadSession(workspace, otherSession.sessionId)).rejects.toThrow(/Session not found/u);
     await expect(stat(join(fakeHome, ".agents", "topchester", "sessions"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(stat(join(fakeConfig, ".agents", "topchester", "sessions"))).resolves.toMatchObject({});
   });

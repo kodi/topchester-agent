@@ -2,10 +2,10 @@ import { isKeyRelease, isKeyRepeat, matchesKey, ProcessTerminal, TUI } from "@ea
 import { type AgentRuntimeEvent } from "../agent/events.js";
 import { TopchesterAgentRuntime, type AgentRuntime } from "../agent/runtime.js";
 import { type AppContext } from "../app/context.js";
-import { ensureSessionStorage } from "../session/store.js";
+import { createSession, type SessionHandle } from "../session/store.js";
 import { BusyIndicator } from "./busy.js";
 import { ChatLayout } from "./layout.js";
-import { systemMessage } from "./messages.js";
+import { type ChatMessage, systemMessage } from "./messages.js";
 import { renderRuntimeEvent } from "./runtime-events.js";
 import { getFolderName, getModelLabel, getStartupThreadMessages, renderStaticLayout } from "./status.js";
 import { enterAlternateScreen, exitAlternateScreen } from "./terminal.js";
@@ -14,20 +14,30 @@ export interface TuiShell {
   render(): Promise<void>;
 }
 
+export interface TuiShellOptions {
+  session?: SessionHandle;
+  initialMessages?: ChatMessage[];
+}
+
 export class TopchesterTuiShell implements TuiShell {
   private readonly runtime: AgentRuntime;
 
   constructor(
     private readonly context: AppContext,
-    runtime?: AgentRuntime
+    runtime?: AgentRuntime,
+    private readonly options: TuiShellOptions = {}
   ) {
     this.runtime = runtime ?? new TopchesterAgentRuntime(context);
   }
 
   async render(): Promise<void> {
-    await ensureSessionStorage(this.context.workspaceRoot);
+    const session = this.options.session ?? (await createSession(this.context.workspaceRoot));
+    const isResumed = this.options.session !== undefined;
 
-    const messages = getStartupThreadMessages(this.context);
+    const messages = this.options.initialMessages ?? getStartupThreadMessages(this.context);
+    if (!isResumed) {
+      await persistMessages(session, messages);
+    }
     const folderName = getFolderName(this.context.workspaceRoot);
     const modelLabel = getModelLabel(this.context);
 
@@ -191,6 +201,19 @@ export class TopchesterTuiShell implements TuiShell {
       for (const message of renderRuntimeEvent(event)) {
         app.addMessage(message);
       }
+    }
+  }
+}
+
+async function persistMessages(session: SessionHandle, messages: ChatMessage[]): Promise<void> {
+  for (const message of messages) {
+    if (message.kind === "system" || message.kind === "user" || message.kind === "agent") {
+      await session.append({
+        kind: "message",
+        role: message.kind === "agent" ? "assistant" : message.kind,
+        text: message.text,
+        ...(message.meta === undefined ? {} : { meta: message.meta }),
+      });
     }
   }
 }

@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { uuidv7 } from "uuidv7";
 import { ZodError } from "zod";
@@ -77,6 +77,14 @@ export async function loadSession(workspaceRoot: string, sessionIdOrLatest: stri
   const sessionId =
     sessionIdOrLatest === "latest" ? await resolveLatestSessionId(workspaceRoot) : validateSessionId(sessionIdOrLatest);
   const sessionDir = join(getTopchesterSessionsPath(workspaceRoot), sessionId);
+  try {
+    await stat(sessionDir);
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      throw new Error("Session not found");
+    }
+    throw error;
+  }
   const metadataPath = join(sessionDir, "metadata.json");
   const eventsPath = join(sessionDir, "events.jsonl");
   const metadata = await readMetadata(metadataPath);
@@ -236,7 +244,15 @@ async function readMetadata(path: string): Promise<SessionMetadata> {
 }
 
 async function readEvents(path: string): Promise<SessionEvent[]> {
-  const raw = await readFile(path, "utf8");
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf8");
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      throw new Error("Session not found");
+    }
+    throw error;
+  }
   const lines = raw.split("\n");
   const events: SessionEvent[] = [];
 
@@ -312,4 +328,8 @@ function formatKnowledgeStatusEvent(status: Record<string, unknown>): string {
   const state = !kbExists ? "[missing]" : kbIsDirectory ? "[ok]" : "[not a folder]";
 
   return `KB status: ${kbPath} ${state} (${source})`;
+}
+
+function isFileNotFoundError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
