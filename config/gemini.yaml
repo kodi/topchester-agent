@@ -2,9 +2,9 @@ models:
   defaultPurpose: agent.primary
   assignments:
     agent.primary:
-      name: google/gemini-2.5-flash-lite
+      name: google/gemini-3-flash-preview
     agent.fast:
-      name: google/gemini-2.5-flash-lite
+      name: google/gemini-3-flash-preview
     kb.scan:
       name: google/gemini-3-flash-preview
     kb.summarize:
