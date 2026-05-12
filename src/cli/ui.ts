@@ -6,10 +6,14 @@ const colors = {
   cyan: "\u001b[36m",
   dim: "\u001b[2m",
   green: "\u001b[32m",
+  orange: "\u001b[38;5;208m",
+  purple: "\u001b[35m",
   red: "\u001b[31m",
   reset: "\u001b[0m",
   yellow: "\u001b[33m",
 };
+
+export type UiColorName = keyof typeof colors;
 
 export const ui = {
   heading(text: string): string {
@@ -95,7 +99,7 @@ async function withStatusLine<T>(
   }
 }
 
-export function color(text: string, colorName: keyof typeof colors): string {
+export function color(text: string, colorName: UiColorName): string {
   if (!shouldUseColor()) {
     return text;
   }

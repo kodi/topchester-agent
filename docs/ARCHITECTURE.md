@@ -199,11 +199,13 @@ Topchester should be organized around these responsibilities:
    - Core API is local HTTP JSON-RPC 2.0.
    - MCP is an adapter layer on top of the same service, not the internal source of truth.
    - Provides methods such as `kb.search`, `kb.getNode`, `kb.neighbors`, `kb.contextPack`, `kb.driftCheck`, and `kb.impact`.
+   - Returns provenance and drift metadata so the runtime knows whether facts came from canonical KB, session overlay, live files, or mixed evidence.
 
 6. Agent runtime
    - Owns the coding-agent loop: receive user intent, retrieve KB context, plan, call tools, observe results, update state, and produce user-visible responses.
    - Must be KB-aware by construction.
    - Should not have a normal coding path that bypasses the KB.
+   - Uses the KB to orient, plan, estimate impact, and choose verification, while resolving task-critical facts against the current working tree.
    - May be implemented as Topchester-owned runtime, or later as a Pi SDK embedding if a spike proves the KB contract can be enforced cleanly.
 
 7. Tool execution layer
@@ -213,6 +215,7 @@ Topchester should be organized around these responsibilities:
 
 8. Session and persistence layer
    - Stores sessions, user config, model/provider config, command history, task state, and local runtime state.
+   - Tracks the KB session overlay for dirty-but-known work in progress.
    - Keeps canonical KB state in the committed KB directory and generated cache/index state in `.agents/topchester-kb-cache/`.
    - Keeps transient UI state separate from workspace/agent/KB state.
 
@@ -298,16 +301,17 @@ user request
   -> TUI submits request to agent runtime
   -> runtime checks workspace and KB status
   -> runtime asks KB service for relevant context pack
-  -> runtime reasons with retrieved KB context
+  -> runtime runs scoped drift check for relevant files/modules/features
+  -> runtime plans with KB graph, session overlay, and live files
   -> runtime chooses tool calls
   -> tool layer executes file/shell/git actions
-  -> runtime observes results and diffs
+  -> runtime observes results and diffs and updates session overlay
   -> runtime asks KB service / Knowledge Compiler for impact and drift
   -> runtime refreshes or marks affected KB nodes
   -> runtime responds with result, diffs, tests, and any KB warnings
 ```
 
-The agent can still use direct file reads, search, and tests. The constraint is that those actions are coordinated with the KB, not independent of it.
+The agent can still use direct file reads, search, and tests. The constraint is that those actions are coordinated with the KB, not independent of it. The KB chooses and explains context; the current working tree remains the authority for exact task-critical behavior.
 
 ## Initial Design Principles
 

@@ -6,16 +6,21 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import {
   ChatLayout,
   BusyIndicator,
+  colorAsciiBanner,
+  getRandomAsciiBanner,
+  getRandomAsciiBannerColor,
   enterAlternateScreen,
   exitAlternateScreen,
   formatKnowledgeFooterStatus,
   formatStatusLine,
   getKnowledgeStatusMessages,
+  getStartupThreadMessages,
 } from "../src/tui/index.js";
 import { getKnowledgeStatus } from "../src/knowledge/status.js";
 import { createExitConfirmationInputListener } from "../src/tui/shell.js";
 import { agentMessage, modalMessage, systemMessage } from "../src/tui/messages.js";
 import { type Terminal } from "@earendil-works/pi-tui";
+import { type AppContext } from "../src/app/context.js";
 
 class FakeTerminal implements Terminal {
   columns = 60;
@@ -43,6 +48,63 @@ class FakeTerminal implements Terminal {
 }
 
 describe("TUI rendering", () => {
+  it("selects an ASCII banner from the provided list", () => {
+    expect(getRandomAsciiBanner(["one", "two", "three"], () => 0.6)).toBe("two");
+  });
+
+  it("returns no banner when the banner list is empty", () => {
+    expect(getRandomAsciiBanner([], () => 0)).toBeUndefined();
+  });
+
+  it("selects an ASCII banner color from the provided list", () => {
+    expect(getRandomAsciiBannerColor(["purple", "blue", "yellow"], () => 0.7)).toBe("yellow");
+  });
+
+  it("colors ASCII banners when color is enabled", () => {
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+
+    try {
+      expect(colorAsciiBanner("banner\nnext", () => 0)).toBe("\u001b[35mbanner\u001b[0m\n\u001b[35mnext\u001b[0m");
+    } finally {
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
+  });
+
+  it("adds two top and bottom padding lines around the startup banner", () => {
+    const [message] = getStartupThreadMessages({
+      workspaceRoot: "/repo",
+      config: {},
+      devFlags: new Set(),
+      modelGateway: {} as AppContext["modelGateway"],
+      logger: {} as AppContext["logger"],
+    });
+
+    expect(message?.kind).toBe("system");
+    if (message?.kind !== "system") {
+      throw new Error("Expected startup message to be a system message.");
+    }
+
+    const lines = message.text.split("\n");
+    const workspaceIndex = lines.findIndex((line) => line.includes("workspace"));
+
+    expect(lines[0]).toBe("");
+    expect(lines[1]).toBe("");
+    expect(lines[workspaceIndex - 2]).toBe("");
+    expect(lines[workspaceIndex - 1]).toBe("");
+  });
+
   it("keeps status line output unchanged when no KB status is supplied", () => {
     expect(formatStatusLine("repo", "model [provider]")).toBe("status: ready · folder: repo · model [provider]");
   });

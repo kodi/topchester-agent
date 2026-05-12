@@ -129,6 +129,8 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [ ] Implement `kb.impact`
 - [ ] Implement `kb.updatePlan`
 - [ ] Add response envelope with drift warnings
+- [ ] Add provenance metadata for canonical KB, session overlay, live file, and mixed evidence
+- [ ] Add KB-suggested verification commands to context packs or impact responses
 - [ ] Add service tests
 
 ## Runtime Cache
@@ -138,6 +140,7 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [ ] Add FTS index
 - [ ] Add cache invalidation based on manifest/hash
 - [ ] Keep cache fully rebuildable from canonical KB
+- [ ] Add session overlay storage for dirty-but-known active work
 - [ ] Add cache tests
 
 ## MCP Adapter
@@ -155,8 +158,12 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [ ] Query KB before architecture answers
 - [ ] Request context pack before non-trivial coding tasks
 - [ ] Run drift check before editing relevant files
+- [ ] Use KB context to orient, plan, estimate impact, and identify verification
+- [ ] Resolve task-critical facts against current working tree before acting
+- [ ] Track dirty files and suspect nodes in a session overlay during edits
 - [ ] Warn clearly when relevant KB is stale
 - [ ] Update or mark KB stale after edits
+- [ ] Mark session as `needs_sync` when canonical KB should be refreshed before completion
 - [ ] Include KB updates with in-scope code changes
 - [ ] Prevent normal coding path from bypassing KB once strict mode exists
 - [ ] Add agent behavior tests

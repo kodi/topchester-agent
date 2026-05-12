@@ -4,16 +4,19 @@ import { type AppContext } from "../app/context.js";
 import { ui } from "../cli/ui.js";
 import { type KnowledgeStatus } from "../knowledge/status.js";
 import { type ModelPurpose } from "../model/index.js";
+import { colorAsciiBanner, getRandomAsciiBanner } from "./banner.js";
 import { renderChatMessage, systemMessage, type ChatMessage } from "./messages.js";
 
 export function getStartupThreadMessages(context: AppContext): ChatMessage[] {
   const assignments = context.config.models?.assignments ?? {};
   const providers = context.config.models?.providers ?? {};
-  const lines = [
-    ui.heading(""),
+  const banner = getRandomAsciiBanner();
+  const lines = banner ? ["", "", colorAsciiBanner(banner), "", ""] : [ui.heading("")];
+
+  lines.push(
     `${ui.label("workspace")}: ${context.workspaceRoot}`,
-    `${ui.label("default model")}: ${context.config.models?.defaultPurpose ?? "agent.primary"}`,
-  ];
+    `${ui.label("default model")}: ${context.config.models?.defaultPurpose ?? "agent.primary"}`
+  );
 
   if (Object.keys(assignments).length === 0) {
     lines.push(`${ui.label("model assignments")}: none configured`);
