@@ -104,7 +104,7 @@ Dependencies: Slice 1.
 
 ### Slice 3: Refresh After KB Commands
 
-Status: `[ ]` Not started
+Status: `[x]` Complete
 
 Goal: Keep the footer accurate after KB-changing slash commands.
 
@@ -183,7 +183,8 @@ Manual check after implementation:
 - 2026-05-12: Plan created. User chose footer segment, path health only, visible warning behavior, `kb: ready` wording, refresh after startup and KB commands, and `docs/plans/` as the plan location.
 - 2026-05-12: Slice 1 complete. Added the optional KB footer status contract and compact formatter in the TUI layer. Verified with `pnpm test test/tui.render.test.ts` and `pnpm typecheck`.
 - 2026-05-12: Slice 2 complete. `ChatLayout` stores the compact KB footer label and runtime `knowledge_status` events update it while still rendering the existing KB status message/modal. Verified with `pnpm test test/tui.render.test.ts`.
+- 2026-05-12: Slice 3 complete. Runtime slash-command handling now emits a fresh `knowledge_status` event after `/kb status`, `/kb init`, `/kb compile`, and `/kb reset`; command response text stays unchanged. Verified with `pnpm test test/commands.test.ts test/tui.render.test.ts` and `pnpm typecheck`.
 
 ## Next Slice
 
-Start Slice 3 by refreshing `getKnowledgeStatus(workspaceRoot)` after `/kb init`, `/kb reset`, `/kb compile`, and `/kb status`.
+Start Slice 4 by documenting the footer behavior, updating the implementation checklist, and running `pnpm check`.

@@ -1,4 +1,4 @@
-import { executeSlashCommand } from "./commands.js";
+import { executeSlashCommand, parseSlashCommand } from "./commands.js";
 import { type ConversationTurn, buildConversationPrompt } from "./conversation.js";
 import { agentEvent, choiceAction, type AgentRuntimeEvent } from "./events.js";
 import { checkAgentReady } from "./health.js";
@@ -138,9 +138,22 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       modelGateway: this.context.modelGateway,
       onProgress,
     });
+    const events: AgentRuntimeEvent[] = [agentEvent.systemMessage(result.messages.join("\n"))];
 
-    return [agentEvent.systemMessage(result.messages.join("\n")), agentEvent.status("ready")];
+    if (shouldRefreshKnowledgeStatus(command)) {
+      events.push(agentEvent.knowledgeStatus(getKnowledgeStatus(this.context.workspaceRoot)));
+    }
+
+    events.push(agentEvent.status("ready"));
+
+    return events;
   }
+}
+
+function shouldRefreshKnowledgeStatus(command: string): boolean {
+  const parsed = parseSlashCommand(command);
+
+  return parsed?.name === "kb" && ["init", "reset", "compile", "status"].includes(parsed.args[0] ?? "");
 }
 
 export function getKnowledgeStatusEvents(status: KnowledgeStatus, devFlags = new Set<string>()): AgentRuntimeEvent[] {

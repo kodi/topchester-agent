@@ -2,12 +2,14 @@ import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { type AppContext } from "../src/app/context.js";
 import {
   executeSlashCommand,
   formatKnowledgeStatus,
   getSlashCommandSuggestions,
   parseSlashCommand,
 } from "../src/agent/commands.js";
+import { TopchesterAgentRuntime } from "../src/agent/runtime.js";
 
 describe("slash commands", () => {
   it("parses slash commands and arguments", () => {
@@ -192,4 +194,52 @@ describe("slash commands", () => {
     expect(result.messages).toContain(`knowledge folder: ${join(workspace, "topchester-kb")} [ok] (default)`);
     expect(result.messages).toContain("state: knowledge base found");
   });
+
+  it("refreshes runtime KB status after KB slash commands", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    const runtime = new TopchesterAgentRuntime(createTestContext(workspace));
+
+    await expect(getRuntimeKnowledgeFolderState(runtime, "/kb status")).resolves.toEqual({
+      exists: false,
+      isDirectory: false,
+    });
+    await expect(getRuntimeKnowledgeFolderState(runtime, "/kb init")).resolves.toEqual({
+      exists: true,
+      isDirectory: true,
+    });
+    await expect(getRuntimeKnowledgeFolderState(runtime, "/kb compile")).resolves.toEqual({
+      exists: true,
+      isDirectory: true,
+    });
+    await expect(getRuntimeKnowledgeFolderState(runtime, "/kb reset")).resolves.toEqual({
+      exists: false,
+      isDirectory: false,
+    });
+  });
 });
+
+function createTestContext(workspaceRoot: string): AppContext {
+  return {
+    workspaceRoot,
+    config: {},
+    modelGateway: {
+      async generateText() {
+        throw new Error("model should not be called for this test");
+      },
+    } as unknown as AppContext["modelGateway"],
+    devFlags: new Set(),
+    logger: {} as AppContext["logger"],
+  };
+}
+
+async function getRuntimeKnowledgeFolderState(
+  runtime: TopchesterAgentRuntime,
+  command: string
+): Promise<{ exists: boolean; isDirectory: boolean } | undefined> {
+  const events = await runtime.submitSlashCommand(command);
+  const event = events.find((candidate) => candidate.type === "knowledge_status");
+
+  return event?.type === "knowledge_status"
+    ? { exists: event.status.kbExists, isDirectory: event.status.kbIsDirectory }
+    : undefined;
+}
