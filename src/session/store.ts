@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, truncate, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { uuidv7 } from "uuidv7";
 import { ZodError } from "zod";
@@ -198,19 +198,26 @@ function buildHandle(sessionDir: string, metadata: SessionMetadata): SessionHand
     metadata,
     append(payload) {
       const appendOperation = appendQueue.then(async () => {
+        const previousEventFileSize = (await stat(handle.eventsPath)).size;
         const nextEvent = sessionEventSchema.parse({
           version: SESSION_EVENT_VERSION,
           id: handle.metadata.lastEventId + 1,
           ts: new Date().toISOString(),
           ...payload,
         });
-        await writeFile(handle.eventsPath, `${JSON.stringify(nextEvent)}\n`, { flag: "a" });
-        handle.metadata = {
+        const nextMetadata = {
           ...handle.metadata,
           updatedAt: nextEvent.ts,
           lastEventId: nextEvent.id,
         };
-        await writeMetadata(handle.metadataPath, handle.metadata);
+        await writeFile(handle.eventsPath, `${JSON.stringify(nextEvent)}\n`, { flag: "a" });
+        try {
+          await writeMetadata(handle.metadataPath, nextMetadata);
+        } catch (error) {
+          await truncate(handle.eventsPath, previousEventFileSize);
+          throw error;
+        }
+        handle.metadata = nextMetadata;
 
         return nextEvent;
       });

@@ -196,7 +196,7 @@ describe("session store", () => {
     expect(metadata.lastEventId).toBe(2);
   });
 
-  it("keeps event IDs consistent after a metadata write failure", async () => {
+  it("rolls back a failed metadata write so durable reload stays consistent", async () => {
     const workspace = await tempWorkspace();
     const session = await createSession(workspace);
     const originalMetadata = await readFile(session.metadataPath, "utf8");
@@ -208,15 +208,21 @@ describe("session store", () => {
     ).rejects.toThrow();
 
     const rawAfterFailure = await readFile(session.eventsPath, "utf8");
-    expect(rawAfterFailure).toMatch(/"id":1/u);
-    expect(rawAfterFailure.endsWith("\n")).toBe(true);
+    expect(rawAfterFailure).toBe("");
 
     await rm(session.metadataPath, { recursive: true });
     await writeFile(session.metadataPath, originalMetadata);
+
+    await expect(loadSession(workspace, session.sessionId)).resolves.toMatchObject({
+      metadata: { lastEventId: 0 },
+      events: [],
+    });
+
+    const reloaded = await loadSessionForAppend(workspace, session.sessionId);
     await expect(
-      session.append({ kind: "message", role: "assistant", text: "after metadata recovered" })
+      reloaded.append({ kind: "message", role: "assistant", text: "after metadata recovered" })
     ).resolves.toMatchObject({
-      id: 2,
+      id: 1,
       text: "after metadata recovered",
     });
 
@@ -224,8 +230,8 @@ describe("session store", () => {
       .trimEnd()
       .split("\n")
       .map((line) => JSON.parse(line));
-    expect(events.map((event) => event.id)).toEqual([1, 2]);
-    expect((await readJson(session.metadataPath)) as Record<string, unknown>).toMatchObject({ lastEventId: 2 });
+    expect(events.map((event) => event.id)).toEqual([1]);
+    expect((await readJson(session.metadataPath)) as Record<string, unknown>).toMatchObject({ lastEventId: 1 });
   });
 
   it("preserves structured representative event payloads", async () => {
