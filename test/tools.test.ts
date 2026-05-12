@@ -203,6 +203,30 @@ describe("agent tools", () => {
     expect(result.content).toBe("src/file.ts:1:needle from rg");
   });
 
+  it("passes no-ignore to rg grep so ignored files are searchable", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-tools-bin-"));
+    await writeExecutable(
+      join(bin, "rg"),
+      'printf "%s\\n" "$@" > "$PWD/rg-args.txt"\nprintf "test-foo.ts:1:needle\\n"'
+    );
+
+    const result = await grepWorkspace(workspace, { pattern: "needle" }, { pathEnv: bin });
+
+    expect(result.content).toBe("test-foo.ts:1:needle");
+    await expect(readFile(join(workspace, "rg-args.txt"), "utf8")).resolves.toContain("--no-ignore\n");
+  });
+
+  it("finds ignored files by name with the native rg collector", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await writeFile(join(workspace, ".gitignore"), "test-foo.ts\n");
+    await writeFile(join(workspace, "test-foo.ts"), "");
+
+    const result = await findWorkspaceFilesByName(workspace, { query: "test-foo.ts", path: ".", limit: 10 });
+
+    expect(result.content).toBe("test-foo.ts");
+  });
+
   it("logs grep native command selection and trace output", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
     const logFile = join(workspace, "tool.log");
@@ -294,7 +318,10 @@ describe("agent tools", () => {
     const bin = await mkdtemp(join(tmpdir(), "topchester-tools-bin-"));
     await mkdir(join(workspace, "src"), { recursive: true });
     await writeFile(join(workspace, "src", "runtime-native.ts"), "");
-    await writeExecutable(join(bin, "rg"), "printf 'src/runtime-native.ts\\n'");
+    await writeExecutable(
+      join(bin, "rg"),
+      'printf "%s\\n" "$@" > "$PWD/rg-find-args.txt"\nprintf "src/runtime-native.ts\\n"'
+    );
 
     await withEnv({ TOPCHESTER_LOG_LEVEL: "debug", TOPCHESTER_LOG_FILE: logFile }, async () => {
       const { logger } = createTopchesterLogger(workspace);
@@ -305,6 +332,7 @@ describe("agent tools", () => {
       );
 
       expect(result.content).toBe("src/runtime-native.ts");
+      await expect(readFile(join(workspace, "rg-find-args.txt"), "utf8")).resolves.toContain("--no-ignore\n");
       await expect(readJsonLogLines(logFile)).resolves.toEqual(
         expect.arrayContaining([
           expect.objectContaining({ event: "native_tool_selected", tool: "find_file", nativeTool: "rg" }),

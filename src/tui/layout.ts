@@ -192,7 +192,7 @@ export class ChatLayout implements Component, Focusable {
 
   private renderThreadMessageLines(lines: string[], innerWidth: number, width: number, highlight: boolean): string[] {
     return lines.flatMap((line) => {
-      const styleLine = (value: string) => (highlight ? ui.softBackground(value) : value);
+      const styleLine = (value: string) => (highlight ? ui.softBackground(colorUserMessageBorder(value)) : value);
 
       if (line.length === 0) {
         return [styleLine(padThreadLine("", innerWidth, width))];
@@ -414,6 +414,10 @@ export class ChatLayout implements Component, Focusable {
       this.submitMessage?.(message);
     }
   }
+}
+
+function colorUserMessageBorder(line: string): string {
+  return line.replace("│", ui.modelInline("│"));
 }
 
 function renderInputWithoutPrompt(input: Input, width: number): string {

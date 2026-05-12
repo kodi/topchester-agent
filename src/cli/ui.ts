@@ -11,6 +11,7 @@ const colors = {
   purple: "\u001b[35m",
   red: "\u001b[31m",
   reset: "\u001b[0m",
+  resetForeground: "\u001b[39m",
   yellow: "\u001b[33m",
 };
 
@@ -28,6 +29,13 @@ export const ui = {
   },
   model(text: string): string {
     return color(text, "blue");
+  },
+  modelInline(text: string): string {
+    if (!shouldUseColor()) {
+      return text;
+    }
+
+    return `${colors.blue}${text}${colors.resetForeground}`;
   },
   ok(text: string): string {
     return color(text, "green");

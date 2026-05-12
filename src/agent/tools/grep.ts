@@ -65,6 +65,7 @@ export async function grepWorkspace(
           "--color",
           "never",
           "--hidden",
+          "--no-ignore",
           "--glob",
           "!.git/**",
           "--no-heading",

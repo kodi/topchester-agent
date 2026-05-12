@@ -1,4 +1,4 @@
 export const main = () => {
-  console.log("HEEELOOOOO WORLD YAAAY!!!");
+  console.log("Hello, world!");
   return 0;
 };

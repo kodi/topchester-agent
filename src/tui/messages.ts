@@ -75,7 +75,7 @@ export function renderChatMessage(message: ChatMessage, options: RenderChatMessa
 }
 
 function renderUserMessage(lines: string[]): string[] {
-  const border = ui.model("│");
+  const border = "│";
   const rendered = lines.map((line) => `${border} ${line}`);
 
   return [`${border} `, ...rendered, `${border} `];

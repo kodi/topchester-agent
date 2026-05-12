@@ -285,19 +285,23 @@ describe("TUI rendering", () => {
     }
   });
 
-  it("renders user messages with a blue left border and no label", () => {
+  it("renders user messages with a left border and no label", () => {
+    expect(renderChatMessage(userMessage("hello"))).toEqual(["│ ", "│ hello", "│ "]);
+    expect(renderChatMessage(userMessage("hello")).join("\n")).not.toContain("You:");
+  });
+
+  it("colors user message rows with a blue left border and full soft background", () => {
     const previousForceColor = process.env.FORCE_COLOR;
     const previousNoColor = process.env.NO_COLOR;
     delete process.env.NO_COLOR;
     process.env.FORCE_COLOR = "1";
 
     try {
-      expect(renderChatMessage(userMessage("hello"))).toEqual([
-        "\u001b[34m│\u001b[0m ",
-        "\u001b[34m│\u001b[0m hello",
-        "\u001b[34m│\u001b[0m ",
-      ]);
-      expect(renderChatMessage(userMessage("hello")).join("\n")).not.toContain("You:");
+      const app = new ChatLayout(new FakeTerminal(), [userMessage("hello")], "repo", "model [provider]");
+      const output = app.render(60).join("\n");
+
+      expect(output).toContain("\u001b[48;5;236m \u001b[34m│\u001b[39m hello");
+      expect(output).not.toContain("\u001b[34m│\u001b[0m hello");
     } finally {
       if (previousForceColor === undefined) {
         delete process.env.FORCE_COLOR;

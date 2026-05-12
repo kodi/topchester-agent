@@ -204,7 +204,7 @@ async function createRipgrepCollector(
   return {
     name: "rg",
     command,
-    args: ["--files", "--hidden", ...ignoredDirectoryGlobArgs(), "--", relativeStartPath],
+    args: ["--files", "--hidden", "--no-ignore", ...ignoredDirectoryGlobArgs(), "--", relativeStartPath],
   };
 }
 
@@ -220,7 +220,17 @@ async function createFdCollector(pathEnv: string, relativeStartPath: string): Pr
   return {
     name: fdCommand ? "fd" : "fdfind",
     command,
-    args: ["--type", "f", "--hidden", "--color", "never", ...ignoredDirectoryExcludeArgs(), ".", relativeStartPath],
+    args: [
+      "--type",
+      "f",
+      "--hidden",
+      "--no-ignore",
+      "--color",
+      "never",
+      ...ignoredDirectoryExcludeArgs(),
+      ".",
+      relativeStartPath,
+    ],
   };
 }
 
