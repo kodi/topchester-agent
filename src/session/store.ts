@@ -169,28 +169,38 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
 }
 
 function buildHandle(sessionDir: string, metadata: SessionMetadata): SessionHandle {
+  let appendQueue: Promise<void> = Promise.resolve();
   const handle: SessionHandle = {
     sessionId: metadata.sessionId,
     sessionDir,
     metadataPath: join(sessionDir, "metadata.json"),
     eventsPath: join(sessionDir, "events.jsonl"),
     metadata,
-    async append(payload) {
-      const nextEvent = sessionEventSchema.parse({
-        version: SESSION_EVENT_VERSION,
-        id: handle.metadata.lastEventId + 1,
-        ts: new Date().toISOString(),
-        ...payload,
-      });
-      await writeFile(handle.eventsPath, `${JSON.stringify(nextEvent)}\n`, { flag: "a" });
-      handle.metadata = {
-        ...handle.metadata,
-        updatedAt: nextEvent.ts,
-        lastEventId: nextEvent.id,
-      };
-      await writeMetadata(handle.metadataPath, handle.metadata);
+    append(payload) {
+      const appendOperation = appendQueue.then(async () => {
+        const nextEvent = sessionEventSchema.parse({
+          version: SESSION_EVENT_VERSION,
+          id: handle.metadata.lastEventId + 1,
+          ts: new Date().toISOString(),
+          ...payload,
+        });
+        await writeFile(handle.eventsPath, `${JSON.stringify(nextEvent)}\n`, { flag: "a" });
+        handle.metadata = {
+          ...handle.metadata,
+          updatedAt: nextEvent.ts,
+          lastEventId: nextEvent.id,
+        };
+        await writeMetadata(handle.metadataPath, handle.metadata);
 
-      return nextEvent;
+        return nextEvent;
+      });
+
+      appendQueue = appendOperation.then(
+        () => undefined,
+        () => undefined
+      );
+
+      return appendOperation;
     },
   };
 

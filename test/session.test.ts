@@ -117,6 +117,58 @@ describe("session store", () => {
     expect(metadata.updatedAt >= firstMetadata.updatedAt).toBe(true);
   });
 
+  it("serializes overlapping appends before assigning event IDs", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+
+    const appended = await Promise.all([
+      session.append({ kind: "message", role: "user", text: "one" }),
+      session.append({ kind: "message", role: "assistant", text: "two" }),
+      session.append({ kind: "status", status: "ready" }),
+      session.append({ kind: "message", role: "system", text: "four" }),
+    ]);
+
+    expect(appended.map((event) => event.id)).toEqual([1, 2, 3, 4]);
+
+    const raw = await readFile(session.eventsPath, "utf8");
+    const lines = raw.split("\n");
+    expect(lines).toHaveLength(5);
+    expect(lines[4]).toBe("");
+    expect(lines.slice(0, 4).map((line) => JSON.parse(line).id)).toEqual([1, 2, 3, 4]);
+
+    const metadata = (await readJson(session.metadataPath)) as { lastEventId: number; updatedAt: string };
+    expect(metadata.lastEventId).toBe(4);
+    expect(metadata.updatedAt).toBe(appended.at(-1)!.ts);
+  });
+
+  it("continues accepting appends after a queued append fails", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+
+    await expect(
+      Promise.all([
+        session.append({ kind: "message", role: "user", text: "valid" }),
+        session.append({ kind: "message", role: "invalid", text: "bad" } as never),
+      ])
+    ).rejects.toThrow();
+
+    await expect(session.append({ kind: "message", role: "assistant", text: "after failure" })).resolves.toMatchObject({
+      id: 2,
+      kind: "message",
+      text: "after failure",
+    });
+
+    const raw = await readFile(session.eventsPath, "utf8");
+    expect(
+      raw
+        .trimEnd()
+        .split("\n")
+        .map((line) => JSON.parse(line).id)
+    ).toEqual([1, 2]);
+    const metadata = (await readJson(session.metadataPath)) as { lastEventId: number };
+    expect(metadata.lastEventId).toBe(2);
+  });
+
   it("preserves structured representative event payloads", async () => {
     const workspace = await tempWorkspace();
     const session = await createSession(workspace);
