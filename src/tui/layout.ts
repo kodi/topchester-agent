@@ -167,24 +167,24 @@ export class ChatLayout implements Component, Focusable {
   }
 
   private renderThread(width: number): string[] {
-    const innerWidth = Math.max(1, width - 2);
+    const innerWidth = Math.max(1, width);
 
     const activeModalIndex = this.getActiveModalIndex();
     const lines = this.messages.flatMap((message, index) => {
       const messageLines = renderChatMessage(message, {
         selectedActionIndex: index === activeModalIndex ? this.activeModalActionIndex : undefined,
       });
-      const spacer = index === this.messages.length - 1 ? [] : [padThreadLine("", innerWidth, width)];
+      const spacer = index === this.messages.length - 1 ? [] : [padThreadLine("", width)];
 
       return [...this.renderThreadMessageLines(messageLines, innerWidth, width, message.kind === "user"), ...spacer];
     });
 
     if (this.ephemeralLine) {
-      lines.push(...this.renderThreadMessageLines([this.ephemeralLine], innerWidth, width, false));
+      lines.push(...this.renderThreadMessageLines([` ${this.ephemeralLine}`], innerWidth, width, false));
     }
 
     if (this.noticeLine) {
-      lines.push(...this.renderThreadMessageLines([this.noticeLine], innerWidth, width, false));
+      lines.push(...this.renderThreadMessageLines([` ${this.noticeLine}`], innerWidth, width, false));
     }
 
     return lines;
@@ -195,12 +195,10 @@ export class ChatLayout implements Component, Focusable {
       const styleLine = (value: string) => (highlight ? ui.softBackground(colorUserMessageBorder(value)) : value);
 
       if (line.length === 0) {
-        return [styleLine(padThreadLine("", innerWidth, width))];
+        return [styleLine(padThreadLine("", width))];
       }
 
-      return wrapTextWithAnsi(line, innerWidth).map((wrappedLine) =>
-        styleLine(padThreadLine(wrappedLine, innerWidth, width))
-      );
+      return wrapTextWithAnsi(line, innerWidth).map((wrappedLine) => styleLine(padThreadLine(wrappedLine, width)));
     });
   }
 
@@ -417,7 +415,7 @@ export class ChatLayout implements Component, Focusable {
 }
 
 function colorUserMessageBorder(line: string): string {
-  return line.replace("│", ui.modelInline("│"));
+  return line.replace("▌", ui.modelInline("▌"));
 }
 
 function renderInputWithoutPrompt(input: Input, width: number): string {

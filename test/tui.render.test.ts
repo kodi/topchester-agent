@@ -312,7 +312,7 @@ describe("TUI rendering", () => {
 
     try {
       expect(renderChatMessage(systemMessage("Tool edit_file: test-foo.ts (changed +1/-1)"))).toContain(
-        "  Tool edit_file: test-foo.ts \u001b[90m(changed +1/-1)\u001b[0m"
+        "   Tool edit_file: test-foo.ts \u001b[90m(changed +1/-1)\u001b[0m"
       );
     } finally {
       if (previousForceColor === undefined) {
@@ -329,7 +329,7 @@ describe("TUI rendering", () => {
   });
 
   it("renders user messages with a left border and no label", () => {
-    expect(renderChatMessage(userMessage("hello"))).toEqual(["│ ", "│ hello", "│ "]);
+    expect(renderChatMessage(userMessage("hello"))).toEqual(["▌ ", "▌ hello", "▌ "]);
     expect(renderChatMessage(userMessage("hello")).join("\n")).not.toContain("You:");
   });
 
@@ -343,8 +343,8 @@ describe("TUI rendering", () => {
       const app = new ChatLayout(new FakeTerminal(), [userMessage("hello")], "repo", "model [provider]");
       const output = app.render(60).join("\n");
 
-      expect(output).toContain("\u001b[48;5;236m \u001b[34m│\u001b[39m hello");
-      expect(output).not.toContain("\u001b[34m│\u001b[0m hello");
+      expect(output).toContain("\u001b[48;5;236m\u001b[34m▌\u001b[39m hello");
+      expect(output).not.toContain("\u001b[34m▌\u001b[0m hello");
     } finally {
       if (previousForceColor === undefined) {
         delete process.env.FORCE_COLOR;
@@ -614,7 +614,7 @@ describe("TUI rendering", () => {
     app.handleInput("\n");
     const output = app.render(60).join("\n");
 
-    expect(output).toContain(" │ hello");
+    expect(output).toContain("▌ hello");
     expect(submitted).toBe("hello");
   });
 
@@ -633,7 +633,7 @@ describe("TUI rendering", () => {
     app.handleInput("\n");
     const output = app.render(60).join("\n");
 
-    expect(output).toContain(" │ /kb status");
+    expect(output).toContain("▌ /kb status");
     expect(submittedCommand).toBe("/kb status");
     expect(submittedMessage).toBe("");
   });
@@ -671,11 +671,10 @@ describe("TUI rendering", () => {
 
     app.handleInput("\n");
     const lines = app.render(60);
-    const messageIndex = lines.findIndex((line) => line.includes("│ hello"));
+    const messageIndex = lines.findIndex((line) => line.includes("▌ hello"));
 
-    expect(messageIndex).toBeGreaterThan(0);
-    expect(lines[messageIndex - 1]).toContain("│");
-    expect(lines[messageIndex + 1]).toContain("│");
+    expect(lines[messageIndex - 1]).toContain("▌");
+    expect(lines[messageIndex + 1]).toContain("▌");
   });
 
   it("renders chat modal messages with numbered actions", () => {
@@ -774,7 +773,7 @@ describe("TUI rendering", () => {
     app.handleInput("\n");
     const output = app.render(80).join("\n");
 
-    expect(output).toContain(" │ Skip creation");
+    expect(output).toContain("▌ Skip creation");
     expect(submitted).toBe("Skip creation");
   });
 
@@ -795,7 +794,7 @@ describe("TUI rendering", () => {
     app.handleInput("\u001b");
     const output = app.render(80).join("\n");
 
-    expect(output).toContain(" │ Cancel");
+    expect(output).toContain("▌ Cancel");
     expect(output).not.toContain("chat is not wired yet");
   });
 

@@ -69,23 +69,26 @@ export function renderChatMessage(message: ChatMessage, options: RenderChatMessa
       : lines.map((line, index) => `${index === 0 ? prefix : " ".repeat(prefix.length)}${line}`);
 
   if (message.meta) {
-    rendered.push(ui.label(message.meta));
+    rendered.push(` ${ui.label(message.meta)}`);
   }
 
   return rendered;
 }
 
 function renderUserMessage(lines: string[]): string[] {
-  const border = "│";
+  const border = "▌";
   const rendered = lines.map((line) => `${border} ${line}`);
 
   return [`${border} `, ...rendered, `${border} `];
 }
 
 function renderSystemMessage(lines: string[]): string[] {
-  const bodyPrefix = "  ";
+  const bodyPrefix = "   ";
 
-  return [`${ui.ok("✦")} ${ui.label("System")}:`, ...lines.map((line) => `${bodyPrefix}${formatSystemBodyLine(line)}`)];
+  return [
+    ` ${ui.ok("✦")} ${ui.label("System")}:`,
+    ...lines.map((line) => `${bodyPrefix}${formatSystemBodyLine(line)}`),
+  ];
 }
 
 function formatSystemBodyLine(line: string): string {
@@ -95,7 +98,7 @@ function formatSystemBodyLine(line: string): string {
 function getPrefix(kind: TextChatMessage["kind"]): string {
   switch (kind) {
     case "agent":
-      return "";
+      return " ";
     case "user":
       return `${ui.label("You")}: `;
     case "system":

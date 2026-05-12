@@ -6,8 +6,8 @@ export function padLines(lines: string[], height: number, width: number): string
   return [...padding, ...lines].map((line) => truncateToWidth(line, width, "…", true));
 }
 
-export function padThreadLine(line: string, innerWidth: number, width: number): string {
-  return truncateToWidth(` ${truncateToWidth(line, innerWidth, "…", true)} `, width, "…", true);
+export function padThreadLine(line: string, width: number): string {
+  return truncateToWidth(line, width, "…", true);
 }
 
 export function stripAnsi(text: string): string {
