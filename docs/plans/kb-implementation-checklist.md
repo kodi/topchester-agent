@@ -19,6 +19,7 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [x] CLI `topchester kb compile`
 - [x] Slash command `/kb compile`
 - [x] CLI L1 progress with count, percentage, progress bar, and current file
+- [x] Workspace-scoped `edit_file` tool marks edited files dirty-known and `needs_sync` in the runtime session overlay
 
 ## Global KB Setup and Configuration
 
@@ -141,7 +142,19 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [ ] Add cache invalidation based on manifest/hash
 - [ ] Keep cache fully rebuildable from canonical KB
 - [ ] Add session overlay storage for dirty-but-known active work
+- [x] Add in-memory session overlay state for agent-authored `edit_file` changes
 - [ ] Add cache tests
+
+## Tool Execution
+
+- [x] Add workspace-scoped `read_file`
+- [x] Add workspace-scoped `grep`
+- [x] Add workspace-scoped `find_file`
+- [x] Add workspace-scoped `edit_file` for exact existing-file replacements
+- [x] Add `edit_file` path containment, existing-file checks, UTF-8 validation, optional expected-hash checks, and atomic-ish same-directory writes
+- [x] Add per-file mutation serialization for `edit_file`
+- [x] Return edit diff, before/after hashes, byte delta, first changed line, and KB dirty-state metadata
+- [x] Avoid debug-level logging of full `edit_file` old/new edit text
 
 ## MCP Adapter
 
@@ -160,10 +173,10 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [ ] Run drift check before editing relevant files
 - [ ] Use KB context to orient, plan, estimate impact, and identify verification
 - [ ] Resolve task-critical facts against current working tree before acting
-- [ ] Track dirty files and suspect nodes in a session overlay during edits
+- [x] Track dirty files and suspect nodes in a session overlay during `edit_file` edits
 - [ ] Warn clearly when relevant KB is stale
-- [ ] Update or mark KB stale after edits
-- [ ] Mark session as `needs_sync` when canonical KB should be refreshed before completion
+- [x] Update or mark KB stale after `edit_file` edits
+- [x] Mark session as `needs_sync` after `edit_file` edits
 - [ ] Include KB updates with in-scope code changes
 - [ ] Prevent normal coding path from bypassing KB once strict mode exists
 - [ ] Add agent behavior tests

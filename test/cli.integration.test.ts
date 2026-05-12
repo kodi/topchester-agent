@@ -62,7 +62,7 @@ describe("CLI integration", () => {
     expect(stdout).toContain("openrouter: openai-compatible https://openrouter.ai/api/v1 auth=env:OPENROUTER_API_KEY");
     expect(stdout).toContain("│ >");
     expect(stdout).toContain(
-      `status: ready · folder: ${fixture.root.split("/").at(-1)} · model: qwen/qwen3-coder:free [openrouter]`
+      `status: ready · folder: ${fixture.root.split("/").at(-1)} · qwen/qwen3-coder:free [openrouter]`
     );
   });
 

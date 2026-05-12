@@ -359,7 +359,7 @@ Dependencies: Slice 3.
 
 ### Slice 5: Documentation and Checklist Update
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Keep user-facing command docs and implementation tracking in sync.
 
@@ -426,7 +426,8 @@ Manual checks after implementation:
 - 2026-05-12: Slice 2 wired `edit_file` as a workspace-scoped tool with same-directory temp writes, per-file mutation serialization, expected-hash checks, diff/hash metadata, and registry execution. Verification passed with `pnpm test test/tools.test.ts`, `pnpm typecheck`, and `pnpm format-check`.
 - 2026-05-12: Slice 3 added edit-specific prompt guidance, `read_file` hash metadata, compact edit result formatting for the final model prompt, and runtime coverage for edit tool-call labels/results. Verification passed with `pnpm test test/tools.test.ts test/tui.render.test.ts test/commands.test.ts`, `pnpm typecheck`, and `pnpm format-check`.
 - 2026-05-12: Slice 4 added an in-memory session overlay for edit events and dirty-known KB state, marks edited files `needs_sync` with stale L1/suspect derived markers, and sanitizes edit debug logs so old/new text is not logged at debug level. Verification passed with `pnpm test test/tools.test.ts test/logging.test.ts`, `pnpm test test/commands.test.ts`, `pnpm typecheck`, and `pnpm format-check`.
+- 2026-05-12: Slice 5 updated `docs/cli.md`, `docs/plans/kb-implementation-checklist.md`, and this plan; also corrected the CLI integration footer expectation to the current label-less model footer. Verification passed with `pnpm check` and `mise local-ci`.
 
 ## Next Slice
 
-Slice 5: Documentation and Checklist Update.
+All slices implemented. Final gate: `mise local-ci` passed.

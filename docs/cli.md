@@ -18,7 +18,7 @@ This document tracks implemented and planned `topchester` CLI commands. Any CLI 
 
 - `TOPCHESTER_LOG_LEVEL=debug` writes structured JSON logs to `.agents/topchester/logs/topchester.log`.
 - `TOPCHESTER_LOG_FILE=<path>` overrides the log file path. Relative paths are resolved from the workspace root.
-- `debug` logs tool calls, tool result metadata, and model response metadata. `trace` also logs full model/tool response text.
+- `debug` logs tool calls, tool result metadata, edit metadata, and model response metadata. For `edit_file`, debug logs include hashes, changed-line metadata, and edit counts, not full old/new edit text. `trace` also logs full model/tool response text.
 - Logging is file-only and does not write to the TUI.
 
 ## Output style
@@ -44,10 +44,13 @@ Current behavior:
 - Shows a scrolling thread area on top with startup context.
 - Supports terminal alternate-scroll wheel events, `PageUp`/`PageDown`, and `Home`/`End` for chat history scrolling.
 - Shows an unlabeled input box below the thread.
-- Shows a status line below the prompt box with `ready`, the current folder name, the active model as `model [provider]`, and compact KB state as `✅ kb: ready`, `○ kb: empty`, `⚠ kb: missing`, or `✕ kb: path conflict` after the KB check runs.
+- Shows a status line below the prompt box with `ready`, the current folder name, the active model as `<model> [provider]`, and compact KB state as `✅ kb: ready`, `○ kb: empty`, `⚠ kb: missing`, or `✕ kb: path conflict` after the KB check runs.
 - Tracks chat rows as `System`, `You`, and `Agent` messages, and sends user messages to the configured `agent.primary` model.
-- Lets the model use workspace-scoped tools: `read_file` and `grep`.
+- Lets the model use workspace-scoped tools: `read_file`, `grep`, `find_file`, and `edit_file`.
+- `read_file` reads UTF-8 files inside the workspace and returns content hash metadata for stale-read checks.
 - `grep` uses `rg` when available, falls back to `grep`, and reports a warning if neither command is installed.
+- `find_file` searches existing workspace filenames by fuzzy path or name.
+- `edit_file` edits existing UTF-8 files inside the workspace with exact `old_text`/`new_text` replacements. It rejects path escapes, missing files, directories, invalid UTF-8, duplicate or overlapping matches, unchanged output, and stale `expected_hash` values when provided. Successful edits return a compact diff, before/after hashes, first changed line, and mark the KB session overlay as `needs_sync`.
 - Intercepts slash commands before chat, starting with `/kb status`.
 - Shows slash command suggestions when the prompt starts with `/`; `Tab` completes the selected suggestion.
 - Shows a temporary thinking row while waiting for chat responses.
