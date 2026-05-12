@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -117,6 +117,33 @@ describe("session store", () => {
     expect(metadata.updatedAt >= firstMetadata.updatedAt).toBe(true);
   });
 
+  it("preserves old JSONL bytes exactly when loading and appending later events", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+    await session.append({
+      kind: "tool_call",
+      label: "Tool custom: keep structured fields",
+      call: { tool: "custom", args: { path: "src/index.ts" }, future: { overlayId: "kb-overlay-1" } },
+    });
+    await session.append({
+      kind: "choice",
+      tone: "info",
+      title: "Choose",
+      body: "This old record must not be normalized.",
+      actions: [{ label: "Keep", value: "keep" }],
+    });
+    const originalPrefix = await readFile(session.eventsPath, "utf8");
+
+    const loaded = await loadSessionForAppend(workspace, session.sessionId);
+    const appended = await loaded.append({ kind: "status", status: "ready" });
+    const afterAppend = await readFile(session.eventsPath, "utf8");
+
+    expect(appended.id).toBe(3);
+    expect(afterAppend.startsWith(originalPrefix)).toBe(true);
+    expect(afterAppend.slice(0, originalPrefix.length)).toBe(originalPrefix);
+    expect(afterAppend.slice(originalPrefix.length).trimEnd()).toEqual(expect.stringContaining('"kind":"status"'));
+  });
+
   it("serializes overlapping appends before assigning event IDs", async () => {
     const workspace = await tempWorkspace();
     const session = await createSession(workspace);
@@ -167,6 +194,38 @@ describe("session store", () => {
     ).toEqual([1, 2]);
     const metadata = (await readJson(session.metadataPath)) as { lastEventId: number };
     expect(metadata.lastEventId).toBe(2);
+  });
+
+  it("keeps event IDs consistent after a metadata write failure", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+    const originalMetadata = await readFile(session.metadataPath, "utf8");
+
+    await rm(session.metadataPath);
+    await mkdir(session.metadataPath);
+    await expect(
+      session.append({ kind: "message", role: "user", text: "written before metadata failed" })
+    ).rejects.toThrow();
+
+    const rawAfterFailure = await readFile(session.eventsPath, "utf8");
+    expect(rawAfterFailure).toMatch(/"id":1/u);
+    expect(rawAfterFailure.endsWith("\n")).toBe(true);
+
+    await rm(session.metadataPath, { recursive: true });
+    await writeFile(session.metadataPath, originalMetadata);
+    await expect(
+      session.append({ kind: "message", role: "assistant", text: "after metadata recovered" })
+    ).resolves.toMatchObject({
+      id: 2,
+      text: "after metadata recovered",
+    });
+
+    const events = (await readFile(session.eventsPath, "utf8"))
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(events.map((event) => event.id)).toEqual([1, 2]);
+    expect((await readJson(session.metadataPath)) as Record<string, unknown>).toMatchObject({ lastEventId: 2 });
   });
 
   it("preserves structured representative event payloads", async () => {

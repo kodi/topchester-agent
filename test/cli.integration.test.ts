@@ -140,6 +140,23 @@ describe("CLI integration", () => {
     await expect(readdir(join(fixture.workspace, ".agents", "topchester", "sessions"))).resolves.toHaveLength(2);
   });
 
+  it("does not rewrite existing records when resuming a selected session", async () => {
+    const fixture = await makeFixture();
+    const selected = await seedSession(fixture.workspace, "selected old row");
+    const originalPrefix = await readFile(selected.eventsPath, "utf8");
+
+    const { stdout } = await runCli(
+      ["--config", fixture.config, "--workspace", fixture.workspace, "--resume", selected.sessionId],
+      fixture.root
+    );
+
+    expect(stdout).toContain("selected old row");
+    expect(await readFile(selected.eventsPath, "utf8")).toBe(originalPrefix);
+    await expect(readdir(join(fixture.workspace, ".agents", "topchester", "sessions"))).resolves.toEqual([
+      selected.sessionId,
+    ]);
+  });
+
   it("resumes an exact session id in static mode", async () => {
     const fixture = await makeFixture();
     const exact = await seedSession(fixture.workspace, "exact unique row");
@@ -203,6 +220,46 @@ describe("CLI integration", () => {
     ).rejects.toMatchObject({
       stderr: expect.stringContaining(`Could not read session event in ${session.eventsPath} line 2: invalid JSON`),
     });
+  });
+
+  it("fails malformed latest safely without mutating session logs or falling back", async () => {
+    const fixture = await makeFixture();
+    const older = await seedSession(fixture.workspace, "older safe row");
+    const latest = await seedSession(fixture.workspace, "latest broken row");
+    const olderEventsBefore = await readFile(older.eventsPath, "utf8");
+    const latestEventsBefore = `${JSON.stringify({
+      version: 1,
+      id: 1,
+      ts: "2026-01-01T00:00:00.000Z",
+      kind: "message",
+      role: "user",
+      text: "latest broken row",
+    })}\nnot json\n`;
+    await writeFile(latest.eventsPath, latestEventsBefore);
+
+    await expect(
+      runCli(["--config", fixture.config, "--workspace", fixture.workspace, "--resume", "latest"], fixture.root)
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining(`Could not read session event in ${latest.eventsPath} line 2: invalid JSON`),
+    });
+
+    expect(await readFile(older.eventsPath, "utf8")).toBe(olderEventsBefore);
+    expect(await readFile(latest.eventsPath, "utf8")).toBe(latestEventsBefore);
+  });
+
+  it("keeps session logs covered by the project git ignore rules", async () => {
+    const ignoreFile = await readFile(join(process.cwd(), ".gitignore"), "utf8");
+
+    expect(ignoreFile).toContain(".agents/topchester/");
+
+    const { stdout } = await execFileAsync("git", [
+      "-C",
+      process.cwd(),
+      "check-ignore",
+      ".agents/topchester/sessions/example/events.jsonl",
+    ]);
+
+    expect(stdout.trim()).toBe(".agents/topchester/sessions/example/events.jsonl");
   });
 
   it("startup ignores fake home and other-workspace sessions", async () => {
