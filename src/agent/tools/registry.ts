@@ -1,11 +1,13 @@
 import { editFileTool } from "./edit-file.js";
 import { findFileTool } from "./find-file.js";
 import { grepTool } from "./grep.js";
+import { listFilesTool } from "./list-files.js";
 import { readFileTool } from "./read-file.js";
 import { type ToolCallForDefinition, type ToolResultForDefinition } from "./types.js";
 
 export const toolRegistry = {
   [readFileTool.name]: readFileTool,
+  [listFilesTool.name]: listFilesTool,
   [grepTool.name]: grepTool,
   [findFileTool.name]: findFileTool,
   [editFileTool.name]: editFileTool,

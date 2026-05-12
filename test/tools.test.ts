@@ -10,6 +10,7 @@ import {
   findWorkspaceFilesByName,
   getToolPromptLines,
   grepWorkspace,
+  listWorkspaceFiles,
   parseToolCall,
   readWorkspaceFile,
 } from "../src/agent/tools.js";
@@ -37,6 +38,20 @@ describe("agent tools", () => {
     expect(parseToolCall('{"tool":"grep","args":{"pattern":"needle","path":"src"}}')).toEqual({
       tool: "grep",
       args: { pattern: "needle", path: "src" },
+    });
+  });
+
+  it("parses list_files tool calls from JSON", () => {
+    expect(parseToolCall('{"tool":"list_files","args":{"path":"src","recursive":true,"limit":20}}')).toEqual({
+      tool: "list_files",
+      args: { path: "src", recursive: true, limit: 20 },
+    });
+  });
+
+  it("parses list_files defaults from JSON", () => {
+    expect(parseToolCall('{"tool":"list_files","args":{}}')).toEqual({
+      tool: "list_files",
+      args: { path: ".", recursive: false, limit: 500 },
     });
   });
 
@@ -90,6 +105,7 @@ describe("agent tools", () => {
   it("rejects unknown tools and invalid tool args", () => {
     expect(parseToolCall('{"tool":"unknown","args":{}}')).toBeUndefined();
     expect(parseToolCall('{"tool":"read_file","args":{"path":123}}')).toBeUndefined();
+    expect(parseToolCall('{"tool":"list_files","args":{"limit":0}}')).toBeUndefined();
     expect(parseToolCall('{"tool":"grep","args":{"path":"src"}}')).toBeUndefined();
     expect(parseToolCall('{"tool":"find_file","args":{"query":""}}')).toBeUndefined();
   });
@@ -114,6 +130,7 @@ describe("agent tools", () => {
   it("gets model prompt lines from the tool registry", () => {
     expect(getToolPromptLines()).toEqual([
       'read_file: read a UTF-8 file inside the workspace. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
+      'list_files: list files and directories inside the workspace; top-level by default, recursive only when requested, with "/" after directory names. To use it, reply with only JSON: {"tool":"list_files","args":{"path":"src","recursive":false,"limit":500}}',
       'grep: search text inside file contents in the workspace; output lines are the files containing the matched text, and paths mentioned inside those lines are not confirmed files unless checked with find_file or read_file. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
       'find_file: find existing files by fuzzy path or filename inside the workspace; matches may appear in the middle of a filename, and results are file paths, not file contents. To use it, reply with only JSON: {"tool":"find_file","args":{"query":"runtime"}}',
       'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_hash":"sha256:optional-current-file-hash","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
@@ -186,6 +203,56 @@ describe("agent tools", () => {
 
     await expect(readWorkspaceFile(workspace, "../package.json")).rejects.toThrow(
       "read_file can only read files inside the workspace"
+    );
+  });
+
+  it("lists top-level workspace directory entries", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await mkdir(join(workspace, "src"));
+    await writeFile(join(workspace, ".env.example"), "");
+    await writeFile(join(workspace, "README.md"), "");
+
+    const result = await listWorkspaceFiles(workspace, { path: ".", recursive: false, limit: 500 });
+
+    expect(result).toEqual({
+      tool: "list_files",
+      path: ".",
+      content: [".env.example", "README.md", "src/"].join("\n"),
+      warning: undefined,
+    });
+  });
+
+  it("lists workspace directory entries recursively", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await mkdir(join(workspace, "src", "agent"), { recursive: true });
+    await writeFile(join(workspace, "src", "agent", "runtime.ts"), "");
+    await writeFile(join(workspace, "src", "index.ts"), "");
+
+    const result = await listWorkspaceFiles(workspace, { path: "src", recursive: true, limit: 500 });
+
+    expect(result.content).toBe(["src/agent/", "src/index.ts", "src/agent/runtime.ts"].join("\n"));
+  });
+
+  it("applies list_files limit and reports truncation", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await writeFile(join(workspace, "a.txt"), "");
+    await writeFile(join(workspace, "b.txt"), "");
+
+    const result = await listWorkspaceFiles(workspace, { path: ".", recursive: false, limit: 1 });
+
+    expect(result).toEqual({
+      tool: "list_files",
+      path: ".",
+      content: ["a.txt", "[1 entry limit reached. Use a narrower path or a higher limit for more.]"].join("\n"),
+      warning: "1 entry limit reached.",
+    });
+  });
+
+  it("rejects list_files paths outside the workspace", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+
+    await expect(listWorkspaceFiles(workspace, { path: "..", recursive: false, limit: 500 })).rejects.toThrow(
+      "list_files can only list directories inside the workspace"
     );
   });
 

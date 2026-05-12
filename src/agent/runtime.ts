@@ -221,6 +221,8 @@ function formatToolCallMessage(call: ToolCall, result?: ToolResult): string {
   switch (call.tool) {
     case "read_file":
       return `Tool read_file: ${call.args.path}`;
+    case "list_files":
+      return `Tool list_files: ${call.args.path}${call.args.recursive ? " (recursive)" : ""}`;
     case "grep":
       return `Tool grep: ${call.args.pattern} in ${call.args.path ?? "."}`;
     case "find_file":

@@ -54,8 +54,9 @@ Current behavior:
 - Shows an unlabeled input box below the thread.
 - Shows a status line below the prompt box with `ready`, the current folder name, the active model as `<model> [provider]`, and compact KB state as `✅ kb: ready`, `○ kb: empty`, `⚠ kb: missing`, or `✕ kb: path conflict` after the KB check runs.
 - Tracks chat rows as `System`, `You`, and `Agent` messages, and sends user messages to the configured `agent.primary` model.
-- Lets the model use workspace-scoped tools: `read_file`, `grep`, `find_file`, and `edit_file`.
+- Lets the model use workspace-scoped tools: `read_file`, `list_files`, `grep`, `find_file`, and `edit_file`.
 - `read_file` reads UTF-8 files inside the workspace and returns content hash metadata for stale-read checks.
+- `list_files` lists files and directories inside a workspace folder, top-level by default, with optional recursive listing and a result limit.
 - `grep` uses `rg` when available, falls back to `grep`, and reports a warning if neither command is installed.
 - `find_file` searches existing workspace filenames by fuzzy path or name.
 - `edit_file` edits existing UTF-8 files inside the workspace with exact `old_text`/`new_text` replacements. It rejects path escapes, missing files, directories, invalid UTF-8, duplicate or overlapping matches, unchanged output, and stale `expected_hash` values when provided. Successful edits return a compact diff, before/after hashes, first changed line, and mark the KB session overlay as `needs_sync`.

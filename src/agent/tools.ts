@@ -24,6 +24,13 @@ export {
   type GrepToolCall,
   type GrepWorkspaceOptions,
 } from "./tools/grep.js";
+export {
+  listFilesTool,
+  listWorkspaceFiles,
+  type ListFilesToolArgs,
+  type ListFilesToolCall,
+  type ListFilesToolResult,
+} from "./tools/list-files.js";
 export { parseToolCall } from "./tools/parser.js";
 export { readFileTool, readWorkspaceFile, type ReadFileToolArgs, type ReadFileToolCall } from "./tools/read-file.js";
 export {
