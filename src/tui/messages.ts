@@ -74,7 +74,8 @@ export function renderChatMessage(message: ChatMessage, options: RenderChatMessa
       : lines.map((line, index) => `${index === 0 ? prefix : " ".repeat(prefix.length)}${line}`);
 
   if (message.meta) {
-    rendered.push(` ${ui.label(message.meta)}`);
+    const metaText = `↳ ${message.meta}`;
+    rendered.push(` ${ui.label("─".repeat(metaText.length))}`, ` ${ui.label(metaText)}`);
   }
 
   return rendered;

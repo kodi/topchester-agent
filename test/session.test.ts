@@ -451,9 +451,19 @@ describe("session store", () => {
       { kind: "user", text: "/help" },
       { kind: "agent", text: "answer", meta: "model" },
       { kind: "system", text: "Tool shell: echo hi" },
-      { kind: "system", text: expect.stringContaining("KB status: topchester-kb") },
       { kind: "modal", tone: "warning", title: "Continue?", body: "Pick", actions: [{ label: "No", value: "no" }] },
     ]);
     expect(rehydrated.status).toBe("ready");
+  });
+
+  it("skips old startup ready assistant messages when resuming", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+    await session.append({ kind: "message", role: "assistant", text: "ready" });
+    await session.append({ kind: "message", role: "assistant", text: "real answer", meta: "model" });
+
+    const loaded = await loadSession(workspace, session.sessionId);
+
+    expect(rehydrateSession(loaded.events).messages).toEqual([{ kind: "agent", text: "real answer", meta: "model" }]);
   });
 });

@@ -6,7 +6,7 @@ import { ui } from "../cli/ui.js";
 const codeFenceSentinel = "\uE000topchester-code-fence\uE000";
 
 export function renderMarkdown(text: string, width: number): string[] {
-  const lines = new Markdown(text, 0, 0, getMarkdownTheme()).render(width);
+  const lines = new Markdown(unwrapMarkdownCodeFences(text), 0, 0, getMarkdownTheme()).render(width);
   const rendered: string[] = [];
   let inCodeBlock = false;
 
@@ -20,6 +20,10 @@ export function renderMarkdown(text: string, width: number): string[] {
   }
 
   return rendered;
+}
+
+function unwrapMarkdownCodeFences(text: string): string {
+  return text.replace(/^```(?:markdown|md)\s*\n([\s\S]*?)\n```$/gim, "$1");
 }
 
 function getMarkdownTheme(): MarkdownTheme {
@@ -68,7 +72,7 @@ function applyCodeBlockBackground(line: string): string {
     return line;
   }
 
-  const background = "\u001b[48;5;236m";
+  const background = "\u001b[48;5;235m";
   const reset = "\u001b[0m";
   const lineWithPersistentBackground = line.split(reset).join(`${reset}${background}`);
 

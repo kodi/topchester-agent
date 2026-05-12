@@ -28,7 +28,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     const result = await checkAgentReady(this.context.modelGateway, abortSignal);
 
     if (result === "ready") {
-      return [agentEvent.assistantMessage("ready"), agentEvent.status("ready")];
+      return [agentEvent.status("ready")];
     }
 
     if (result === "timed-out") {

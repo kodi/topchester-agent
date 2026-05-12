@@ -147,6 +147,9 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
   for (const event of events) {
     switch (event.kind) {
       case "message":
+        if (event.role === "assistant" && event.text === "ready" && event.meta === undefined) {
+          break;
+        }
         messages.push({
           kind: event.role === "assistant" ? "agent" : event.role,
           text: event.text,
@@ -163,7 +166,6 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
         messages.push({ kind: "system", text: event.label });
         break;
       case "knowledge_status":
-        messages.push({ kind: "system", text: formatKnowledgeStatusEvent(event.status) });
         break;
       case "choice":
         messages.push({
@@ -337,16 +339,6 @@ function validateEventConsistency(metadata: SessionMetadata, events: SessionEven
 
 function formatZodError(error: ZodError): string {
   return error.issues.map((issue) => `${issue.path.join(".") || "value"} ${issue.message}`).join("; ");
-}
-
-function formatKnowledgeStatusEvent(status: Record<string, unknown>): string {
-  const kbPath = typeof status.kbPath === "string" ? status.kbPath : "unknown";
-  const kbExists = typeof status.kbExists === "boolean" ? status.kbExists : false;
-  const kbIsDirectory = typeof status.kbIsDirectory === "boolean" ? status.kbIsDirectory : false;
-  const source = typeof status.kbPathSource === "string" ? status.kbPathSource : "workspace";
-  const state = !kbExists ? "[missing]" : kbIsDirectory ? "[ok]" : "[not a folder]";
-
-  return `KB status: ${kbPath} ${state} (${source})`;
 }
 
 function isVisibleOnlyMessage(meta: unknown): boolean {

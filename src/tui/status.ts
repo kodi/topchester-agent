@@ -77,9 +77,9 @@ export function formatStatusLine(
   kbStatus?: string,
   width?: number
 ): string {
-  const folder = folderName ? ` · folder: ${folderName}` : "";
+  const folder = folderName ? ` · ${ui.label("")} ${folderName}` : "";
   const model = modelLabel ? ` · ${formatModelStatusSegment(modelLabel)}` : "";
-  const left = `${ui.label("status")}: ${status}${folder}${model}`;
+  const left = `${ui.ok("●")} ${status}${folder}${model}`;
 
   if (!kbStatus) {
     return width === undefined ? left : truncateToWidth(left, width, "…", true);

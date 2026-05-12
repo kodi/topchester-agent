@@ -149,12 +149,12 @@ describe("TUI rendering", () => {
   });
 
   it("keeps status line output unchanged when no KB status is supplied", () => {
-    expect(formatStatusLine("repo", "model [provider]")).toBe("status: ready · folder: repo · model [provider]");
+    expect(formatStatusLine("repo", "model [provider]")).toBe("● ready ·  repo · model [provider]");
   });
 
   it("appends optional KB status to the status line", () => {
     expect(formatStatusLine("repo", "model [provider]", "ready", "kb: ready")).toBe(
-      "status: ready · folder: repo · model [provider] · kb: ready"
+      "● ready ·  repo · model [provider] · kb: ready"
     );
   });
 
@@ -163,7 +163,7 @@ describe("TUI rendering", () => {
 
     expect(visibleWidth(line)).toBe(60);
     expect(line.endsWith("✅ kb: ready")).toBe(true);
-    expect(line).toContain("status: ready · folder: repo · model [provider]");
+    expect(line).toContain("● ready ·  repo · model [provider]");
   });
 
   it("keeps right-aligned KB status visible when the status line is narrow", () => {
@@ -301,7 +301,7 @@ describe("TUI rendering", () => {
     expect(output).toContain(" ✦ System:");
     expect(output).toContain("   Welcome");
     expect(output).toContain("│ >");
-    expect(output).toContain("status: ready · folder: repo · model [provider]");
+    expect(output).toContain("● ready ·  repo · model [provider]");
   });
 
   it("colors edit_file change summaries dark gray in system messages", () => {
@@ -376,7 +376,7 @@ describe("TUI rendering", () => {
     });
     const output = app.render(80).join("\n");
 
-    expect(output).toContain("status: ready · folder: repo · model [provider]");
+    expect(output).toContain("● ready ·  repo · model [provider]");
     expect(output).toContain("✅ kb: ready");
   });
 
@@ -527,7 +527,8 @@ describe("TUI rendering", () => {
     const output = app.render(60).join("\n");
 
     expect(output).toContain(" Sure, I can help.");
-    expect(output).toContain(" qwen/qwen3-coder:free · 1.4 sec");
+    expect(output).toContain(" ─────────────────────────────────");
+    expect(output).toContain(" ↳ qwen/qwen3-coder:free · 1.4 sec");
   });
 
   it("renders one blank line between chat messages", () => {
@@ -598,11 +599,48 @@ describe("TUI rendering", () => {
 
       const output = app.render(80).join("\n");
 
-      expect(output).toContain("\u001b[48;5;236m");
+      expect(output).toContain("\u001b[48;5;235m");
+      expect(output).not.toContain("\u001b[48;5;236m");
       expect(output).toContain("\u001b[");
       expect(output).toContain("const");
       expect(output).not.toContain("│ const");
       expect(output).not.toContain("```");
+    } finally {
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
+  });
+
+  it("renders markdown fenced as markdown instead of raw code", () => {
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+
+    try {
+      const app = new ChatLayout(
+        new FakeTerminal(),
+        [agentMessage("The content is:\n\n```markdown\n# Title\n\n## Details\n\n**Bold item**\n```")],
+        "repo",
+        "model [provider]"
+      );
+
+      const output = app.render(80).join("\n");
+
+      expect(output).toContain("Title");
+      expect(output).toContain("Details");
+      expect(output).toContain("\u001b[1mBold item\u001b[22m");
+      expect(output).not.toContain("# Title");
+      expect(output).not.toContain("```");
+      expect(output).not.toContain("\u001b[48;5;235m");
     } finally {
       if (previousForceColor === undefined) {
         delete process.env.FORCE_COLOR;
@@ -982,10 +1020,7 @@ describe("TUI rendering", () => {
       label: "Tool read_file: README.md",
       call: { tool: "read_file", args: { path: "README.md" } },
     });
-    expect(runtimeEventToSessionPayload(agentEvent.knowledgeStatus(status))).toEqual({
-      kind: "knowledge_status",
-      status,
-    });
+    expect(runtimeEventToSessionPayload(agentEvent.knowledgeStatus(status))).toBeUndefined();
     expect(
       runtimeEventToSessionPayload(
         agentEvent.choice({ tone: "warning", title: "No KB found", body: "Create one?", actions: [{ label: "Exit" }] })
@@ -1001,6 +1036,16 @@ describe("TUI rendering", () => {
       kind: "status",
       status: "ready",
     });
+  });
+
+  it("does not turn successful startup checks into visible ready messages", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-ready-check-"));
+    const runtime = new TopchesterAgentRuntime(createTestContext(workspace));
+
+    const events = await runtime.checkAgent();
+
+    expect(events).toEqual([agentEvent.status("ready")]);
+    expect(events.flatMap((event) => (event.type === "message" ? [event.text] : []))).not.toContain("ready");
   });
 
   it("marks slash-command submissions as visible-only command input", () => {

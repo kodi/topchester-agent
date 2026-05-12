@@ -305,10 +305,7 @@ export function runtimeEventToSessionPayload(event: AgentRuntimeEvent): SessionE
         call: event.call as unknown as Record<string, unknown>,
       };
     case "knowledge_status":
-      return {
-        kind: "knowledge_status",
-        status: event.status as unknown as Record<string, unknown>,
-      };
+      return undefined;
     case "choice":
       return {
         kind: "choice",
