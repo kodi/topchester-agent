@@ -116,7 +116,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       const toolResult = await executeToolCall(this.context.workspaceRoot, toolCall, {
         logger: this.context.logger,
       });
-      events.push(agentEvent.toolCall(toolCall, formatToolCallMessage(toolCall)));
+      events.push(agentEvent.toolCall(toolCall, formatToolCallMessage(toolCall, toolResult)));
       afterTool = toolCall.tool;
       nextPrompt = `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\nContinue the user's request using the tool result above. If another tool is needed, reply with only that tool JSON. Otherwise answer the user. Do not guess.`;
     }
@@ -217,7 +217,7 @@ function formatToolResultForPrompt(result: ToolResult): string {
   return [`Tool result from ${result.tool}${path}${command}:${warning}`, "```", result.content, "```"].join("\n");
 }
 
-function formatToolCallMessage(call: ToolCall): string {
+function formatToolCallMessage(call: ToolCall, result?: ToolResult): string {
   switch (call.tool) {
     case "read_file":
       return `Tool read_file: ${call.args.path}`;
@@ -226,8 +226,16 @@ function formatToolCallMessage(call: ToolCall): string {
     case "find_file":
       return `Tool find_file: ${call.args.query} in ${call.args.path}`;
     case "edit_file":
-      return `Tool edit_file: ${call.args.path}`;
+      return `Tool edit_file: ${call.args.path}${formatEditFileChangeSummary(result)}`;
   }
+}
+
+function formatEditFileChangeSummary(result: ToolResult | undefined): string {
+  if (result?.tool !== "edit_file") {
+    return "";
+  }
+
+  return ` (changed ${result.editEvent.diffSummary})`;
 }
 
 function formatAgentMessageMeta(model: string, durationMs: number): string {

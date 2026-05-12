@@ -75,16 +75,20 @@ export function renderChatMessage(message: ChatMessage, options: RenderChatMessa
 }
 
 function renderUserMessage(lines: string[]): string[] {
-  const prefix = "You: ";
-  const rendered = lines.map((line, index) => `${index === 0 ? prefix : " ".repeat(prefix.length)}${line}`);
+  const border = ui.model("│");
+  const rendered = lines.map((line) => `${border} ${line}`);
 
-  return ["", ...rendered, ""];
+  return [`${border} `, ...rendered, `${border} `];
 }
 
 function renderSystemMessage(lines: string[]): string[] {
   const bodyPrefix = "  ";
 
-  return [`${ui.ok("✦")} ${ui.label("System")}:`, ...lines.map((line) => `${bodyPrefix}${line}`)];
+  return [`${ui.ok("✦")} ${ui.label("System")}:`, ...lines.map((line) => `${bodyPrefix}${formatSystemBodyLine(line)}`)];
+}
+
+function formatSystemBodyLine(line: string): string {
+  return line.replace(/\(changed \+\d+\/-\d+\)$/u, (summary) => ui.muted(summary));
 }
 
 function getPrefix(kind: TextChatMessage["kind"]): string {

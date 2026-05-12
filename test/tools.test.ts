@@ -62,6 +62,31 @@ describe("agent tools", () => {
     });
   });
 
+  it("parses the first tool call when the model emits concatenated tool JSON", () => {
+    expect(
+      parseToolCall(
+        '{"tool":"find_file","args":{"query":"test-foo.ts"}}{"tool":"read_file","args":{"path":"test-foo.ts"}}'
+      )
+    ).toEqual({
+      tool: "find_file",
+      args: { query: "test-foo.ts", path: ".", limit: 50 },
+    });
+  });
+
+  it("parses a leading tool call when the model appends prose", () => {
+    expect(
+      parseToolCall(
+        '{"tool":"edit_file","args":{"path":"test-foo.ts","edits":[{"old_text":"console.log(\\"hello\\");","new_text":"console.log(\\"HELLO\\");"}]}}Changed the file.'
+      )
+    ).toEqual({
+      tool: "edit_file",
+      args: {
+        path: "test-foo.ts",
+        edits: [{ old_text: 'console.log("hello");', new_text: 'console.log("HELLO");' }],
+      },
+    });
+  });
+
   it("rejects unknown tools and invalid tool args", () => {
     expect(parseToolCall('{"tool":"unknown","args":{}}')).toBeUndefined();
     expect(parseToolCall('{"tool":"read_file","args":{"path":123}}')).toBeUndefined();
@@ -104,6 +129,8 @@ describe("agent tools", () => {
   it("tells the model how to use edit_file safely", () => {
     const prompt = getChatSystemPrompt();
 
+    expect(prompt).toContain("When using a tool, output exactly one tool JSON object and no prose");
+    expect(prompt).toContain("After the tool result, either output the next single tool JSON object");
     expect(prompt).toContain("Use read_file before editing a file");
     expect(prompt).toContain("Use edit_file for targeted edits to existing files");
     expect(prompt).toContain("Keep edit_file old_text small but unique");

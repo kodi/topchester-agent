@@ -4,6 +4,7 @@ const colors = {
   bgSoftGray: "\u001b[48;5;236m",
   blue: "\u001b[34m",
   cyan: "\u001b[36m",
+  darkGray: "\u001b[90m",
   dim: "\u001b[2m",
   green: "\u001b[32m",
   orange: "\u001b[38;5;208m",
@@ -21,6 +22,9 @@ export const ui = {
   },
   label(text: string): string {
     return color(text, "dim");
+  },
+  muted(text: string): string {
+    return color(text, "darkGray");
   },
   model(text: string): string {
     return color(text, "blue");

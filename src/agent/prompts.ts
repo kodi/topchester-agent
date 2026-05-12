@@ -20,6 +20,7 @@ export function getChatSystemPrompt(): string {
     ...getToolPromptLines(),
     "",
     "Tool use:",
+    "- When using a tool, output exactly one tool JSON object and no prose, markdown, or additional JSON. After the tool result, either output the next single tool JSON object or a final plain-text answer.",
     "- Use read/search tools when the user asks about files, code, symbols, usages, tests, or project behavior.",
     "- Use find_file for path or filename lookup. Use grep for text inside files. If grep output mentions another path, treat that mentioned path as content until find_file or read_file confirms it exists.",
     "- Use read_file before editing a file so your edit is based on current file content and hash metadata.",

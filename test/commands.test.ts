@@ -254,7 +254,7 @@ describe("slash commands", () => {
 
     expect(events).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ type: "tool_call", label: "Tool edit_file: example.txt" }),
+        expect.objectContaining({ type: "tool_call", label: "Tool edit_file: example.txt (changed +1/-1)" }),
         expect.objectContaining({ type: "message", role: "assistant", text: "Updated example.txt." }),
       ])
     );
@@ -327,7 +327,7 @@ describe("slash commands", () => {
       expect.arrayContaining([
         expect.objectContaining({ type: "tool_call", label: "Tool find_file: test-foo.ts in ." }),
         expect.objectContaining({ type: "tool_call", label: "Tool read_file: test-foo.ts" }),
-        expect.objectContaining({ type: "tool_call", label: "Tool edit_file: test-foo.ts" }),
+        expect.objectContaining({ type: "tool_call", label: "Tool edit_file: test-foo.ts (changed +1/-1)" }),
         expect.objectContaining({ type: "message", role: "assistant", text: "Updated test-foo.ts." }),
       ])
     );

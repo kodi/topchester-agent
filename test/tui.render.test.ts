@@ -18,7 +18,7 @@ import {
 } from "../src/tui/index.js";
 import { getKnowledgeStatus } from "../src/knowledge/status.js";
 import { createExitConfirmationInputListener } from "../src/tui/shell.js";
-import { agentMessage, modalMessage, systemMessage } from "../src/tui/messages.js";
+import { agentMessage, modalMessage, renderChatMessage, systemMessage, userMessage } from "../src/tui/messages.js";
 import { type Terminal } from "@earendil-works/pi-tui";
 import { type AppContext } from "../src/app/context.js";
 
@@ -259,6 +259,57 @@ describe("TUI rendering", () => {
     expect(output).toContain("   Welcome");
     expect(output).toContain("│ >");
     expect(output).toContain("status: ready · folder: repo · model [provider]");
+  });
+
+  it("colors edit_file change summaries dark gray in system messages", () => {
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+
+    try {
+      expect(renderChatMessage(systemMessage("Tool edit_file: test-foo.ts (changed +1/-1)"))).toContain(
+        "  Tool edit_file: test-foo.ts \u001b[90m(changed +1/-1)\u001b[0m"
+      );
+    } finally {
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
+  });
+
+  it("renders user messages with a blue left border and no label", () => {
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+
+    try {
+      expect(renderChatMessage(userMessage("hello"))).toEqual([
+        "\u001b[34m│\u001b[0m ",
+        "\u001b[34m│\u001b[0m hello",
+        "\u001b[34m│\u001b[0m ",
+      ]);
+      expect(renderChatMessage(userMessage("hello")).join("\n")).not.toContain("You:");
+    } finally {
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
   });
 
   it("renders stored KB status in the footer", () => {
@@ -516,7 +567,7 @@ describe("TUI rendering", () => {
     app.handleInput("\n");
     const output = app.render(60).join("\n");
 
-    expect(output).toContain(" You: hello");
+    expect(output).toContain(" │ hello");
     expect(submitted).toBe("hello");
   });
 
@@ -535,7 +586,7 @@ describe("TUI rendering", () => {
     app.handleInput("\n");
     const output = app.render(60).join("\n");
 
-    expect(output).toContain(" You: /kb status");
+    expect(output).toContain(" │ /kb status");
     expect(submittedCommand).toBe("/kb status");
     expect(submittedMessage).toBe("");
   });
@@ -573,11 +624,11 @@ describe("TUI rendering", () => {
 
     app.handleInput("\n");
     const lines = app.render(60);
-    const messageIndex = lines.findIndex((line) => line.includes("You: hello"));
+    const messageIndex = lines.findIndex((line) => line.includes("│ hello"));
 
     expect(messageIndex).toBeGreaterThan(0);
-    expect(lines[messageIndex - 1]?.trim()).toBe("");
-    expect(lines[messageIndex + 1]?.trim()).toBe("");
+    expect(lines[messageIndex - 1]).toContain("│");
+    expect(lines[messageIndex + 1]).toContain("│");
   });
 
   it("renders chat modal messages with numbered actions", () => {
@@ -676,7 +727,7 @@ describe("TUI rendering", () => {
     app.handleInput("\n");
     const output = app.render(80).join("\n");
 
-    expect(output).toContain(" You: Skip creation");
+    expect(output).toContain(" │ Skip creation");
     expect(submitted).toBe("Skip creation");
   });
 
@@ -697,7 +748,7 @@ describe("TUI rendering", () => {
     app.handleInput("\u001b");
     const output = app.render(80).join("\n");
 
-    expect(output).toContain(" You: Cancel");
+    expect(output).toContain(" │ Cancel");
     expect(output).not.toContain("chat is not wired yet");
   });
 
