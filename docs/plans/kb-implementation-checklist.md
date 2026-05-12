@@ -29,7 +29,7 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [x] Default cache path: `.agents/topchester-kb-cache/`
 - [x] Environment overrides for KB/cache paths
 - [ ] Validate KB folder schema/version during status and compile
-- [ ] Add explicit compiler version to manifest
+- [x] Add explicit compiler version to manifest
 - [ ] Add reproducibility metadata to manifest
 - [ ] Add safe upgrade/migration story for future KB layout changes
 

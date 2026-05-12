@@ -9,6 +9,7 @@ import {
   isPartialKnowledgeCompileResult,
 } from "../src/knowledge/compiler/index.js";
 import { listProjectFilesForL1 } from "../src/knowledge/compiler/inventory.js";
+import { knowledgeCompilerIdentity } from "../src/knowledge/compiler/manifest.js";
 import { getL1FileEntryPath } from "../src/knowledge/compiler/path-encoding.js";
 import { initializeKnowledgeBase } from "../src/knowledge/init.js";
 
@@ -110,6 +111,7 @@ describe("knowledge compiler inventory", () => {
     expect(result.queuedFiles.map((file) => file.path)).toEqual([".gitignore", "src/index.ts"]);
     expect(result.queuedFiles.find((file) => file.path === "src/index.ts")?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(queue.queuedFiles).toEqual(result.queuedFiles);
+    expect(manifest.compiler).toEqual(knowledgeCompilerIdentity);
     expect(manifest.queuedFileCount).toBe(2);
   });
 
@@ -187,6 +189,7 @@ describe("knowledge compiler inventory", () => {
 
     expect(result.queuedFiles).toEqual([]);
     expect(queue.queuedFiles).toEqual([]);
+    expect(manifest.compiler).toEqual(knowledgeCompilerIdentity);
     expect(manifest.queuedFileCount).toBe(0);
     expect(manifest.l1).toEqual({ queued: 0, completed: 0, failed: 0, changed: 0, missing: 0, currentEntries: 0 });
     expect(l1Entries).toEqual([]);

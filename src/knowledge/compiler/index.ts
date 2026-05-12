@@ -5,6 +5,7 @@ import { type KnowledgeProgressReporter } from "../progress.js";
 import { listProjectFilesForL1 } from "./inventory.js";
 import { createL1QueueFile, createL1QueueItem, type L1QueueItem } from "./l1.js";
 import { processL1Queue, type L1QueueProcessingSummary, type L1SummaryModel } from "./l1-processor.js";
+import { knowledgeCompilerIdentity } from "./manifest.js";
 
 export interface KnowledgeCompiler {
   compile(): Promise<KnowledgeCompileResult>;
@@ -62,6 +63,7 @@ export async function compileKnowledgeBase(
       {
         name: "topchester-kb",
         version: 1,
+        compiler: knowledgeCompilerIdentity,
         generatedAt,
         workspaceRoot,
         l1QueuePath: queuePath,

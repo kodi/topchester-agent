@@ -1,4 +1,8 @@
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import {
   ChatLayout,
   BusyIndicator,
@@ -8,6 +12,7 @@ import {
   formatStatusLine,
   getKnowledgeStatusMessages,
 } from "../src/tui/index.js";
+import { getKnowledgeStatus } from "../src/knowledge/status.js";
 import { createExitConfirmationInputListener } from "../src/tui/shell.js";
 import { agentMessage, modalMessage, systemMessage } from "../src/tui/messages.js";
 import { type Terminal } from "@earendil-works/pi-tui";
@@ -39,13 +44,58 @@ class FakeTerminal implements Terminal {
 
 describe("TUI rendering", () => {
   it("keeps status line output unchanged when no KB status is supplied", () => {
-    expect(formatStatusLine("repo", "model [provider]")).toBe("status: ready · folder: repo · model: model [provider]");
+    expect(formatStatusLine("repo", "model [provider]")).toBe("status: ready · folder: repo · model [provider]");
   });
 
   it("appends optional KB status to the status line", () => {
     expect(formatStatusLine("repo", "model [provider]", "ready", "kb: ready")).toBe(
-      "status: ready · folder: repo · model: model [provider] · kb: ready"
+      "status: ready · folder: repo · model [provider] · kb: ready"
     );
+  });
+
+  it("right-aligns KB status when a footer width is supplied", () => {
+    const line = formatStatusLine("repo", "model [provider]", "ready", "✅ kb: ready", 60);
+
+    expect(visibleWidth(line)).toBe(60);
+    expect(line.endsWith("✅ kb: ready")).toBe(true);
+    expect(line).toContain("status: ready · folder: repo · model [provider]");
+  });
+
+  it("keeps right-aligned KB status visible when the status line is narrow", () => {
+    const line = formatStatusLine(
+      "topchester-agent",
+      "google/gemini-2.5-flash-lite [openrouter]",
+      "ready",
+      "✅ kb: ready",
+      34
+    );
+
+    expect(visibleWidth(line)).toBe(34);
+    expect(line.endsWith("✅ kb: ready")).toBe(true);
+  });
+
+  it("colors the footer model blue and provider gray when color is enabled", () => {
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+
+    try {
+      expect(formatStatusLine("repo", "google/gemini-2.5-flash-lite [openrouter]")).toContain(
+        "\u001b[34mgoogle/gemini-2.5-flash-lite\u001b[0m\u001b[2m [openrouter]\u001b[0m"
+      );
+    } finally {
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
   });
 
   it("formats compact KB footer status labels", () => {
@@ -59,9 +109,73 @@ describe("TUI rendering", () => {
       cachePathSource: "default" as const,
     };
 
-    expect(formatKnowledgeFooterStatus({ ...baseStatus, kbExists: true, kbIsDirectory: true })).toBe("kb: ready");
-    expect(formatKnowledgeFooterStatus({ ...baseStatus, kbExists: false, kbIsDirectory: false })).toBe("kb: missing");
-    expect(formatKnowledgeFooterStatus({ ...baseStatus, kbExists: true, kbIsDirectory: false })).toBe("kb: not-folder");
+    expect(
+      formatKnowledgeFooterStatus({ ...baseStatus, kbExists: true, kbIsDirectory: true, kbContentState: "ready" })
+    ).toBe("✅ kb: ready");
+    expect(
+      formatKnowledgeFooterStatus({ ...baseStatus, kbExists: true, kbIsDirectory: true, kbContentState: "empty" })
+    ).toBe("○ kb: empty");
+    expect(formatKnowledgeFooterStatus({ ...baseStatus, kbExists: false, kbIsDirectory: false })).toBe("⚠ kb: missing");
+    expect(formatKnowledgeFooterStatus({ ...baseStatus, kbExists: true, kbIsDirectory: false })).toBe(
+      "✕ kb: path conflict"
+    );
+  });
+
+  it("detects empty and ready KB content from the manifest", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-status-"));
+    const kbPath = join(workspace, "topchester-kb");
+    await mkdir(kbPath, { recursive: true });
+
+    expect(getKnowledgeStatus(workspace).kbContentState).toBe("empty");
+
+    await writeFile(
+      join(kbPath, "manifest.json"),
+      JSON.stringify({ l1: { completed: 0, currentEntries: 1 } }, null, 2)
+    );
+
+    expect(getKnowledgeStatus(workspace).kbContentState).toBe("ready");
+  });
+
+  it("colors compact KB footer status labels when color is enabled", () => {
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    const baseStatus = {
+      workspaceRoot: "/repo",
+      kbPath: "/repo/topchester-kb",
+      cachePath: "/repo/.agents/topchester-kb-cache",
+      cacheExists: false,
+      cacheIsDirectory: false,
+      kbPathSource: "default" as const,
+      cachePathSource: "default" as const,
+    };
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+
+    try {
+      expect(
+        formatKnowledgeFooterStatus({ ...baseStatus, kbExists: true, kbIsDirectory: true, kbContentState: "ready" })
+      ).toBe("\u001b[32m✅\u001b[0m kb: \u001b[32mready\u001b[0m");
+      expect(
+        formatKnowledgeFooterStatus({ ...baseStatus, kbExists: true, kbIsDirectory: true, kbContentState: "empty" })
+      ).toBe("\u001b[2m○\u001b[0m kb: \u001b[2mempty\u001b[0m");
+      expect(formatKnowledgeFooterStatus({ ...baseStatus, kbExists: false, kbIsDirectory: false })).toBe(
+        "\u001b[33m⚠\u001b[0m kb: \u001b[33mmissing\u001b[0m"
+      );
+      expect(formatKnowledgeFooterStatus({ ...baseStatus, kbExists: true, kbIsDirectory: false })).toBe(
+        "\u001b[31m✕\u001b[0m kb: \u001b[31mpath conflict\u001b[0m"
+      );
+    } finally {
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
   });
 
   it("enters and exits the terminal alternate screen", () => {
@@ -82,7 +196,7 @@ describe("TUI rendering", () => {
     expect(output).toContain(" ✦ System:");
     expect(output).toContain("   Welcome");
     expect(output).toContain("│ >");
-    expect(output).toContain("status: ready · folder: repo · model: model [provider]");
+    expect(output).toContain("status: ready · folder: repo · model [provider]");
   });
 
   it("renders stored KB status in the footer", () => {
@@ -94,6 +208,7 @@ describe("TUI rendering", () => {
       cachePath: "/repo/.agents/topchester-kb-cache",
       kbExists: true,
       kbIsDirectory: true,
+      kbContentState: "ready",
       cacheExists: false,
       cacheIsDirectory: false,
       kbPathSource: "default",
@@ -101,7 +216,31 @@ describe("TUI rendering", () => {
     });
     const output = app.render(80).join("\n");
 
-    expect(output).toContain("status: ready · folder: repo · model: model [provider] · kb: ready");
+    expect(output).toContain("status: ready · folder: repo · model [provider]");
+    expect(output).toContain("✅ kb: ready");
+  });
+
+  it("pads the status footer by one column on each edge", () => {
+    const app = new ChatLayout(new FakeTerminal(), [systemMessage("Welcome")], "repo", "model [provider]");
+
+    app.setKnowledgeStatus({
+      workspaceRoot: "/repo",
+      kbPath: "/repo/topchester-kb",
+      cachePath: "/repo/.agents/topchester-kb-cache",
+      kbExists: true,
+      kbIsDirectory: true,
+      kbContentState: "ready",
+      cacheExists: false,
+      cacheIsDirectory: false,
+      kbPathSource: "default",
+      cachePathSource: "default",
+    });
+    const footer = app.render(80).at(-1) ?? "";
+
+    expect(visibleWidth(footer)).toBe(80);
+    expect(footer.startsWith(" ")).toBe(true);
+    expect(footer.endsWith(" ")).toBe(true);
+    expect(footer.trimEnd().endsWith("✅ kb: ready")).toBe(true);
   });
 
   it("renders busy state as an ephemeral chat line with a prompt hint", () => {

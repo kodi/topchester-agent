@@ -212,8 +212,9 @@ export class ChatLayout implements Component, Focusable {
     const inputLine = this.promptHint
       ? truncateToWidth(ui.label(this.promptHint), innerWidth, "…", true)
       : truncateToWidth(renderInputWithoutPrompt(this.input, innerWidth), innerWidth, "…", true);
+    const statusInnerWidth = Math.max(1, width - 2);
     const status = truncateToWidth(
-      formatStatusLine(this.folderName, this.modelLabel, this.status, this.knowledgeStatus),
+      ` ${formatStatusLine(this.folderName, this.modelLabel, this.status, this.knowledgeStatus, statusInnerWidth)} `,
       width,
       "…",
       true
@@ -257,7 +258,14 @@ export class ChatLayout implements Component, Focusable {
 
   private renderModalHelp(width: number): string[] {
     const help = "↑↓ navigate   Enter select   Esc cancel";
-    const status = formatStatusLine(this.folderName, this.modelLabel, this.status, this.knowledgeStatus);
+    const statusInnerWidth = Math.max(1, width - 4);
+    const status = formatStatusLine(
+      this.folderName,
+      this.modelLabel,
+      this.status,
+      this.knowledgeStatus,
+      statusInnerWidth
+    );
 
     return [truncateToWidth(`  ${help}`, width, "…", true), truncateToWidth(`  ${status}`, width, "…", true)];
   }

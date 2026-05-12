@@ -44,7 +44,7 @@ Current behavior:
 - Shows a scrolling thread area on top with startup context.
 - Supports terminal alternate-scroll wheel events, `PageUp`/`PageDown`, and `Home`/`End` for chat history scrolling.
 - Shows an unlabeled input box below the thread.
-- Shows a status line below the prompt box with `ready`, the current folder name, the active model as `model [provider]`, and compact KB path health as `kb: ready`, `kb: missing`, or `kb: not-folder` after the KB check runs.
+- Shows a status line below the prompt box with `ready`, the current folder name, the active model as `model [provider]`, and compact KB state as `✅ kb: ready`, `○ kb: empty`, `⚠ kb: missing`, or `✕ kb: path conflict` after the KB check runs.
 - Tracks chat rows as `System`, `You`, and `Agent` messages, and sends user messages to the configured `agent.primary` model.
 - Lets the model use workspace-scoped tools: `read_file` and `grep`.
 - `grep` uses `rg` when available, falls back to `grep`, and reports a warning if neither command is installed.
@@ -108,7 +108,7 @@ Current behavior:
 - Queues each listed file for L1 processing in `.agents/topchester-kb-cache/l1-queue.json`.
 - Processes the L1 queue with the configured `kb.summarize` model purpose. If `kb.summarize` is not configured, it uses the configured `fallback` model if one exists.
 - Writes one current L1 JSON entry per successfully processed file under `topchester-kb/l1-files/`.
-- Writes `topchester-kb/manifest.json` with the queued file count, gitignore files read, and L1 outcome counts.
+- Writes `topchester-kb/manifest.json` with the KB layout version, compiler name/version, queued file count, gitignore files read, and L1 outcome counts.
 - Prints progress while reading ignore files, listing files, queueing L1 work, processing L1 entries, and writing output. During L1 processing, the CLI shows a progress bar, completed/total count, percentage, and current file path.
 - Prints the workspace path, gitignore file count, queue path, manifest path, queued count, completed count, failed count, changed count, missing count, current L1 entry count, and final state.
 - Exits successfully only when every in-scope file has a current L1 entry. Per-file failed, changed, or missing outcomes print a partial state and set a non-success automation exit code. Fatal setup or model configuration errors fail before claiming L1 entries are current.

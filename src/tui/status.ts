@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type AppContext } from "../app/context.js";
 import { ui } from "../cli/ui.js";
 import { type KnowledgeStatus } from "../knowledge/status.js";
@@ -66,24 +67,67 @@ export function getFolderName(path: string): string {
   return basename(path) || path;
 }
 
-export function formatStatusLine(folderName: string, modelLabel: string, status = "ready", kbStatus?: string): string {
+export function formatStatusLine(
+  folderName: string,
+  modelLabel: string,
+  status = "ready",
+  kbStatus?: string,
+  width?: number
+): string {
   const folder = folderName ? ` · folder: ${folderName}` : "";
-  const model = modelLabel ? ` · model: ${modelLabel}` : "";
-  const knowledge = kbStatus ? ` · ${kbStatus}` : "";
+  const model = modelLabel ? ` · ${formatModelStatusSegment(modelLabel)}` : "";
+  const left = `${ui.label("status")}: ${status}${folder}${model}`;
 
-  return `${ui.label("status")}: ${status}${folder}${model}${knowledge}`;
+  if (!kbStatus) {
+    return width === undefined ? left : truncateToWidth(left, width, "…", true);
+  }
+
+  if (width === undefined) {
+    return `${left} · ${kbStatus}`;
+  }
+
+  return formatSplitStatusLine(left, kbStatus, width);
+}
+
+function formatSplitStatusLine(left: string, right: string, width: number): string {
+  const safeWidth = Math.max(1, width);
+  const rightWidth = visibleWidth(right);
+
+  if (rightWidth >= safeWidth) {
+    return truncateToWidth(right, safeWidth, "…", true);
+  }
+
+  const leftWidth = Math.max(1, safeWidth - rightWidth - 1);
+  const leftText = truncateToWidth(left, leftWidth, "…", true);
+  const gap = Math.max(1, safeWidth - visibleWidth(leftText) - rightWidth);
+
+  return `${leftText}${" ".repeat(gap)}${right}`;
+}
+
+function formatModelStatusSegment(modelLabel: string): string {
+  const providerMatch = /^(?<model>.*?)(?<provider> \[[^\]]+\])$/.exec(modelLabel);
+
+  if (!providerMatch?.groups) {
+    return ui.model(modelLabel);
+  }
+
+  return `${ui.model(providerMatch.groups.model)}${ui.label(providerMatch.groups.provider)}`;
 }
 
 export function formatKnowledgeFooterStatus(status: KnowledgeStatus): string {
   if (!status.kbExists) {
-    return "kb: missing";
+    return `${ui.warn("⚠")} kb: ${ui.warn("missing")}`;
   }
 
   if (!status.kbIsDirectory) {
-    return "kb: not-folder";
+    return `${ui.error("✕")} kb: ${ui.error("path conflict")}`;
   }
 
-  return "kb: ready";
+  if (status.kbContentState !== "ready") {
+    return `${ui.label("○")} kb: ${ui.label("empty")}`;
+  }
+
+  return `${ui.ok("✅")} kb: ${ui.ok("ready")}`;
 }
 
 export function formatPathStatus(path: string, exists: boolean, isDirectory: boolean): string {

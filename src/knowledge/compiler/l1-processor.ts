@@ -6,6 +6,7 @@ import { type ModelTextResult } from "../../model/index.js";
 import { formatCountProgress, type KnowledgeProgressReporter } from "../progress.js";
 import { l1FileEntrySchemaPath, parseL1FileEntry, type L1FileEntry } from "./l1-entry.js";
 import { createL1QueueFile, l1QueueFileSchema, type L1QueueFailure, type L1QueueItem } from "./l1.js";
+import { knowledgeCompilerIdentity } from "./manifest.js";
 import { getL1FileEntryPath, normalizeL1FilePath } from "./path-encoding.js";
 
 const MAX_L1_PROMPT_FILE_BYTES = 256 * 1024;
@@ -571,6 +572,7 @@ async function writeManifest(
       {
         name: "topchester-kb",
         version: 1,
+        compiler: knowledgeCompilerIdentity,
         generatedAt,
         workspaceRoot: options.workspaceRoot,
         l1QueuePath: options.queuePath,

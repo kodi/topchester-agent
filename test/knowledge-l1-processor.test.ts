@@ -16,6 +16,7 @@ import {
   processL1QueueItem,
   type L1SummaryModel,
 } from "../src/knowledge/compiler/l1-processor.js";
+import { knowledgeCompilerIdentity } from "../src/knowledge/compiler/manifest.js";
 import {
   getL1FileEntryPath,
   getL1FileEntryRelativePath,
@@ -545,6 +546,7 @@ describe("durable L1 queue processing", () => {
     const persistedQueue = l1QueueFileSchema.parse(JSON.parse(await readFile(queuePath, "utf8")));
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
     expect(persistedQueue.queuedFiles.map((item) => item.status)).toEqual(["completed", "failed", "completed"]);
+    expect(manifest.compiler).toEqual(knowledgeCompilerIdentity);
     expect(manifest.l1).toEqual(result.summary);
   });
 

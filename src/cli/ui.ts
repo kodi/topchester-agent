@@ -2,6 +2,7 @@ import { stderr, stdout } from "node:process";
 
 const colors = {
   bgSoftGray: "\u001b[48;5;236m",
+  blue: "\u001b[34m",
   cyan: "\u001b[36m",
   dim: "\u001b[2m",
   green: "\u001b[32m",
@@ -16,6 +17,9 @@ export const ui = {
   },
   label(text: string): string {
     return color(text, "dim");
+  },
+  model(text: string): string {
+    return color(text, "blue");
   },
   ok(text: string): string {
     return color(text, "green");

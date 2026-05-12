@@ -1,4 +1,5 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { resolveWorkspacePath } from "../app/paths.js";
 
 export interface KnowledgeStatus {
@@ -9,6 +10,7 @@ export interface KnowledgeStatus {
   kbIsDirectory: boolean;
   cacheExists: boolean;
   cacheIsDirectory: boolean;
+  kbContentState?: "empty" | "ready";
   kbPathSource: "default" | "env";
   cachePathSource: "default" | "env";
 }
@@ -32,9 +34,45 @@ export function getKnowledgeStatus(workspaceRoot: string): KnowledgeStatus {
     kbIsDirectory: kbStat?.isDirectory() ?? false,
     cacheExists: Boolean(cacheStat),
     cacheIsDirectory: cacheStat?.isDirectory() ?? false,
+    kbContentState: getKbContentState(kbPath, kbStat?.isDirectory() ?? false),
     kbPathSource,
     cachePathSource,
   };
+}
+
+function getKbContentState(kbPath: string, kbIsDirectory: boolean): KnowledgeStatus["kbContentState"] {
+  if (!kbIsDirectory) {
+    return undefined;
+  }
+
+  const manifest = readManifest(join(kbPath, "manifest.json"));
+  const l1 = isRecord(manifest) && isRecord(manifest.l1) ? manifest.l1 : undefined;
+  const currentEntries = getNumber(l1, "currentEntries");
+  const completed = getNumber(l1, "completed");
+
+  return currentEntries > 0 || completed > 0 ? "ready" : "empty";
+}
+
+function readManifest(path: string): unknown {
+  if (!existsSync(path)) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getNumber(record: Record<string, unknown> | undefined, key: string): number {
+  const value = record?.[key];
+
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function safeStat(path: string) {
