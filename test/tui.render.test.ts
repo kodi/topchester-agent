@@ -4,6 +4,8 @@ import {
   BusyIndicator,
   enterAlternateScreen,
   exitAlternateScreen,
+  formatKnowledgeFooterStatus,
+  formatStatusLine,
   getKnowledgeStatusMessages,
 } from "../src/tui/index.js";
 import { createExitConfirmationInputListener } from "../src/tui/shell.js";
@@ -36,6 +38,32 @@ class FakeTerminal implements Terminal {
 }
 
 describe("TUI rendering", () => {
+  it("keeps status line output unchanged when no KB status is supplied", () => {
+    expect(formatStatusLine("repo", "model [provider]")).toBe("status: ready · folder: repo · model: model [provider]");
+  });
+
+  it("appends optional KB status to the status line", () => {
+    expect(formatStatusLine("repo", "model [provider]", "ready", "kb: ready")).toBe(
+      "status: ready · folder: repo · model: model [provider] · kb: ready"
+    );
+  });
+
+  it("formats compact KB footer status labels", () => {
+    const baseStatus = {
+      workspaceRoot: "/repo",
+      kbPath: "/repo/topchester-kb",
+      cachePath: "/repo/.agents/topchester-kb-cache",
+      cacheExists: false,
+      cacheIsDirectory: false,
+      kbPathSource: "default" as const,
+      cachePathSource: "default" as const,
+    };
+
+    expect(formatKnowledgeFooterStatus({ ...baseStatus, kbExists: true, kbIsDirectory: true })).toBe("kb: ready");
+    expect(formatKnowledgeFooterStatus({ ...baseStatus, kbExists: false, kbIsDirectory: false })).toBe("kb: missing");
+    expect(formatKnowledgeFooterStatus({ ...baseStatus, kbExists: true, kbIsDirectory: false })).toBe("kb: not-folder");
+  });
+
   it("enters and exits the terminal alternate screen", () => {
     const terminal = new FakeTerminal();
 

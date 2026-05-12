@@ -3,6 +3,7 @@ export { ChatLayout } from "./layout.js";
 export { getKnowledgeStatusMessages, renderRuntimeEvent, renderRuntimeEvents } from "./runtime-events.js";
 export { TopchesterTuiShell, type TuiShell } from "./shell.js";
 export {
+  formatKnowledgeFooterStatus,
   formatPathStatus,
   formatStatusLine,
   getFolderName,

@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import { type AppContext } from "../app/context.js";
 import { ui } from "../cli/ui.js";
+import { type KnowledgeStatus } from "../knowledge/status.js";
 import { type ModelPurpose } from "../model/index.js";
 import { renderChatMessage, systemMessage, type ChatMessage } from "./messages.js";
 
@@ -65,11 +66,24 @@ export function getFolderName(path: string): string {
   return basename(path) || path;
 }
 
-export function formatStatusLine(folderName: string, modelLabel: string, status = "ready"): string {
+export function formatStatusLine(folderName: string, modelLabel: string, status = "ready", kbStatus?: string): string {
   const folder = folderName ? ` · folder: ${folderName}` : "";
   const model = modelLabel ? ` · model: ${modelLabel}` : "";
+  const knowledge = kbStatus ? ` · ${kbStatus}` : "";
 
-  return `${ui.label("status")}: ${status}${folder}${model}`;
+  return `${ui.label("status")}: ${status}${folder}${model}${knowledge}`;
+}
+
+export function formatKnowledgeFooterStatus(status: KnowledgeStatus): string {
+  if (!status.kbExists) {
+    return "kb: missing";
+  }
+
+  if (!status.kbIsDirectory) {
+    return "kb: not-folder";
+  }
+
+  return "kb: ready";
 }
 
 export function formatPathStatus(path: string, exists: boolean, isDirectory: boolean): string {
