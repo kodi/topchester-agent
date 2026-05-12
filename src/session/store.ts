@@ -142,6 +142,7 @@ export async function resolveLatestSessionId(workspaceRoot: string): Promise<str
 export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
   const messages: ChatMessage[] = [];
   let status: string | undefined;
+  let visibleOnlyActionValues = new Set<string>();
 
   for (const event of events) {
     switch (event.kind) {
@@ -150,7 +151,13 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
           kind: event.role === "assistant" ? "agent" : event.role,
           text: event.text,
           ...(typeof event.meta === "string" ? { meta: event.meta } : {}),
+          ...(isVisibleOnlyMessage(event.meta) || visibleOnlyActionValues.has(event.text)
+            ? { modelContext: false }
+            : {}),
         });
+        if (event.role === "user") {
+          visibleOnlyActionValues = new Set();
+        }
         break;
       case "tool_call":
         messages.push({ kind: "system", text: event.label });
@@ -166,6 +173,11 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
           ...(event.body === undefined ? {} : { body: event.body }),
           actions: event.actions,
         });
+        visibleOnlyActionValues = new Set(
+          event.actions
+            .flatMap((action) => [action.label, action.value])
+            .filter((value): value is string => Boolean(value))
+        );
         break;
       case "status":
         status = event.status;
@@ -328,6 +340,15 @@ function formatKnowledgeStatusEvent(status: Record<string, unknown>): string {
   const state = !kbExists ? "[missing]" : kbIsDirectory ? "[ok]" : "[not a folder]";
 
   return `KB status: ${kbPath} ${state} (${source})`;
+}
+
+function isVisibleOnlyMessage(meta: unknown): boolean {
+  return (
+    typeof meta === "object" &&
+    meta !== null &&
+    "visibleOnly" in meta &&
+    (meta as { visibleOnly?: unknown }).visibleOnly === true
+  );
 }
 
 function isFileNotFoundError(error: unknown): boolean {

@@ -29,7 +29,8 @@ import { type Terminal } from "@earendil-works/pi-tui";
 import { type AppContext } from "../src/app/context.js";
 import { getTopchesterSessionsPath } from "../src/app/paths.js";
 import { agentEvent } from "../src/agent/events.js";
-import { type SessionHandle } from "../src/session/store.js";
+import { TopchesterAgentRuntime } from "../src/agent/runtime.js";
+import { createSession, loadSession, rehydrateSession, type SessionHandle } from "../src/session/store.js";
 
 class FakeTerminal implements Terminal {
   columns = 60;
@@ -927,6 +928,80 @@ describe("TUI rendering", () => {
       text: "/kb status",
       meta: { source: "slash_command", visibleOnly: true },
     });
+  });
+
+  it("filters resumed model context to normal user and assistant turns only", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-resume-context-"));
+    const session = await createSession(workspace);
+    const capturedPrompts: string[] = [];
+    const context = {
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText(request: { prompt?: string; purpose?: string }) {
+          if (request.purpose === "agent.primary") {
+            capturedPrompts.push(request.prompt ?? "");
+          }
+
+          return {
+            text: "assistant after resume",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    };
+
+    await session.append({ kind: "message", role: "system", text: "startup row" });
+    await session.append({ kind: "message", role: "user", text: "normal old user" });
+    await session.append({ kind: "message", role: "assistant", text: "normal old assistant" });
+    await session.append(slashCommandToSessionPayload("/kb status"));
+    await session.append({ kind: "message", role: "system", text: "slash command output" });
+    await session.append({
+      kind: "tool_call",
+      label: "Tool read_file: README.md",
+      call: { tool: "read_file", args: { path: "README.md" } },
+    });
+    await session.append({
+      kind: "knowledge_status",
+      status: {
+        workspaceRoot: workspace,
+        kbPath: join(workspace, "topchester-kb"),
+        cachePath: join(workspace, ".agents", "topchester-kb-cache"),
+        kbExists: false,
+        kbIsDirectory: false,
+        cacheExists: false,
+        cacheIsDirectory: false,
+        kbPathSource: "default",
+        cachePathSource: "default",
+      },
+    });
+    await session.append({
+      kind: "choice",
+      tone: "warning",
+      title: "No KB found",
+      body: "Create one?",
+      actions: [{ label: "Create KB now", value: "/kb init" }],
+    });
+    await session.append({ kind: "message", role: "user", text: "Create KB now" });
+    await session.append({ kind: "status", status: "ready" });
+
+    const loaded = await loadSession(workspace, session.sessionId);
+    const rehydrated = rehydrateSession(loaded.events);
+    const app = new ChatLayout(new FakeTerminal(), rehydrated.messages, "repo", "fake-agent");
+
+    await new TopchesterAgentRuntime(context).submitMessage(app.getConversationTurns(), "new prompt", undefined);
+
+    expect(capturedPrompts).toEqual([
+      ["User: normal old user", "Assistant: normal old assistant", "User: new prompt"].join("\n\n"),
+    ]);
+    expect(capturedPrompts[0]).not.toContain("startup row");
+    expect(capturedPrompts[0]).not.toContain("/kb status");
+    expect(capturedPrompts[0]).not.toContain("slash command output");
+    expect(capturedPrompts[0]).not.toContain("Tool read_file");
+    expect(capturedPrompts[0]).not.toContain("No KB found");
+    expect(capturedPrompts[0]).not.toContain("Create KB now");
+    expect(capturedPrompts[0]).not.toContain("ready");
   });
 
   it("warns once when startup persistence fails without recursively persisting the warning", async () => {

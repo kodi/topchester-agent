@@ -6,6 +6,7 @@ interface TextChatMessage {
   kind: Exclude<ChatMessageKind, "modal">;
   text: string;
   meta?: string;
+  modelContext?: boolean;
 }
 export interface ChatModalAction {
   label: string;

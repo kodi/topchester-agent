@@ -107,11 +107,11 @@ export class ChatLayout implements Component, Focusable {
 
   getConversationTurns(): ConversationTurn[] {
     return this.messages.flatMap((message): ConversationTurn[] => {
-      if (message.kind === "user") {
+      if (message.kind === "user" && message.modelContext !== false) {
         return [{ role: "user", text: message.text }];
       }
 
-      if (message.kind === "agent" && message.text !== "ready") {
+      if (message.kind === "agent" && message.text !== "ready" && message.modelContext !== false) {
         return [{ role: "assistant", text: message.text }];
       }
 
