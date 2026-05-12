@@ -132,7 +132,7 @@ Dependencies: Slice 2.
 
 ### Slice 4: Documentation and Final Check
 
-Status: `[ ]` Not started
+Status: `[x]` Complete
 
 Goal: Record the TUI behavior and verify the full repo.
 
@@ -184,7 +184,8 @@ Manual check after implementation:
 - 2026-05-12: Slice 1 complete. Added the optional KB footer status contract and compact formatter in the TUI layer. Verified with `pnpm test test/tui.render.test.ts` and `pnpm typecheck`.
 - 2026-05-12: Slice 2 complete. `ChatLayout` stores the compact KB footer label and runtime `knowledge_status` events update it while still rendering the existing KB status message/modal. Verified with `pnpm test test/tui.render.test.ts`.
 - 2026-05-12: Slice 3 complete. Runtime slash-command handling now emits a fresh `knowledge_status` event after `/kb status`, `/kb init`, `/kb compile`, and `/kb reset`; command response text stays unchanged. Verified with `pnpm test test/commands.test.ts test/tui.render.test.ts` and `pnpm typecheck`.
+- 2026-05-12: Slice 4 complete. Documented the footer labels and command refresh behavior, checked off the TUI footer/test checklist items, and verified the full repo with `pnpm check`.
 
 ## Next Slice
 
-Start Slice 4 by documenting the footer behavior, updating the implementation checklist, and running `pnpm check`.
+All planned slices are complete.

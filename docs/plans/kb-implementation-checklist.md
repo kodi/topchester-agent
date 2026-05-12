@@ -163,14 +163,14 @@ Track implementation of the global knowledge base feature from current L1 suppor
 
 ## TUI Integration
 
-- [ ] Show KB health/status in TUI
+- [x] Show KB path health/status in TUI footer
 - [ ] Show compile progress
 - [ ] Show L1 file processing progress
 - [ ] Add feature map view
 - [ ] Add context pack preview
 - [ ] Add drift warning panel
 - [ ] Add knowledge diff view
-- [ ] Add TUI tests
+- [x] Add TUI tests for KB footer path health
 
 ## Validation and CI
 

@@ -44,7 +44,7 @@ Current behavior:
 - Shows a scrolling thread area on top with startup context.
 - Supports terminal alternate-scroll wheel events, `PageUp`/`PageDown`, and `Home`/`End` for chat history scrolling.
 - Shows an unlabeled input box below the thread.
-- Shows a status line below the prompt box with `ready`, the current folder name, and the active model as `model [provider]`.
+- Shows a status line below the prompt box with `ready`, the current folder name, the active model as `model [provider]`, and compact KB path health as `kb: ready`, `kb: missing`, or `kb: not-folder` after the KB check runs.
 - Tracks chat rows as `System`, `You`, and `Agent` messages, and sends user messages to the configured `agent.primary` model.
 - Lets the model use workspace-scoped tools: `read_file` and `grep`.
 - `grep` uses `rg` when available, falls back to `grep`, and reports a warning if neither command is installed.
@@ -53,7 +53,7 @@ Current behavior:
 - Shows a temporary thinking row while waiting for chat responses.
 - Checks the configured `agent.fast` model on startup in interactive mode and prints `Agent: ready` when the model responds.
 - Skips the startup check with a plain message if the agent takes too long.
-- Checks KB status after the agent is ready.
+- Checks KB status after the agent is ready and refreshes the footer after `/kb init`, `/kb reset`, `/kb compile`, and `/kb status`.
 - Shows a warning modal with setup choices when no KB folder exists, or when the KB path is not a folder.
 - Shows a temporary spinner row in the chat area while the engine is busy, with copy that says what is happening.
 - Shows `press Esc to stop` inside the prompt box while the startup agent check is running.
