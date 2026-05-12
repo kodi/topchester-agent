@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { ZodError } from "zod";
 import { getTopchesterSessionsPath } from "../app/paths.js";
+import { type ChatMessage } from "../tui/messages.js";
 import {
   SESSION_EVENT_VERSION,
   SESSION_METADATA_VERSION,
@@ -13,6 +15,7 @@ import {
 } from "./events.js";
 
 const UUIDV7_MAX_SEQUENCE = 0xfff;
+const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 let lastTimestamp = 0;
 let sequence = 0;
 
@@ -23,6 +26,18 @@ export interface SessionHandle {
   eventsPath: string;
   metadata: SessionMetadata;
   append(payload: SessionEventPayload): Promise<SessionEvent>;
+}
+
+export interface LoadedSession {
+  sessionId: string;
+  sessionDir: string;
+  metadata: SessionMetadata;
+  events: SessionEvent[];
+}
+
+export interface RehydratedSession {
+  messages: ChatMessage[];
+  status?: string;
 }
 
 export function generateSessionId(now = Date.now()): string {
@@ -76,11 +91,104 @@ export async function createSession(workspaceRoot: string): Promise<SessionHandl
 }
 
 export async function loadSessionForAppend(workspaceRoot: string, sessionId: string): Promise<SessionHandle> {
+  const loaded = await loadSession(workspaceRoot, sessionId);
+
+  return buildHandle(loaded.sessionDir, loaded.metadata);
+}
+
+export async function loadSession(workspaceRoot: string, sessionIdOrLatest: string): Promise<LoadedSession> {
+  const sessionId =
+    sessionIdOrLatest === "latest" ? await resolveLatestSessionId(workspaceRoot) : validateSessionId(sessionIdOrLatest);
   const sessionDir = join(getTopchesterSessionsPath(workspaceRoot), sessionId);
   const metadataPath = join(sessionDir, "metadata.json");
-  const metadata = sessionMetadataSchema.parse(JSON.parse(await readFile(metadataPath, "utf8")));
+  const eventsPath = join(sessionDir, "events.jsonl");
+  const metadata = await readMetadata(metadataPath);
 
-  return buildHandle(sessionDir, metadata);
+  validateMetadataConsistency(metadata, sessionId, workspaceRoot, metadataPath);
+  const events = await readEvents(eventsPath);
+  validateEventConsistency(metadata, events, eventsPath);
+
+  return { sessionId, sessionDir, metadata, events };
+}
+
+export async function resolveLatestSessionId(workspaceRoot: string): Promise<string> {
+  const sessionsPath = getTopchesterSessionsPath(workspaceRoot);
+  let entries: string[];
+  try {
+    entries = await readdir(sessionsPath);
+  } catch {
+    throw new Error("No sessions found");
+  }
+
+  const ids = entries.filter((entry) => SESSION_ID_PATTERN.test(entry)).sort();
+  if (ids.length === 0) {
+    throw new Error("No sessions found");
+  }
+
+  const candidates = await Promise.all(
+    ids.map(async (sessionId) => ({
+      sessionId,
+      metadata: await readMetadata(join(sessionsPath, sessionId, "metadata.json")),
+    }))
+  );
+
+  for (const candidate of candidates) {
+    validateMetadataConsistency(
+      candidate.metadata,
+      candidate.sessionId,
+      workspaceRoot,
+      join(sessionsPath, candidate.sessionId, "metadata.json")
+    );
+  }
+
+  const timestamps = new Set(candidates.map((candidate) => candidate.metadata.updatedAt));
+  if (timestamps.size > 1) {
+    return candidates
+      .sort((left, right) => {
+        const byUpdatedAt = left.metadata.updatedAt.localeCompare(right.metadata.updatedAt);
+        return byUpdatedAt === 0 ? left.sessionId.localeCompare(right.sessionId) : byUpdatedAt;
+      })
+      .at(-1)!.sessionId;
+  }
+
+  return ids.at(-1)!;
+}
+
+export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
+  const messages: ChatMessage[] = [];
+  let status: string | undefined;
+
+  for (const event of events) {
+    switch (event.kind) {
+      case "message":
+        messages.push({
+          kind: event.role === "assistant" ? "agent" : event.role,
+          text: event.text,
+          ...(typeof event.meta === "string" ? { meta: event.meta } : {}),
+        });
+        break;
+      case "tool_call":
+        messages.push({ kind: "system", text: event.label });
+        break;
+      case "knowledge_status":
+        messages.push({ kind: "system", text: formatKnowledgeStatusEvent(event.status) });
+        break;
+      case "choice":
+        messages.push({
+          kind: "modal",
+          tone: event.tone,
+          title: event.title,
+          ...(event.body === undefined ? {} : { body: event.body }),
+          actions: event.actions,
+        });
+        break;
+      case "status":
+        status = event.status;
+        break;
+    }
+  }
+
+  return { messages, status };
 }
 
 function buildHandle(sessionDir: string, metadata: SessionMetadata): SessionHandle {
@@ -114,6 +222,109 @@ function buildHandle(sessionDir: string, metadata: SessionMetadata): SessionHand
 
 async function writeMetadata(path: string, metadata: SessionMetadata): Promise<void> {
   await writeFile(path, `${JSON.stringify(sessionMetadataSchema.parse(metadata), null, 2)}\n`);
+}
+
+function validateSessionId(sessionId: string): string {
+  if (!SESSION_ID_PATTERN.test(sessionId)) {
+    throw new Error("Session id must be an exact lowercase UUIDv7");
+  }
+
+  return sessionId;
+}
+
+async function readMetadata(path: string): Promise<SessionMetadata> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(path, "utf8"));
+  } catch {
+    throw new Error(`Could not read session metadata at ${path}`);
+  }
+
+  const parsed = sessionMetadataSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`Session metadata is not valid in ${path}: ${formatZodError(parsed.error)}`);
+  }
+
+  return parsed.data;
+}
+
+async function readEvents(path: string): Promise<SessionEvent[]> {
+  const raw = await readFile(path, "utf8");
+  const lines = raw.split("\n");
+  const events: SessionEvent[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const lineNumber = index + 1;
+    const line = lines[index];
+    if (line === "" && index === lines.length - 1) {
+      continue;
+    }
+    if (line.trim().length === 0) {
+      throw new Error(`Could not read session event in ${path} line ${lineNumber}: Blank lines are not allowed`);
+    }
+
+    let parsedLine: unknown;
+    try {
+      parsedLine = JSON.parse(line);
+    } catch {
+      throw new Error(`Could not read session event in ${path} line ${lineNumber}: invalid JSON`);
+    }
+
+    const parsed = sessionEventSchema.safeParse(parsedLine);
+    if (!parsed.success) {
+      throw new Error(`Could not read session event in ${path} line ${lineNumber}: ${formatZodError(parsed.error)}`);
+    }
+    events.push(parsed.data);
+  }
+
+  return events;
+}
+
+function validateMetadataConsistency(
+  metadata: SessionMetadata,
+  sessionId: string,
+  workspaceRoot: string,
+  path: string
+): void {
+  if (metadata.sessionId !== sessionId) {
+    throw new Error(`Session metadata mismatch in ${path}: metadata.json sessionId does not match the folder`);
+  }
+  if (metadata.workspaceRoot !== workspaceRoot) {
+    throw new Error(`Session metadata mismatch in ${path}: metadata.json workspaceRoot does not match this workspace`);
+  }
+}
+
+function validateEventConsistency(metadata: SessionMetadata, events: SessionEvent[], path: string): void {
+  let expectedId = 1;
+  for (const event of events) {
+    if (event.id !== expectedId) {
+      throw new Error(
+        `Session event consistency error in ${path}: expected event id ${expectedId} but found ${event.id}`
+      );
+    }
+    expectedId += 1;
+  }
+
+  const finalEventId = events.at(-1)?.id ?? 0;
+  if (metadata.lastEventId !== finalEventId) {
+    throw new Error(
+      `Session metadata mismatch: metadata.json lastEventId ${metadata.lastEventId} does not match final event id ${finalEventId}`
+    );
+  }
+}
+
+function formatZodError(error: ZodError): string {
+  return error.issues.map((issue) => `${issue.path.join(".") || "value"} ${issue.message}`).join("; ");
+}
+
+function formatKnowledgeStatusEvent(status: Record<string, unknown>): string {
+  const kbPath = typeof status.kbPath === "string" ? status.kbPath : "unknown";
+  const kbExists = typeof status.kbExists === "boolean" ? status.kbExists : false;
+  const kbIsDirectory = typeof status.kbIsDirectory === "boolean" ? status.kbIsDirectory : false;
+  const source = typeof status.kbPathSource === "string" ? status.kbPathSource : "workspace";
+  const state = !kbExists ? "[missing]" : kbIsDirectory ? "[ok]" : "[not a folder]";
+
+  return `KB status: ${kbPath} ${state} (${source})`;
 }
 
 function toUuid(bytes: Uint8Array): string {

@@ -1,9 +1,16 @@
-import { mkdir, mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getTopchesterSessionsPath } from "../src/app/paths.js";
-import { createSession, generateSessionId, loadSessionForAppend } from "../src/session/store.js";
+import {
+  createSession,
+  generateSessionId,
+  loadSession,
+  loadSessionForAppend,
+  rehydrateSession,
+  resolveLatestSessionId,
+} from "../src/session/store.js";
 
 async function tempWorkspace(): Promise<string> {
   return mkdtemp(join(tmpdir(), "topchester-session-"));
@@ -130,5 +137,167 @@ describe("session store", () => {
     const session = await createSession(workspace);
 
     expect(session.sessionDir.startsWith(join(workspace, ".agents", "topchester", "sessions"))).toBe(true);
+  });
+
+  it("strictly loads valid metadata and events", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+    await session.append({ kind: "message", role: "user", text: "hello" });
+    await session.append({ kind: "message", role: "assistant", text: "hi", meta: "model" });
+
+    const loaded = await loadSession(workspace, session.sessionId);
+
+    expect(loaded.metadata.sessionId).toBe(session.sessionId);
+    expect(loaded.events).toMatchObject([
+      { id: 1, kind: "message", role: "user", text: "hello" },
+      { id: 2, kind: "message", role: "assistant", text: "hi", meta: "model" },
+    ]);
+  });
+
+  it("rejects malformed JSONL and blank middle lines with line-specific plain errors", async () => {
+    const workspace = await tempWorkspace();
+    const malformed = await createSession(workspace);
+    await writeFile(malformed.eventsPath, '{"version":1\n');
+    await expect(loadSession(workspace, malformed.sessionId)).rejects.toThrow(/events\.jsonl line 1/u);
+    await expect(loadSession(workspace, malformed.sessionId)).rejects.toThrow(/Could not read session event/u);
+
+    const blank = await createSession(workspace);
+    await blank.append({ kind: "message", role: "user", text: "first" });
+    await writeFile(
+      blank.eventsPath,
+      `${JSON.stringify({ version: 1, id: 1, ts: new Date().toISOString(), kind: "message", role: "user", text: "first" })}\n   \n`
+    );
+    await expect(loadSession(workspace, blank.sessionId)).rejects.toThrow(/events\.jsonl line 2/u);
+    await expect(loadSession(workspace, blank.sessionId)).rejects.toThrow(/Blank lines are not allowed/u);
+  });
+
+  it("rejects schema and semantic consistency errors plainly", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+    await session.append({ kind: "message", role: "user", text: "hello" });
+
+    await writeFile(
+      session.eventsPath,
+      `${JSON.stringify({ version: 1, id: 1, ts: new Date().toISOString(), kind: "message", role: "bot", text: "bad" })}\n`
+    );
+    await expect(loadSession(workspace, session.sessionId)).rejects.toThrow(/events\.jsonl line 1/u);
+    await expect(loadSession(workspace, session.sessionId)).rejects.toThrow(/role/u);
+
+    await writeFile(
+      session.eventsPath,
+      `${JSON.stringify({ version: 1, id: 1, ts: new Date().toISOString(), kind: "message", role: "user", text: "ok" })}\n${JSON.stringify(
+        {
+          version: 1,
+          id: 3,
+          ts: new Date().toISOString(),
+          kind: "message",
+          role: "assistant",
+          text: "gap",
+        }
+      )}\n`
+    );
+    await expect(loadSession(workspace, session.sessionId)).rejects.toThrow(/expected event id 2 but found 3/u);
+
+    const metadata = (await readJson(session.metadataPath)) as Record<string, unknown>;
+    await writeFile(
+      session.metadataPath,
+      `${JSON.stringify({ ...metadata, workspaceRoot: `${workspace}-other` }, null, 2)}\n`
+    );
+    await expect(loadSession(workspace, session.sessionId)).rejects.toThrow(/metadata\.json workspaceRoot/u);
+  });
+
+  it("rejects direct session IDs before paths can escape the session root", async () => {
+    const workspace = await tempWorkspace();
+    const valid = generateSessionId();
+    const invalidIds = [
+      "../x",
+      "foo/bar",
+      join(workspace, valid),
+      valid.toUpperCase(),
+      "not-a-uuid",
+      valid.slice(0, 8),
+    ];
+
+    for (const id of invalidIds) {
+      await expect(loadSession(workspace, id)).rejects.toThrow(/Session id must be an exact lowercase UUIDv7/u);
+    }
+  });
+
+  it("resolves latest by metadata updatedAt and falls back to folder order only when needed", async () => {
+    const workspace = await tempWorkspace();
+    const older = await createSession(workspace);
+    const newer = await createSession(workspace);
+    await writeFile(
+      older.metadataPath,
+      `${JSON.stringify({ ...older.metadata, updatedAt: "2025-01-01T00:00:00.000Z" }, null, 2)}\n`
+    );
+    await writeFile(
+      newer.metadataPath,
+      `${JSON.stringify({ ...newer.metadata, updatedAt: "2025-01-02T00:00:00.000Z" }, null, 2)}\n`
+    );
+
+    await expect(resolveLatestSessionId(workspace)).resolves.toBe(newer.sessionId);
+
+    await writeFile(
+      older.metadataPath,
+      `${JSON.stringify({ ...older.metadata, updatedAt: older.metadata.createdAt }, null, 2)}\n`
+    );
+    await writeFile(
+      newer.metadataPath,
+      `${JSON.stringify({ ...newer.metadata, updatedAt: newer.metadata.createdAt }, null, 2)}\n`
+    );
+    await expect(resolveLatestSessionId(workspace)).resolves.toBe([older.sessionId, newer.sessionId].sort().at(-1));
+  });
+
+  it("does not skip a malformed selected latest candidate", async () => {
+    const workspace = await tempWorkspace();
+    const older = await createSession(workspace);
+    const newer = await createSession(workspace);
+    await writeFile(
+      older.metadataPath,
+      `${JSON.stringify({ ...older.metadata, updatedAt: "2025-01-01T00:00:00.000Z" }, null, 2)}\n`
+    );
+    await writeFile(
+      newer.metadataPath,
+      `${JSON.stringify({ ...newer.metadata, updatedAt: "2025-01-02T00:00:00.000Z" }, null, 2)}\n`
+    );
+    await writeFile(newer.eventsPath, "not json\n");
+
+    await expect(loadSession(workspace, "latest")).rejects.toThrow(newer.sessionId);
+    await expect(loadSession(workspace, "latest")).rejects.toThrow(/events\.jsonl line 1/u);
+  });
+
+  it("rehydrates persisted visible events without executing old actions", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+    await session.append({ kind: "message", role: "system", text: "startup" });
+    await session.append({ kind: "message", role: "user", text: "/help", meta: { inputType: "command" } });
+    await session.append({ kind: "message", role: "assistant", text: "answer", meta: "model" });
+    await session.append({ kind: "tool_call", label: "Tool shell: echo hi", call: { command: "echo hi" } });
+    await session.append({
+      kind: "knowledge_status",
+      status: { kbPath: "topchester-kb", kbExists: false, kbIsDirectory: false, kbPathSource: "workspace" },
+    });
+    await session.append({
+      kind: "choice",
+      tone: "warning",
+      title: "Continue?",
+      body: "Pick",
+      actions: [{ label: "No", value: "no" }],
+    });
+    await session.append({ kind: "status", status: "ready" });
+
+    const loaded = await loadSession(workspace, session.sessionId);
+    const rehydrated = rehydrateSession(loaded.events);
+
+    expect(rehydrated.messages).toEqual([
+      { kind: "system", text: "startup" },
+      { kind: "user", text: "/help" },
+      { kind: "agent", text: "answer", meta: "model" },
+      { kind: "system", text: "Tool shell: echo hi" },
+      { kind: "system", text: expect.stringContaining("KB status: topchester-kb") },
+      { kind: "modal", tone: "warning", title: "Continue?", body: "Pick", actions: [{ label: "No", value: "no" }] },
+    ]);
+    expect(rehydrated.status).toBe("ready");
   });
 });
