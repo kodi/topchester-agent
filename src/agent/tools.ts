@@ -1,5 +1,12 @@
 export { executeToolCall, type ExecuteToolCallOptions } from "./tools/executor.js";
 export {
+  applyExactEdits,
+  editFileArgsSchema,
+  type ApplyEditResult,
+  type EditFileEdit,
+  type EditFileToolArgs,
+} from "./tools/edit-file.js";
+export {
   findFileTool,
   findWorkspaceFilesByName,
   type FindFileToolArgs,

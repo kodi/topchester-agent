@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  applyExactEdits,
   executeToolCall,
   findWorkspaceFilesByName,
   getToolPromptLines,
@@ -10,6 +11,7 @@ import {
   parseToolCall,
   readWorkspaceFile,
 } from "../src/agent/tools.js";
+import { editFileArgsSchema } from "../src/agent/tools/edit-file.js";
 import { getChatSystemPrompt } from "../src/agent/prompts.js";
 import { createTopchesterLogger } from "../src/logging/index.js";
 
@@ -299,6 +301,97 @@ describe("agent tools", () => {
     await expect(findWorkspaceFilesByName(workspace, { query: "package", path: "..", limit: 10 })).rejects.toThrow(
       "find_file can only search inside the workspace"
     );
+  });
+});
+
+describe("edit_file pure edit engine", () => {
+  it("defines the edit_file argument schema", () => {
+    expect(() =>
+      editFileArgsSchema.parse({
+        path: "src/example.ts",
+        expected_hash: "sha256:optional",
+        edits: [{ old_text: "const enabled = false;\n", new_text: "const enabled = true;\n" }],
+      })
+    ).not.toThrow();
+    expect(() => editFileArgsSchema.parse({ path: "src/example.ts", edits: [] })).toThrow();
+  });
+
+  it("applies one exact replacement and returns diff metadata", () => {
+    const result = applyExactEdits(
+      "alpha\nbeta\ngamma\n",
+      [{ old_text: "beta\n", new_text: "bravo\n" }],
+      "example.txt"
+    );
+
+    expect(result.newContent).toBe("alpha\nbravo\ngamma\n");
+    expect(result.firstChangedLine).toBe(2);
+    expect(result.diff).toContain("--- a/example.txt\n+++ b/example.txt");
+    expect(result.diff).toContain("-beta");
+    expect(result.diff).toContain("+bravo");
+  });
+
+  it("applies multiple blocks against the original content", () => {
+    const result = applyExactEdits("one\ntwo\nthree\nfour\n", [
+      { old_text: "two\n", new_text: "2\n" },
+      { old_text: "four\n", new_text: "4\n" },
+    ]);
+
+    expect(result.newContent).toBe("one\n2\nthree\n4\n");
+    expect(result.firstChangedLine).toBe(2);
+  });
+
+  it("rejects empty old_text", () => {
+    expect(() => applyExactEdits("alpha\n", [{ old_text: "", new_text: "beta" }])).toThrow(
+      "old_text at index 0 must not be empty"
+    );
+  });
+
+  it("rejects missing matches", () => {
+    expect(() => applyExactEdits("alpha\n", [{ old_text: "beta\n", new_text: "bravo\n" }])).toThrow(
+      "old_text at index 0 was not found"
+    );
+  });
+
+  it("rejects duplicate old_text entries", () => {
+    expect(() =>
+      applyExactEdits("alpha\nbeta\n", [
+        { old_text: "alpha\n", new_text: "a\n" },
+        { old_text: "alpha\n", new_text: "again\n" },
+      ])
+    ).toThrow("old_text at index 1 duplicates an earlier edit");
+  });
+
+  it("rejects old_text that matches more than once", () => {
+    expect(() => applyExactEdits("same\nsame\n", [{ old_text: "same\n", new_text: "changed\n" }])).toThrow(
+      "old_text at index 0 matched 2 times"
+    );
+  });
+
+  it("rejects overlapping edit ranges", () => {
+    expect(() =>
+      applyExactEdits("abcdef\n", [
+        { old_text: "abc", new_text: "ABC" },
+        { old_text: "bcde", new_text: "BCDE" },
+      ])
+    ).toThrow("edit_file edits must not overlap");
+  });
+
+  it("rejects identical output", () => {
+    expect(() => applyExactEdits("alpha\n", [{ old_text: "alpha\n", new_text: "alpha\n" }])).toThrow(
+      "edit_file did not change the file content"
+    );
+  });
+
+  it("preserves CRLF line endings", () => {
+    const result = applyExactEdits("alpha\r\nbeta\r\n", [{ old_text: "beta\n", new_text: "bravo\n" }]);
+
+    expect(result.newContent).toBe("alpha\r\nbravo\r\n");
+  });
+
+  it("preserves UTF-8 BOM", () => {
+    const result = applyExactEdits("\uFEFFalpha\nbeta\n", [{ old_text: "beta\n", new_text: "bravo\n" }]);
+
+    expect(result.newContent).toBe("\uFEFFalpha\nbravo\n");
   });
 });
 

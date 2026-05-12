@@ -230,7 +230,7 @@ Execution flow:
 
 ### Slice 1: Edit Contract and Pure Apply Logic
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Define and test the core edit algorithm without touching the real filesystem.
 
@@ -422,7 +422,8 @@ Manual checks after implementation:
 ## Working Notes
 
 - 2026-05-12: Plan created after reading `AGENTS.md`, `AGENTS.override.md`, the architecture/knowledge/session/CLI docs, current Topchester tool code, and local Pi/OpenCode/Codex/Cline/Kilo Code edit implementations.
+- 2026-05-12: Slice 1 added a pure edit engine in `src/agent/tools/edit-file.ts`; verification passed with `pnpm test test/tools.test.ts` and `pnpm typecheck`.
 
 ## Next Slice
 
-Slice 1: Edit Contract and Pure Apply Logic.
+Slice 2: Workspace-Scoped `edit_file` Tool.
