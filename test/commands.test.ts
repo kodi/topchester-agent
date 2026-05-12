@@ -216,6 +216,56 @@ describe("slash commands", () => {
       isDirectory: false,
     });
   });
+
+  it("formats edit_file tool calls and results for the final model prompt", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    await writeFile(join(workspace, "example.txt"), "enabled=false\n");
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          return prompts.length === 1
+            ? {
+                text: JSON.stringify({
+                  tool: "edit_file",
+                  args: {
+                    path: "example.txt",
+                    edits: [{ old_text: "enabled=false\n", new_text: "enabled=true\n" }],
+                  },
+                }),
+                providerId: "fake",
+                modelId: "fake-agent",
+                purpose: "agent.primary" as const,
+              }
+            : {
+                text: "Updated example.txt.",
+                providerId: "fake",
+                modelId: "fake-agent",
+                purpose: "agent.primary" as const,
+              };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "turn it on");
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "tool_call", label: "Tool edit_file: example.txt" }),
+        expect.objectContaining({ type: "message", role: "assistant", text: "Updated example.txt." }),
+      ])
+    );
+    expect(prompts[1]).toContain('Tool result from edit_file "example.txt":');
+    expect(prompts[1]).toContain("after_hash: sha256:");
+    expect(prompts[1]).toContain("first_changed_line: 1");
+    expect(prompts[1]).toContain("```diff");
+    expect(prompts[1]).toContain("-enabled=false");
+    expect(prompts[1]).toContain("+enabled=true");
+    expect(prompts[1]).not.toContain("Edited example.txt");
+  });
 });
 
 function createTestContext(workspaceRoot: string): AppContext {
@@ -228,7 +278,11 @@ function createTestContext(workspaceRoot: string): AppContext {
       },
     } as unknown as AppContext["modelGateway"],
     devFlags: new Set(),
-    logger: {} as AppContext["logger"],
+    logger: {
+      debug() {},
+      trace() {},
+      error() {},
+    } as unknown as AppContext["logger"],
   };
 }
 

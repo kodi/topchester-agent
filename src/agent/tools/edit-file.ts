@@ -38,7 +38,7 @@ export const editFileTool = defineTool({
   name: "edit_file",
   description: "Edit an existing UTF-8 file inside the workspace with exact text replacements.",
   prompt:
-    'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
+    'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_hash":"sha256:optional-current-file-hash","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
   argsSchema: editFileArgsSchema,
   execute: (context, args) => editWorkspaceFile(context.workspaceRoot, args),
 });

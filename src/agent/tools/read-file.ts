@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
@@ -9,7 +10,9 @@ export const readFileArgsSchema = z.object({
 
 export type ReadFileToolArgs = z.infer<typeof readFileArgsSchema>;
 export type ReadFileToolCall = ToolCall<"read_file", ReadFileToolArgs>;
-export type ReadFileToolResult = ToolResult<"read_file">;
+export interface ReadFileToolResult extends ToolResult<"read_file"> {
+  hash: string;
+}
 
 export const readFileTool = defineTool({
   name: "read_file",
@@ -29,11 +32,13 @@ export async function readWorkspaceFile(workspaceRoot: string, path: string): Pr
     throw new Error(`read_file can only read files inside the workspace: ${path}`);
   }
 
-  const content = await readFile(resolvedPath, "utf8");
+  const bytes = await readFile(resolvedPath);
+  const content = bytes.toString("utf8");
 
   return {
     tool: "read_file",
     path: relativePath || ".",
     content,
+    hash: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
   };
 }

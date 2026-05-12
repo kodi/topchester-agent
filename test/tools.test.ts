@@ -81,6 +81,7 @@ describe("agent tools", () => {
       tool: "read_file",
       path: "package.json",
       content: '{"name":"real"}\n',
+      hash: hashContent('{"name":"real"}\n'),
     });
   });
 
@@ -89,7 +90,7 @@ describe("agent tools", () => {
       'read_file: read a UTF-8 file inside the workspace. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
       'grep: search text inside file contents in the workspace; output lines are the files containing the matched text, and paths mentioned inside those lines are not confirmed files unless checked with find_file or read_file. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
       'find_file: find existing files by fuzzy path or filename inside the workspace; matches may appear in the middle of a filename, and results are file paths, not file contents. To use it, reply with only JSON: {"tool":"find_file","args":{"query":"runtime"}}',
-      'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
+      'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_hash":"sha256:optional-current-file-hash","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
     ]);
   });
 
@@ -97,6 +98,15 @@ describe("agent tools", () => {
     expect(getChatSystemPrompt()).toContain(
       "If grep output mentions another path, treat that mentioned path as content until find_file or read_file confirms it exists."
     );
+  });
+
+  it("tells the model how to use edit_file safely", () => {
+    const prompt = getChatSystemPrompt();
+
+    expect(prompt).toContain("Use read_file before editing a file");
+    expect(prompt).toContain("Use edit_file for targeted edits to existing files");
+    expect(prompt).toContain("Keep edit_file old_text small but unique");
+    expect(prompt).toContain("Do not include line labels or grep prefixes in old_text");
   });
 
   it("logs tool calls and result metadata without debug-level content", async () => {
@@ -139,6 +149,7 @@ describe("agent tools", () => {
       tool: "read_file",
       path: "package.json",
       content: '{"name":"real"}\n',
+      hash: hashContent('{"name":"real"}\n'),
     });
   });
 

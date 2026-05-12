@@ -191,6 +191,29 @@ function formatToolResultForPrompt(result: ToolResult): string {
   const command = result.command ? ` via ${result.command}` : "";
   const warning = result.warning ? `\nWarning: ${result.warning}` : "";
 
+  if (result.tool === "read_file") {
+    return [
+      `Tool result from ${result.tool}${path}${command}:${warning}`,
+      `hash: ${result.hash}`,
+      "```",
+      result.content,
+      "```",
+    ].join("\n");
+  }
+
+  if (result.tool === "edit_file") {
+    return [
+      `Tool result from ${result.tool}${path}:`,
+      `before_hash: ${result.beforeHash}`,
+      `after_hash: ${result.afterHash}`,
+      `bytes_changed: ${result.bytesChanged}`,
+      `first_changed_line: ${result.firstChangedLine}`,
+      "```diff",
+      result.diff,
+      "```",
+    ].join("\n");
+  }
+
   return [`Tool result from ${result.tool}${path}${command}:${warning}`, "```", result.content, "```"].join("\n");
 }
 
