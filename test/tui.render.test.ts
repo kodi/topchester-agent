@@ -24,12 +24,20 @@ import {
   runtimeEventToSessionPayload,
   slashCommandToSessionPayload,
 } from "../src/tui/shell.js";
-import { agentMessage, modalMessage, renderChatMessage, systemMessage, userMessage } from "../src/tui/messages.js";
+import {
+  agentMessage,
+  type ChatMessage,
+  modalMessage,
+  renderChatMessage,
+  systemMessage,
+  userMessage,
+} from "../src/tui/messages.js";
 import { type Terminal } from "@earendil-works/pi-tui";
 import { type AppContext } from "../src/app/context.js";
 import { getTopchesterSessionsPath } from "../src/app/paths.js";
 import { agentEvent } from "../src/agent/events.js";
 import { TopchesterAgentRuntime } from "../src/agent/runtime.js";
+import { type SessionEventPayload } from "../src/session/events.js";
 import { createSession, loadSession, rehydrateSession, type SessionHandle } from "../src/session/store.js";
 
 class FakeTerminal implements Terminal {
@@ -1020,6 +1028,80 @@ describe("TUI rendering", () => {
     expect(messages.flatMap((message) => ("text" in message ? [message.text] : []))).toEqual([
       "Startup one",
       "Startup two",
+      "Session save failed: disk is full",
+    ]);
+  });
+
+  it("awaits runtime event appends in runtime event processing order before returning", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-runtime-await-"));
+    const context = createTestContext(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    const appendStarted: string[] = [];
+    const appendFinished: string[] = [];
+    let releaseFirstAppend: (() => void) | undefined;
+    let releaseSecondAppend: (() => void) | undefined;
+    let applyFinished = false;
+    const shell = new TopchesterTuiShell(context, undefined, {
+      session: {
+        async append(payload: SessionEventPayload) {
+          const label = payload.kind === "message" ? payload.text : payload.kind;
+          appendStarted.push(label);
+          await new Promise<void>((resolve) => {
+            if (appendStarted.length === 1) {
+              releaseFirstAppend = resolve;
+            } else {
+              releaseSecondAppend = resolve;
+            }
+          });
+          appendFinished.push(label);
+        },
+      } as unknown as SessionHandle,
+    });
+
+    const applying = (shell as unknown as { applyRuntimeEvents(app: ChatLayout, events: unknown[]): Promise<void> })
+      .applyRuntimeEvents(app, [agentEvent.assistantMessage("First"), agentEvent.systemMessage("Second")])
+      .then(() => {
+        applyFinished = true;
+      });
+    await Promise.resolve();
+
+    expect(appendStarted).toEqual(["First"]);
+    expect(applyFinished).toBe(false);
+
+    releaseFirstAppend?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(appendStarted).toEqual(["First", "Second"]);
+    expect(applyFinished).toBe(false);
+
+    releaseSecondAppend?.();
+    await applying;
+
+    expect(appendFinished).toEqual(["First", "Second"]);
+    expect(applyFinished).toBe(true);
+  });
+
+  it("adds runtime append failure warnings before runtime event processing returns without recursive persistence", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-runtime-warning-"));
+    const context = createTestContext(workspace);
+    const messages: ChatMessage[] = [];
+    const app = new ChatLayout(new FakeTerminal(), messages, "repo", "model [provider]");
+    let appendCalls = 0;
+    const shell = new TopchesterTuiShell(context, undefined, {
+      session: {
+        async append() {
+          appendCalls += 1;
+          throw new Error("disk is full");
+        },
+      } as unknown as SessionHandle,
+    });
+
+    await (
+      shell as unknown as { applyRuntimeEvents(app: ChatLayout, events: unknown[]): Promise<void> }
+    ).applyRuntimeEvents(app, [agentEvent.assistantMessage("Saved later")]);
+
+    expect(appendCalls).toBe(1);
+    expect(messages.map((message) => ("text" in message ? message.text : message.title))).toEqual([
+      "Saved later",
       "Session save failed: disk is full",
     ]);
   });

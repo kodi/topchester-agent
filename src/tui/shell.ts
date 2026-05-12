@@ -30,6 +30,7 @@ export class TopchesterTuiShell implements TuiShell {
     private readonly options: TuiShellOptions = {}
   ) {
     this.runtime = runtime ?? new TopchesterAgentRuntime(context);
+    this.session = options.session;
   }
 
   async render(): Promise<void> {
@@ -104,7 +105,7 @@ export class TopchesterTuiShell implements TuiShell {
     tui.requestRender();
 
     try {
-      this.applyRuntimeEvents(app, await this.runtime.checkAgent(abortController.signal));
+      await this.applyRuntimeEvents(app, await this.runtime.checkAgent(abortController.signal));
     } catch (error) {
       if (cancelled) {
         app.addMessage(systemMessage("Agent check stopped."));
@@ -120,7 +121,7 @@ export class TopchesterTuiShell implements TuiShell {
     }
 
     if (app.isReady()) {
-      this.applyRuntimeEvents(app, this.runtime.checkKnowledgeBase());
+      await this.applyRuntimeEvents(app, this.runtime.checkKnowledgeBase());
     }
 
     tui.requestRender();
@@ -148,7 +149,7 @@ export class TopchesterTuiShell implements TuiShell {
         role: "user",
         text: message,
       });
-      this.applyRuntimeEvents(
+      await this.applyRuntimeEvents(
         app,
         await this.runtime.submitMessage(app.getConversationTurns(), message, abortController.signal)
       );
@@ -185,7 +186,7 @@ export class TopchesterTuiShell implements TuiShell {
 
     try {
       await this.persistPayloadWithWarning(app, slashCommandToSessionPayload(command));
-      this.applyRuntimeEvents(
+      await this.applyRuntimeEvents(
         app,
         await this.runtime.submitSlashCommand(command, (event) => {
           busy.setActivity(event.message);
@@ -205,7 +206,7 @@ export class TopchesterTuiShell implements TuiShell {
     }
   }
 
-  private applyRuntimeEvents(app: ChatLayout, events: AgentRuntimeEvent[]): void {
+  private async applyRuntimeEvents(app: ChatLayout, events: AgentRuntimeEvent[]): Promise<void> {
     for (const event of events) {
       if (event.type === "status") {
         app.setStatus(event.status);
@@ -219,7 +220,7 @@ export class TopchesterTuiShell implements TuiShell {
         app.addMessage(message);
       }
 
-      void this.persistPayloadWithWarning(app, runtimeEventToSessionPayload(event));
+      await this.persistPayloadWithWarning(app, runtimeEventToSessionPayload(event));
     }
   }
 
