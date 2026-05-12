@@ -50,6 +50,20 @@ async function makeFixture() {
 }
 
 describe("CLI integration", () => {
+  it("documents resume session behavior in CLI docs", async () => {
+    const docs = await readFile(join(process.cwd(), "docs", "cli.md"), "utf8");
+
+    expect(docs).toContain("--resume <session>");
+    expect(docs).toContain(".agents/topchester/sessions/");
+    expect(docs).toContain("Plain `topchester` starts a fresh session");
+    expect(docs).toContain("does not auto-resume");
+    expect(docs).toContain("`--resume latest` restores the newest project-local session");
+    expect(docs).toContain("`--resume <session-id>` restores that exact project-local session");
+    expect(docs).toContain("append to the selected session log");
+    expect(docs).toContain("fail before the TUI/static layout opens");
+    expect(docs).toContain("V0 does not include a `topchester sessions list` command");
+  });
+
   it("lists resume as a top-level help option", async () => {
     const fixture = await makeFixture();
 
