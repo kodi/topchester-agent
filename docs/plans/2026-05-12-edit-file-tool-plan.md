@@ -260,7 +260,7 @@ Dependencies: None.
 
 ### Slice 2: Workspace-Scoped `edit_file` Tool
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Expose the edit engine as a real workspace tool.
 
@@ -423,7 +423,8 @@ Manual checks after implementation:
 
 - 2026-05-12: Plan created after reading `AGENTS.md`, `AGENTS.override.md`, the architecture/knowledge/session/CLI docs, current Topchester tool code, and local Pi/OpenCode/Codex/Cline/Kilo Code edit implementations.
 - 2026-05-12: Slice 1 added a pure edit engine in `src/agent/tools/edit-file.ts`; verification passed with `pnpm test test/tools.test.ts` and `pnpm typecheck`.
+- 2026-05-12: Slice 2 wired `edit_file` as a workspace-scoped tool with same-directory temp writes, per-file mutation serialization, expected-hash checks, diff/hash metadata, and registry execution. Verification passed with `pnpm test test/tools.test.ts`, `pnpm typecheck`, and `pnpm format-check`.
 
 ## Next Slice
 
-Slice 2: Workspace-Scoped `edit_file` Tool.
+Slice 3: Registry, Prompt, and Runtime Result Handling.

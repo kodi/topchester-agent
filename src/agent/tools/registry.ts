@@ -1,3 +1,4 @@
+import { editFileTool } from "./edit-file.js";
 import { findFileTool } from "./find-file.js";
 import { grepTool } from "./grep.js";
 import { readFileTool } from "./read-file.js";
@@ -7,6 +8,7 @@ export const toolRegistry = {
   [readFileTool.name]: readFileTool,
   [grepTool.name]: grepTool,
   [findFileTool.name]: findFileTool,
+  [editFileTool.name]: editFileTool,
 } as const;
 
 export type ToolName = keyof typeof toolRegistry;

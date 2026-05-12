@@ -1,4 +1,9 @@
+import { createHash, randomUUID } from "node:crypto";
+import { rename, rm, stat, writeFile, readFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
+import { enqueueFileMutation } from "./file-mutation-queue.js";
+import { defineTool, type ToolCall, type ToolResult } from "./types.js";
 
 export const editFileEditSchema = z.object({
   old_text: z.string(),
@@ -13,12 +18,30 @@ export const editFileArgsSchema = z.object({
 
 export type EditFileEdit = z.infer<typeof editFileEditSchema>;
 export type EditFileToolArgs = z.infer<typeof editFileArgsSchema>;
+export type EditFileToolCall = ToolCall<"edit_file", EditFileToolArgs>;
+
+export interface EditFileToolResult extends ToolResult<"edit_file"> {
+  diff: string;
+  beforeHash: string;
+  afterHash: string;
+  bytesChanged: number;
+  firstChangedLine: number;
+}
 
 export interface ApplyEditResult {
   newContent: string;
   diff: string;
   firstChangedLine: number;
 }
+
+export const editFileTool = defineTool({
+  name: "edit_file",
+  description: "Edit an existing UTF-8 file inside the workspace with exact text replacements.",
+  prompt:
+    'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
+  argsSchema: editFileArgsSchema,
+  execute: (context, args) => editWorkspaceFile(context.workspaceRoot, args),
+});
 
 interface MatchedEdit {
   edit: EditFileEdit;
@@ -29,6 +52,46 @@ interface MatchedEdit {
 }
 
 type LineEnding = "lf" | "crlf";
+
+export async function editWorkspaceFile(workspaceRoot: string, args: EditFileToolArgs): Promise<EditFileToolResult> {
+  const scopedPath = resolveWorkspaceScopedPath(workspaceRoot, args.path);
+
+  return enqueueFileMutation(scopedPath.path, async () => {
+    const fileStat = await statExistingFile(scopedPath.path, args.path);
+    const beforeBytes = await readFile(scopedPath.path);
+    const beforeHash = hashBytes(beforeBytes);
+
+    if (args.expected_hash && args.expected_hash !== beforeHash) {
+      throw new Error(`edit_file expected_hash did not match ${scopedPath.relativePath}.`);
+    }
+
+    const beforeContent = decodeUtf8(scopedPath.relativePath, beforeBytes);
+    const result = applyExactEdits(beforeContent, args.edits, scopedPath.relativePath);
+    const afterBytes = Buffer.from(result.newContent, "utf8");
+    const afterHash = hashBytes(afterBytes);
+
+    await writeFileAtomically(scopedPath.path, afterBytes, fileStat.mode);
+
+    const content = [
+      `Edited ${scopedPath.relativePath}`,
+      `before_hash: ${beforeHash}`,
+      `after_hash: ${afterHash}`,
+      `first_changed_line: ${result.firstChangedLine}`,
+      result.diff,
+    ].join("\n");
+
+    return {
+      tool: "edit_file",
+      path: scopedPath.relativePath,
+      content,
+      diff: result.diff,
+      beforeHash,
+      afterHash,
+      bytesChanged: afterBytes.length - beforeBytes.length,
+      firstChangedLine: result.firstChangedLine,
+    };
+  });
+}
 
 export function applyExactEdits(content: string, edits: EditFileEdit[], path = "file"): ApplyEditResult {
   const document = splitDocument(content);
@@ -51,6 +114,74 @@ export function applyExactEdits(content: string, edits: EditFileEdit[], path = "
     diff: createUnifiedDiff(path, document.body, newBody),
     firstChangedLine: getFirstChangedLine(document.body, newBody),
   };
+}
+
+function resolveWorkspaceScopedPath(workspaceRoot: string, path: string) {
+  if (path.includes("\0")) {
+    throw new Error("edit_file path is invalid.");
+  }
+
+  const resolvedWorkspace = resolve(workspaceRoot);
+  const resolvedPath = isAbsolute(path) ? resolve(path) : resolve(resolvedWorkspace, path);
+  const relativePath = relative(resolvedWorkspace, resolvedPath);
+
+  if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
+    throw new Error(`edit_file can only edit files inside the workspace: ${path}`);
+  }
+
+  return {
+    workspaceRoot: resolvedWorkspace,
+    path: resolvedPath,
+    relativePath: relativePath || ".",
+  };
+}
+
+async function statExistingFile(resolvedPath: string, originalPath: string) {
+  let fileStat;
+
+  try {
+    fileStat = await stat(resolvedPath);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      throw new Error(`edit_file can only edit existing files: ${originalPath}`);
+    }
+
+    throw error;
+  }
+
+  if (!fileStat.isFile()) {
+    throw new Error(`edit_file can only edit regular files: ${originalPath}`);
+  }
+
+  return fileStat;
+}
+
+function decodeUtf8(path: string, bytes: Buffer): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    throw new Error(`edit_file can only edit UTF-8 text files: ${path}`);
+  }
+}
+
+async function writeFileAtomically(path: string, content: Buffer, mode: number): Promise<void> {
+  const temporaryPath = resolve(dirname(path), `.${basename(path)}.topchester-${process.pid}-${randomUUID()}.tmp`);
+
+  try {
+    await writeFile(temporaryPath, content, { flag: "wx", mode: mode & 0o777 });
+    await rename(temporaryPath, path);
+  } catch (error) {
+    await rm(temporaryPath, { force: true });
+    throw error;
+  }
+}
+
+function hashBytes(bytes: Buffer): string {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
 }
 
 function normalizeEdits(edits: EditFileEdit[]): EditFileEdit[] {

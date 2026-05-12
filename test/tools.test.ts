@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { chmod, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   applyExactEdits,
+  editWorkspaceFile,
   executeToolCall,
   findWorkspaceFilesByName,
   getToolPromptLines,
@@ -44,6 +46,21 @@ describe("agent tools", () => {
     });
   });
 
+  it("parses edit_file tool calls from JSON", () => {
+    expect(
+      parseToolCall(
+        '{"tool":"edit_file","args":{"path":"src/example.ts","expected_hash":"sha256:abc","edits":[{"old_text":"off","new_text":"on"}]}}'
+      )
+    ).toEqual({
+      tool: "edit_file",
+      args: {
+        path: "src/example.ts",
+        expected_hash: "sha256:abc",
+        edits: [{ old_text: "off", new_text: "on" }],
+      },
+    });
+  });
+
   it("rejects unknown tools and invalid tool args", () => {
     expect(parseToolCall('{"tool":"unknown","args":{}}')).toBeUndefined();
     expect(parseToolCall('{"tool":"read_file","args":{"path":123}}')).toBeUndefined();
@@ -72,6 +89,7 @@ describe("agent tools", () => {
       'read_file: read a UTF-8 file inside the workspace. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
       'grep: search text inside file contents in the workspace; output lines are the files containing the matched text, and paths mentioned inside those lines are not confirmed files unless checked with find_file or read_file. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
       'find_file: find existing files by fuzzy path or filename inside the workspace; matches may appear in the middle of a filename, and results are file paths, not file contents. To use it, reply with only JSON: {"tool":"find_file","args":{"query":"runtime"}}',
+      'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
     ]);
   });
 
@@ -302,6 +320,118 @@ describe("agent tools", () => {
       "find_file can only search inside the workspace"
     );
   });
+
+  it("edits existing workspace files through the tool executor", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const file = join(workspace, "example.txt");
+    await writeFile(file, "enabled=false\n");
+    const call = parseToolCall(
+      '{"tool":"edit_file","args":{"path":"example.txt","edits":[{"old_text":"enabled=false\\n","new_text":"enabled=true\\n"}]}}'
+    );
+
+    if (!call) {
+      throw new Error("Expected edit_file tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call);
+
+    expect(await readFile(file, "utf8")).toBe("enabled=true\n");
+    expect(result).toMatchObject({
+      tool: "edit_file",
+      path: "example.txt",
+      firstChangedLine: 1,
+      bytesChanged: -1,
+    });
+    expect(result.content).toContain("after_hash: sha256:");
+    expect(result.content).toContain("-enabled=false");
+    expect(result.content).toContain("+enabled=true");
+  });
+
+  it("rejects edit_file paths outside the workspace", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+
+    await expect(
+      editWorkspaceFile(workspace, { path: "../example.txt", edits: [{ old_text: "old", new_text: "new" }] })
+    ).rejects.toThrow("edit_file can only edit files inside the workspace");
+  });
+
+  it("rejects missing files and directories", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await mkdir(join(workspace, "src"));
+
+    await expect(
+      editWorkspaceFile(workspace, { path: "missing.txt", edits: [{ old_text: "old", new_text: "new" }] })
+    ).rejects.toThrow("edit_file can only edit existing files");
+    await expect(
+      editWorkspaceFile(workspace, { path: "src", edits: [{ old_text: "old", new_text: "new" }] })
+    ).rejects.toThrow("edit_file can only edit regular files");
+  });
+
+  it("rejects invalid UTF-8 files", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await writeFile(join(workspace, "binary.bin"), Buffer.from([0xff]));
+
+    await expect(
+      editWorkspaceFile(workspace, { path: "binary.bin", edits: [{ old_text: "old", new_text: "new" }] })
+    ).rejects.toThrow("edit_file can only edit UTF-8 text files");
+  });
+
+  it("checks expected_hash before writing", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const file = join(workspace, "example.txt");
+    await writeFile(file, "old\n");
+
+    await expect(
+      editWorkspaceFile(workspace, {
+        path: "example.txt",
+        expected_hash: `sha256:${"0".repeat(64)}`,
+        edits: [{ old_text: "old\n", new_text: "new\n" }],
+      })
+    ).rejects.toThrow("edit_file expected_hash did not match example.txt");
+    expect(await readFile(file, "utf8")).toBe("old\n");
+  });
+
+  it("returns before and after hashes for successful edits", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const file = join(workspace, "example.txt");
+    await writeFile(file, "old\n");
+    const beforeHash = hashContent("old\n");
+
+    const result = await editWorkspaceFile(workspace, {
+      path: "example.txt",
+      expected_hash: beforeHash,
+      edits: [{ old_text: "old\n", new_text: "new\n" }],
+    });
+
+    expect(result.beforeHash).toBe(beforeHash);
+    expect(result.afterHash).toBe(hashContent("new\n"));
+    expect(result.diff).toContain("-old");
+    expect(result.diff).toContain("+new");
+  });
+
+  it("does not partially write when an edit fails", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const file = join(workspace, "example.txt");
+    await writeFile(file, "old\n");
+
+    await expect(
+      editWorkspaceFile(workspace, { path: "example.txt", edits: [{ old_text: "missing\n", new_text: "new\n" }] })
+    ).rejects.toThrow("old_text at index 0 was not found");
+    expect(await readFile(file, "utf8")).toBe("old\n");
+  });
+
+  it("serializes concurrent same-file edits", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const file = join(workspace, "example.txt");
+    await writeFile(file, "start\n");
+
+    await Promise.all([
+      editWorkspaceFile(workspace, { path: "example.txt", edits: [{ old_text: "start\n", new_text: "middle\n" }] }),
+      editWorkspaceFile(workspace, { path: "example.txt", edits: [{ old_text: "middle\n", new_text: "done\n" }] }),
+    ]);
+
+    expect(await readFile(file, "utf8")).toBe("done\n");
+  });
 });
 
 describe("edit_file pure edit engine", () => {
@@ -425,4 +555,8 @@ async function withEnv(env: Record<string, string>, run: () => Promise<void>): P
       }
     }
   }
+}
+
+function hashContent(content: string): string {
+  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
 }

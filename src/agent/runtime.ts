@@ -202,6 +202,8 @@ function formatToolCallMessage(call: ToolCall): string {
       return `Tool grep: ${call.args.pattern} in ${call.args.path ?? "."}`;
     case "find_file":
       return `Tool find_file: ${call.args.query} in ${call.args.path}`;
+    case "edit_file":
+      return `Tool edit_file: ${call.args.path}`;
   }
 }
 
