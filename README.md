@@ -1,5 +1,7 @@
 # Topchester Agent
 
+Website: https://topchester.com
+
 ## Overview
 
 Topchester Agent is a terminal-native TUI coding agent tightly coupled to a committed project knowledge base. The normal workflow is to compile project knowledge first, then let the agent use that knowledge while planning, editing, checking drift, and updating the repository.

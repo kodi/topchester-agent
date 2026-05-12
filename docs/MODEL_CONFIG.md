@@ -113,7 +113,7 @@ type ModelProviderConfig =
 
 ```jsonc
 {
-  "$schema": "https://topchester.dev/schemas/config.v1.json",
+  "$schema": "https://topchester.com/schemas/config.v1.json",
   "models": {
     "defaultPurpose": "agent.primary",
     "assignments": {
@@ -131,7 +131,7 @@ type ModelProviderConfig =
         "apiKeyEnv": "OPENROUTER_API_KEY",
         "supportsStructuredOutputs": true,
         "headers": {
-          "HTTP-Referer": "https://topchester.dev",
+          "HTTP-Referer": "https://topchester.com",
           "X-Title": "Topchester",
         },
       },

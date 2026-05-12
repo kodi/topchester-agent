@@ -62,7 +62,7 @@ Target user workflow:
 
 ```text
 # install
-curl -fsSL https://topchester.dev/install | sh
+curl -fsSL https://topchester.com/install | sh
 # or
 npm install -g topchester
 
