@@ -2,6 +2,7 @@ import { isKeyRelease, isKeyRepeat, matchesKey, ProcessTerminal, TUI } from "@ea
 import { type AgentRuntimeEvent } from "../agent/events.js";
 import { TopchesterAgentRuntime, type AgentRuntime } from "../agent/runtime.js";
 import { type AppContext } from "../app/context.js";
+import { ui } from "../cli/ui.js";
 import { type SessionEventPayload } from "../session/events.js";
 import { createSession, type SessionHandle } from "../session/store.js";
 import { BusyIndicator } from "./busy.js";
@@ -34,6 +35,7 @@ export class TopchesterTuiShell implements TuiShell {
   }
 
   async render(): Promise<void> {
+    const startedAt = Date.now();
     const session = this.options.session ?? (await createSession(this.context.workspaceRoot));
     this.session = session;
     const isResumed = this.options.session !== undefined;
@@ -53,9 +55,16 @@ export class TopchesterTuiShell implements TuiShell {
     const terminal = new ProcessTerminal();
     enterAlternateScreen(terminal);
     const tui = new TUI(terminal, true);
+    let didExit = false;
     const exit = () => {
+      if (didExit) {
+        return;
+      }
+
+      didExit = true;
       tui.stop();
       exitAlternateScreen(terminal);
+      printExitBanner(session.sessionId, Date.now() - startedAt);
     };
     const app = new ChatLayout(terminal, messages, folderName, modelLabel, () => {
       exit();
@@ -327,6 +336,34 @@ export function slashCommandToSessionPayload(command: string): SessionEventPaylo
 
 function formatPlainError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+export function printExitBanner(sessionId: string, durationMs: number): void {
+  console.log("");
+  console.log(`${ui.heading("session ended")} ${ui.label(`after ${formatDuration(durationMs)}`)}`);
+  console.log(`${ui.label("To resume this session, run:")} ${ui.ok(`topchester --resume ${sessionId}`)}`);
+}
+
+export function formatDuration(durationMs: number): string {
+  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const parts: string[] = [];
+
+  if (hours > 0) {
+    parts.push(`${hours} ${hours === 1 ? "hour" : "hours"}`);
+  }
+
+  if (minutes > 0) {
+    parts.push(`${minutes} ${minutes === 1 ? "minute" : "minutes"}`);
+  }
+
+  if (seconds > 0 || parts.length === 0) {
+    parts.push(`${seconds} ${seconds === 1 ? "second" : "seconds"}`);
+  }
+
+  return parts.join(" ");
 }
 
 function getSlashCommandActivities(command: string): string[] {

@@ -20,7 +20,9 @@ import { getKnowledgeStatus } from "../src/knowledge/status.js";
 import {
   TopchesterTuiShell,
   createExitConfirmationInputListener,
+  formatDuration,
   persistMessagesWithWarning,
+  printExitBanner,
   runtimeEventToSessionPayload,
   slashCommandToSessionPayload,
 } from "../src/tui/shell.js";
@@ -66,6 +68,29 @@ class FakeTerminal implements Terminal {
 }
 
 describe("TUI rendering", () => {
+  it("formats session durations for the exit banner", () => {
+    expect(formatDuration(0)).toBe("0 seconds");
+    expect(formatDuration(1000)).toBe("1 second");
+    expect(formatDuration(61_000)).toBe("1 minute 1 second");
+    expect(formatDuration(3_661_000)).toBe("1 hour 1 minute 1 second");
+  });
+
+  it("prints an exit banner with resume command", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      printExitBanner("80343a57-3013-4977-b547-591419ed84eb", 125_000);
+
+      expect(log.mock.calls.map((call) => call.join(" ")).join("\n")).toContain("Topchester session ended");
+      expect(log.mock.calls.map((call) => call.join(" ")).join("\n")).toContain("after 2 minutes 5 seconds");
+      expect(log.mock.calls.map((call) => call.join(" ")).join("\n")).toContain(
+        "topchester --resume 80343a57-3013-4977-b547-591419ed84eb"
+      );
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it("selects an ASCII banner from the provided list", () => {
     expect(getRandomAsciiBanner(["one", "two", "three"], () => 0.6)).toBe("two");
   });
