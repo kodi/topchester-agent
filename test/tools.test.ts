@@ -10,6 +10,7 @@ import {
   parseToolCall,
   readWorkspaceFile,
 } from "../src/agent/tools.js";
+import { getChatSystemPrompt } from "../src/agent/prompts.js";
 import { createTopchesterLogger } from "../src/logging/index.js";
 
 describe("agent tools", () => {
@@ -67,9 +68,15 @@ describe("agent tools", () => {
   it("gets model prompt lines from the tool registry", () => {
     expect(getToolPromptLines()).toEqual([
       'read_file: read a UTF-8 file inside the workspace. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
-      'grep: search text inside the workspace. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
-      'find_file: find files by fuzzy name inside the workspace. To use it, reply with only JSON: {"tool":"find_file","args":{"query":"runtime"}}',
+      'grep: search text inside file contents in the workspace; output lines are the files containing the matched text, and paths mentioned inside those lines are not confirmed files unless checked with find_file or read_file. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
+      'find_file: find existing files by fuzzy path or filename inside the workspace; matches may appear in the middle of a filename, and results are file paths, not file contents. To use it, reply with only JSON: {"tool":"find_file","args":{"query":"runtime"}}',
     ]);
+  });
+
+  it("tells the model to verify paths mentioned inside grep output", () => {
+    expect(getChatSystemPrompt()).toContain(
+      "If grep output mentions another path, treat that mentioned path as content until find_file or read_file confirms it exists."
+    );
   });
 
   it("logs tool calls and result metadata without debug-level content", async () => {

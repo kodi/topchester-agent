@@ -21,6 +21,7 @@ export function getChatSystemPrompt(): string {
     "",
     "Tool use:",
     "- Use read/search tools when the user asks about files, code, symbols, usages, tests, or project behavior.",
+    "- Use find_file for path or filename lookup. Use grep for text inside files. If grep output mentions another path, treat that mentioned path as content until find_file or read_file confirms it exists.",
     "- Use edit/write tools when they are available and the user asks you to implement, fix, add, update, or refactor code.",
     "- Use command/test tools when they are available and you need to inspect the environment, run tests, format, lint, typecheck, or verify behavior.",
     "- After each tool result, decide the next useful action from the new evidence. Continue until the request is handled or blocked.",
