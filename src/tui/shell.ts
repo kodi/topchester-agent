@@ -2,6 +2,7 @@ import { isKeyRelease, isKeyRepeat, matchesKey, ProcessTerminal, TUI } from "@ea
 import { type AgentRuntimeEvent } from "../agent/events.js";
 import { TopchesterAgentRuntime, type AgentRuntime } from "../agent/runtime.js";
 import { type AppContext } from "../app/context.js";
+import { ensureSessionStorage } from "../session/store.js";
 import { BusyIndicator } from "./busy.js";
 import { ChatLayout } from "./layout.js";
 import { systemMessage } from "./messages.js";
@@ -24,6 +25,8 @@ export class TopchesterTuiShell implements TuiShell {
   }
 
   async render(): Promise<void> {
+    await ensureSessionStorage(this.context.workspaceRoot);
+
     const messages = getStartupThreadMessages(this.context);
     const folderName = getFolderName(this.context.workspaceRoot);
     const modelLabel = getModelLabel(this.context);

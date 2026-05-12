@@ -66,6 +66,42 @@ describe("CLI integration", () => {
     );
   });
 
+  it("prepares local session folders on startup without creating KB folders", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout } = await runCli(["--config", fixture.config, "--workspace", fixture.workspace], fixture.root);
+
+    expect(stdout).toContain("Topchester");
+    await expect(stat(join(fixture.workspace, ".agents", "topchester"))).resolves.toMatchObject({});
+    await expect(stat(join(fixture.workspace, ".agents", "topchester", "sessions"))).resolves.toMatchObject({});
+    await expect(stat(join(fixture.workspace, "topchester-kb"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(join(fixture.workspace, ".agents", "topchester-kb-cache"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("startup ignores fake home and other-workspace sessions", async () => {
+    const fixture = await makeFixture();
+    const otherWorkspace = join(fixture.root, "other-workspace");
+    const fakeHome = join(fixture.root, "fake-home");
+    await mkdir(join(otherWorkspace, ".agents", "topchester", "sessions", "019b0da2-0000-7000-8000-000000000001"), {
+      recursive: true,
+    });
+    await mkdir(join(fakeHome, ".agents", "topchester", "sessions", "019b0da2-0000-7000-8000-000000000002"), {
+      recursive: true,
+    });
+
+    await runCli(["--config", fixture.config, "--workspace", fixture.workspace], fixture.root);
+
+    await expect(stat(join(fixture.workspace, ".agents", "topchester", "sessions"))).resolves.toMatchObject({});
+    await expect(
+      stat(join(fixture.workspace, ".agents", "topchester", "sessions", "019b0da2-0000-7000-8000-000000000001"))
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      stat(join(fixture.workspace, ".agents", "topchester", "sessions", "019b0da2-0000-7000-8000-000000000002"))
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("keeps a relative config path relative to the caller cwd when workspace is overridden", async () => {
     const fixture = await makeFixture();
     const relativeConfig = "config.yaml";

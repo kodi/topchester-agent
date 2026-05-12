@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { getTopchesterSessionsPath } from "../src/app/paths.js";
 import {
   createSession,
+  ensureSessionStorage,
   generateSessionId,
   loadSession,
   loadSessionForAppend,
@@ -49,6 +50,36 @@ describe("session store", () => {
       updatedAt: session.metadata.createdAt,
       lastEventId: 0,
     });
+  });
+
+  it("initializes only the local session folders without KB side effects", async () => {
+    const workspace = await tempWorkspace();
+
+    await ensureSessionStorage(workspace);
+
+    await expect(stat(join(workspace, ".agents"))).resolves.toMatchObject({});
+    await expect(stat(join(workspace, ".agents", "topchester"))).resolves.toMatchObject({});
+    await expect(stat(join(workspace, ".agents", "topchester", "sessions"))).resolves.toMatchObject({});
+    await expect(stat(join(workspace, "topchester-kb"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(join(workspace, ".agents", "topchester-kb-cache"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("ignores global and other-workspace session locations", async () => {
+    const workspace = await tempWorkspace();
+    const otherWorkspace = await tempWorkspace();
+    const fakeHome = await tempWorkspace();
+    const fakeConfig = join(fakeHome, ".config", "topchester");
+    const otherSession = await createSession(otherWorkspace);
+    await otherSession.append({ kind: "message", role: "user", text: "not from this workspace" });
+    await mkdir(join(fakeConfig, ".agents", "topchester", "sessions"), { recursive: true });
+
+    const localSession = await createSession(workspace);
+    await localSession.append({ kind: "message", role: "user", text: "from this workspace" });
+
+    await expect(resolveLatestSessionId(workspace)).resolves.toBe(localSession.sessionId);
+    await expect(loadSession(workspace, otherSession.sessionId)).rejects.toThrow(/Could not read session metadata/u);
+    await expect(stat(join(fakeHome, ".agents", "topchester", "sessions"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(join(fakeConfig, ".agents", "topchester", "sessions"))).resolves.toMatchObject({});
   });
 
   it("appends newline-terminated JSON objects with sequential IDs and metadata updates", async () => {

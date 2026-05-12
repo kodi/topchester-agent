@@ -68,6 +68,10 @@ export function generateSessionId(now = Date.now()): string {
   return toUuid(bytes);
 }
 
+export async function ensureSessionStorage(workspaceRoot: string): Promise<void> {
+  await mkdir(getTopchesterSessionsPath(workspaceRoot), { recursive: true });
+}
+
 export async function createSession(workspaceRoot: string): Promise<SessionHandle> {
   const sessionId = generateSessionId();
   const sessionDir = join(getTopchesterSessionsPath(workspaceRoot), sessionId);
