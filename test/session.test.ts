@@ -22,6 +22,14 @@ async function readJson(path: string): Promise<unknown> {
 }
 
 describe("session store", () => {
+  it("uses the uuidv7 package for session ID generation", async () => {
+    const source = await readFile(join(process.cwd(), "src", "session", "store.ts"), "utf8");
+
+    expect(source).toContain('import { uuidv7 } from "uuidv7";');
+    expect(source).not.toContain('from "node:crypto"');
+    expect(source).not.toContain("function toUuid");
+  });
+
   it("generates lowercase UUIDv7-style session IDs that sort in creation order", () => {
     const ids = Array.from({ length: 128 }, () => generateSessionId());
 

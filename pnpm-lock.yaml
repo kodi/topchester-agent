@@ -23,6 +23,9 @@ importers:
       pino:
         specifier: ^10.3.1
         version: 10.3.1
+      uuidv7:
+        specifier: 1.2.1
+        version: 1.2.1
       yaml:
         specifier: ^2.8.4
         version: 2.8.4
@@ -1276,6 +1279,10 @@ packages:
   undici-types@7.16.0:
     resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
 
+  uuidv7@1.2.1:
+    resolution: {integrity: sha512-4kPkK3/XTQW9Hbm4CaqfICn+kY9LJtDVEOfgsRRra/+n2Ofg4NqzRFceAkxvQ/Ud/6BpHOPzj8cirqM7TzTN5Q==}
+    hasBin: true
+
   vite@8.0.11:
     resolution: {integrity: sha512-Jz1mxtUBR5xTT65VOdJZUUeoyLtqljmFkiUXhPTLZka3RDc9vpi/xXkyrnsdRcm2lIi3l3GPMnAidTsEGIj3Ow==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -2285,6 +2292,8 @@ snapshots:
       quansync: 1.0.0
 
   undici-types@7.16.0: {}
+
+  uuidv7@1.2.1: {}
 
   vite@8.0.11(@types/node@24.12.3)(esbuild@0.27.7)(tsx@4.21.0)(yaml@2.8.4):
     dependencies:
