@@ -2,6 +2,7 @@
   "id": "04-grep-path-discipline",
   "name": "Grep path discipline",
   "description": "Checks grep use without trusting fake paths inside matched content.",
+  "timeoutMs": 10000,
   "prompt": "Search for FEATURE_FLAG and report the file that defines it. Do not assume paths mentioned inside file contents exist.",
   "requiredToolCalls": ["grep"],
   "forbiddenToolCalls": ["edit_file"],

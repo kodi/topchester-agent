@@ -52,6 +52,8 @@ interface CliOptions {
   scenario?: string;
   trials: number;
   model?: string;
+  configPath?: string;
+  timeoutMs?: number;
   fakeApi: boolean;
   keepWorkspaces: boolean;
   dryRun: boolean;
@@ -82,6 +84,8 @@ interface JsonLine {
   };
 }
 
+class DryRunComplete extends Error {}
+
 const options = parseArgs(process.argv.slice(2));
 const outputRoot = resolve(options.output ?? join(tmpdir(), `topchester-smoke-${Date.now()}`, "report.json"));
 const artifactRoot = join(dirname(outputRoot), "artifacts");
@@ -89,6 +93,10 @@ let fakeApi: Awaited<ReturnType<typeof startFakeApi>> | undefined;
 const suiteStartedAt = Date.now();
 
 try {
+  if (options.fakeApi && options.configPath) {
+    throw new Error("--config cannot be combined with --fake-api because fake API runs generate their own config.");
+  }
+
   if (options.fakeApi) {
     fakeApi = await startFakeApi();
   }
@@ -126,6 +134,7 @@ try {
         generatedAt: new Date().toISOString(),
         fakeApi: options.fakeApi,
         model: options.model,
+        configPath: options.configPath,
         results,
       },
       null,
@@ -173,7 +182,10 @@ async function runTrial(
   await copyTemplate(templatePath, workspace);
   await applyBootstrapFiles(workspace, scenario.bootstrapFiles);
 
-  const configPath = fakeApiBaseURL ? await writeFakeApiConfig(outputDir, fakeApiBaseURL, options.model) : undefined;
+  const configPath = fakeApiBaseURL
+    ? await writeFakeApiConfig(outputDir, fakeApiBaseURL, options.model)
+    : options.configPath;
+  const timeoutMs = options.timeoutMs ?? scenario.timeoutMs;
   const prompts = Array.isArray(scenario.prompt) ? scenario.prompt : [scenario.prompt];
 
   for (let index = 0; index < prompts.length; index += 1) {
@@ -182,7 +194,7 @@ async function runTrial(
       workspace,
       configPath,
       prompt: prompts[index]!,
-      timeoutMs: scenario.timeoutMs,
+      timeoutMs,
       model: fakeApiBaseURL ? undefined : options.model,
       sessionId,
       eventsPath,
@@ -500,6 +512,10 @@ function parseArgs(args: string[]): CliOptions {
       options.trials = parsePositiveInteger(readArgValue(args, ++index, arg), arg);
     } else if (arg === "--model") {
       options.model = readArgValue(args, ++index, arg);
+    } else if (arg === "--config") {
+      options.configPath = resolve(readArgValue(args, ++index, arg));
+    } else if (arg === "--timeout") {
+      options.timeoutMs = parsePositiveInteger(readArgValue(args, ++index, arg), arg);
     } else if (arg === "--output") {
       options.output = readArgValue(args, ++index, arg);
     } else if (arg === "--parallel") {
@@ -538,8 +554,6 @@ async function runWithConcurrency<T, R>(
 
   return results;
 }
-
-class DryRunComplete extends Error {}
 
 function readArgValue(args: string[], index: number, option: string): string {
   const value = args[index];

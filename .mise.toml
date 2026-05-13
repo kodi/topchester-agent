@@ -17,5 +17,17 @@ run = "pnpm run format-check"
 dir = "{{config_root}}"
 run = "pnpm run lint"
 
+[tasks.smoke]
+dir = "{{config_root}}"
+run = "pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --trials {{arg(name='trials', default='1')}}"
+
+[tasks.smoke-scenario]
+dir = "{{config_root}}"
+run = "pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --scenario {{arg(name='scenario')}} --trials {{arg(name='trials', default='1')}} --keep-workspaces"
+
+[tasks.smoke-live]
+dir = "{{config_root}}"
+run = "config=\"{{arg(name='config')}}\"; trials=\"{{arg(name='trials', default='1')}}\"; model=\"{{arg(name='model', default='')}}\"; timeout_ms=\"{{arg(name='timeout_ms', default='120000')}}\"; if [ -n \"$model\" ] && [ \"$model\" != \"''\" ]; then pnpm exec tsx scripts/smoke/run-smoke.ts --config \"$config\" --trials \"$trials\" --model \"$model\" --timeout \"$timeout_ms\"; else pnpm exec tsx scripts/smoke/run-smoke.ts --config \"$config\" --trials \"$trials\" --timeout \"$timeout_ms\"; fi"
+
 [tasks.local-ci]
 depends = ["typecheck", "format-check", "lint"]

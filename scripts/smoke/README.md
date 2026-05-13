@@ -5,19 +5,19 @@ Smoke tests run curated prompts against clean `/tmp` workspaces and assert globa
 Run the deterministic fake API battery:
 
 ```sh
-pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --trials 1
+mise run smoke 1
 ```
 
 Run one live-model trial from a machine with model API keys:
 
 ```sh
-pnpm exec tsx scripts/smoke/run-smoke.ts --trials 1 --model openrouter/qwen/qwen3-coder:free
+mise run smoke-live config/gemini.yaml 1 inclusionai/ring-2.6-1t:free
 ```
 
 Debug one scenario and keep its workspace:
 
 ```sh
-pnpm exec tsx scripts/smoke/run-smoke.ts --scenario 05-edit-file --trials 1 --keep-workspaces
+mise run smoke-scenario 05-edit-file 1
 ```
 
 Validate scenario configs without running prompts:
@@ -39,6 +39,11 @@ The final summary includes report paths, pass/fail totals, and total elapsed tim
 
 Useful options:
 
+- `mise run smoke <trials>` runs the fake API battery.
+- `mise run smoke-scenario <id> <trials>` runs one fake API scenario and keeps its workspace.
+- `mise run smoke-live <config> <trials> <model> <timeout_ms>` runs the live-model battery.
+- `--config <path>` passes an explicit Topchester config file to live-model runs.
+- `--timeout <ms>` overrides each scenario prompt timeout.
 - `--scenario <id>` runs one scenario.
 - `--trials <n>` repeats each selected scenario.
 - `--parallel <n>` limits concurrent trials.

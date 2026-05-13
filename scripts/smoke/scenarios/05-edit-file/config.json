@@ -2,6 +2,7 @@
   "id": "05-edit-file",
   "name": "Edit file",
   "description": "Checks read_file plus edit_file on an existing file.",
+  "timeoutMs": 10000,
   "prompt": "Edit greeting.txt and change Hello to Goodbye.",
   "requiredToolCalls": ["read_file", "edit_file"],
   "forbiddenToolCalls": ["inspect_command"],

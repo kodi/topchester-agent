@@ -2,6 +2,7 @@
   "id": "06-multi-edit",
   "name": "Multi edit",
   "description": "Checks one edit_file call can make multiple exact replacements.",
+  "timeoutMs": 10000,
   "prompt": "In config.txt, set debug to true and retries to 3.",
   "requiredToolCalls": ["read_file", "edit_file"],
   "expectedContent": [

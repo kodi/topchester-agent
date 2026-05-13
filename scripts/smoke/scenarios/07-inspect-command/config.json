@@ -2,7 +2,8 @@
   "id": "07-inspect-command",
   "name": "Inspect command",
   "description": "Checks safe read-only command execution for orientation.",
-  "prompt": "Orient yourself in this repo and list the top-level docs files.",
+  "timeoutMs": 10000,
+  "prompt": "Use inspect_command to orient yourself in this repo, then list the top-level docs files.",
   "requiredToolCalls": ["inspect_command"],
   "expectedOutputContains": ["docs/guide.md"]
 }

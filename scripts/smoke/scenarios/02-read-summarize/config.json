@@ -2,8 +2,9 @@
   "id": "02-read-summarize",
   "name": "Read and summarize",
   "description": "Checks read_file followed by an artifact update.",
+  "timeoutMs": 10000,
   "prompt": "Read data.txt and update summary.txt with one sentence about what it contains.",
   "requiredToolCalls": ["read_file", "edit_file"],
   "expectedFiles": ["summary.txt"],
-  "expectedContent": [{ "file": "summary.txt", "contains": "user account notes" }]
+  "expectedContent": [{ "file": "summary.txt", "matches": "(?=.*user account)(?=.*(notes|billing contact))" }]
 }
