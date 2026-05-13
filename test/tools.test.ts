@@ -77,6 +77,19 @@ describe("agent tools", () => {
     });
   });
 
+  it("parses inspect_command tool calls from JSON", () => {
+    expect(
+      parseToolCall('{"tool":"inspect_command","args":{"command":"pwd && rg --files docs/plans | head -20"}}')
+    ).toEqual({
+      tool: "inspect_command",
+      args: {
+        command: "pwd && rg --files docs/plans | head -20",
+        workdir: ".",
+        timeout_ms: 10_000,
+      },
+    });
+  });
+
   it("parses the first tool call when the model emits concatenated tool JSON", () => {
     expect(
       parseToolCall(
@@ -134,6 +147,7 @@ describe("agent tools", () => {
       'grep: search text inside file contents in the workspace; output lines are the files containing the matched text, and paths mentioned inside those lines are not confirmed files unless checked with find_file or read_file. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
       'find_file: find existing files by fuzzy path or filename inside the workspace; matches may appear in the middle of a filename, and results are file paths, not file contents. To use it, reply with only JSON: {"tool":"find_file","args":{"query":"runtime"}}',
       'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_hash":"sha256:optional-current-file-hash","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
+      'inspect_command: run a safe read-only discovery command inside the workspace for quick orientation; prefer read_file, list_files, grep, and find_file for exact file tasks, and do not use it for builds, tests, installs, network, shell scripts, or edits. To use it, reply with only JSON: {"tool":"inspect_command","args":{"command":"pwd && rg --files docs/plans | head -20","workdir":".","timeout_ms":10000}}',
     ]);
   });
 
@@ -181,6 +195,46 @@ describe("agent tools", () => {
         ])
       );
       expect(JSON.stringify(logLines)).not.toContain('{"name":"real"}');
+    });
+  });
+
+  it("executes inspect_command through the registry and logs bounded metadata", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const logFile = join(workspace, "tool.log");
+    const call = parseToolCall('{"tool":"inspect_command","args":{"command":"pwd"}}');
+
+    if (!call) {
+      throw new Error("Expected inspect_command tool call to parse.");
+    }
+
+    await withEnv({ TOPCHESTER_LOG_LEVEL: "debug", TOPCHESTER_LOG_FILE: logFile }, async () => {
+      const { logger } = createTopchesterLogger(workspace);
+      const result = await executeToolCall(workspace, call, { logger });
+      const logLines = await readJsonLogLines(logFile);
+
+      expect(result).toMatchObject({
+        tool: "inspect_command",
+        command: "pwd",
+        cwd: ".",
+        exitCode: 0,
+      });
+      if (result.tool !== "inspect_command") {
+        throw new Error("Expected inspect_command result.");
+      }
+      expect(logLines).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ event: "tool_call", tool: "inspect_command" }),
+          expect.objectContaining({
+            event: "tool_result",
+            tool: "inspect_command",
+            command: "pwd",
+            cwd: ".",
+            exitCode: 0,
+            stdoutLength: result.stdout.length,
+          }),
+        ])
+      );
+      expect(JSON.stringify(logLines)).not.toContain(result.stdout.trim());
     });
   });
 

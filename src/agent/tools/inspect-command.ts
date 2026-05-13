@@ -9,12 +9,14 @@ import {
   type InspectSimpleCommand,
 } from "./inspect-command-parser.js";
 import { type InspectCommandArgs, inspectCommandArgsSchema, validateInspectCommand } from "./inspect-command-policy.js";
-import { type ToolResult } from "./types.js";
+import { defineTool, type ToolCall, type ToolResult } from "./types.js";
 
 const MAX_OUTPUT_BYTES = 40_000;
 const MAX_OUTPUT_LINES = 1_000;
 
 export { inspectCommandArgsSchema, type InspectCommandArgs };
+
+export type InspectCommandToolCall = ToolCall<"inspect_command", InspectCommandArgs>;
 
 export interface InspectCommandToolResult extends ToolResult<"inspect_command"> {
   cwd: string;
@@ -34,6 +36,15 @@ export interface InspectCommandToolResult extends ToolResult<"inspect_command"> 
 export interface InspectCommandOptions {
   pathEnv?: string;
 }
+
+export const inspectCommandTool = defineTool({
+  name: "inspect_command",
+  description: "Run a narrowly validated read-only command for repository orientation.",
+  prompt:
+    'inspect_command: run a safe read-only discovery command inside the workspace for quick orientation; prefer read_file, list_files, grep, and find_file for exact file tasks, and do not use it for builds, tests, installs, network, shell scripts, or edits. To use it, reply with only JSON: {"tool":"inspect_command","args":{"command":"pwd && rg --files docs/plans | head -20","workdir":".","timeout_ms":10000}}',
+  argsSchema: inspectCommandArgsSchema,
+  execute: (context, args) => inspectWorkspaceCommand(context.workspaceRoot, args, { pathEnv: context.pathEnv }),
+});
 
 interface PipelineExecutionResult {
   stdout: string;

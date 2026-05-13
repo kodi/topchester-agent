@@ -214,6 +214,23 @@ function formatToolResultForPrompt(result: ToolResult): string {
     ].join("\n");
   }
 
+  if (result.tool === "inspect_command") {
+    return [
+      `Tool result from ${result.tool} via ${result.command}:`,
+      `cwd: ${result.cwd}`,
+      `exit_code: ${result.exitCode}`,
+      `timed_out: ${result.timedOut}`,
+      `truncated: ${result.truncated}`,
+      `decision: ${result.decision.reason}`,
+      warning ? warning.trimStart() : "",
+      "```",
+      result.content,
+      "```",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
   return [`Tool result from ${result.tool}${path}${command}:${warning}`, "```", result.content, "```"].join("\n");
 }
 
@@ -229,6 +246,8 @@ function formatToolCallMessage(call: ToolCall, result?: ToolResult): string {
       return `Tool find_file: ${call.args.query} in ${call.args.path}`;
     case "edit_file":
       return `Tool edit_file: ${call.args.path}${formatEditFileChangeSummary(result)}`;
+    case "inspect_command":
+      return `Tool inspect_command: ${call.args.command}`;
   }
 }
 

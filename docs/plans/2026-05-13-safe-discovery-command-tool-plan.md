@@ -394,7 +394,7 @@ Dependencies: Slice 1.
 
 ### Slice 3: Tool Registry and Runtime Integration
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Expose `inspect_command` to the model and display its results clearly.
 

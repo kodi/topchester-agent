@@ -25,6 +25,15 @@ export {
   type GrepWorkspaceOptions,
 } from "./tools/grep.js";
 export {
+  inspectCommandTool,
+  inspectWorkspaceCommand,
+  inspectCommandArgsSchema,
+  type InspectCommandArgs,
+  type InspectCommandOptions,
+  type InspectCommandToolCall,
+  type InspectCommandToolResult,
+} from "./tools/inspect-command.js";
+export {
   listFilesTool,
   listWorkspaceFiles,
   type ListFilesToolArgs,

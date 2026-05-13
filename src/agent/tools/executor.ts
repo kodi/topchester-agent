@@ -81,6 +81,18 @@ function summarizeToolArgs(call: ToolCall): unknown {
 }
 
 function summarizeToolResult(result: ToolResult): Record<string, unknown> {
+  if (result.tool === "inspect_command") {
+    return {
+      cwd: result.cwd,
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      truncated: result.truncated,
+      decision: result.decision,
+      stdoutLength: result.stdout.length,
+      stderrLength: result.stderr.length,
+    };
+  }
+
   if (result.tool !== "edit_file") {
     return {};
   }

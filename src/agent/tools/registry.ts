@@ -1,6 +1,7 @@
 import { editFileTool } from "./edit-file.js";
 import { findFileTool } from "./find-file.js";
 import { grepTool } from "./grep.js";
+import { inspectCommandTool } from "./inspect-command.js";
 import { listFilesTool } from "./list-files.js";
 import { readFileTool } from "./read-file.js";
 import { type ToolCallForDefinition, type ToolResultForDefinition } from "./types.js";
@@ -11,6 +12,7 @@ export const toolRegistry = {
   [grepTool.name]: grepTool,
   [findFileTool.name]: findFileTool,
   [editFileTool.name]: editFileTool,
+  [inspectCommandTool.name]: inspectCommandTool,
 } as const;
 
 export type ToolName = keyof typeof toolRegistry;
