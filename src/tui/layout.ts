@@ -23,6 +23,7 @@ import {
   isUpKey,
   parseMouseWheel,
 } from "./keys.js";
+import { PromptHistory } from "./prompt-history.js";
 import { formatKnowledgeFooterStatus, formatStatusLine } from "./status.js";
 import { padLines, padThreadLine, stripAnsi } from "./text.js";
 
@@ -39,6 +40,7 @@ export class ChatLayout implements Component, Focusable {
   private activeModalActionIndex = 0;
   private activeSlashSuggestionIndex = 0;
   private threadScrollOffset = 0;
+  private readonly promptHistory = new PromptHistory();
 
   constructor(
     private readonly terminal: Terminal,
@@ -141,11 +143,19 @@ export class ChatLayout implements Component, Focusable {
       return;
     }
 
+    if (this.handlePromptHistoryInput(data)) {
+      return;
+    }
+
     if (this.handleThreadScrollInput(data)) {
       return;
     }
 
+    const previousInput = this.input.getValue();
     this.input.handleInput(data);
+    if (this.input.getValue() !== previousInput) {
+      this.promptHistory.resetBrowsing();
+    }
   }
 
   invalidate(): void {
@@ -310,16 +320,6 @@ export class ChatLayout implements Component, Focusable {
     const pageSize = Math.max(1, Math.floor(this.terminal.rows / 2));
     const wheel = parseMouseWheel(data);
 
-    if (isUpKey(data)) {
-      this.threadScrollOffset += 3;
-      return true;
-    }
-
-    if (isDownKey(data)) {
-      this.threadScrollOffset = Math.max(0, this.threadScrollOffset - 3);
-      return true;
-    }
-
     if (wheel === "up") {
       this.threadScrollOffset += 3;
       return true;
@@ -347,6 +347,30 @@ export class ChatLayout implements Component, Focusable {
 
     if (isEndKey(data)) {
       this.threadScrollOffset = 0;
+      return true;
+    }
+
+    return false;
+  }
+
+  private handlePromptHistoryInput(data: string): boolean {
+    if (this.promptHint) {
+      return false;
+    }
+
+    if (isUpKey(data)) {
+      const prompt = this.promptHistory.previous(this.input.getValue());
+      if (prompt !== undefined) {
+        this.input.setValue(prompt);
+      }
+      return true;
+    }
+
+    if (isDownKey(data)) {
+      const prompt = this.promptHistory.next();
+      if (prompt !== undefined) {
+        this.input.setValue(prompt);
+      }
       return true;
     }
 
@@ -387,6 +411,7 @@ export class ChatLayout implements Component, Focusable {
   private completeSlashSuggestion(suggestions: SlashCommandSuggestion[]): void {
     this.input.setValue(suggestions[this.activeSlashSuggestionIndex]?.value ?? this.input.getValue());
     this.input.handleInput("\u001b[F");
+    this.promptHistory.resetBrowsing();
   }
 
   private getSlashSuggestions(): SlashCommandSuggestion[] {
@@ -407,6 +432,7 @@ export class ChatLayout implements Component, Focusable {
   }
 
   private submitUserInput(message: string): void {
+    this.promptHistory.add(message);
     if (message.startsWith("/")) {
       this.submitCommand?.(message);
     } else {
