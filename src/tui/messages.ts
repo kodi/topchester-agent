@@ -98,15 +98,36 @@ function renderSystemMessage(lines: string[]): string[] {
 }
 
 function formatSystemBodyLine(line: string): string {
+  const expandedLine = expandTabs(line);
+
   if (isToolCallLine(line)) {
-    return ui.muted(line);
+    return ui.muted(expandedLine);
   }
 
-  return line.replace(/\(changed \+\d+\/-\d+\)$/u, (summary) => ui.muted(summary));
+  return expandedLine.replace(/\(changed \+\d+\/-\d+\)$/u, (summary) => ui.muted(summary));
 }
 
 function isToolCallLine(line: string): boolean {
   return /^(read_file|list_files|grep|find_file|edit_file|inspect_command): /u.test(line);
+}
+
+function expandTabs(line: string): string {
+  let column = 0;
+  let expanded = "";
+
+  for (const char of line) {
+    if (char === "\t") {
+      const spaces = 4 - (column % 4);
+      expanded += " ".repeat(spaces);
+      column += spaces;
+      continue;
+    }
+
+    expanded += char;
+    column += 1;
+  }
+
+  return expanded;
 }
 
 function getPrefix(kind: TextChatMessage["kind"]): string {

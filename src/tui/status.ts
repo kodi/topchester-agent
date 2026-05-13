@@ -130,6 +130,12 @@ export function formatKnowledgeFooterStatus(status: KnowledgeStatus): string {
     return `${ui.label("○")} kb: ${ui.label("empty")}`;
   }
 
+  if (status.nonCleanFileCount !== undefined) {
+    const syncState = status.nonCleanFileCount === 0 ? ui.ok("clean") : ui.warn(`${status.nonCleanFileCount} dirty`);
+
+    return `${ui.ok("✅")} kb: ${ui.ok("ready")} | ${syncState}`;
+  }
+
   return `${ui.ok("✅")} kb: ${ui.ok("ready")}`;
 }
 

@@ -1,6 +1,9 @@
 import {
   compileKnowledgeBase,
+  dryRunKnowledgeCompile,
+  filterNonCleanKnowledgeCompileResult,
   formatKnowledgeCompileResult,
+  formatKnowledgeCompileStatusResult,
   formatKnowledgeSyncResult,
   syncKnowledgeBase,
 } from "../knowledge/compiler/index.js";
@@ -10,16 +13,19 @@ import { formatKnowledgeInitResult, initializeKnowledgeBase } from "../knowledge
 import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
 import { formatKnowledgeResetResult, resetKnowledgeBase } from "../knowledge/reset.js";
 import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js";
+import { type L1FileScanStatus } from "../knowledge/compiler/l1-entry.js";
 
 export interface SlashCommandContext {
   workspaceRoot: string;
   config?: TopchesterConfig;
   modelGateway?: L1SummaryModel;
   onProgress?: KnowledgeProgressReporter;
+  formatSyncStatus?: (status: L1FileScanStatus) => string;
 }
 
 export interface SlashCommandResult {
   messages: string[];
+  knowledgeStatus?: KnowledgeStatus;
 }
 
 export interface SlashCommand {
@@ -41,7 +47,7 @@ export interface ParsedSlashCommand {
 export const slashCommandSuggestions: SlashCommandSuggestion[] = [
   {
     value: "/kb status",
-    description: "show project knowledge base status",
+    description: "show non-clean knowledge files",
   },
   {
     value: "/kb compile",
@@ -121,7 +127,14 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
   const subcommand = args[0];
 
   if (subcommand === "status") {
-    return { messages: formatKnowledgeStatus(getKnowledgeStatus(context.workspaceRoot)) };
+    const result = filterNonCleanKnowledgeCompileResult(
+      await dryRunKnowledgeCompile(context.workspaceRoot, { config: context.config })
+    );
+
+    return {
+      messages: formatKnowledgeCompileStatusResult(result, { formatSyncStatus: context.formatSyncStatus }),
+      knowledgeStatus: { ...getKnowledgeStatus(context.workspaceRoot), nonCleanFileCount: result.files.length },
+    };
   }
 
   if (subcommand === "init") {

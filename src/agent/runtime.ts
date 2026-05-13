@@ -1,18 +1,21 @@
+import { type AppContext } from "../app/context.js";
+import { ui } from "../cli/ui.js";
+import { dryRunKnowledgeCompile, filterNonCleanKnowledgeCompileResult } from "../knowledge/compiler/index.js";
+import { type L1FileScanStatus } from "../knowledge/compiler/l1-entry.js";
+import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
+import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js";
 import { executeSlashCommand, parseSlashCommand } from "./commands.js";
 import { type ConversationTurn, buildConversationPrompt } from "./conversation.js";
 import { agentEvent, choiceAction, type AgentRuntimeEvent } from "./events.js";
 import { checkAgentReady } from "./health.js";
 import { getChatSystemPrompt } from "./prompts.js";
 import { executeToolCall, parseToolCall, type ToolCall, type ToolResult } from "./tools.js";
-import { type AppContext } from "../app/context.js";
-import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js";
-import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
 
 const MAX_TOOL_CALLS_PER_TURN = 8;
 
 export interface AgentRuntime {
   checkAgent(abortSignal?: AbortSignal): Promise<AgentRuntimeEvent[]>;
-  checkKnowledgeBase(): AgentRuntimeEvent[];
+  checkKnowledgeBase(): Promise<AgentRuntimeEvent[]>;
   submitMessage(
     conversation: ConversationTurn[],
     message: string,
@@ -41,8 +44,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     return [agentEvent.systemMessage("Agent did not say it was ready."), agentEvent.status("ready")];
   }
 
-  checkKnowledgeBase(): AgentRuntimeEvent[] {
-    return getKnowledgeStatusEvents(getKnowledgeStatus(this.context.workspaceRoot), this.context.devFlags);
+  async checkKnowledgeBase(): Promise<AgentRuntimeEvent[]> {
+    return getKnowledgeStatusEvents(await this.getKnowledgeStatusWithNonCleanFileCount(), this.context.devFlags);
   }
 
   async submitMessage(
@@ -137,17 +140,44 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       config: this.context.config,
       modelGateway: this.context.modelGateway,
       onProgress,
+      formatSyncStatus: formatTuiSyncStatus,
     });
     const events: AgentRuntimeEvent[] = [agentEvent.systemMessage(result.messages.join("\n"))];
 
     if (shouldRefreshKnowledgeStatus(command)) {
-      events.push(agentEvent.knowledgeStatus(getKnowledgeStatus(this.context.workspaceRoot)));
+      events.push(agentEvent.knowledgeStatus(result.knowledgeStatus ?? getKnowledgeStatus(this.context.workspaceRoot)));
     }
 
     events.push(agentEvent.status("ready"));
 
     return events;
   }
+
+  private async getKnowledgeStatusWithNonCleanFileCount(): Promise<KnowledgeStatus> {
+    const status = getKnowledgeStatus(this.context.workspaceRoot);
+
+    if (!status.kbExists || !status.kbIsDirectory || status.kbContentState !== "ready") {
+      return status;
+    }
+
+    const result = filterNonCleanKnowledgeCompileResult(
+      await dryRunKnowledgeCompile(this.context.workspaceRoot, { config: this.context.config })
+    );
+
+    return { ...status, nonCleanFileCount: result.files.length };
+  }
+}
+
+function formatTuiSyncStatus(status: L1FileScanStatus): string {
+  if (status === "current") {
+    return ui.ok(status);
+  }
+
+  if (status === "invalid" || status === "missing_file") {
+    return ui.error(status);
+  }
+
+  return ui.warn(status);
 }
 
 function shouldRefreshKnowledgeStatus(command: string): boolean {

@@ -29,7 +29,7 @@ describe("slash commands", () => {
     expect(getSlashCommandSuggestions("/")).toEqual([
       {
         value: "/kb status",
-        description: "show project knowledge base status",
+        description: "show non-clean knowledge files",
       },
       {
         value: "/kb compile",
@@ -51,7 +51,7 @@ describe("slash commands", () => {
     expect(getSlashCommandSuggestions("/k")).toEqual([
       {
         value: "/kb status",
-        description: "show project knowledge base status",
+        description: "show non-clean knowledge files",
       },
       {
         value: "/kb compile",
@@ -85,7 +85,7 @@ describe("slash commands", () => {
     expect(getSlashCommandSuggestions("/kb s")).toEqual([
       {
         value: "/kb status",
-        description: "show project knowledge base status",
+        description: "show non-clean knowledge files",
       },
       {
         value: "/kb sync",
@@ -266,12 +266,19 @@ describe("slash commands", () => {
 
   it("executes /kb status against the workspace", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
-    await mkdir(join(workspace, "topchester-kb"), { recursive: true });
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
 
     const result = await executeSlashCommand("/kb status", { workspaceRoot: workspace });
 
-    expect(result.messages).toContain(`knowledge folder: ${join(workspace, "topchester-kb")} [empty] (default)`);
-    expect(result.messages).toContain("state: knowledge base folder is empty");
+    expect(result.messages).toContain("KB status");
+    expect(result.messages).toContain(`workspace: ${workspace}`);
+    expect(result.messages).toContain(`knowledge folder: ${join(workspace, "topchester-kb")} [missing]`);
+    expect(result.messages).toContain("non-clean files: 1");
+    expect(result.messages).toContain("");
+    expect(result.messages.some((line) => line.startsWith("missing_entry\tsrc/index.ts\t"))).toBe(true);
+    expect(result.messages).toContain("----");
+    expect(result.messages).toContain("total non-clean files: 1");
   });
 
   it("refreshes runtime KB status after KB slash commands", async () => {
@@ -298,6 +305,23 @@ describe("slash commands", () => {
       exists: false,
       isDirectory: false,
     });
+  });
+
+  it("adds non-clean file count to startup KB status", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await mkdir(join(workspace, "topchester-kb"), { recursive: true });
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+    await writeFile(
+      join(workspace, "topchester-kb", "manifest.json"),
+      JSON.stringify({ l1: { completed: 0, currentEntries: 1 } }, null, 2)
+    );
+    const runtime = new TopchesterAgentRuntime(createTestContext(workspace));
+
+    const events = await runtime.checkKnowledgeBase();
+    const event = events.find((candidate) => candidate.type === "knowledge_status");
+
+    expect(event?.type === "knowledge_status" ? event.status.nonCleanFileCount : undefined).toBe(1);
   });
 
   it("formats edit_file tool calls and results for the final model prompt", async () => {

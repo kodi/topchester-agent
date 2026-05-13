@@ -130,7 +130,7 @@ export class TopchesterTuiShell implements TuiShell {
     }
 
     if (app.isReady()) {
-      await this.applyRuntimeEvents(app, this.runtime.checkKnowledgeBase());
+      await this.applyRuntimeEvents(app, await this.runtime.checkKnowledgeBase());
     }
 
     tui.requestRender();

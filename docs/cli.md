@@ -64,12 +64,12 @@ Current behavior:
 - `inspect_command` runs a small allowlisted set of read-only discovery commands for quick repo orientation, such as `pwd && rg --files docs/plans | head -20`. It validates a narrow shell-like subset itself and runs commands without invoking a shell.
 - `inspect_command` supports simple command lists with `&&`, `||`, and `;`, plus pipelines with `|`. It rejects redirects, shell expansion, subshells, background jobs, multiline scripts, `cd`, mutation commands, package managers, interpreters, network commands, Docker/Kubernetes/cloud CLIs, editors, pagers, and process-control commands.
 - `inspect_command` keeps its working directory and path arguments inside the workspace, uses short timeouts, bounds returned output, reports exit status/timeout/truncation metadata, and returns a plain rejection reason for unsafe commands.
-- Intercepts slash commands before chat, starting with `/kb status`.
+- Intercepts slash commands before chat, including KB commands.
 - Shows slash command suggestions when the prompt starts with `/`; `Up`/`Down` choose a suggestion and `Tab` completes it.
 - Shows a temporary thinking row while waiting for chat responses.
 - Checks the configured `agent.fast` model on startup in interactive mode and prints `Agent: ready` when the model responds.
 - Skips the startup check with a plain message if the agent takes too long.
-- Checks KB status after the agent is ready and refreshes the footer after `/kb init`, `/kb reset`, `/kb compile`, and `/kb status`.
+- Checks KB status after the agent is ready and refreshes the footer after `/kb init`, `/kb reset`, `/kb compile`, `/kb sync`, and `/kb status`.
 - Shows a warning modal with setup choices when no KB folder exists, or when the KB path is not a folder.
 - Uses `Up`/`Down` to navigate active modal choices.
 - Shows a temporary spinner row in the chat area while the engine is busy, with copy that says what is happening.
@@ -82,7 +82,7 @@ Slash commands:
 - `/kb compile` — reads `.gitignore` files, lists project files, and processes them into L1 file entries with the configured `kb.summarize` model. Shows L1 processing counts and percentage while it runs.
 - `/kb sync` — checks project file sync status and processes only non-clean files into L1 entries.
 - `/kb reset` — deletes the configured knowledge folder and local cache folder so the project can start clean. Shows a simple progress line while it runs.
-- `/kb status` — prints simple workspace KB folder status inside the chat thread.
+- `/kb status` — prints the same non-clean file status as `topchester kb status` inside the chat thread.
 
 ### `topchester dev`
 

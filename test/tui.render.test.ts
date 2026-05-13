@@ -43,6 +43,7 @@ import { TopchesterAgentRuntime } from "../src/agent/runtime.js";
 import { type SessionEventPayload } from "../src/session/events.js";
 import { createSession, loadSession, rehydrateSession, type SessionHandle } from "../src/session/store.js";
 
+// fake terminal for testing - 2
 class FakeTerminal implements Terminal {
   columns = 60;
   rows = 10;
@@ -219,6 +220,24 @@ describe("TUI rendering", () => {
       formatKnowledgeFooterStatus({ ...baseStatus, kbExists: true, kbIsDirectory: true, kbContentState: "ready" })
     ).toBe("✅ kb: ready");
     expect(
+      formatKnowledgeFooterStatus({
+        ...baseStatus,
+        kbExists: true,
+        kbIsDirectory: true,
+        kbContentState: "ready",
+        nonCleanFileCount: 0,
+      })
+    ).toBe("✅ kb: ready | clean");
+    expect(
+      formatKnowledgeFooterStatus({
+        ...baseStatus,
+        kbExists: true,
+        kbIsDirectory: true,
+        kbContentState: "ready",
+        nonCleanFileCount: 41,
+      })
+    ).toBe("✅ kb: ready | 41 dirty");
+    expect(
       formatKnowledgeFooterStatus({ ...baseStatus, kbExists: true, kbIsDirectory: true, kbContentState: "empty" })
     ).toBe("○ kb: empty");
     expect(formatKnowledgeFooterStatus({ ...baseStatus, kbExists: false, kbIsDirectory: false })).toBe("⚠ kb: missing");
@@ -261,6 +280,15 @@ describe("TUI rendering", () => {
       expect(
         formatKnowledgeFooterStatus({ ...baseStatus, kbExists: true, kbIsDirectory: true, kbContentState: "ready" })
       ).toBe("\u001b[32m✅\u001b[0m kb: \u001b[32mready\u001b[0m");
+      expect(
+        formatKnowledgeFooterStatus({
+          ...baseStatus,
+          kbExists: true,
+          kbIsDirectory: true,
+          kbContentState: "ready",
+          nonCleanFileCount: 2,
+        })
+      ).toBe("\u001b[32m✅\u001b[0m kb: \u001b[32mready\u001b[0m | \u001b[33m2 dirty\u001b[0m");
       expect(
         formatKnowledgeFooterStatus({ ...baseStatus, kbExists: true, kbIsDirectory: true, kbContentState: "empty" })
       ).toBe("\u001b[2m○\u001b[0m kb: \u001b[2mempty\u001b[0m");
@@ -332,6 +360,12 @@ describe("TUI rendering", () => {
     }
   });
 
+  it("expands tabs in system messages before wrapping", () => {
+    expect(renderChatMessage(systemMessage("changed\ttest/commands.test.ts\t17154 bytes"))).toContain(
+      "   changed test/commands.test.ts   17154 bytes"
+    );
+  });
+
   it("renders user messages with a left border and no label", () => {
     expect(renderChatMessage(userMessage("hello"))).toEqual(["▌ ", "▌ hello", "▌ "]);
     expect(renderChatMessage(userMessage("hello")).join("\n")).not.toContain("You:");
@@ -373,6 +407,7 @@ describe("TUI rendering", () => {
       kbExists: true,
       kbIsDirectory: true,
       kbContentState: "ready",
+      nonCleanFileCount: 1,
       cacheExists: false,
       cacheIsDirectory: false,
       kbPathSource: "default",
@@ -381,7 +416,7 @@ describe("TUI rendering", () => {
     const output = app.render(80).join("\n");
 
     expect(output).toContain("● ready ·  repo · model [provider]");
-    expect(output).toContain("✅ kb: ready");
+    expect(output).toContain("✅ kb: ready | 1 dirty");
   });
 
   it("pads the status footer by one column on each edge", () => {
@@ -744,7 +779,7 @@ describe("TUI rendering", () => {
     const output = app.render(80).join("\n");
 
     expect(output).toContain("slash commands");
-    expect(output).toContain("> /kb status — show project knowledge base status");
+    expect(output).toContain("> /kb status — show non-clean knowledge files");
     expect(output).toContain("Tab complete · ↑↓ choose");
   });
 

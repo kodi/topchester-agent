@@ -10,6 +10,7 @@ export interface KnowledgeStatus {
   kbIsDirectory: boolean;
   cacheExists: boolean;
   cacheIsDirectory: boolean;
+  nonCleanFileCount?: number;
   kbContentState?: "empty" | "ready";
   kbPathSource: "default" | "env";
   cachePathSource: "default" | "env";
