@@ -1,4 +1,9 @@
-import { compileKnowledgeBase, formatKnowledgeCompileResult } from "../knowledge/compiler/index.js";
+import {
+  compileKnowledgeBase,
+  formatKnowledgeCompileResult,
+  formatKnowledgeSyncResult,
+  syncKnowledgeBase,
+} from "../knowledge/compiler/index.js";
 import { type L1SummaryModel } from "../knowledge/compiler/l1-processor.js";
 import { type TopchesterConfig } from "../config/index.js";
 import { formatKnowledgeInitResult, initializeKnowledgeBase } from "../knowledge/init.js";
@@ -41,6 +46,10 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
   {
     value: "/kb compile",
     description: "process project files into L1 entries",
+  },
+  {
+    value: "/kb sync",
+    description: "process non-clean project files into L1 entries",
   },
   {
     value: "/kb init",
@@ -119,15 +128,17 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
     return { messages: formatKnowledgeInitResult(await initializeKnowledgeBase(context.workspaceRoot)) };
   }
 
-  if (subcommand === "compile") {
+  if (subcommand === "compile" || subcommand === "sync") {
     if (!context.modelGateway) {
       return { messages: ['No model configured for purpose "kb.summarize"; L1 entries were not processed.'] };
     }
 
     try {
+      const action = subcommand === "sync" ? syncKnowledgeBase : compileKnowledgeBase;
+      const format = subcommand === "sync" ? formatKnowledgeSyncResult : formatKnowledgeCompileResult;
       return {
-        messages: formatKnowledgeCompileResult(
-          await compileKnowledgeBase(context.workspaceRoot, {
+        messages: format(
+          await action(context.workspaceRoot, {
             model: context.modelGateway,
             requireModel: true,
             config: context.config,
@@ -136,7 +147,9 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
         ),
       };
     } catch (error) {
-      return { messages: [`KB compile failed: ${error instanceof Error ? error.message : "Unknown error."}`] };
+      return {
+        messages: [`KB ${subcommand} failed: ${error instanceof Error ? error.message : "Unknown error."}`],
+      };
     }
   }
 
@@ -144,7 +157,7 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
     return { messages: formatKnowledgeResetResult(await resetKnowledgeBase(context.workspaceRoot)) };
   }
 
-  return { messages: ["Usage: /kb init, /kb compile, /kb reset, or /kb status"] };
+  return { messages: ["Usage: /kb init, /kb compile, /kb sync, /kb reset, or /kb status"] };
 }
 
 export function formatKnowledgeStatus(status: KnowledgeStatus): string[] {

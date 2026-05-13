@@ -49,6 +49,8 @@ const DEFAULT_EXCLUDED_DIRS = new Set([
   "topchester-kb",
 ]);
 
+const DEFAULT_EXCLUDED_FILES = new Set(["topchester.jsonc"]);
+
 const BINARY_FILE_EXTENSIONS = new Set([
   ".avif",
   ".bmp",
@@ -184,6 +186,7 @@ async function walkDirectory(
 
     if (
       !entry.isFile() ||
+      shouldSkipFileByDefault(relativePath) ||
       isIgnored(workspaceRoot, absolutePath, false, rules, excludedDirs) ||
       projectIgnoreMatcher.isIgnored(relativePath, false)
     ) {
@@ -356,6 +359,10 @@ function shouldSkipDirectoryByDefault(
   excludedDirs: Set<string> = DEFAULT_EXCLUDED_DIRS
 ): boolean {
   return excludedDirs.has(relativePath) || [...excludedDirs].some((dir) => relativePath.startsWith(`${dir}/`));
+}
+
+function shouldSkipFileByDefault(relativePath: string): boolean {
+  return DEFAULT_EXCLUDED_FILES.has(relativePath);
 }
 
 function toPosixPath(path: string): string {

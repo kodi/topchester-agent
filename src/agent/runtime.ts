@@ -153,7 +153,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 function shouldRefreshKnowledgeStatus(command: string): boolean {
   const parsed = parseSlashCommand(command);
 
-  return parsed?.name === "kb" && ["init", "reset", "compile", "status"].includes(parsed.args[0] ?? "");
+  return parsed?.name === "kb" && ["init", "reset", "compile", "sync", "status"].includes(parsed.args[0] ?? "");
 }
 
 export function getKnowledgeStatusEvents(status: KnowledgeStatus, devFlags = new Set<string>()): AgentRuntimeEvent[] {

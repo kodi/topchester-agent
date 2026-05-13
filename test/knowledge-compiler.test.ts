@@ -1,12 +1,18 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   compileKnowledgeBase,
+  dryRunKnowledgeCompile,
+  filterNonCleanKnowledgeCompileResult,
+  formatKnowledgeCompileDryRunResult,
   formatKnowledgeCompileResult,
+  formatKnowledgeCompileStatusResult,
+  formatKnowledgeSyncResult,
   isPartialKnowledgeCompileResult,
+  syncKnowledgeBase,
 } from "../src/knowledge/compiler/index.js";
 import { createProjectIgnoreMatcher, listProjectFilesForL1 } from "../src/knowledge/compiler/inventory.js";
 import { knowledgeCompilerIdentity } from "../src/knowledge/compiler/manifest.js";
@@ -138,9 +144,16 @@ describe("knowledge compiler inventory", () => {
     await writeFile(join(workspace, "fixtures", "important", "keep.ts"), "kept\n");
     await writeFile(join(workspace, "node_modules", "keep.ts"), "still ignored\n");
     await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+    await writeFile(join(workspace, "topchester.jsonc"), '{ "ignore": { "paths": [] } }\n');
 
     const inventory = await listProjectFilesForL1(workspace, {
-      ignorePaths: ["generated/**", "fixtures/**", "!fixtures/important/**", "!node_modules/keep.ts"],
+      ignorePaths: [
+        "generated/**",
+        "fixtures/**",
+        "!fixtures/important/**",
+        "!node_modules/keep.ts",
+        "!topchester.jsonc",
+      ],
     });
 
     expect(inventory.files.map((file) => file.path)).toEqual(["fixtures/important/keep.ts", "src/index.ts"]);
@@ -189,6 +202,91 @@ describe("knowledge compiler inventory", () => {
     await expect(
       readFile(getL1FileEntryPath(join(workspace, "topchester-kb"), "generated/client.ts"), "utf8")
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("dry-runs compile inventory without writing artifacts and reports L1 sync status", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-"));
+    await mkdir(join(workspace, "generated"), { recursive: true });
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "generated", "client.ts"), "ignored\n");
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+    await initializeKnowledgeBase(workspace);
+    await compileKnowledgeBase(workspace, {
+      config: { ignore: { paths: ["generated/**"] } },
+      model: fakeL1Model(),
+    });
+
+    const queuePath = join(workspace, ".agents", "topchester-kb-cache", "l1-queue.json");
+    const queueModifiedBefore = (await stat(queuePath)).mtimeMs;
+    const currentResult = await dryRunKnowledgeCompile(workspace, {
+      config: { ignore: { paths: ["generated/**"] } },
+    });
+
+    expect(currentResult.files.map((file) => [file.path, file.syncStatus])).toEqual([["src/index.ts", "current"]]);
+    expect(formatKnowledgeCompileDryRunResult(currentResult)).toContain("config ignore rules: 1");
+    expect(formatKnowledgeCompileDryRunResult(currentResult)).toContain("total files: 1");
+    expect(filterNonCleanKnowledgeCompileResult(currentResult).files).toEqual([]);
+    expect(formatKnowledgeCompileStatusResult(filterNonCleanKnowledgeCompileResult(currentResult))).toContain(
+      "state: all in-scope files are current"
+    );
+    expect(formatKnowledgeCompileStatusResult(filterNonCleanKnowledgeCompileResult(currentResult))).toContain(
+      "total non-clean files: 0"
+    );
+
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 2;\n");
+
+    const changedResult = await dryRunKnowledgeCompile(workspace, {
+      config: { ignore: { paths: ["generated/**"] } },
+    });
+
+    expect(changedResult.files.map((file) => [file.path, file.syncStatus])).toEqual([["src/index.ts", "changed"]]);
+    expect(filterNonCleanKnowledgeCompileResult(changedResult).files.map((file) => file.path)).toEqual([
+      "src/index.ts",
+    ]);
+    expect((await stat(queuePath)).mtimeMs).toBe(queueModifiedBefore);
+  });
+
+  it("syncs only non-clean files while preserving current L1 entries", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "src", "changed.ts"), "export const value = 1;\n");
+    await writeFile(join(workspace, "src", "current.ts"), "export const stable = true;\n");
+    await initializeKnowledgeBase(workspace);
+    await compileKnowledgeBase(workspace, { model: fakeL1Model("Initial summary.") });
+    await writeFile(join(workspace, "src", "changed.ts"), "export const value = 2;\n");
+    const model = fakeL1Model("Synced summary.");
+
+    const result = await syncKnowledgeBase(workspace, { model, requireModel: true });
+    const queue = JSON.parse(await readFile(result.queuePath, "utf8"));
+    const changedEntry = JSON.parse(
+      await readFile(getL1FileEntryPath(join(workspace, "topchester-kb"), "src/changed.ts"), "utf8")
+    );
+    const currentEntry = JSON.parse(
+      await readFile(getL1FileEntryPath(join(workspace, "topchester-kb"), "src/current.ts"), "utf8")
+    );
+
+    expect(result.queuePath).toBe(join(workspace, ".agents", "topchester-kb-cache", "l1-sync-queue.json"));
+    expect(result.queuedFiles.map((file) => file.path)).toEqual(["src/changed.ts"]);
+    expect(queue.queuedFiles.map((file: { path: string }) => file.path)).toEqual(["src/changed.ts"]);
+    expect(model.calls).toHaveLength(1);
+    expect(model.calls[0]).toContain("src/changed.ts");
+    expect(changedEntry.summary).toBe("Synced summary.");
+    expect(currentEntry.summary).toBe("Initial summary.");
+    expect(formatKnowledgeSyncResult(result)).toContain("KB sync");
+    expect(formatKnowledgeSyncResult(result)).toContain("queued: 1");
+  });
+
+  it("reports clean sync without requiring a model", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+    await initializeKnowledgeBase(workspace);
+    await compileKnowledgeBase(workspace, { model: fakeL1Model() });
+
+    const result = await syncKnowledgeBase(workspace, { requireModel: true });
+
+    expect(result.queuedFiles).toEqual([]);
+    expect(formatKnowledgeSyncResult(result)).toContain("queued: 0");
   });
 
   it("processes queued files into model-backed L1 entries and reports current counts", async () => {

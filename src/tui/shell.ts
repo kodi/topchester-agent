@@ -364,11 +364,11 @@ export function formatDuration(durationMs: number): string {
 }
 
 function getSlashCommandActivities(command: string): string[] {
-  if (command.startsWith("/kb compile")) {
+  if (command.startsWith("/kb compile") || command.startsWith("/kb sync")) {
     return [
       "Checking project knowledge folders...",
       "Reading .gitignore files...",
-      "Listing project files...",
+      command.startsWith("/kb sync") ? "Checking KB file status..." : "Listing project files...",
       "Queueing L1 work...",
     ];
   }

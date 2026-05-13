@@ -80,8 +80,9 @@ Slash commands:
 
 - `/kb init` — creates Topchester project folders and prints what was created or already present. Shows a simple progress line while it runs.
 - `/kb compile` — reads `.gitignore` files, lists project files, and processes them into L1 file entries with the configured `kb.summarize` model. Shows L1 processing counts and percentage while it runs.
+- `/kb sync` — checks project file sync status and processes only non-clean files into L1 entries.
 - `/kb reset` — deletes the configured knowledge folder and local cache folder so the project can start clean. Shows a simple progress line while it runs.
-- `/kb status` — prints the same simple workspace KB status as `topchester kb status` inside the chat thread.
+- `/kb status` — prints simple workspace KB folder status inside the chat thread.
 
 ### `topchester dev`
 
@@ -121,7 +122,7 @@ Current behavior:
 
 - Requires `topchester kb init` to have created the knowledge folder first.
 - Reads `.gitignore` files from the workspace, including nested `.gitignore` files.
-- Lists project files that are not ignored and skips heavy generated folders such as `.git/`, `node_modules/`, `dist/`, `coverage/`, `topchester-kb/`, `.agents/topchester/`, and `.agents/topchester-kb-cache/`.
+- Lists project files that are not ignored and skips heavy generated folders such as `.git/`, `node_modules/`, `dist/`, `coverage/`, `topchester-kb/`, `.agents/topchester/`, and `.agents/topchester-kb-cache/`, plus the project config file `topchester.jsonc`.
 - Applies `ignore.paths` rules from the resolved Topchester config after `.gitignore` and before L1 queueing. Rules come from `~/.config/topchester/config.jsonc`, `topchester.jsonc`, `.topchester/config.local.jsonc`, `TOPCHESTER_CONFIG`, and `--config` in that order. Negated config rules can re-include files ignored by earlier config rules, but cannot re-include built-in excluded folders.
 - Queues each listed file for L1 processing in `.agents/topchester-kb-cache/l1-queue.json`.
 - Processes the L1 queue with the configured `kb.summarize` model purpose. If `kb.summarize` is not configured, it uses the configured `fallback` model if one exists.
@@ -130,6 +131,46 @@ Current behavior:
 - Prints progress while reading ignore files, listing files, queueing L1 work, processing L1 entries, and writing output. During L1 processing, the CLI shows a progress bar, completed/total count, percentage, and current file path.
 - Prints the workspace path, gitignore file count, config ignore rule count, queue path, manifest path, queued count, completed count, failed count, changed count, missing count, current L1 entry count, and final state.
 - Exits successfully only when every in-scope file has a current L1 entry. Per-file failed, changed, or missing outcomes print a partial state and set a non-success automation exit code. Fatal setup or model configuration errors fail before claiming L1 entries are current.
+
+### `topchester kb dry-run`
+
+Lists the project files that would be compiled into the knowledge base.
+
+Status: implemented, read-only inventory preview.
+
+Current behavior:
+
+- Does not require `topchester kb init`.
+- Does not create knowledge folders, cache folders, queues, manifests, or L1 entries.
+- Uses the same project file inventory rules as `topchester kb compile`.
+- Reads `.gitignore` files from the workspace, including nested `.gitignore` files.
+- Applies default exclusions such as `.git/`, `node_modules/`, `dist/`, `coverage/`, `topchester-kb/`, `.agents/topchester/`, and `.agents/topchester-kb-cache/`.
+- Excludes `topchester.jsonc` from the compile inventory.
+- Applies `ignore.paths` rules from the resolved Topchester config in the same order as compile.
+- Prints the workspace path, knowledge folder path, gitignore file count, config ignore rule count, and file count.
+- Prints one line per in-scope file with sync status, path, and size.
+- Prints a bottom separator and total file count after the list.
+- Reports sync status as `current`, `changed`, `missing_entry`, `missing_file`, `suspect`, or `invalid` by comparing current file metadata with existing L1 entries when the knowledge folder exists.
+- Colors the sync status token when color output is enabled.
+- Does not call any model provider.
+
+### `topchester kb sync`
+
+Syncs non-clean project files into the knowledge base.
+
+Status: implemented, dirty-file L1 processing.
+
+Current behavior:
+
+- Requires `topchester kb init` to have created the knowledge folder first.
+- Uses the same project file inventory and sync-status logic as `topchester kb status`.
+- Queues only files whose sync status is not `current`.
+- Writes the sync queue to `.agents/topchester-kb-cache/l1-sync-queue.json`.
+- Processes queued files with the configured `kb.summarize` model purpose. If `kb.summarize` is not configured, it uses the configured `fallback` model if one exists.
+- Does not remove existing current L1 entries that are absent from the dirty-file queue.
+- Writes `topchester-kb/manifest.json` with the sync queue path, queued file count, config ignore rule count, gitignore files read, and L1 outcome counts for the sync run.
+- Prints the workspace path, gitignore file count, config ignore rule count, queue path, manifest path, queued count, completed count, failed count, changed count, missing count, current L1 entry count, and final state.
+- Exits successfully only when every queued non-clean file has a current L1 entry. Per-file failed, changed, or missing outcomes print a partial state and set a non-success automation exit code.
 
 ### `topchester kb reset`
 
@@ -150,22 +191,19 @@ Current behavior:
 
 ### `topchester kb status`
 
-Shows project knowledge base status.
+Shows files that are not current in the knowledge base.
 
-Status: implemented, path checks plus knowledge-folder content state.
+Status: implemented, read-only non-clean inventory preview.
 
 Current behavior:
 
-- Prints the workspace path.
-- Checks the knowledge folder path:
-  - Default: `topchester-kb/`
-  - Override: `TOPCHESTER_KB_DIR`
-- Checks the local cache folder path:
-  - Default: `.agents/topchester-kb-cache/`
-  - Override: `TOPCHESTER_KB_CACHE_DIR`
-- Reports each path as `[ok]`, `[missing]`, or `[not a folder]`; the knowledge folder can also report `[empty]`.
-- Prints one state line:
-  - `state: no knowledge base found yet`
-  - `state: knowledge base path is not a folder`
-  - `state: knowledge base folder is empty`
-  - `state: knowledge base found`
+- Does not create knowledge folders, cache folders, queues, manifests, or L1 entries.
+- Uses the same project file inventory and sync-status logic as `topchester kb dry-run`.
+- Applies default exclusions, `.gitignore`, and resolved `ignore.paths` rules.
+- Prints the workspace path, knowledge folder path, gitignore file count, config ignore rule count, and non-clean file count.
+- Prints only files whose sync status is not `current`.
+- Prints one line per non-clean file with sync status, path, and size.
+- Prints a bottom separator and total non-clean file count after the list.
+- Prints `state: all in-scope files are current` when there are no non-clean files.
+- Colors the sync status token when color output is enabled.
+- Does not call any model provider.

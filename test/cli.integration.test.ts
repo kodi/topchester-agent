@@ -10,7 +10,7 @@ const execFileAsync = promisify(execFile);
 const cliPath = join(process.cwd(), "src/cli.ts");
 const tsxPath = join(process.cwd(), "node_modules/.bin/tsx");
 
-async function runCli(args: string[], cwd: string) {
+async function runCli(args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) {
   return execFileAsync(tsxPath, [cliPath, ...args], {
     cwd,
     env: {
@@ -18,6 +18,7 @@ async function runCli(args: string[], cwd: string) {
       TOPCHESTER_CONFIG: "",
       TOPCHESTER_LOG_FILE: "",
       TOPCHESTER_LOG_LEVEL: "",
+      ...env,
     },
   });
 }
@@ -317,13 +318,18 @@ describe("CLI integration", () => {
 
   it("reports missing KB status with explicit workspace", async () => {
     const fixture = await makeFixture();
+    await mkdir(join(fixture.workspace, "src"), { recursive: true });
+    await writeFile(join(fixture.workspace, "src", "index.ts"), "export const value = 1;\n");
 
     const { stdout } = await runCli(["--workspace", fixture.workspace, "kb", "status"], fixture.root);
 
     expect(stdout).toContain("KB status");
     expect(stdout).toContain(`workspace: ${fixture.workspace}`);
-    expect(stdout).toContain(`knowledge folder: ${join(fixture.workspace, "topchester-kb")} [missing] (default)`);
-    expect(stdout).toContain("state: no knowledge base found yet");
+    expect(stdout).toContain(`knowledge folder: ${join(fixture.workspace, "topchester-kb")} [missing]`);
+    expect(stdout).toContain("non-clean files: 1");
+    expect(stdout).toContain("non-clean files: 1\n\nmissing_entry\tsrc/index.ts");
+    expect(stdout).toContain("missing_entry\tsrc/index.ts");
+    expect(stdout).toContain("----\ntotal non-clean files: 1");
   });
 
   it("initializes project knowledge folders", async () => {
@@ -340,17 +346,16 @@ describe("CLI integration", () => {
     await expect(stat(join(fixture.workspace, "topchester-kb"))).resolves.toMatchObject({});
   });
 
-  it("reports empty KB status", async () => {
+  it("reports clean KB status when no in-scope files need sync", async () => {
     const fixture = await makeFixture();
     await mkdir(join(fixture.workspace, "topchester-kb"), { recursive: true });
 
     const { stdout } = await runCli(["--workspace", fixture.workspace, "kb", "status"], fixture.root);
 
-    expect(stdout).toContain(`knowledge folder: ${join(fixture.workspace, "topchester-kb")} [empty] (default)`);
-    expect(stdout).toContain(
-      `local cache folder: ${join(fixture.workspace, ".agents/topchester-kb-cache")} [missing] (default)`
-    );
-    expect(stdout).toContain("state: knowledge base folder is empty");
+    expect(stdout).toContain(`knowledge folder: ${join(fixture.workspace, "topchester-kb")} [ok]`);
+    expect(stdout).toContain("non-clean files: 0");
+    expect(stdout).toContain("state: all in-scope files are current");
+    expect(stdout).toContain("----\ntotal non-clean files: 0");
   });
 
   it("resets project knowledge folders", async () => {
@@ -388,6 +393,74 @@ describe("CLI integration", () => {
     await expect(stat(join(fixture.workspace, "topchester-kb/manifest.json"))).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it("dry-runs compile inventory without writing KB artifacts and respects config ignores", async () => {
+    const fixture = await makeFixture();
+    await mkdir(join(fixture.workspace, "generated"), { recursive: true });
+    await mkdir(join(fixture.workspace, "src"), { recursive: true });
+    await mkdir(join(fixture.workspace, "dist"), { recursive: true });
+    await mkdir(join(fixture.workspace, "node_modules", "pkg"), { recursive: true });
+    await writeFile(join(fixture.workspace, "topchester.jsonc"), '{ "ignore": { "paths": ["generated/**"] } }\n');
+    await writeFile(join(fixture.workspace, ".gitignore"), "dist/\n");
+    await writeFile(join(fixture.workspace, "generated", "client.ts"), "ignored\n");
+    await writeFile(join(fixture.workspace, "dist", "bundle.js"), "ignored\n");
+    await writeFile(join(fixture.workspace, "node_modules", "pkg", "index.js"), "ignored\n");
+    await writeFile(join(fixture.workspace, "src", "index.ts"), "export const value = 1;\n");
+
+    const { stdout } = await runCli(
+      ["--config", fixture.config, "--workspace", fixture.workspace, "kb", "dry-run"],
+      fixture.root
+    );
+
+    expect(stdout).toContain("KB dry run");
+    expect(stdout).toContain("config ignore rules: 1");
+    expect(stdout).toContain("files: 2");
+    expect(stdout).toContain("missing_entry\t.gitignore");
+    expect(stdout).toContain("missing_entry\tsrc/index.ts");
+    expect(stdout).toContain("----\ntotal files: 2");
+    expect(stdout).not.toContain("sha256:");
+    expect(stdout).not.toContain("topchester.jsonc");
+    expect(stdout).not.toContain("generated/client.ts");
+    expect(stdout).not.toContain("dist/bundle.js");
+    expect(stdout).not.toContain("node_modules/pkg/index.js");
+    await expect(stat(join(fixture.workspace, ".agents/topchester-kb-cache/l1-queue.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(stat(join(fixture.workspace, "topchester-kb/manifest.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("fails sync clearly before init without writing L1 artifacts", async () => {
+    const fixture = await makeFixture();
+    await mkdir(join(fixture.workspace, "src"), { recursive: true });
+    await writeFile(join(fixture.workspace, "src", "index.ts"), "export const value = 1;\n");
+
+    await expect(
+      runCli(["--config", fixture.config, "--workspace", fixture.workspace, "kb", "sync"], fixture.root)
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("Run `topchester kb init` before syncing the project knowledge base."),
+    });
+    await expect(stat(join(fixture.workspace, ".agents/topchester-kb-cache/l1-sync-queue.json"))).rejects.toMatchObject(
+      {
+        code: "ENOENT",
+      }
+    );
+  });
+
+  it("colors the dry-run sync status token when color is enabled", async () => {
+    const fixture = await makeFixture();
+    await mkdir(join(fixture.workspace, "src"), { recursive: true });
+    await writeFile(join(fixture.workspace, "src", "index.ts"), "export const value = 1;\n");
+
+    const { stdout } = await runCli(
+      ["--config", fixture.config, "--workspace", fixture.workspace, "kb", "dry-run"],
+      fixture.root,
+      { FORCE_COLOR: "1", NO_COLOR: "" }
+    );
+
+    expect(stdout).toContain("\u001b[33mmissing_entry\u001b[0m\tsrc/index.ts");
   });
 
   it("fails compile clearly when no kb.summarize model or fallback is configured", async () => {

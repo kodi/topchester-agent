@@ -4,14 +4,20 @@ import { isAbsolute, resolve } from "node:path";
 import { Command } from "commander";
 import { createAppContext } from "./app/context.js";
 import { ui } from "./cli/ui.js";
+import { type L1FileScanStatus } from "./knowledge/compiler/l1-entry.js";
 import {
   compileKnowledgeBase,
+  dryRunKnowledgeCompile,
+  filterNonCleanKnowledgeCompileResult,
+  formatKnowledgeCompileDryRunResult,
   formatKnowledgeCompileResult,
+  formatKnowledgeCompileStatusResult,
+  formatKnowledgeSyncResult,
   isPartialKnowledgeCompileResult,
+  syncKnowledgeBase,
 } from "./knowledge/compiler/index.js";
 import { formatKnowledgeInitResult, initializeKnowledgeBase } from "./knowledge/init.js";
 import { formatKnowledgeResetResult, resetKnowledgeBase } from "./knowledge/reset.js";
-import { getKnowledgeStatus } from "./knowledge/status.js";
 import { loadSession, loadSessionForAppend, rehydrateSession } from "./session/store.js";
 import { TopchesterTuiShell } from "./tui/index.js";
 import { getTopchesterVersion } from "./version.js";
@@ -92,6 +98,38 @@ kbCommand
   });
 
 kbCommand
+  .command("dry-run")
+  .description("list project files that would be compiled into the knowledge base")
+  .action(async () => {
+    const context = createContextFromOptions();
+    const result = await ui.spinner("Listing project files for KB compile...", () =>
+      dryRunKnowledgeCompile(context.workspaceRoot, { config: context.config })
+    );
+
+    console.log(formatKnowledgeCompileDryRunResult(result, { formatSyncStatus: formatDryRunSyncStatus }).join("\n"));
+  });
+
+kbCommand
+  .command("sync")
+  .description("sync non-clean project files into the knowledge base")
+  .action(async () => {
+    const context = createContextFromOptions();
+    const result = await ui.progress("Syncing non-clean L1 file entries...", (report) =>
+      syncKnowledgeBase(context.workspaceRoot, {
+        model: context.modelGateway,
+        requireModel: true,
+        config: context.config,
+        onProgress: (event) => report(event.message),
+      })
+    );
+
+    console.log(formatKnowledgeSyncResult(result).join("\n"));
+    if (isPartialKnowledgeCompileResult(result)) {
+      process.exitCode = 2;
+    }
+  });
+
+kbCommand
   .command("reset")
   .description("delete the local project knowledge base and cache")
   .action(async () => {
@@ -105,29 +143,16 @@ kbCommand
 
 kbCommand
   .command("status")
-  .description("show project knowledge base status")
+  .description("show project files that are not current in the knowledge base")
   .action(async () => {
     const context = createContextFromOptions();
-    const status = await ui.spinner("Checking knowledge base...", () => getKnowledgeStatus(context.workspaceRoot));
-
-    console.log(ui.heading("KB status"));
-    console.log(`${ui.label("workspace")}: ${status.workspaceRoot}`);
-    console.log(
-      `${ui.label("knowledge folder")}: ${formatKnowledgePathStatus(status)} ${ui.label(`(${status.kbPathSource})`)}`
-    );
-    console.log(
-      `${ui.label("local cache folder")}: ${formatPathStatus(status.cachePath, status.cacheExists, status.cacheIsDirectory)} ${ui.label(`(${status.cachePathSource})`)}`
+    const result = await ui.spinner("Checking KB file status...", async () =>
+      filterNonCleanKnowledgeCompileResult(
+        await dryRunKnowledgeCompile(context.workspaceRoot, { config: context.config })
+      )
     );
 
-    if (!status.kbExists) {
-      console.log(`${ui.label("state")}: ${ui.warn("no knowledge base found yet")}`);
-    } else if (!status.kbIsDirectory) {
-      console.log(`${ui.label("state")}: ${ui.error("knowledge base path is not a folder")}`);
-    } else if (status.kbContentState !== "ready") {
-      console.log(`${ui.label("state")}: ${ui.label("knowledge base folder is empty")}`);
-    } else {
-      console.log(`${ui.label("state")}: ${ui.ok("knowledge base found")}`);
-    }
+    console.log(formatKnowledgeCompileStatusResult(result, { formatSyncStatus: formatDryRunSyncStatus }).join("\n"));
   });
 
 await program.parseAsync();
@@ -201,30 +226,14 @@ function collectDevFlag(flag: string, flags: string[]): string[] {
   return [...flags, flag];
 }
 
-function formatPathStatus(path: string, exists: boolean, isDirectory: boolean): string {
-  if (!exists) {
-    return `${path} ${ui.warn("[missing]")}`;
+function formatDryRunSyncStatus(status: L1FileScanStatus): string {
+  if (status === "current") {
+    return ui.ok(status);
   }
 
-  if (!isDirectory) {
-    return `${path} ${ui.error("[not a folder]")}`;
+  if (status === "invalid" || status === "missing_file") {
+    return ui.error(status);
   }
 
-  return `${path} ${ui.ok("[ok]")}`;
-}
-
-function formatKnowledgePathStatus(status: ReturnType<typeof getKnowledgeStatus>): string {
-  if (!status.kbExists) {
-    return `${status.kbPath} ${ui.warn("[missing]")}`;
-  }
-
-  if (!status.kbIsDirectory) {
-    return `${status.kbPath} ${ui.error("[not a folder]")}`;
-  }
-
-  if (status.kbContentState !== "ready") {
-    return `${status.kbPath} ${ui.label("[empty]")}`;
-  }
-
-  return `${status.kbPath} ${ui.ok("[ok]")}`;
+  return ui.warn(status);
 }

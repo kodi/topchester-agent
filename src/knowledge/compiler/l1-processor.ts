@@ -37,6 +37,7 @@ export interface ProcessL1QueueOptions {
   gitignoreFiles: string[];
   configIgnorePathCount: number;
   model: L1SummaryModel;
+  removeOrphanedEntries?: boolean;
   onProgress?: KnowledgeProgressReporter;
   now?: () => Date;
 }
@@ -60,7 +61,9 @@ export async function processL1Queue(options: ProcessL1QueueOptions): Promise<Pr
   const queue = l1QueueFileSchema.parse(JSON.parse(await readFile(options.queuePath, "utf8")));
   let queuedFiles = queue.queuedFiles.map(validateQueueItemPath);
 
-  await removeOrphanedL1Entries(options.kbPath, new Set(queuedFiles.map((item) => item.path)));
+  if (options.removeOrphanedEntries ?? true) {
+    await removeOrphanedL1Entries(options.kbPath, new Set(queuedFiles.map((item) => item.path)));
+  }
 
   for (const [index, item] of queuedFiles.entries()) {
     options.onProgress?.({

@@ -36,6 +36,10 @@ describe("slash commands", () => {
         description: "process project files into L1 entries",
       },
       {
+        value: "/kb sync",
+        description: "process non-clean project files into L1 entries",
+      },
+      {
         value: "/kb init",
         description: "start project knowledge base setup",
       },
@@ -52,6 +56,10 @@ describe("slash commands", () => {
       {
         value: "/kb compile",
         description: "process project files into L1 entries",
+      },
+      {
+        value: "/kb sync",
+        description: "process non-clean project files into L1 entries",
       },
       {
         value: "/kb init",
@@ -74,13 +82,23 @@ describe("slash commands", () => {
         description: "delete the local knowledge base and cache",
       },
     ]);
+    expect(getSlashCommandSuggestions("/kb s")).toEqual([
+      {
+        value: "/kb status",
+        description: "show project knowledge base status",
+      },
+      {
+        value: "/kb sync",
+        description: "process non-clean project files into L1 entries",
+      },
+    ]);
     expect(getSlashCommandSuggestions("/nope")).toEqual([]);
     expect(getSlashCommandSuggestions("hello")).toEqual([]);
   });
 
   it("reports /kb usage for unknown KB subcommands", async () => {
     await expect(executeSlashCommand("/kb nope", { workspaceRoot: "/repo" })).resolves.toEqual({
-      messages: ["Usage: /kb init, /kb compile, /kb reset, or /kb status"],
+      messages: ["Usage: /kb init, /kb compile, /kb sync, /kb reset, or /kb status"],
     });
   });
 
@@ -152,6 +170,44 @@ describe("slash commands", () => {
     });
 
     expect(result.messages).toContain("KB compile");
+    expect(result.messages).toContain("queued: 1");
+    expect(result.messages).toContain("completed: 1");
+    expect(result.messages).toContain("state: L1 entries are ready and current");
+  });
+
+  it("executes /kb sync through the dirty-file L1 pipeline", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await executeSlashCommand("/kb init", { workspaceRoot: workspace });
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+
+    const result = await executeSlashCommand("/kb sync", {
+      workspaceRoot: workspace,
+      modelGateway: {
+        async generateText() {
+          return {
+            text: JSON.stringify({
+              language: "typescript",
+              summary: "Syncs the entry file.",
+              responsibilities: ["Export a test value."],
+              symbols: [],
+              imports: [],
+              exports: ["value"],
+              module_ids: [],
+              feature_ids: [],
+              test_ids: [],
+              evidence: [{ kind: "path", value: "src/index.ts" }],
+              confidence: "medium",
+            }),
+            providerId: "fake",
+            modelId: "fake-l1",
+            purpose: "kb.summarize" as const,
+          };
+        },
+      },
+    });
+
+    expect(result.messages).toContain("KB sync");
     expect(result.messages).toContain("queued: 1");
     expect(result.messages).toContain("completed: 1");
     expect(result.messages).toContain("state: L1 entries are ready and current");
@@ -231,6 +287,10 @@ describe("slash commands", () => {
       isDirectory: true,
     });
     await expect(getRuntimeKnowledgeFolderState(runtime, "/kb compile")).resolves.toEqual({
+      exists: true,
+      isDirectory: true,
+    });
+    await expect(getRuntimeKnowledgeFolderState(runtime, "/kb sync")).resolves.toEqual({
       exists: true,
       isDirectory: true,
     });
