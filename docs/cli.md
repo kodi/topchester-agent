@@ -50,6 +50,7 @@ Current behavior:
 - Uses the terminal alternate screen without mouse capture, so terminal text selection keeps working.
 - Pressing `Ctrl-C` once shows `press Ctrl-C again to exit.` as a temporary message; pressing `Ctrl-C` again right away exits.
 - Shows a scrolling thread area on top with startup context.
+- `Up` and `Down` browse submitted prompt history when the normal prompt is active.
 - Supports terminal alternate-scroll wheel events, `PageUp`/`PageDown`, and `Home`/`End` for chat history scrolling.
 - Shows an unlabeled input box below the thread.
 - Shows a status line below the prompt box with `ready`, the current folder name, the active model as `<model> [provider]`, and compact KB state as `✅ kb: ready`, `○ kb: empty`, `⚠ kb: missing`, or `✕ kb: path conflict` after the KB check runs.
@@ -61,12 +62,13 @@ Current behavior:
 - `find_file` searches existing workspace filenames by fuzzy path or name.
 - `edit_file` edits existing UTF-8 files inside the workspace with exact `old_text`/`new_text` replacements. It rejects path escapes, missing files, directories, invalid UTF-8, duplicate or overlapping matches, unchanged output, and stale `expected_hash` values when provided. Successful edits return a compact diff, before/after hashes, first changed line, and mark the KB session overlay as `needs_sync`.
 - Intercepts slash commands before chat, starting with `/kb status`.
-- Shows slash command suggestions when the prompt starts with `/`; `Tab` completes the selected suggestion.
+- Shows slash command suggestions when the prompt starts with `/`; `Up`/`Down` choose a suggestion and `Tab` completes it.
 - Shows a temporary thinking row while waiting for chat responses.
 - Checks the configured `agent.fast` model on startup in interactive mode and prints `Agent: ready` when the model responds.
 - Skips the startup check with a plain message if the agent takes too long.
 - Checks KB status after the agent is ready and refreshes the footer after `/kb init`, `/kb reset`, `/kb compile`, and `/kb status`.
 - Shows a warning modal with setup choices when no KB folder exists, or when the KB path is not a folder.
+- Uses `Up`/`Down` to navigate active modal choices.
 - Shows a temporary spinner row in the chat area while the engine is busy, with copy that says what is happening.
 - Shows `press Esc to stop` inside the prompt box while the startup agent check is running.
 - Prints a static version of the same layout when output is not interactive.
