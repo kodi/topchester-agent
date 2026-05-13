@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type AppContext } from "../src/app/context.js";
+import { type AgentRuntimeEvent } from "../src/agent/events.js";
 import {
   executeSlashCommand,
   formatKnowledgeStatus,
@@ -324,6 +325,26 @@ describe("slash commands", () => {
     expect(event?.type === "knowledge_status" ? event.status.nonCleanFileCount : undefined).toBe(1);
   });
 
+  it("refreshes non-clean file count after /kb sync", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: fakeKbModel(),
+    });
+
+    await runtime.submitSlashCommand("/kb init");
+    await runtime.submitSlashCommand("/kb compile");
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 2;\n");
+
+    const dirtyEvents = await runtime.submitSlashCommand("/kb status");
+    const syncEvents = await runtime.submitSlashCommand("/kb sync");
+
+    expect(getKnowledgeStatusEvent(dirtyEvents)?.status.nonCleanFileCount).toBe(1);
+    expect(getKnowledgeStatusEvent(syncEvents)?.status.nonCleanFileCount).toBe(0);
+  });
+
   it("formats edit_file tool calls and results for the final model prompt", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     await writeFile(join(workspace, "example.txt"), "enabled=false\n");
@@ -458,6 +479,39 @@ function createTestContext(workspaceRoot: string): AppContext {
       error() {},
     } as unknown as AppContext["logger"],
   };
+}
+
+function fakeKbModel(): AppContext["modelGateway"] {
+  return {
+    async generateText() {
+      return {
+        text: JSON.stringify({
+          language: "typescript",
+          summary: "Summarizes the source file.",
+          responsibilities: ["Describe the file for the project knowledge base."],
+          symbols: [],
+          imports: [],
+          exports: [],
+          module_ids: [],
+          feature_ids: [],
+          test_ids: [],
+          evidence: [{ kind: "path", value: "model-path" }],
+          confidence: "medium",
+        }),
+        providerId: "fake",
+        modelId: "fake-kb",
+        purpose: "kb.summarize" as const,
+      };
+    },
+  } as unknown as AppContext["modelGateway"];
+}
+
+function getKnowledgeStatusEvent(
+  events: AgentRuntimeEvent[]
+): Extract<AgentRuntimeEvent, { type: "knowledge_status" }> | undefined {
+  return events.find((candidate): candidate is Extract<AgentRuntimeEvent, { type: "knowledge_status" }> => {
+    return candidate.type === "knowledge_status";
+  });
 }
 
 async function getRuntimeKnowledgeFolderState(

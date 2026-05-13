@@ -145,7 +145,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     const events: AgentRuntimeEvent[] = [agentEvent.systemMessage(result.messages.join("\n"))];
 
     if (shouldRefreshKnowledgeStatus(command)) {
-      events.push(agentEvent.knowledgeStatus(result.knowledgeStatus ?? getKnowledgeStatus(this.context.workspaceRoot)));
+      events.push(agentEvent.knowledgeStatus(await this.getKnowledgeStatusWithNonCleanFileCount()));
     }
 
     events.push(agentEvent.status("ready"));

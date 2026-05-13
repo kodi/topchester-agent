@@ -74,5 +74,6 @@ Example configs live in `config/example.yaml` and `config/gemini.yaml`. OpenRout
 - [Architecture](docs/ARCHITECTURE.md)
 - [Knowledge System](docs/KNOWLEDGE.md)
 - [CLI Commands](docs/cli.md)
+- [TUI Guide](docs/tui.md)
 - [Model Configuration](docs/MODEL_CONFIG.md)
 - [Sessions](docs/SESSIONS.md)

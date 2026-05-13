@@ -12,7 +12,7 @@ import { type TopchesterConfig } from "../config/index.js";
 import { formatKnowledgeInitResult, initializeKnowledgeBase } from "../knowledge/init.js";
 import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
 import { formatKnowledgeResetResult, resetKnowledgeBase } from "../knowledge/reset.js";
-import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js";
+import { type KnowledgeStatus } from "../knowledge/status.js";
 import { type L1FileScanStatus } from "../knowledge/compiler/l1-entry.js";
 
 export interface SlashCommandContext {
@@ -25,7 +25,6 @@ export interface SlashCommandContext {
 
 export interface SlashCommandResult {
   messages: string[];
-  knowledgeStatus?: KnowledgeStatus;
 }
 
 export interface SlashCommand {
@@ -133,7 +132,6 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
 
     return {
       messages: formatKnowledgeCompileStatusResult(result, { formatSyncStatus: context.formatSyncStatus }),
-      knowledgeStatus: { ...getKnowledgeStatus(context.workspaceRoot), nonCleanFileCount: result.files.length },
     };
   }
 
