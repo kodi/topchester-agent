@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { type Terminal } from "@earendil-works/pi-tui";
 import { ChatLayout } from "../src/tui/layout.js";
 import { modalMessage, systemMessage } from "../src/tui/messages.js";
+import { stripAnsi } from "../src/tui/text.js";
 
 class FakeTerminal implements Terminal {
   columns = 60;
@@ -146,5 +147,5 @@ function promptLine(app: ChatLayout): string {
 }
 
 function promptText(app: ChatLayout): string {
-  return promptLine(app).replace(/\u001b\[[0-9;]*m/g, "");
+  return stripAnsi(promptLine(app));
 }
