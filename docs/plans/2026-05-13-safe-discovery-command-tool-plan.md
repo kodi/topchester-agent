@@ -424,7 +424,7 @@ Dependencies: Slice 2.
 
 ### Slice 4: Prompt, Docs, and Behavior Guardrails
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Teach the agent when to use the tool and keep user-facing command behavior documented.
 

@@ -151,6 +151,7 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [x] Add workspace-scoped `grep`
 - [x] Add workspace-scoped `find_file`
 - [x] Add workspace-scoped `edit_file` for exact existing-file replacements
+- [x] Add workspace-scoped `inspect_command` for read-only repo orientation through a narrow allowlist
 - [x] Add `edit_file` path containment, existing-file checks, UTF-8 validation, optional expected-hash checks, and atomic-ish same-directory writes
 - [x] Add per-file mutation serialization for `edit_file`
 - [x] Return edit diff, before/after hashes, byte delta, first changed line, and KB dirty-state metadata

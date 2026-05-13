@@ -168,6 +168,15 @@ describe("agent tools", () => {
     expect(prompt).toContain("Do not include line labels or grep prefixes in old_text");
   });
 
+  it("tells the model inspect_command is only for read-only orientation", () => {
+    const prompt = getChatSystemPrompt();
+
+    expect(prompt).toContain("Use list_files, grep, find_file, and read_file for exact file listing");
+    expect(prompt).toContain("Use inspect_command only for quick read-only repo orientation");
+    expect(prompt).toContain("inspect_command is not a shell");
+    expect(prompt).toContain("Unsafe commands, shell expansion, scripts, installs, builds, tests, network access");
+  });
+
   it("logs tool calls and result metadata without debug-level content", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
     const logFile = join(workspace, "tool.log");

@@ -19,7 +19,7 @@ This document tracks implemented and planned `topchester` CLI commands. Any CLI 
 
 - `TOPCHESTER_LOG_LEVEL=debug` writes structured JSON logs to `.agents/topchester/logs/topchester.log`.
 - `TOPCHESTER_LOG_FILE=<path>` overrides the log file path. Relative paths are resolved from the workspace root.
-- `debug` logs tool calls, tool result metadata, edit metadata, and model response metadata. For `edit_file`, debug logs include hashes, changed-line metadata, and edit counts, not full old/new edit text. `trace` also logs full model/tool response text.
+- `debug` logs tool calls, tool result metadata, edit metadata, and model response metadata. For `edit_file`, debug logs include hashes, changed-line metadata, and edit counts, not full old/new edit text. For `inspect_command`, debug logs include the command, cwd, allowlist decision, exit status, timing, and output sizes, not full command output. `trace` also logs full model/tool response text.
 - Logging is file-only and does not write to the TUI.
 
 ## Output style
@@ -55,12 +55,15 @@ Current behavior:
 - Shows an unlabeled input box below the thread.
 - Shows a status line below the prompt box with `ready`, the current folder name, the active model as `<model> [provider]`, and compact KB state as `✅ kb: ready`, `○ kb: empty`, `⚠ kb: missing`, or `✕ kb: path conflict` after the KB check runs.
 - Tracks chat rows as `System`, `You`, and `Agent` messages, and sends user messages to the configured `agent.primary` model.
-- Lets the model use workspace-scoped tools: `read_file`, `list_files`, `grep`, `find_file`, and `edit_file`.
+- Lets the model use workspace-scoped tools: `read_file`, `list_files`, `grep`, `find_file`, `edit_file`, and `inspect_command`.
 - `read_file` reads UTF-8 files inside the workspace and returns content hash metadata for stale-read checks.
 - `list_files` lists files and directories inside a workspace folder, top-level by default, with optional recursive listing and a result limit.
 - `grep` uses `rg` when available, falls back to `grep`, and reports a warning if neither command is installed.
 - `find_file` searches existing workspace filenames by fuzzy path or name.
 - `edit_file` edits existing UTF-8 files inside the workspace with exact `old_text`/`new_text` replacements. It rejects path escapes, missing files, directories, invalid UTF-8, duplicate or overlapping matches, unchanged output, and stale `expected_hash` values when provided. Successful edits return a compact diff, before/after hashes, first changed line, and mark the KB session overlay as `needs_sync`.
+- `inspect_command` runs a small allowlisted set of read-only discovery commands for quick repo orientation, such as `pwd && rg --files docs/plans | head -20`. It validates a narrow shell-like subset itself and runs commands without invoking a shell.
+- `inspect_command` supports simple command lists with `&&`, `||`, and `;`, plus pipelines with `|`. It rejects redirects, shell expansion, subshells, background jobs, multiline scripts, `cd`, mutation commands, package managers, interpreters, network commands, Docker/Kubernetes/cloud CLIs, editors, pagers, and process-control commands.
+- `inspect_command` keeps its working directory and path arguments inside the workspace, uses short timeouts, bounds returned output, reports exit status/timeout/truncation metadata, and returns a plain rejection reason for unsafe commands.
 - Intercepts slash commands before chat, starting with `/kb status`.
 - Shows slash command suggestions when the prompt starts with `/`; `Up`/`Down` choose a suggestion and `Tab` completes it.
 - Shows a temporary thinking row while waiting for chat responses.
