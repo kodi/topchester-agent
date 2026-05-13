@@ -309,11 +309,11 @@ describe("CLI integration", () => {
     const fixture = await makeFixture();
 
     const { stdout } = await runCli(
-      ["--config", fixture.config, "--dev", "disable-kb-check-modal", "--dev", "do-something-other", "dev"],
+      ["--config", fixture.config, "--dev", "alpha", "--dev", "beta", "dev"],
       fixture.root
     );
 
-    expect(stdout).toContain("dev flags: disable-kb-check-modal, do-something-other");
+    expect(stdout).toContain("dev flags: alpha, beta");
   });
 
   it("reports missing KB status with explicit workspace", async () => {

@@ -4,8 +4,8 @@ import { type KnowledgeStatus } from "../knowledge/status.js";
 import { agentMessage, modalMessage, systemMessage, type ChatMessage } from "./messages.js";
 import { formatKnowledgePathStatus } from "./status.js";
 
-export function getKnowledgeStatusMessages(status: KnowledgeStatus, devFlags = new Set<string>()): ChatMessage[] {
-  return renderRuntimeEvents(getKnowledgeStatusEvents(status, devFlags));
+export function getKnowledgeStatusMessages(status: KnowledgeStatus): ChatMessage[] {
+  return renderRuntimeEvents(getKnowledgeStatusEvents(status));
 }
 
 export function renderRuntimeEvents(events: AgentRuntimeEvent[]): ChatMessage[] {
@@ -20,7 +20,11 @@ export function renderRuntimeEvent(event: AgentRuntimeEvent): ChatMessage[] {
       return [systemMessage(event.label)];
     case "knowledge_status":
       return [
-        systemMessage(`KB status: ${formatKnowledgePathStatus(event.status)}${formatKbPathSource(event.status)}`),
+        systemMessage(
+          [`KB status: ${formatKnowledgePathStatus(event.status)}${formatKbPathSource(event.status)}`, event.guidance]
+            .filter(Boolean)
+            .join("\n")
+        ),
       ];
     case "choice":
       return [

@@ -29,6 +29,7 @@ export interface AgentToolCallEvent {
 export interface AgentKnowledgeStatusEvent {
   type: "knowledge_status";
   status: KnowledgeStatus;
+  guidance?: string;
 }
 
 export interface AgentChoiceEvent {
@@ -70,8 +71,10 @@ export const agentEvent = {
     return { type: "tool_call", call, label };
   },
 
-  knowledgeStatus(status: KnowledgeStatus): AgentKnowledgeStatusEvent {
-    return { type: "knowledge_status", status };
+  knowledgeStatus(status: KnowledgeStatus, guidance?: string): AgentKnowledgeStatusEvent {
+    return guidance === undefined
+      ? { type: "knowledge_status", status }
+      : { type: "knowledge_status", status, guidance };
   },
 
   choice(options: AgentChoiceOptions): AgentChoiceEvent {

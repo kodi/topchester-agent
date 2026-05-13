@@ -325,6 +325,23 @@ describe("slash commands", () => {
     expect(event?.type === "knowledge_status" ? event.status.nonCleanFileCount : undefined).toBe(1);
   });
 
+  it("adds startup guidance when KB files are not current", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await mkdir(join(workspace, "topchester-kb"), { recursive: true });
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+    await writeFile(
+      join(workspace, "topchester-kb", "manifest.json"),
+      JSON.stringify({ l1: { completed: 0, currentEntries: 1 } }, null, 2)
+    );
+    const runtime = new TopchesterAgentRuntime(createTestContext(workspace));
+
+    const events = await runtime.checkKnowledgeBase();
+    const event = getKnowledgeStatusEvent(events);
+
+    expect(event?.guidance).toBe("Next: run /kb sync to update project knowledge, or /kb status to inspect the files.");
+  });
+
   it("refreshes non-clean file count after /kb sync", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     await mkdir(join(workspace, "src"), { recursive: true });

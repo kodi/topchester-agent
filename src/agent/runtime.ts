@@ -6,7 +6,7 @@ import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
 import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js";
 import { executeSlashCommand, parseSlashCommand } from "./commands.js";
 import { type ConversationTurn, buildConversationPrompt } from "./conversation.js";
-import { agentEvent, choiceAction, type AgentRuntimeEvent } from "./events.js";
+import { agentEvent, type AgentRuntimeEvent } from "./events.js";
 import { checkAgentReady } from "./health.js";
 import { getChatSystemPrompt } from "./prompts.js";
 import { executeToolCall, parseToolCall, type ToolCall, type ToolResult } from "./tools.js";
@@ -45,7 +45,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
   }
 
   async checkKnowledgeBase(): Promise<AgentRuntimeEvent[]> {
-    return getKnowledgeStatusEvents(await this.getKnowledgeStatusWithNonCleanFileCount(), this.context.devFlags);
+    return getKnowledgeStatusEvents(await this.getKnowledgeStatusWithNonCleanFileCount());
   }
 
   async submitMessage(
@@ -186,34 +186,28 @@ function shouldRefreshKnowledgeStatus(command: string): boolean {
   return parsed?.name === "kb" && ["init", "reset", "compile", "sync", "status"].includes(parsed.args[0] ?? "");
 }
 
-export function getKnowledgeStatusEvents(status: KnowledgeStatus, devFlags = new Set<string>()): AgentRuntimeEvent[] {
-  const events: AgentRuntimeEvent[] = [agentEvent.knowledgeStatus(status)];
+export function getKnowledgeStatusEvents(status: KnowledgeStatus): AgentRuntimeEvent[] {
+  return [agentEvent.knowledgeStatus(status, formatStartupKnowledgeGuidance(status))];
+}
 
-  if (devFlags.has("disable-kb-check-modal")) {
-    return events;
-  }
-
+function formatStartupKnowledgeGuidance(status: KnowledgeStatus): string | undefined {
   if (!status.kbExists) {
-    events.push(
-      agentEvent.choice({
-        tone: "warning",
-        title: "No KB found",
-        body: "Topchester needs a project knowledge base before normal coding can start.",
-        actions: [choiceAction("Create KB now", "/kb init"), choiceAction("Exit")],
-      })
-    );
-  } else if (!status.kbIsDirectory) {
-    events.push(
-      agentEvent.choice({
-        tone: "warning",
-        title: "KB path is not a folder",
-        body: `This path exists but is not a folder:\n${status.kbPath}`,
-        actions: [choiceAction("Exit")],
-      })
-    );
+    return "Next: run /kb init, then /kb compile to create project knowledge.";
   }
 
-  return events;
+  if (!status.kbIsDirectory) {
+    return "Fix the KB path or config, then run /kb status.";
+  }
+
+  if (status.kbContentState !== "ready") {
+    return "Next: run /kb compile to build project knowledge.";
+  }
+
+  if ((status.nonCleanFileCount ?? 0) > 0) {
+    return "Next: run /kb sync to update project knowledge, or /kb status to inspect the files.";
+  }
+
+  return undefined;
 }
 
 function formatToolResultForPrompt(result: ToolResult): string {

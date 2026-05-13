@@ -28,10 +28,6 @@ These options can be used with the top-level command and subcommands:
 - `-V, --version` — print the CLI package version.
 - `-h, --help` — print help.
 
-Development flags:
-
-- `disable-kb-check-modal` — still checks and prints KB status during startup, but does not show the missing-KB modal in the TUI.
-
 ## Command Overview
 
 | Command                 | Purpose                                                 |

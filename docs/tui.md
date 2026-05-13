@@ -78,9 +78,7 @@ Interactive startup does two checks:
 
 If the model check takes too long, startup skips the check and prints a plain message.
 
-If no KB folder exists, or the configured KB path is not a folder, the TUI shows a warning modal with setup choices. Use `Up` and `Down` to move between modal choices.
-
-Use `--dev disable-kb-check-modal` when you want the startup KB status check without the warning modal.
+If the KB is missing, empty, misconfigured, or not current, the startup KB status message includes a short next step. The footer stays visible so you can keep working while you decide whether to run `/kb init`, `/kb compile`, `/kb sync`, or `/kb status`.
 
 ## Agent Tools
 

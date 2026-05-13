@@ -950,7 +950,7 @@ describe("TUI rendering", () => {
     expect(output).toContain("press Esc to stop");
   });
 
-  it("shows a KB status modal when the project has no KB", () => {
+  it("adds startup guidance when the project has no KB", () => {
     const messages = getKnowledgeStatusMessages({
       workspaceRoot: "/repo",
       kbPath: "/repo/topchester-kb",
@@ -969,14 +969,12 @@ describe("TUI rendering", () => {
     const output = app.render(80).join("\n");
 
     expect(output).toContain("KB status:  topchester-kb [missing]");
-    expect(output).toContain("⚠️  No KB found:");
-    expect(output).toContain("Topchester needs a project knowledge base before normal coding can start.");
-    expect(output).toContain("> 1) Create KB now");
-    expect(output).toContain("  2) Exit");
-    expect(output).not.toContain("Add custom KB setup notes");
+    expect(output).toContain("Next: run /kb init, then /kb compile to create project knowledge.");
+    expect(output).not.toContain("No KB found");
+    expect(output).not.toContain("Create KB now");
   });
 
-  it("reports an empty KB folder in the startup status message", () => {
+  it("adds startup guidance when the KB folder is empty", () => {
     const messages = getKnowledgeStatusMessages({
       workspaceRoot: "/repo",
       kbPath: "/repo/topchester-kb",
@@ -994,6 +992,7 @@ describe("TUI rendering", () => {
     const output = app.render(80).join("\n");
 
     expect(output).toContain("KB status:  topchester-kb [empty]");
+    expect(output).toContain("Next: run /kb compile to build project knowledge.");
     expect(output).not.toContain("KB status:  topchester-kb [ok] (default)");
   });
 
@@ -1032,26 +1031,6 @@ describe("TUI rendering", () => {
         cachePathSource: "default",
       })
     ).toBe(" /external/topchester-kb [empty]");
-  });
-
-  it("hides the KB status modal when the dev flag disables it", () => {
-    const messages = getKnowledgeStatusMessages(
-      {
-        workspaceRoot: "/repo",
-        kbPath: "/repo/topchester-kb",
-        cachePath: "/repo/.agents/topchester-kb-cache",
-        kbExists: false,
-        kbIsDirectory: false,
-        cacheExists: false,
-        cacheIsDirectory: false,
-        kbPathSource: "default",
-        cachePathSource: "default",
-      },
-      new Set(["disable-kb-check-modal"])
-    );
-
-    expect(messages).toHaveLength(1);
-    expect(messages[0]?.kind).toBe("system");
   });
 
   it("exits when the active modal Exit action is selected", () => {
@@ -1346,7 +1325,7 @@ function createTestContext(workspaceRoot: string): AppContext {
   return {
     workspaceRoot,
     config: {},
-    devFlags: new Set(["disable-kb-check-modal"]),
+    devFlags: new Set(),
     modelGateway: {
       async generateText() {
         return {
