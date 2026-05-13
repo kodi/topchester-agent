@@ -31,15 +31,15 @@ Important limits:
 
 ## Competitor Snapshot
 
-| Competitor | External tools and surfaces found |
-| --- | --- |
-| Claude Code | File read/edit/write, shell, grep/glob, web fetch/search, image input, git/PR workflows, MCP, Chrome/browser automation, todos, subagents, hooks, skills, `CLAUDE.md` memory. |
-| OpenAI Codex CLI | File read/edit, local command execution, web search, image input/generation/editing, MCP, subagents, custom agents, GitHub/cloud PR workflows, `AGENTS.md`, memories. |
-| Google Gemini CLI | Shell, glob, grep, list/read/write files, web search/fetch, text/image/audio/PDF reads, MCP, plan mode, extensions, skills, subagents, `GEMINI.md`. |
-| Cursor Agent/CLI | Terminal, file/search/semantic search, web search, browser automation with screenshots/console/network, media reads, MCP, rules, hooks, subagents, cloud agents, PR review. |
-| Aider | File edits, repo map, multi-file edits, git auto-commit/diff/undo, dirty-file protection, `/run`, `/test`, `/lint`, `/git`, `/web`, URL scrape, image/screenshot input, convention files. |
-| GitHub Copilot coding agent | File and shell agent mode, Actions-backed tests, branch/PR work, issue-to-PR workflows, MCP, custom agents, repository instructions, prompt files, memory, code review. |
-| Amp | File edits, shell/git, web search/page retrieval, image/PDF support, image generation/editing, MCP, skills/toolboxes, plugins, subagents, `AGENTS.md`, thread search. |
+| Competitor                  | External tools and surfaces found                                                                                                                                                         |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code                 | File read/edit/write, shell, grep/glob, web fetch/search, image input, git/PR workflows, MCP, Chrome/browser automation, todos, subagents, hooks, skills, `CLAUDE.md` memory.             |
+| OpenAI Codex CLI            | File read/edit, local command execution, web search, image input/generation/editing, MCP, subagents, custom agents, GitHub/cloud PR workflows, `AGENTS.md`, memories.                     |
+| Google Gemini CLI           | Shell, glob, grep, list/read/write files, web search/fetch, text/image/audio/PDF reads, MCP, plan mode, extensions, skills, subagents, `GEMINI.md`.                                       |
+| Cursor Agent/CLI            | Terminal, file/search/semantic search, web search, browser automation with screenshots/console/network, media reads, MCP, rules, hooks, subagents, cloud agents, PR review.               |
+| Aider                       | File edits, repo map, multi-file edits, git auto-commit/diff/undo, dirty-file protection, `/run`, `/test`, `/lint`, `/git`, `/web`, URL scrape, image/screenshot input, convention files. |
+| GitHub Copilot coding agent | File and shell agent mode, Actions-backed tests, branch/PR work, issue-to-PR workflows, MCP, custom agents, repository instructions, prompt files, memory, code review.                   |
+| Amp                         | File edits, shell/git, web search/page retrieval, image/PDF support, image generation/editing, MCP, skills/toolboxes, plugins, subagents, `AGENTS.md`, thread search.                     |
 
 ## Table-Stakes Tool Categories
 

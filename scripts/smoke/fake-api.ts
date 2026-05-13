@@ -20,9 +20,10 @@ export async function startFakeApi(): Promise<FakeApiHandle> {
     }
 
     try {
-      const body = (await readJson(request)) as { model?: unknown; messages?: unknown };
+      const body = (await readJson(request)) as { model?: unknown; messages?: unknown; tools?: unknown };
       const model = typeof body.model === "string" ? body.model : "unknown";
       const prompt = extractPrompt(body.messages);
+      const content = chooseResponse(prompt);
       requests.push({ model, prompt });
       writeJson(response, 200, {
         id: `fake-${requests.length}`,
@@ -32,11 +33,7 @@ export async function startFakeApi(): Promise<FakeApiHandle> {
         choices: [
           {
             index: 0,
-            finish_reason: "stop",
-            message: {
-              role: "assistant",
-              content: chooseResponse(prompt),
-            },
+            ...formatFakeChoice(model, body.tools, content),
           },
         ],
         usage: {
@@ -68,6 +65,61 @@ export async function startFakeApi(): Promise<FakeApiHandle> {
     requests,
     close: () => closeServer(server),
   };
+}
+
+function formatFakeChoice(model: string, tools: unknown, content: string): Record<string, unknown> {
+  const toolCall = model.includes("native") && Array.isArray(tools) ? parseFakeToolCall(content) : undefined;
+
+  if (!toolCall) {
+    return {
+      finish_reason: "stop",
+      message: {
+        role: "assistant",
+        content,
+      },
+    };
+  }
+
+  return {
+    finish_reason: "tool_calls",
+    message: {
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        {
+          id: `fake-call-${toolCall.tool}`,
+          type: "function",
+          function: {
+            name: toolCall.tool,
+            arguments: JSON.stringify(toolCall.args),
+          },
+        },
+      ],
+    },
+  };
+}
+
+function parseFakeToolCall(content: string): { tool: string; args: Record<string, unknown> } | undefined {
+  try {
+    const parsed = JSON.parse(content) as unknown;
+
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      typeof (parsed as { tool?: unknown }).tool === "string" &&
+      typeof (parsed as { args?: unknown }).args === "object" &&
+      (parsed as { args?: unknown }).args !== null
+    ) {
+      return {
+        tool: (parsed as { tool: string }).tool,
+        args: (parsed as { args: Record<string, unknown> }).args,
+      };
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
 }
 
 function chooseResponse(prompt: string): string {

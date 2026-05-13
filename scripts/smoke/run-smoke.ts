@@ -59,6 +59,7 @@ interface CliOptions {
   dryRun: boolean;
   parallel: number;
   output?: string;
+  toolProtocol?: "auto" | "native" | "text-json" | "text-xml";
 }
 
 interface TrialResult {
@@ -69,6 +70,12 @@ interface TrialResult {
   outputDir: string;
   failures: string[];
   durationMs: number;
+  toolProtocol?: string;
+  nativeToolCallCount: number;
+  textJsonToolCallCount: number;
+  textXmlToolCallCount: number;
+  providerRejectedTools: boolean;
+  fallbackReason?: string;
 }
 
 interface JsonLine {
@@ -82,6 +89,15 @@ interface JsonLine {
     };
     status?: Record<string, unknown>;
   };
+}
+
+interface ProtocolMetadata {
+  toolProtocol?: string;
+  nativeToolCallCount: number;
+  textJsonToolCallCount: number;
+  textXmlToolCallCount: number;
+  providerRejectedTools: boolean;
+  fallbackReason?: string;
 }
 
 class DryRunComplete extends Error {}
@@ -183,7 +199,7 @@ async function runTrial(
   await applyBootstrapFiles(workspace, scenario.bootstrapFiles);
 
   const configPath = fakeApiBaseURL
-    ? await writeFakeApiConfig(outputDir, fakeApiBaseURL, options.model)
+    ? await writeFakeApiConfig(outputDir, fakeApiBaseURL, options.model, options.toolProtocol)
     : options.configPath;
   const timeoutMs = options.timeoutMs ?? scenario.timeoutMs;
   const prompts = Array.isArray(scenario.prompt) ? scenario.prompt : [scenario.prompt];
@@ -196,6 +212,7 @@ async function runTrial(
       prompt: prompts[index]!,
       timeoutMs,
       model: fakeApiBaseURL ? undefined : options.model,
+      toolProtocol: options.toolProtocol,
       sessionId,
       eventsPath,
     });
@@ -214,6 +231,7 @@ async function runTrial(
   await writeFile(join(outputDir, "stdout.log"), stdoutParts.join("\n"));
   await writeFile(join(outputDir, "stderr.log"), stderrParts.join("\n"));
   await collectGlobalLogs(workspace, runIds, outputDir, failures);
+  const protocolMetadata = await readProtocolMetadata(outputDir);
   await assertScenario(scenario, workspace, outputDir, stdoutParts.join("\n"), failures);
 
   if (options.keepWorkspaces) {
@@ -230,6 +248,7 @@ async function runTrial(
     outputDir,
     failures,
     durationMs: Date.now() - startedAt,
+    ...protocolMetadata,
   };
 }
 
@@ -239,6 +258,7 @@ async function runTopchester(options: {
   prompt: string;
   timeoutMs: number;
   model?: string;
+  toolProtocol?: CliOptions["toolProtocol"];
   sessionId?: string;
   eventsPath: string;
 }): Promise<{ stdout: string; stderr: string; exitCode: number }> {
@@ -270,6 +290,7 @@ async function runTopchester(options: {
         TOPCHESTER_CONFIG: "",
         TOPCHESTER_LOG_FILE: "",
         TOPCHESTER_LOG_LEVEL: "debug",
+        TOPCHESTER_TOOL_PROTOCOL: options.toolProtocol ?? "",
       },
       maxBuffer: 10 * 1024 * 1024,
     });
@@ -459,7 +480,12 @@ async function applyBootstrapFiles(
   }
 }
 
-async function writeFakeApiConfig(outputDir: string, baseURL: string, model: string | undefined): Promise<string> {
+async function writeFakeApiConfig(
+  outputDir: string,
+  baseURL: string,
+  model: string | undefined,
+  toolProtocol: CliOptions["toolProtocol"]
+): Promise<string> {
   const configPath = join(outputDir, "topchester-smoke.config.yaml");
   const modelId = model ?? "topchester-smoke-fake";
   await writeFile(
@@ -480,6 +506,7 @@ async function writeFakeApiConfig(outputDir: string, baseURL: string, model: str
       "      type: openai-compatible",
       `      baseURL: ${JSON.stringify(baseURL)}`,
       "      apiKey: fake",
+      ...(toolProtocol ? [`      toolProtocol: ${toolProtocol}`] : []),
     ].join("\n")
   );
   return configPath;
@@ -518,6 +545,8 @@ function parseArgs(args: string[]): CliOptions {
       options.timeoutMs = parsePositiveInteger(readArgValue(args, ++index, arg), arg);
     } else if (arg === "--output") {
       options.output = readArgValue(args, ++index, arg);
+    } else if (arg === "--tool-protocol") {
+      options.toolProtocol = parseToolProtocol(readArgValue(args, ++index, arg), arg);
     } else if (arg === "--parallel") {
       options.parallel = parsePositiveInteger(readArgValue(args, ++index, arg), arg);
     } else if (arg === "--fake-api") {
@@ -532,6 +561,14 @@ function parseArgs(args: string[]): CliOptions {
   }
 
   return options;
+}
+
+function parseToolProtocol(value: string, option: string): NonNullable<CliOptions["toolProtocol"]> {
+  if (value === "auto" || value === "native" || value === "text-json" || value === "text-xml") {
+    return value;
+  }
+
+  throw new Error(`${option} must be one of: auto, native, text-json, text-xml.`);
 }
 
 async function runWithConcurrency<T, R>(
@@ -586,6 +623,10 @@ function formatSummary(results: TrialResult[]): string {
       "",
       `status: ${result.status}`,
       `duration_ms: ${result.durationMs}`,
+      `tool_protocol: ${result.toolProtocol ?? "none"}`,
+      `tool_calls: native=${result.nativeToolCallCount}, text_json=${result.textJsonToolCallCount}, text_xml=${result.textXmlToolCallCount}`,
+      `provider_rejected_tools: ${result.providerRejectedTools}`,
+      ...(result.fallbackReason ? [`fallback_reason: ${result.fallbackReason}`] : []),
       `workspace: ${result.workspace}`,
       `artifacts: ${result.outputDir}`,
       "",
@@ -620,7 +661,38 @@ function formatTrialLine(result: TrialResult): string {
   const summary =
     result.status === "passed" ? "passed" : result.failures[0] === undefined ? "failed" : result.failures[0];
 
-  return gray(`${marker} ${result.scenarioId} trial ${result.trial} ${summary} (${duration})`);
+  const protocol = result.toolProtocol ?? "no-tools";
+
+  return gray(`${marker} ${result.scenarioId} trial ${result.trial} ${summary} [${protocol}] (${duration})`);
+}
+
+async function readProtocolMetadata(outputDir: string): Promise<ProtocolMetadata> {
+  const logEvents = await readJsonLines<Record<string, unknown>>(join(outputDir, "topchester.log"));
+  const modelResponses = logEvents.filter((event) => event.event === "model_response");
+  const sources = modelResponses
+    .map((event) => event.toolCallSource)
+    .filter((source): source is string => typeof source === "string");
+  const fallbackReason = modelResponses
+    .map((event) => event.fallbackReason)
+    .find((reason): reason is string => typeof reason === "string" && reason.length > 0);
+  const lastToolProtocol = modelResponses
+    .filter((event) => typeof event.toolCallSource === "string")
+    .map((event) => event.toolProtocol)
+    .filter((protocol): protocol is string => typeof protocol === "string")
+    .at(-1);
+  const lastResponseProtocol = modelResponses
+    .map((event) => event.toolProtocol)
+    .filter((protocol): protocol is string => typeof protocol === "string")
+    .at(-1);
+
+  return {
+    toolProtocol: lastToolProtocol ?? lastResponseProtocol,
+    nativeToolCallCount: sources.filter((source) => source === "native").length,
+    textJsonToolCallCount: sources.filter((source) => source === "text-json").length,
+    textXmlToolCallCount: sources.filter((source) => source === "text-xml").length,
+    providerRejectedTools: modelResponses.some((event) => event.providerRejectedTools === true),
+    ...(fallbackReason ? { fallbackReason } : {}),
+  };
 }
 
 function gray(text: string): string {

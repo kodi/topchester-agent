@@ -1,6 +1,53 @@
 import { getToolDefinition, isToolName, type ToolCall } from "./registry.js";
+import { parseXmlToolCall } from "./xml-parser.js";
+import { type ToolCallSource } from "./types.js";
 
 export function parseToolCall(text: string): ToolCall | undefined {
+  return parseJsonToolCall(text);
+}
+
+export function parseToolCallWithSource(
+  text: string,
+  allowedSources: readonly ToolCallSource[] = ["text-json", "text-xml"]
+): { call: ToolCall; source: ToolCallSource } | undefined {
+  if (allowedSources.includes("text-json")) {
+    const json = parseJsonToolCall(text);
+
+    if (json) {
+      return { call: json, source: "text-json" };
+    }
+  }
+
+  if (allowedSources.includes("text-xml")) {
+    const xml = parseXmlToolCall(text);
+
+    if (xml) {
+      return { call: xml, source: "text-xml" };
+    }
+  }
+
+  return undefined;
+}
+
+export function parseNativeToolCall(toolName: string, args: unknown): ToolCall | undefined {
+  if (!isToolName(toolName)) {
+    return undefined;
+  }
+
+  const definition = getToolDefinition(toolName);
+  const parsed = definition.argsSchema.safeParse(args);
+
+  if (!parsed.success) {
+    return undefined;
+  }
+
+  return {
+    tool: definition.name,
+    args: parsed.data,
+  } as ToolCall;
+}
+
+function parseJsonToolCall(text: string): ToolCall | undefined {
   const trimmed = extractToolJsonCandidate(stripJsonFence(text.trim()));
   let value: unknown;
 

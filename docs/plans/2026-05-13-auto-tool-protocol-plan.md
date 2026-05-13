@@ -146,7 +146,7 @@ interface ModelAgentResult extends ModelTextResult {
 
 ## Slice 1: Tool Schema Adapter
 
-Status: `[ ]` Not started
+Status: `[x]` Implemented
 
 Goal: Convert Topchester tool definitions into AI SDK tool schemas without changing runtime behavior.
 
@@ -178,7 +178,7 @@ Dependencies: None.
 
 ## Slice 2: Native Tool Gateway Result
 
-Status: `[ ]` Not started
+Status: `[x]` Implemented
 
 Goal: Let `ModelGateway` make an OpenAI-compatible native tool request and return normalized tool calls.
 
@@ -210,7 +210,7 @@ Dependencies: Slice 1.
 
 ## Slice 3: OpenRouter Internal Routing Options
 
-Status: `[ ]` Not started
+Status: `[x]` Implemented
 
 Goal: Improve OpenRouter native-tool reliability without asking users to configure routing details.
 
@@ -246,7 +246,7 @@ Dependencies: Slice 2.
 
 ## Slice 4: Runtime Protocol Selection
 
-Status: `[ ]` Not started
+Status: `[x]` Implemented
 
 Goal: Make `TopchesterAgentRuntime` try native tools first, then fall back automatically to text protocols.
 
@@ -282,7 +282,7 @@ Dependencies: Slices 1 and 2.
 
 ## Slice 5: XML Text Tool Parser
 
-Status: `[ ]` Not started
+Status: `[x]` Implemented
 
 Goal: Add XML-style text tool parsing as a compatibility fallback for models that emit Cline-like tool calls.
 
@@ -316,7 +316,7 @@ Dependencies: None, but runtime adoption happens in Slice 4.
 
 ## Slice 6: Smoke Report And Log Metadata
 
-Status: `[ ]` Not started
+Status: `[x]` Implemented
 
 Goal: Make protocol behavior visible in logs and smoke reports.
 
@@ -354,7 +354,7 @@ Dependencies: Slice 4.
 
 ## Slice 7: Docs And Optional Overrides
 
-Status: `[ ]` Not started
+Status: `[x]` Implemented
 
 Goal: Document the no-config-required model and add optional advanced protocol overrides.
 
@@ -448,6 +448,15 @@ mise run smoke-live config/gemini.yaml 1 google/gemini-3-flash-preview 10000
 - Should the XML fallback support both Cline-style tags and the observed `<tool_call>` wrapper, or only the observed wrapper first?
 - Should native tool-result history be represented as provider-native model messages immediately, or can V0 continue with text-formatted tool results after a native call? Full native history is cleaner but larger.
 
+## Implementation Notes
+
+- `src/agent/tools/ai-sdk-tools.ts` adapts registered Topchester tools into AI SDK tool schemas.
+- `ModelGateway.generateAgentStep(...)` owns auto protocol selection, native OpenAI-compatible requests, text fallback, OpenRouter routing options, and normalized tool-call metadata.
+- `TopchesterAgentRuntime` executes native, JSON, and XML tool calls through the existing tool executor and logs protocol metadata on model responses.
+- `scripts/smoke/run-smoke.ts` records protocol fields per trial and supports `--tool-protocol` for debugging.
+- `scripts/smoke/fake-api.ts` supports both text fallback and fake native tool-call responses for smoke coverage.
+- `docs/MODEL_CONFIG.md` documents that tools are Topchester-managed and that protocol overrides are advanced-only.
+
 ## Next Slice
 
-Start with Slice 1. It is low risk, creates the needed contract boundary, and does not change runtime behavior.
+Run the full verification gates and use live smoke when provider keys are available.

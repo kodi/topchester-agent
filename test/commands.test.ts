@@ -478,6 +478,62 @@ describe("slash commands", () => {
     );
     expect(prompts).toHaveLength(4);
   });
+
+  it("keeps using text JSON for the rest of a turn after native tools are rejected", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    await writeFile(join(workspace, "data.txt"), "hello\n");
+    const requests: Array<{ toolProtocol?: string }> = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep(request: { toolProtocol?: string }) {
+          requests.push(request);
+
+          if (requests.length === 1) {
+            return {
+              text: "",
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+              toolCalls: [{ id: "text-json-0", tool: "read_file", args: { path: "data.txt" }, source: "text-json" }],
+              toolProtocol: "text-json" as const,
+              protocolAttempts: [
+                { protocol: "native-openai-compatible" as const, status: "failed" as const, reason: "rejected" },
+                { protocol: "text-json" as const, status: "used" as const, reason: "provider rejected native tools" },
+              ],
+              providerRejectedTools: true,
+              warnings: [],
+              openRouterRoutingApplied: false,
+            };
+          }
+
+          return {
+            text: "Done.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+            toolCalls: [],
+            toolProtocol: "text-json" as const,
+            protocolAttempts: [
+              {
+                protocol: "native-openai-compatible" as const,
+                status: "skipped" as const,
+                reason: "toolProtocol=text-json",
+              },
+              { protocol: "text-json" as const, status: "used" as const, reason: "forced text JSON protocol" },
+            ],
+            providerRejectedTools: false,
+            warnings: [],
+            openRouterRoutingApplied: false,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    await runtime.submitMessage([], "read data");
+
+    expect(requests.map((request) => request.toolProtocol)).toEqual([undefined, "text-json"]);
+  });
 });
 
 function createTestContext(workspaceRoot: string): AppContext {

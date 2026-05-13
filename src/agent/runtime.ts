@@ -9,7 +9,18 @@ import { type ConversationTurn, buildConversationPrompt } from "./conversation.j
 import { agentEvent, type AgentRuntimeEvent } from "./events.js";
 import { checkAgentReady } from "./health.js";
 import { getChatSystemPrompt } from "./prompts.js";
-import { executeToolCall, parseToolCall, type ToolCall, type ToolResult } from "./tools.js";
+import {
+  executeToolCall,
+  parseToolCallWithSource,
+  toolRegistry,
+  type ModelToolCall,
+  type ToolCall,
+  type ToolProtocol,
+  type ToolProtocolAttempt,
+  type ToolProtocolOverride,
+  type ToolResult,
+} from "./tools.js";
+import { type ModelAgentResult } from "../model/index.js";
 
 const MAX_TOOL_CALLS_PER_TURN = 8;
 
@@ -59,17 +70,19 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     let totalDurationMs = 0;
     let lastModelId = "model";
     let afterTool: ToolCall["tool"] | undefined;
+    let toolProtocolOverride = readToolProtocolEnvOverride();
 
     for (let toolCalls = 0; toolCalls <= MAX_TOOL_CALLS_PER_TURN; toolCalls += 1) {
       const startedAt = Date.now();
-      const result = await this.context.modelGateway.generateText({
+      const result = await generateAgentStep(this.context, {
         purpose: "agent.primary",
         system: getChatSystemPrompt(),
         prompt: nextPrompt,
         abortSignal,
+        toolProtocol: toolProtocolOverride,
       });
       const durationMs = Date.now() - startedAt;
-      const toolCall = parseToolCall(result.text);
+      const toolCall = result.toolCalls[0];
       totalDurationMs += durationMs;
       lastModelId = result.modelId;
 
@@ -82,6 +95,12 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           totalDurationMs,
           textLength: result.text.length,
           hasToolCall: Boolean(toolCall),
+          toolProtocol: result.toolProtocol,
+          protocolAttempts: result.protocolAttempts,
+          toolCallSource: toolCall?.source,
+          fallbackReason: result.fallbackReason,
+          providerRejectedTools: result.providerRejectedTools,
+          openRouterRoutingApplied: result.openRouterRoutingApplied,
           afterTool,
         },
         afterTool ? "model response after tool" : "model response"
@@ -92,10 +111,17 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           purpose: "agent.primary",
           modelId: result.modelId,
           afterTool,
+          toolProtocol: result.toolProtocol,
           text: result.text,
         },
         afterTool ? "model response text after tool" : "model response text"
       );
+
+      if (result.providerRejectedTools && result.toolProtocol === "text-json") {
+        toolProtocolOverride = "text-json";
+      } else if (result.providerRejectedTools && result.toolProtocol === "text-xml") {
+        toolProtocolOverride = "text-xml";
+      }
 
       if (!toolCall) {
         events.push(
@@ -116,12 +142,13 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         return events;
       }
 
-      const toolResult = await executeToolCall(this.context.workspaceRoot, toolCall, {
+      const executableToolCall = toolCall as ToolCall;
+      const toolResult = await executeToolCall(this.context.workspaceRoot, executableToolCall, {
         logger: this.context.logger,
       });
-      events.push(agentEvent.toolCall(toolCall, formatToolCallMessage(toolCall, toolResult)));
-      afterTool = toolCall.tool;
-      nextPrompt = `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\nContinue the user's request using the tool result above. If another tool is needed, reply with only that tool JSON. Otherwise answer the user. Do not guess.`;
+      events.push(agentEvent.toolCall(executableToolCall, formatToolCallMessage(executableToolCall, toolResult)));
+      afterTool = executableToolCall.tool;
+      nextPrompt = `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(result.toolProtocol)}`;
     }
 
     return [
@@ -166,6 +193,58 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
     return { ...status, nonCleanFileCount: result.files.length };
   }
+}
+
+async function generateAgentStep(
+  context: AppContext,
+  request: {
+    purpose: "agent.primary";
+    system: string;
+    prompt: string;
+    abortSignal?: AbortSignal;
+    toolProtocol?: ToolProtocolOverride;
+  }
+): Promise<ModelAgentResult> {
+  if ("generateAgentStep" in context.modelGateway && typeof context.modelGateway.generateAgentStep === "function") {
+    return context.modelGateway.generateAgentStep({
+      ...request,
+      tools: Object.values(toolRegistry),
+    });
+  }
+
+  const result = await context.modelGateway.generateText(request);
+  const parsed = parseToolCallWithSource(result.text);
+  const toolProtocol: ToolProtocol = parsed?.source === "text-xml" ? "text-xml" : "text-json";
+  const attempts: ToolProtocolAttempt[] = [{ protocol: toolProtocol, status: "used", reason: "legacy gateway" }];
+
+  return {
+    ...result,
+    toolCalls: parsed
+      ? [
+          {
+            id: `${parsed.source}-0`,
+            tool: parsed.call.tool,
+            args: parsed.call.args,
+            source: parsed.source,
+          } as ModelToolCall,
+        ]
+      : [],
+    toolProtocol,
+    protocolAttempts: attempts,
+    providerRejectedTools: false,
+    warnings: [],
+    openRouterRoutingApplied: false,
+  };
+}
+
+function readToolProtocolEnvOverride(): ToolProtocolOverride | undefined {
+  const value = process.env.TOPCHESTER_TOOL_PROTOCOL;
+
+  if (value === "auto" || value === "native" || value === "text-json" || value === "text-xml") {
+    return value;
+  }
+
+  return undefined;
 }
 
 function formatTuiSyncStatus(status: L1FileScanStatus): string {
@@ -257,6 +336,17 @@ function formatToolResultForPrompt(result: ToolResult): string {
   }
 
   return [`Tool result from ${result.tool}${path}${command}:${warning}`, "```", result.content, "```"].join("\n");
+}
+
+function formatContinuationInstruction(protocol: ToolProtocol): string {
+  const toolInstruction =
+    protocol === "text-xml"
+      ? "If another tool is needed, reply with only one XML tool call."
+      : protocol === "text-json"
+        ? "If another tool is needed, reply with only that tool JSON."
+        : "If another tool is needed, use the available tool calling path.";
+
+  return `Continue the user's request using the tool result above. ${toolInstruction} Otherwise answer the user. Do not guess.`;
 }
 
 function formatToolCallMessage(call: ToolCall, result?: ToolResult): string {

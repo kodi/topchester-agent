@@ -120,4 +120,39 @@ describe("Topchester config loading", () => {
       `Invalid Topchester config at ${invalidSchema}: ignore.paths.0: Ignore path rule must be workspace-relative.`
     );
   });
+
+  it("loads optional advanced tool protocol overrides", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    const configPath = join(workspace, "topchester.jsonc");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        models: {
+          assignments: {
+            "agent.primary": { name: "debug-model", provider: "openrouter", toolProtocol: "native" },
+          },
+          providers: {
+            default: "openrouter",
+            openrouter: {
+              type: "openai-compatible",
+              baseURL: "https://openrouter.ai/api/v1",
+              apiKey: "test",
+              toolProtocol: "text-json",
+              openRouterToolRouting: "force",
+            },
+          },
+        },
+      })
+    );
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(config.models?.assignments?.["agent.primary"]?.toolProtocol).toBe("native");
+    expect(config.models?.providers?.openrouter).toMatchObject({
+      toolProtocol: "text-json",
+      openRouterToolRouting: "force",
+    });
+  });
 });

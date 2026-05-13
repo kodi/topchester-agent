@@ -12,8 +12,11 @@ import {
   grepWorkspace,
   listWorkspaceFiles,
   parseToolCall,
+  parseToolCallWithSource,
   readWorkspaceFile,
+  toAiSdkToolSet,
 } from "../src/agent/tools.js";
+import { toolRegistry } from "../src/agent/tools/registry.js";
 import { editFileArgsSchema } from "../src/agent/tools/edit-file.js";
 import { getChatSystemPrompt } from "../src/agent/prompts.js";
 import { createTopchesterLogger } from "../src/logging/index.js";
@@ -121,6 +124,57 @@ describe("agent tools", () => {
     expect(parseToolCall('{"tool":"list_files","args":{"limit":0}}')).toBeUndefined();
     expect(parseToolCall('{"tool":"grep","args":{"path":"src"}}')).toBeUndefined();
     expect(parseToolCall('{"tool":"find_file","args":{"query":""}}')).toBeUndefined();
+  });
+
+  it("converts every registered tool to an AI SDK tool schema", () => {
+    const tools = toAiSdkToolSet(Object.values(toolRegistry));
+
+    expect(Object.keys(tools).sort()).toEqual(Object.keys(toolRegistry).sort());
+    expect(tools.read_file).toMatchObject({
+      description: "Read a UTF-8 file inside the workspace.",
+      inputSchema: toolRegistry.read_file.argsSchema,
+    });
+  });
+
+  it("keeps native tool args validated by the registered Zod schema", () => {
+    const readFileTool = toAiSdkToolSet(Object.values(toolRegistry)).read_file;
+
+    expect(readFileTool.inputSchema).toBe(toolRegistry.read_file.argsSchema);
+    expect(toolRegistry.read_file.argsSchema.safeParse({ path: "package.json" }).success).toBe(true);
+    expect(toolRegistry.read_file.argsSchema.safeParse({ path: 123 }).success).toBe(false);
+  });
+
+  it("parses conservative XML tool calls after JSON", () => {
+    expect(parseToolCallWithSource("<read_file><path>data.txt</path></read_file>")).toEqual({
+      source: "text-xml",
+      call: {
+        tool: "read_file",
+        args: { path: "data.txt" },
+      },
+    });
+    expect(parseToolCallWithSource('<tool_call>find_file query="runtime" limit=20</tool_call>')).toEqual({
+      source: "text-xml",
+      call: {
+        tool: "find_file",
+        args: { query: "runtime", path: ".", limit: 20 },
+      },
+    });
+    expect(parseToolCallWithSource('<tool_call>grep {"pattern":"needle","path":"src"}</tool_call>')).toEqual({
+      source: "text-xml",
+      call: {
+        tool: "grep",
+        args: { pattern: "needle", path: "src" },
+      },
+    });
+  });
+
+  it("rejects ambiguous or invalid XML tool calls", () => {
+    expect(parseToolCallWithSource("<unknown><path>data.txt</path></unknown>")).toBeUndefined();
+    expect(parseToolCallWithSource("<read_file><path>a.txt</path><path>b.txt</path></read_file>")).toBeUndefined();
+    expect(parseToolCallWithSource("<read_file><path><nested>a.txt</nested></path></read_file>")).toBeUndefined();
+    expect(
+      parseToolCallWithSource("<read_file><path>data.txt</path></read_file><read_file><path>two.txt</path></read_file>")
+    ).toBeUndefined();
   });
 
   it("executes parsed tool calls through the registry", async () => {

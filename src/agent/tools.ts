@@ -40,7 +40,8 @@ export {
   type ListFilesToolCall,
   type ListFilesToolResult,
 } from "./tools/list-files.js";
-export { parseToolCall } from "./tools/parser.js";
+export { parseNativeToolCall, parseToolCall, parseToolCallWithSource } from "./tools/parser.js";
+export { toAiSdkToolSet } from "./tools/ai-sdk-tools.js";
 export { readFileTool, readWorkspaceFile, type ReadFileToolArgs, type ReadFileToolCall } from "./tools/read-file.js";
 export {
   getToolDefinition,
@@ -52,4 +53,13 @@ export {
   type ToolName,
   type ToolResult,
 } from "./tools/registry.js";
-export { defineTool, type ToolContext, type ToolDefinition } from "./tools/types.js";
+export {
+  defineTool,
+  type ModelToolCall,
+  type ToolCallSource,
+  type ToolContext,
+  type ToolDefinition,
+  type ToolProtocol,
+  type ToolProtocolAttempt,
+  type ToolProtocolOverride,
+} from "./tools/types.js";

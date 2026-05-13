@@ -31,11 +31,20 @@ The runner writes `report.json`, `summary.md`, per-trial `events-*.jsonl`, `stdo
 During a run, each completed trial prints one compact line:
 
 ```text
-✓ 05-edit-file trial 1 passed (466ms)
-× 02-read-summarize trial 1 summary.txt did not contain "user account notes" (409ms)
+✓ 05-edit-file trial 1 passed [text-json] (466ms)
+× 02-read-summarize trial 1 summary.txt did not contain "user account notes" [native-openai-compatible] (409ms)
 ```
 
 The final summary includes report paths, pass/fail totals, and total elapsed time.
+
+Each `report.json` trial and `summary.md` entry includes protocol metadata:
+
+- `toolProtocol` — the last protocol path that produced a tool call, or the last model response protocol when no tools ran.
+- `nativeToolCallCount` — native structured tool calls seen by the runtime.
+- `textJsonToolCallCount` — text JSON tool calls parsed by the runtime.
+- `textXmlToolCallCount` — XML-style text tool calls parsed by the runtime.
+- `providerRejectedTools` — whether native tools were rejected and fallback was used.
+- `fallbackReason` — the first recorded fallback reason, when present.
 
 Useful options:
 
@@ -48,4 +57,5 @@ Useful options:
 - `--trials <n>` repeats each selected scenario.
 - `--parallel <n>` limits concurrent trials.
 - `--output <path>` chooses the report path.
+- `--tool-protocol <auto|native|text-json|text-xml>` forces a protocol for debugging.
 - `--keep-workspaces` preserves `/tmp` workspaces for debugging.

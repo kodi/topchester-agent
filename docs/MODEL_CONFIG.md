@@ -93,6 +93,8 @@ interface ModelProviderConfig {
   apiKey?: string;
   headers?: Record<string, string>;
   supportsStructuredOutputs?: boolean;
+  toolProtocol?: "auto" | "native" | "text-json" | "text-xml";
+  openRouterToolRouting?: "auto" | "force" | "off";
 }
 ```
 
@@ -106,6 +108,41 @@ type ModelProviderConfig =
   | { type: "openai"; apiKeyEnv?: string }
   | { type: "anthropic"; apiKeyEnv?: string };
 ```
+
+## Tool Calling
+
+Users do not configure tool schemas. Topchester owns the tool registry and builds model-facing schemas from the same tool definitions used by the runtime. Normal config stays focused on providers, API keys, and model assignments.
+
+For agent turns, Topchester tries native OpenAI-compatible tool calls first. If a provider or model rejects native tools, Topchester falls back to text JSON tool calls. If a model emits a simple XML-style tool call, Topchester can parse that as a compatibility fallback. All paths validate tool args against the registered Zod schemas before any tool runs.
+
+OpenRouter requests that try native tools include internal routing hints so OpenRouter should pick an upstream that can accept tool parameters. This is automatic for providers named like `openrouter` or using an OpenRouter base URL.
+
+Advanced debugging overrides are available but should stay out of normal examples:
+
+```jsonc
+{
+  "models": {
+    "providers": {
+      "openrouter": {
+        "type": "openai-compatible",
+        "baseURL": "https://openrouter.ai/api/v1",
+        "apiKeyEnv": "OPENROUTER_API_KEY",
+        "toolProtocol": "text-json",
+        "openRouterToolRouting": "off",
+      },
+    },
+  },
+}
+```
+
+`toolProtocol` values:
+
+- `auto` — default; try native tools, then text fallbacks.
+- `native` — native OpenAI-compatible tools only.
+- `text-json` — text JSON tool calls only.
+- `text-xml` — XML-style text tool calls only.
+
+Override precedence is: smoke or runtime override, model assignment override, provider override, then Topchester's `auto` default.
 
 ## Example Config
 

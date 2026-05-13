@@ -14,6 +14,8 @@ const modelPurposeSchema = z.enum([
   "fallback",
 ]);
 
+const toolProtocolSchema = z.enum(["auto", "native", "text-json", "text-xml"]);
+
 const providerSchema = z.object({
   type: z.literal("openai-compatible"),
   baseURL: z.string().url(),
@@ -21,11 +23,14 @@ const providerSchema = z.object({
   apiKey: z.string().optional(),
   headers: z.record(z.string(), z.string()).optional(),
   supportsStructuredOutputs: z.boolean().optional(),
+  toolProtocol: toolProtocolSchema.optional(),
+  openRouterToolRouting: z.enum(["auto", "force", "off"]).optional(),
 });
 
 const modelAssignmentSchema = z.object({
   name: z.string(),
   provider: z.string().optional(),
+  toolProtocol: toolProtocolSchema.optional(),
 });
 
 const providersSchema = z

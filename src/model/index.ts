@@ -1,5 +1,14 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, streamText, type LanguageModel } from "ai";
+import { toAiSdkToolSet } from "../agent/tools/ai-sdk-tools.js";
+import { parseNativeToolCall, parseToolCallWithSource } from "../agent/tools/parser.js";
+import {
+  type ModelToolCall,
+  type ToolDefinition,
+  type ToolProtocol,
+  type ToolProtocolAttempt,
+  type ToolProtocolOverride,
+} from "../agent/tools/types.js";
 
 export type ModelPurpose =
   | "agent.primary"
@@ -17,11 +26,14 @@ export interface OpenAICompatibleProviderConfig {
   apiKeyEnv?: string;
   headers?: Record<string, string>;
   supportsStructuredOutputs?: boolean;
+  toolProtocol?: ToolProtocolOverride;
+  openRouterToolRouting?: "auto" | "force" | "off";
 }
 
 export interface ModelConfig {
   name: string;
   provider?: string;
+  toolProtocol?: ToolProtocolOverride;
 }
 
 export interface ModelGatewayConfig {
@@ -45,6 +57,21 @@ export interface ModelTextResult {
   purpose: ModelPurpose;
 }
 
+export interface ModelAgentRequest extends ModelRequest {
+  tools: readonly ToolDefinition<string, unknown>[];
+  toolProtocol?: ToolProtocolOverride;
+}
+
+export interface ModelAgentResult extends ModelTextResult {
+  toolCalls: ModelToolCall[];
+  toolProtocol: ToolProtocol;
+  protocolAttempts: ToolProtocolAttempt[];
+  providerRejectedTools: boolean;
+  fallbackReason?: string;
+  warnings: string[];
+  openRouterRoutingApplied: boolean;
+}
+
 export class ModelGateway {
   readonly #config: ModelGatewayConfig;
 
@@ -61,6 +88,7 @@ export class ModelGateway {
         ...this.#config.models,
         [purpose]: {
           ...(current?.provider === undefined ? {} : { provider: current.provider }),
+          ...(current?.toolProtocol === undefined ? {} : { toolProtocol: current.toolProtocol }),
           name: modelId,
         },
       },
@@ -72,6 +100,8 @@ export class ModelGateway {
     providerId: string;
     modelId: string;
     purpose: ModelPurpose;
+    providerConfig: OpenAICompatibleProviderConfig;
+    modelConfig: ModelConfig;
   } {
     const modelConfig = this.#config.models[purpose] ?? this.#config.models.fallback;
 
@@ -105,6 +135,8 @@ export class ModelGateway {
       providerId,
       modelId,
       purpose,
+      providerConfig,
+      modelConfig,
     };
   }
 
@@ -125,6 +157,70 @@ export class ModelGateway {
     };
   }
 
+  async generateAgentStep(request: ModelAgentRequest): Promise<ModelAgentResult> {
+    const resolved = this.resolveModel(request.purpose ?? "agent.primary");
+    const override =
+      request.toolProtocol ?? resolved.modelConfig.toolProtocol ?? resolved.providerConfig.toolProtocol ?? "auto";
+    const attempts: ToolProtocolAttempt[] = [];
+
+    if (override === "native" || override === "auto") {
+      try {
+        const result = await this.generateNativeAgentStep(request, resolved, attempts);
+
+        if (result.toolCalls.length > 0 || override === "native") {
+          return result;
+        }
+
+        const parsedTextCall = parseToolCallWithSource(result.text);
+
+        if (parsedTextCall) {
+          const fallbackProtocol = parsedTextCall.source === "text-xml" ? "text-xml" : "text-json";
+          const fallbackReason = "native response contained a text tool call";
+          attempts.push({ protocol: fallbackProtocol, status: "fallback", reason: fallbackReason });
+
+          return {
+            ...result,
+            toolCalls: [
+              {
+                id: `${parsedTextCall.source}-0`,
+                tool: parsedTextCall.call.tool,
+                args: parsedTextCall.call.args,
+                source: parsedTextCall.source,
+              } as ModelToolCall,
+            ],
+            toolProtocol: fallbackProtocol,
+            fallbackReason,
+          };
+        }
+
+        return result;
+      } catch (error) {
+        const reason = formatErrorMessage(error);
+        attempts.push({ protocol: "native-openai-compatible", status: "failed", reason });
+
+        if (override === "native" || !isNativeToolFallbackError(error)) {
+          throw error;
+        }
+
+        return this.generateTextAgentStep(request, resolved, attempts, "provider rejected native tools", true, [
+          "text-json",
+          "text-xml",
+        ]);
+      }
+    }
+
+    attempts.push({ protocol: "native-openai-compatible", status: "skipped", reason: `toolProtocol=${override}` });
+
+    return this.generateTextAgentStep(
+      request,
+      resolved,
+      attempts,
+      override === "text-xml" ? "forced text XML protocol" : "forced text JSON protocol",
+      false,
+      override === "text-xml" ? ["text-xml"] : ["text-json"]
+    );
+  }
+
   async *streamText(request: ModelRequest): AsyncIterable<string> {
     const resolved = this.resolveModel(request.purpose);
     const result = streamText({
@@ -135,6 +231,99 @@ export class ModelGateway {
     });
 
     yield* result.textStream;
+  }
+
+  private async generateNativeAgentStep(
+    request: ModelAgentRequest,
+    resolved: ReturnType<ModelGateway["resolveModel"]>,
+    attempts: ToolProtocolAttempt[]
+  ): Promise<ModelAgentResult> {
+    const providerOptions = buildNativeProviderOptions(resolved.providerId, resolved.providerConfig);
+    const openRouterRoutingApplied = hasOpenRouterRoutingOptions(providerOptions, resolved.providerId);
+    const result = await generateText({
+      model: resolved.model,
+      system: request.system,
+      prompt: request.prompt,
+      tools: toAiSdkToolSet(request.tools),
+      toolChoice: "auto",
+      providerOptions,
+      abortSignal: request.abortSignal,
+    });
+    const toolCalls = result.toolCalls.map((call, index) => {
+      const parsed = parseNativeToolCall(call.toolName, call.input);
+
+      if (!parsed) {
+        throw new Error(`Native tool call for ${call.toolName} did not match the registered schema.`);
+      }
+
+      return {
+        id: call.toolCallId || `native-${index}`,
+        tool: parsed.tool,
+        args: parsed.args,
+        source: "native",
+      } as ModelToolCall;
+    });
+
+    attempts.push({ protocol: "native-openai-compatible", status: "used" });
+
+    return {
+      text: result.text,
+      providerId: resolved.providerId,
+      modelId: resolved.modelId,
+      purpose: resolved.purpose,
+      toolCalls,
+      toolProtocol: "native-openai-compatible",
+      protocolAttempts: attempts,
+      providerRejectedTools: false,
+      warnings: extractWarningMessages(result.warnings),
+      openRouterRoutingApplied,
+    };
+  }
+
+  private async generateTextAgentStep(
+    request: ModelAgentRequest,
+    resolved: ReturnType<ModelGateway["resolveModel"]>,
+    attempts: ToolProtocolAttempt[],
+    fallbackReason: string | undefined,
+    providerRejectedTools: boolean,
+    allowedSources: Array<"text-json" | "text-xml">
+  ): Promise<ModelAgentResult> {
+    const result = await generateText({
+      model: resolved.model,
+      system: request.system,
+      prompt: request.prompt,
+      abortSignal: request.abortSignal,
+    });
+    const parsed = parseToolCallWithSource(result.text, allowedSources);
+    const defaultProtocol: ToolProtocol =
+      allowedSources.length === 1 && allowedSources[0] === "text-xml" ? "text-xml" : "text-json";
+    const toolProtocol: ToolProtocol =
+      parsed?.source === "text-xml" ? "text-xml" : parsed ? "text-json" : defaultProtocol;
+
+    attempts.push({ protocol: toolProtocol, status: "used", ...(fallbackReason ? { reason: fallbackReason } : {}) });
+
+    return {
+      text: result.text,
+      providerId: resolved.providerId,
+      modelId: resolved.modelId,
+      purpose: resolved.purpose,
+      toolCalls: parsed
+        ? [
+            {
+              id: `${parsed.source}-0`,
+              tool: parsed.call.tool,
+              args: parsed.call.args,
+              source: parsed.source,
+            } as ModelToolCall,
+          ]
+        : [],
+      toolProtocol,
+      protocolAttempts: attempts,
+      providerRejectedTools,
+      ...(fallbackReason ? { fallbackReason } : {}),
+      warnings: extractWarningMessages(result.warnings),
+      openRouterRoutingApplied: false,
+    };
   }
 }
 
@@ -148,4 +337,66 @@ function resolveApiKey(config: OpenAICompatibleProviderConfig): string | undefin
   }
 
   return process.env[config.apiKeyEnv];
+}
+
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+type ProviderOptions = Record<string, { [key: string]: JsonValue }>;
+
+function buildNativeProviderOptions(providerId: string, config: OpenAICompatibleProviderConfig): ProviderOptions {
+  const options: { [key: string]: JsonValue } = {
+    parallel_tool_calls: false,
+  };
+
+  if (shouldApplyOpenRouterRoutingOptions(providerId, config)) {
+    options.provider = { require_parameters: true };
+  }
+
+  return {
+    [providerId]: options,
+  };
+}
+
+function shouldApplyOpenRouterRoutingOptions(providerId: string, config: OpenAICompatibleProviderConfig): boolean {
+  if (config.openRouterToolRouting === "force") {
+    return true;
+  }
+
+  if (config.openRouterToolRouting === "off") {
+    return false;
+  }
+
+  return providerId.toLowerCase().includes("openrouter") || config.baseURL.toLowerCase().includes("openrouter.ai");
+}
+
+function hasOpenRouterRoutingOptions(providerOptions: ProviderOptions, providerId: string): boolean {
+  const options = providerOptions[providerId];
+
+  return Boolean(options && typeof options === "object" && "provider" in options);
+}
+
+function isNativeToolFallbackError(error: unknown): boolean {
+  const message = formatErrorMessage(error).toLowerCase();
+
+  return (
+    message.includes("tool") ||
+    message.includes("function") ||
+    message.includes("parallel_tool_calls") ||
+    message.includes("tool_choice") ||
+    message.includes("requested parameters") ||
+    message.includes("provider routing") ||
+    message.includes("provider-selection") ||
+    message.includes("invalid request")
+  );
+}
+
+function extractWarningMessages(warnings: unknown): string[] {
+  if (!Array.isArray(warnings)) {
+    return [];
+  }
+
+  return warnings.map((warning) => formatErrorMessage(warning));
+}
+
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

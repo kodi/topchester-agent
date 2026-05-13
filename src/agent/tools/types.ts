@@ -12,6 +12,23 @@ export interface ToolCall<Name extends string = string, Args = unknown> {
   args: Args;
 }
 
+export type ToolCallSource = "native" | "text-json" | "text-xml";
+
+export type ToolProtocol = "native-openai-compatible" | "text-json" | "text-xml";
+
+export type ToolProtocolOverride = "auto" | "native" | "text-json" | "text-xml";
+
+export interface ToolProtocolAttempt {
+  protocol: ToolProtocol;
+  status: "used" | "skipped" | "failed" | "fallback";
+  reason?: string;
+}
+
+export interface ModelToolCall<Name extends string = string, Args = unknown> extends ToolCall<Name, Args> {
+  id: string;
+  source: ToolCallSource;
+}
+
 export interface ToolResult<Name extends string = string> {
   tool: Name;
   path?: string;
