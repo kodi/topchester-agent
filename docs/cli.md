@@ -8,7 +8,7 @@ This document tracks implemented and planned `topchester` CLI commands. Any CLI 
 - `--workspace <path>` — workspace root. Defaults to the current working directory.
 - `--resume <session>` — resume a project-local session from `.agents/topchester/sessions/`. Use `latest` or an exact lowercase session ID.
 - `--dev <flag>` — development-only UI/runtime flag. Can be repeated, for example `--dev disable-kb-check-modal --dev do-something-other`.
-- `-V, --version` — print the CLI version.
+- `-V, --version` — print the CLI package version.
 - `-h, --help` — print help.
 
 ## Development flags
@@ -122,12 +122,13 @@ Current behavior:
 - Requires `topchester kb init` to have created the knowledge folder first.
 - Reads `.gitignore` files from the workspace, including nested `.gitignore` files.
 - Lists project files that are not ignored and skips heavy generated folders such as `.git/`, `node_modules/`, `dist/`, `coverage/`, `topchester-kb/`, `.agents/topchester/`, and `.agents/topchester-kb-cache/`.
+- Applies `ignore.paths` rules from the resolved Topchester config after `.gitignore` and before L1 queueing. Rules come from `~/.config/topchester/config.jsonc`, `topchester.jsonc`, `.topchester/config.local.jsonc`, `TOPCHESTER_CONFIG`, and `--config` in that order. Negated config rules can re-include files ignored by earlier config rules, but cannot re-include built-in excluded folders.
 - Queues each listed file for L1 processing in `.agents/topchester-kb-cache/l1-queue.json`.
 - Processes the L1 queue with the configured `kb.summarize` model purpose. If `kb.summarize` is not configured, it uses the configured `fallback` model if one exists.
 - Writes one current L1 JSON entry per successfully processed file under `topchester-kb/l1-files/`.
-- Writes `topchester-kb/manifest.json` with the KB layout version, compiler name/version, queued file count, gitignore files read, and L1 outcome counts.
+- Writes `topchester-kb/manifest.json` with the KB layout version, compiler name/version, queued file count, config ignore rule count, gitignore files read, and L1 outcome counts.
 - Prints progress while reading ignore files, listing files, queueing L1 work, processing L1 entries, and writing output. During L1 processing, the CLI shows a progress bar, completed/total count, percentage, and current file path.
-- Prints the workspace path, gitignore file count, queue path, manifest path, queued count, completed count, failed count, changed count, missing count, current L1 entry count, and final state.
+- Prints the workspace path, gitignore file count, config ignore rule count, queue path, manifest path, queued count, completed count, failed count, changed count, missing count, current L1 entry count, and final state.
 - Exits successfully only when every in-scope file has a current L1 entry. Per-file failed, changed, or missing outcomes print a partial state and set a non-success automation exit code. Fatal setup or model configuration errors fail before claiming L1 entries are current.
 
 ### `topchester kb reset`

@@ -524,6 +524,7 @@ describe("durable L1 queue processing", () => {
       queuePath,
       manifestPath,
       gitignoreFiles: [],
+      configIgnorePathCount: 0,
       model,
       now: fixedNow,
     });
@@ -606,6 +607,7 @@ describe("durable L1 queue processing", () => {
       queuePath,
       manifestPath,
       gitignoreFiles: [],
+      configIgnorePathCount: 0,
       model,
       now: fixedNow,
     });
@@ -647,6 +649,7 @@ describe("durable L1 queue processing", () => {
       queuePath,
       manifestPath,
       gitignoreFiles: [],
+      configIgnorePathCount: 0,
       model: makeFakeModel(JSON.stringify(makeValidL1Entry({ id: "file:src/kept.ts", path: "src/kept.ts" }))),
       now: fixedNow,
     });
@@ -693,6 +696,7 @@ describe("durable L1 queue processing", () => {
         queuePath,
         manifestPath,
         gitignoreFiles: [],
+        configIgnorePathCount: 0,
         model: makeFakeModel(JSON.stringify(makeValidL1Entry())),
         now: fixedNow,
       })

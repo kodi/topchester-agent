@@ -72,6 +72,17 @@ describe("CLI integration", () => {
     expect(stdout).toContain("--resume <session>");
   });
 
+  it("prints the package version", async () => {
+    const fixture = await makeFixture();
+    const packageJson = JSON.parse(await readFile(join(process.cwd(), "package.json"), "utf8")) as {
+      version: string;
+    };
+
+    const { stdout } = await runCli(["--version"], fixture.root);
+
+    expect(stdout.trim()).toBe(packageJson.version);
+  });
+
   it("uses the current directory as the default workspace", async () => {
     const fixture = await makeFixture();
     await writeFile(join(fixture.root, "marker.txt"), "");

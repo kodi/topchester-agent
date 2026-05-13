@@ -8,7 +8,7 @@ import {
   formatKnowledgeCompileResult,
   isPartialKnowledgeCompileResult,
 } from "../src/knowledge/compiler/index.js";
-import { listProjectFilesForL1 } from "../src/knowledge/compiler/inventory.js";
+import { createProjectIgnoreMatcher, listProjectFilesForL1 } from "../src/knowledge/compiler/inventory.js";
 import { knowledgeCompilerIdentity } from "../src/knowledge/compiler/manifest.js";
 import { getL1FileEntryPath } from "../src/knowledge/compiler/path-encoding.js";
 import { initializeKnowledgeBase } from "../src/knowledge/init.js";
@@ -55,6 +55,36 @@ afterEach(async () => {
 });
 
 describe("knowledge compiler inventory", () => {
+  it("matches project ignore rules with standard glob tokens, dotfiles, directories, and negation", () => {
+    const matcher = createProjectIgnoreMatcher([
+      "generated/**",
+      "docs/file?.md",
+      ".env*",
+      "fixtures/*.{ts,js}",
+      "snapshots/[ab].json",
+      "fixtures/**",
+      "!fixtures/important/**",
+    ]);
+
+    expect(matcher.ruleCount).toBe(7);
+    expect(matcher.isIgnored("generated", true)).toBe(true);
+    expect(matcher.shouldPruneDirectory("generated")).toBe(true);
+    expect(matcher.isIgnored("generated/client.ts", false)).toBe(true);
+    expect(matcher.isIgnored("docs/file1.md", false)).toBe(true);
+    expect(matcher.isIgnored("docs/file10.md", false)).toBe(false);
+    expect(matcher.isIgnored(".env.local", false)).toBe(true);
+    expect(matcher.isIgnored("fixtures/example.ts", false)).toBe(true);
+    expect(matcher.isIgnored("snapshots/a.json", false)).toBe(true);
+    expect(matcher.isIgnored("snapshots/c.json", false)).toBe(false);
+    expect(matcher.shouldPruneDirectory("fixtures")).toBe(false);
+    expect(matcher.isIgnored("fixtures/important/keep.ts", false)).toBe(false);
+  });
+
+  it("rejects invalid project ignore rules at the inventory boundary", () => {
+    expect(() => createProjectIgnoreMatcher(["/absolute"])).toThrow("Invalid Topchester ignore path rule: /absolute");
+    expect(() => createProjectIgnoreMatcher(["../outside"])).toThrow("Invalid Topchester ignore path rule: ../outside");
+  });
+
   it("reads root and nested gitignore files before queueing L1 files", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-"));
     await mkdir(join(workspace, "src", "generated"), { recursive: true });
@@ -97,6 +127,25 @@ describe("knowledge compiler inventory", () => {
     expect(inventory.files.every((file) => file.hash.startsWith("sha256:"))).toBe(true);
   });
 
+  it("excludes config-ignored files from inventory while preserving config negation and built-in exclusions", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-"));
+    await mkdir(join(workspace, "generated"), { recursive: true });
+    await mkdir(join(workspace, "fixtures", "important"), { recursive: true });
+    await mkdir(join(workspace, "node_modules"), { recursive: true });
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "generated", "client.ts"), "ignored\n");
+    await writeFile(join(workspace, "fixtures", "skip.ts"), "ignored\n");
+    await writeFile(join(workspace, "fixtures", "important", "keep.ts"), "kept\n");
+    await writeFile(join(workspace, "node_modules", "keep.ts"), "still ignored\n");
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+
+    const inventory = await listProjectFilesForL1(workspace, {
+      ignorePaths: ["generated/**", "fixtures/**", "!fixtures/important/**", "!node_modules/keep.ts"],
+    });
+
+    expect(inventory.files.map((file) => file.path)).toEqual(["fixtures/important/keep.ts", "src/index.ts"]);
+  });
+
   it("writes the L1 queue into the generated cache", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-"));
     await mkdir(join(workspace, "src"), { recursive: true });
@@ -113,6 +162,33 @@ describe("knowledge compiler inventory", () => {
     expect(queue.queuedFiles).toEqual(result.queuedFiles);
     expect(manifest.compiler).toEqual(knowledgeCompilerIdentity);
     expect(manifest.queuedFileCount).toBe(2);
+    expect(manifest.configIgnorePathCount).toBe(0);
+  });
+
+  it("applies configured ignore paths during compile and reports the rule count", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-"));
+    await mkdir(join(workspace, "generated"), { recursive: true });
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "generated", "client.ts"), "ignored\n");
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+    await initializeKnowledgeBase(workspace);
+
+    const result = await compileKnowledgeBase(workspace, {
+      config: { ignore: { paths: ["generated/**"] } },
+      model: fakeL1Model(),
+    });
+    const manifest = JSON.parse(await readFile(result.manifestPath, "utf8"));
+
+    expect(result.configIgnorePathCount).toBe(1);
+    expect(result.queuedFiles.map((file) => file.path)).toEqual(["src/index.ts"]);
+    expect(manifest.configIgnorePathCount).toBe(1);
+    expect(formatKnowledgeCompileResult(result)).toContain("config ignore rules: 1");
+    await expect(
+      readFile(getL1FileEntryPath(join(workspace, "topchester-kb"), "src/index.ts"), "utf8")
+    ).resolves.toContain('"path": "src/index.ts"');
+    await expect(
+      readFile(getL1FileEntryPath(join(workspace, "topchester-kb"), "generated/client.ts"), "utf8")
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("processes queued files into model-backed L1 entries and reports current counts", async () => {

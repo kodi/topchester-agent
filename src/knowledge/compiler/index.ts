@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { type TopchesterConfig } from "../../config/index.js";
 import { getKnowledgeStatus } from "../status.js";
 import { type KnowledgeProgressReporter } from "../progress.js";
 import { listProjectFilesForL1 } from "./inventory.js";
@@ -19,12 +20,18 @@ export interface KnowledgeCompileResult {
   queuedFiles: L1QueueItem[];
   queuePath: string;
   manifestPath: string;
+  configIgnorePathCount: number;
   l1?: L1QueueProcessingSummary;
 }
 
 export async function compileKnowledgeBase(
   workspaceRoot: string,
-  options: { onProgress?: KnowledgeProgressReporter; model?: L1SummaryModel; requireModel?: boolean } = {}
+  options: {
+    onProgress?: KnowledgeProgressReporter;
+    model?: L1SummaryModel;
+    requireModel?: boolean;
+    config?: TopchesterConfig;
+  } = {}
 ): Promise<KnowledgeCompileResult> {
   options.onProgress?.({ message: "Checking project knowledge folders..." });
   const status = getKnowledgeStatus(workspaceRoot);
@@ -39,7 +46,11 @@ export async function compileKnowledgeBase(
 
   await mkdir(status.cachePath, { recursive: true });
   options.onProgress?.({ message: "Reading .gitignore files and listing project files..." });
-  const inventory = await listProjectFilesForL1(workspaceRoot, { excludedPaths: [status.kbPath, status.cachePath] });
+  const ignorePaths = options.config?.ignore?.paths ?? [];
+  const inventory = await listProjectFilesForL1(workspaceRoot, {
+    excludedPaths: [status.kbPath, status.cachePath],
+    ignorePaths,
+  });
   options.onProgress?.({ message: `Queued ${inventory.files.length} project files for L1...` });
   const queuedFiles = inventory.files.map(createL1QueueItem);
   const queuePath = join(status.cachePath, "l1-queue.json");
@@ -68,6 +79,7 @@ export async function compileKnowledgeBase(
         workspaceRoot,
         l1QueuePath: queuePath,
         queuedFileCount: queuedFiles.length,
+        configIgnorePathCount: ignorePaths.length,
         l1,
         gitignoreFiles: inventory.gitignoreFiles,
       },
@@ -84,6 +96,7 @@ export async function compileKnowledgeBase(
         queuePath,
         manifestPath,
         gitignoreFiles: inventory.gitignoreFiles,
+        configIgnorePathCount: ignorePaths.length,
         model: options.model,
         onProgress: options.onProgress,
       })
@@ -97,6 +110,7 @@ export async function compileKnowledgeBase(
     queuedFiles: processed?.queuedFiles ?? queuedFiles,
     queuePath,
     manifestPath,
+    configIgnorePathCount: ignorePaths.length,
     l1: processed?.summary ?? l1,
   };
 }
@@ -123,6 +137,7 @@ export function formatKnowledgeCompileResult(result: KnowledgeCompileResult): st
     "KB compile",
     `workspace: ${result.workspaceRoot}`,
     `gitignore files read: ${result.gitignoreFiles.length}`,
+    `config ignore rules: ${result.configIgnorePathCount}`,
     `queue: ${result.queuePath}`,
     `manifest: ${result.manifestPath}`,
     `queued: ${totalQueued}`,

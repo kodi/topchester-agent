@@ -35,6 +35,7 @@ export interface ProcessL1QueueOptions {
   queuePath: string;
   manifestPath: string;
   gitignoreFiles: string[];
+  configIgnorePathCount: number;
   model: L1SummaryModel;
   onProgress?: KnowledgeProgressReporter;
   now?: () => Date;
@@ -577,6 +578,7 @@ async function writeManifest(
         workspaceRoot: options.workspaceRoot,
         l1QueuePath: options.queuePath,
         queuedFileCount: summary.queued + summary.completed + summary.failed + summary.changed + summary.missing,
+        configIgnorePathCount: options.configIgnorePathCount,
         l1: summary,
         gitignoreFiles: options.gitignoreFiles,
       },

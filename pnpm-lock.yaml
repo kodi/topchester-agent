@@ -23,6 +23,9 @@ importers:
       commander:
         specifier: ^14.0.3
         version: 14.0.3
+      picomatch:
+        specifier: ^4.0.4
+        version: 4.0.4
       pino:
         specifier: ^10.3.1
         version: 10.3.1
@@ -39,6 +42,9 @@ importers:
       '@types/node':
         specifier: ^24.12.3
         version: 24.12.3
+      '@types/picomatch':
+        specifier: ^4.0.3
+        version: 4.0.3
       lefthook:
         specifier: ^2.1.6
         version: 2.1.6
@@ -773,6 +779,9 @@ packages:
 
   '@types/node@24.12.3':
     resolution: {integrity: sha512-8oljBDGun9cIsZRJR6fkihn0TSXJI0UDOOhncYaERq6M0JMDoPLxyscwruJcb4GKS6dvK/d8xebYBg27h/duaQ==}
+
+  '@types/picomatch@4.0.3':
+    resolution: {integrity: sha512-iG0T6+nYJ9FAPmx9SsUlnwcq1ZVRuCXcVEvWnntoPlrOpwtSTKNDC9uVAxTsC3PUvJ+99n4RpAcNgBbHX3JSnQ==}
 
   '@vercel/oidc@3.2.0':
     resolution: {integrity: sha512-UycprH3T6n3jH0k44NHMa7pnFHGu/N05MjojYr+Mc6I7obkoLIJujSWwin1pCvdy/eOxrI/l3uDLQsmcrOb4ug==}
@@ -1914,6 +1923,8 @@ snapshots:
   '@types/node@24.12.3':
     dependencies:
       undici-types: 7.16.0
+
+  '@types/picomatch@4.0.3': {}
 
   '@vercel/oidc@3.2.0': {}
 

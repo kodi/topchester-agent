@@ -14,10 +14,11 @@ import { formatKnowledgeResetResult, resetKnowledgeBase } from "./knowledge/rese
 import { getKnowledgeStatus } from "./knowledge/status.js";
 import { loadSession, loadSessionForAppend, rehydrateSession } from "./session/store.js";
 import { TopchesterTuiShell } from "./tui/index.js";
+import { getTopchesterVersion } from "./version.js";
 
 const program = new Command();
 
-program.name("topchester").description("KB-first terminal coding agent").version("0.0.0");
+program.name("topchester").description("KB-first terminal coding agent").version(getTopchesterVersion());
 
 program
   .option("-c, --config <path>", "explicit config file path")
@@ -79,6 +80,7 @@ kbCommand
       compileKnowledgeBase(context.workspaceRoot, {
         model: context.modelGateway,
         requireModel: true,
+        config: context.config,
         onProgress: (event) => report(event.message),
       })
     );

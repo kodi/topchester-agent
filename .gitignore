@@ -9,3 +9,4 @@ coverage/
 .env
 AGENTS.override.md
 test-foo.ts
+topchester-kb/

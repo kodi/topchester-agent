@@ -1,5 +1,6 @@
 import { compileKnowledgeBase, formatKnowledgeCompileResult } from "../knowledge/compiler/index.js";
 import { type L1SummaryModel } from "../knowledge/compiler/l1-processor.js";
+import { type TopchesterConfig } from "../config/index.js";
 import { formatKnowledgeInitResult, initializeKnowledgeBase } from "../knowledge/init.js";
 import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
 import { formatKnowledgeResetResult, resetKnowledgeBase } from "../knowledge/reset.js";
@@ -7,6 +8,7 @@ import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js
 
 export interface SlashCommandContext {
   workspaceRoot: string;
+  config?: TopchesterConfig;
   modelGateway?: L1SummaryModel;
   onProgress?: KnowledgeProgressReporter;
 }
@@ -128,6 +130,7 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
           await compileKnowledgeBase(context.workspaceRoot, {
             model: context.modelGateway,
             requireModel: true,
+            config: context.config,
             onProgress: context.onProgress,
           })
         ),

@@ -232,6 +232,43 @@ Example:
 
 Resolved config keeps all three assignments.
 
+## Project Ignore Paths
+
+Project config can exclude files from Knowledge Compiler inventory before they are queued for L1 processing:
+
+```jsonc
+{
+  "$schema": "https://topchester.com/schemas/config.v1.json",
+  "ignore": {
+    "paths": ["generated/**", "snapshots/**/*.json", "*.lock.backup"],
+  },
+}
+```
+
+Local uncommitted ignores belong in `.topchester/config.local.jsonc`:
+
+```jsonc
+{
+  "ignore": {
+    "paths": [".scratch/**", "local-dumps/**"],
+  },
+}
+```
+
+Rules are workspace-relative POSIX glob patterns. Absolute paths and `..` traversal are rejected. Matching supports standard glob tokens such as `*`, `**`, `?`, character classes, braces, and dotfiles. Negated rules can re-include files that earlier config ignore rules excluded:
+
+```jsonc
+{
+  "ignore": {
+    "paths": ["fixtures/**", "!fixtures/important/**"],
+  },
+}
+```
+
+Config ignores are applied after built-in safety exclusions and `.gitignore`. Negation cannot re-include default excluded folders such as `.git/`, `node_modules/`, `.agents/topchester/`, `.agents/topchester-kb-cache/`, or `topchester-kb/`.
+
+`ignore.paths` arrays concatenate across config layers in load order: user config, project config, local project config, `TOPCHESTER_CONFIG`, then CLI `--config`. Later entries win inside the effective ignore rule list.
+
 ## Security Rules
 
 - Prefer `apiKeyEnv` over `apiKey`.

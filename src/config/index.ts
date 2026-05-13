@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, resolve, win32 } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
@@ -34,12 +34,53 @@ const providersSchema = z
   })
   .catchall(providerSchema.or(z.string()));
 
+const ignorePathSchema = z
+  .string()
+  .min(1)
+  .superRefine((value, context) => {
+    const pattern = value.startsWith("!") ? value.slice(1) : value;
+
+    if (!pattern) {
+      context.addIssue({
+        code: "custom",
+        message: "Ignore path rule must include a pattern after negation.",
+      });
+      return;
+    }
+
+    if (pattern === ".") {
+      context.addIssue({
+        code: "custom",
+        message: "Ignore path rule must name a path inside the workspace.",
+      });
+    }
+
+    if (pattern.startsWith("/") || isAbsolute(pattern) || win32.isAbsolute(pattern)) {
+      context.addIssue({
+        code: "custom",
+        message: "Ignore path rule must be workspace-relative.",
+      });
+    }
+
+    if (pattern.split(/[\\/]/).includes("..")) {
+      context.addIssue({
+        code: "custom",
+        message: "Ignore path rule must stay inside the workspace.",
+      });
+    }
+  });
+
 export const topchesterConfigSchema = z.object({
   models: z
     .object({
       defaultPurpose: modelPurposeSchema.optional(),
       assignments: z.partialRecord(modelPurposeSchema, modelAssignmentSchema).optional(),
       providers: providersSchema.optional(),
+    })
+    .optional(),
+  ignore: z
+    .object({
+      paths: z.array(ignorePathSchema).optional(),
     })
     .optional(),
 });
@@ -54,8 +95,11 @@ export interface ConfigLoadOptions {
 export function loadTopchesterConfig(options: ConfigLoadOptions): TopchesterConfig {
   const paths = [
     join(homedir(), ".config/topchester/config.yaml"),
+    join(homedir(), ".config/topchester/config.jsonc"),
     join(options.workspaceRoot, "topchester.yaml"),
+    join(options.workspaceRoot, "topchester.jsonc"),
     join(options.workspaceRoot, ".topchester/config.local.yaml"),
+    join(options.workspaceRoot, ".topchester/config.local.jsonc"),
     process.env.TOPCHESTER_CONFIG,
     options.configPath,
   ].filter((path): path is string => Boolean(path));
@@ -69,14 +113,36 @@ export function loadTopchesterConfig(options: ConfigLoadOptions): TopchesterConf
       continue;
     }
 
-    const parsed = parseYaml(readFileSync(resolvedPath, "utf8")) as unknown;
-    merged = deepMerge(merged, topchesterConfigSchema.parse(parsed));
+    const parsed = readConfigFile(resolvedPath);
+    merged = deepMerge(merged, parseConfigFile(resolvedPath, parsed));
   }
 
   return topchesterConfigSchema.parse(merged);
 }
 
-function deepMerge<T>(base: T, override: T): T {
+function readConfigFile(path: string): unknown {
+  try {
+    return parseYaml(readFileSync(path, "utf8")) as unknown;
+  } catch (error) {
+    throw new Error(`Invalid Topchester config at ${path}: ${formatErrorMessage(error)}`);
+  }
+}
+
+function parseConfigFile(path: string, value: unknown): TopchesterConfig {
+  const parsed = topchesterConfigSchema.safeParse(value ?? {});
+
+  if (!parsed.success) {
+    throw new Error(`Invalid Topchester config at ${path}: ${parsed.error.issues.map(formatZodIssue).join("; ")}`);
+  }
+
+  return parsed.data;
+}
+
+function deepMerge<T>(base: T, override: T, path: string[] = []): T {
+  if (Array.isArray(base) && Array.isArray(override)) {
+    return (path.join(".") === "ignore.paths" ? [...base, ...override] : override) as T;
+  }
+
   if (!isPlainObject(base) || !isPlainObject(override)) {
     return override;
   }
@@ -84,7 +150,7 @@ function deepMerge<T>(base: T, override: T): T {
   const result: Record<string, unknown> = { ...base };
 
   for (const [key, value] of Object.entries(override)) {
-    result[key] = key in result ? deepMerge(result[key], value) : value;
+    result[key] = key in result ? deepMerge(result[key], value, [...path, key]) : value;
   }
 
   return result as T;
@@ -92,4 +158,13 @@ function deepMerge<T>(base: T, override: T): T {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatZodIssue(issue: z.ZodIssue): string {
+  const path = issue.path.length > 0 ? issue.path.join(".") : "<root>";
+  return `${path}: ${issue.message}`;
+}
+
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

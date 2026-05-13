@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { open, readdir, readFile, stat } from "node:fs/promises";
-import { dirname, extname, join, relative, sep } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, sep, win32 } from "node:path";
+import picomatch from "picomatch";
 
 export interface InventoryFile {
   path: string;
@@ -16,6 +17,7 @@ export interface InventoryResult {
 
 export interface InventoryOptions {
   excludedPaths?: string[];
+  ignorePaths?: string[];
 }
 
 interface IgnoreRule {
@@ -23,6 +25,18 @@ interface IgnoreRule {
   pattern: string;
   negated: boolean;
   directoryOnly: boolean;
+}
+
+interface ProjectIgnoreRule {
+  pattern: string;
+  negated: boolean;
+  matcher: picomatch.Matcher;
+}
+
+export interface ProjectIgnoreMatcher {
+  readonly ruleCount: number;
+  isIgnored(relativePath: string, isDirectory: boolean): boolean;
+  shouldPruneDirectory(relativePath: string): boolean;
 }
 
 const DEFAULT_EXCLUDED_DIRS = new Set([
@@ -82,9 +96,10 @@ export async function listProjectFilesForL1(
 ): Promise<InventoryResult> {
   const excludedDirs = buildExcludedDirs(workspaceRoot, options.excludedPaths ?? []);
   const rules = await loadGitignoreRules(workspaceRoot, excludedDirs);
+  const projectIgnoreMatcher = createProjectIgnoreMatcher(options.ignorePaths ?? []);
   const files: InventoryFile[] = [];
 
-  await walkDirectory(workspaceRoot, workspaceRoot, rules, files, excludedDirs);
+  await walkDirectory(workspaceRoot, workspaceRoot, rules, projectIgnoreMatcher, files, excludedDirs);
 
   files.sort((a, b) => a.path.localeCompare(b.path));
 
@@ -146,6 +161,7 @@ async function walkDirectory(
   workspaceRoot: string,
   dir: string,
   rules: IgnoreRule[],
+  projectIgnoreMatcher: ProjectIgnoreMatcher,
   files: InventoryFile[],
   excludedDirs: Set<string>
 ): Promise<void> {
@@ -158,14 +174,19 @@ async function walkDirectory(
     if (entry.isDirectory()) {
       if (
         !shouldSkipDirectoryByDefault(relativePath, excludedDirs) &&
-        !isIgnored(workspaceRoot, absolutePath, true, rules, excludedDirs)
+        !isIgnored(workspaceRoot, absolutePath, true, rules, excludedDirs) &&
+        !projectIgnoreMatcher.shouldPruneDirectory(relativePath)
       ) {
-        await walkDirectory(workspaceRoot, absolutePath, rules, files, excludedDirs);
+        await walkDirectory(workspaceRoot, absolutePath, rules, projectIgnoreMatcher, files, excludedDirs);
       }
       continue;
     }
 
-    if (!entry.isFile() || isIgnored(workspaceRoot, absolutePath, false, rules, excludedDirs)) {
+    if (
+      !entry.isFile() ||
+      isIgnored(workspaceRoot, absolutePath, false, rules, excludedDirs) ||
+      projectIgnoreMatcher.isIgnored(relativePath, false)
+    ) {
       continue;
     }
 
@@ -357,4 +378,89 @@ function buildExcludedDirs(workspaceRoot: string, excludedPaths: string[]): Set<
   }
 
   return dirs;
+}
+
+export function createProjectIgnoreMatcher(ignorePaths: string[]): ProjectIgnoreMatcher {
+  const rules = ignorePaths.map(createProjectIgnoreRule);
+
+  return {
+    ruleCount: rules.length,
+    isIgnored(relativePath: string, isDirectory: boolean): boolean {
+      return isProjectIgnored(normalizeProjectPath(relativePath), isDirectory, rules);
+    },
+    shouldPruneDirectory(relativePath: string): boolean {
+      const normalizedPath = normalizeProjectPath(relativePath);
+      return (
+        isProjectIgnored(normalizedPath, true, rules) &&
+        !rules.some((rule) => rule.negated && canRuleMatchDescendant(rule.pattern, normalizedPath))
+      );
+    },
+  };
+}
+
+function createProjectIgnoreRule(rawPattern: string): ProjectIgnoreRule {
+  const negated = rawPattern.startsWith("!");
+  const rawPatternBody = negated ? rawPattern.slice(1) : rawPattern;
+  const pattern = normalizeProjectPath(rawPatternBody);
+
+  if (
+    !pattern ||
+    pattern === "." ||
+    rawPatternBody.startsWith("/") ||
+    isAbsolute(rawPatternBody) ||
+    win32.isAbsolute(rawPatternBody) ||
+    pattern.split("/").includes("..")
+  ) {
+    throw new Error(`Invalid Topchester ignore path rule: ${rawPattern}`);
+  }
+
+  return {
+    pattern,
+    negated,
+    matcher: picomatch(pattern, { dot: true, nonegate: true }),
+  };
+}
+
+function isProjectIgnored(relativePath: string, isDirectory: boolean, rules: ProjectIgnoreRule[]): boolean {
+  let ignored = false;
+
+  for (const rule of rules) {
+    if (matchesProjectIgnoreRule(rule, relativePath, isDirectory)) {
+      ignored = !rule.negated;
+    }
+  }
+
+  return ignored;
+}
+
+function matchesProjectIgnoreRule(rule: ProjectIgnoreRule, relativePath: string, isDirectory: boolean): boolean {
+  if (rule.matcher(relativePath)) {
+    return true;
+  }
+
+  const globstarPrefix = rule.pattern.endsWith("/**") ? rule.pattern.slice(0, -3) : undefined;
+  if (globstarPrefix && (relativePath === globstarPrefix || relativePath.startsWith(`${globstarPrefix}/`))) {
+    return true;
+  }
+
+  if (!hasGlobToken(rule.pattern) && relativePath.startsWith(`${rule.pattern}/`)) {
+    return true;
+  }
+
+  return isDirectory && rule.matcher(`${relativePath}/`);
+}
+
+function canRuleMatchDescendant(pattern: string, directoryPath: string): boolean {
+  return pattern === directoryPath || pattern.startsWith(`${directoryPath}/`);
+}
+
+function hasGlobToken(pattern: string): boolean {
+  return /[*?[\]{}()]/.test(pattern);
+}
+
+function normalizeProjectPath(path: string): string {
+  return path
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .join("/");
 }
