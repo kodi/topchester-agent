@@ -1,4 +1,8 @@
+import { chmod, mkdtemp, mkdir, realpath, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { inspectWorkspaceCommand } from "../src/agent/tools/inspect-command.js";
 import { parseInspectCommand } from "../src/agent/tools/inspect-command-parser.js";
 import { inspectCommandArgsSchema, validateInspectCommand } from "../src/agent/tools/inspect-command-policy.js";
 
@@ -148,4 +152,119 @@ function policyContext() {
   return {
     workspaceRoot: "/tmp/topchester-workspace",
   };
+}
+
+describe("inspect_command execution engine", () => {
+  it("runs the built-in pwd from the requested workspace workdir", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-inspect-"));
+    await mkdir(join(workspace, "docs"));
+
+    const result = await inspectWorkspaceCommand(workspace, { command: "pwd", workdir: "docs", timeout_ms: 10_000 });
+
+    expect(result).toMatchObject({
+      tool: "inspect_command",
+      command: "pwd",
+      cwd: "docs",
+      exitCode: 0,
+      timedOut: false,
+      truncated: false,
+    });
+    expect(result.stdout).toBe(`${await realpath(join(workspace, "docs"))}\n`);
+    expect(result.content).toContain("exit_code: 0");
+  });
+
+  it("runs allowed executables without a shell and passes pipeline stdout forward", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-inspect-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-inspect-bin-"));
+    await writeExecutable(join(bin, "rg"), "printf 'one\\ntwo\\nthree\\n'");
+    await writeExecutable(
+      join(bin, "head"),
+      'count=0\nwhile read line && [ $count -lt 2 ]; do\n  echo "$line"\n  count=$((count + 1))\ndone'
+    );
+
+    const result = await inspectWorkspaceCommand(
+      workspace,
+      { command: "rg --files docs/plans | head -2", workdir: ".", timeout_ms: 10_000 },
+      { pathEnv: bin }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("one\ntwo\n");
+    expect(result.decision.commands).toEqual(["rg --files docs/plans", "head -2"]);
+  });
+
+  it("applies command-list control flow", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-inspect-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-inspect-bin-"));
+    await writeExecutable(join(bin, "grep"), "exit 1");
+    await writeExecutable(join(bin, "cat"), "printf 'fallback\\n'");
+    await writeFile(join(workspace, "package.json"), "{}\n");
+
+    const result = await inspectWorkspaceCommand(
+      workspace,
+      { command: "grep needle package.json || cat package.json", workdir: ".", timeout_ms: 10_000 },
+      { pathEnv: bin }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("fallback\n");
+  });
+
+  it("returns a clear warning when an allowed executable is missing", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-inspect-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-inspect-bin-"));
+
+    const result = await inspectWorkspaceCommand(
+      workspace,
+      { command: "rg --files", workdir: ".", timeout_ms: 10_000 },
+      { pathEnv: bin }
+    );
+
+    expect(result).toMatchObject({
+      exitCode: 127,
+      warning: "inspect_command could not run because 'rg' is not available on PATH.",
+    });
+    expect(result.stderr).toContain("'rg' is not available");
+  });
+
+  it("times out long-running commands", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-inspect-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-inspect-bin-"));
+    await writeExecutable(join(bin, "rg"), "sleep 2\nprintf 'late\\n'");
+
+    const result = await inspectWorkspaceCommand(
+      workspace,
+      { command: "rg needle", workdir: ".", timeout_ms: 100 },
+      { pathEnv: bin }
+    );
+
+    expect(result.exitCode).toBe(124);
+    expect(result.timedOut).toBe(true);
+    expect(result.warning).toBe("inspect_command timed out.");
+  });
+
+  it("truncates large output", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-inspect-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-inspect-bin-"));
+    await writeExecutable(
+      join(bin, "cat"),
+      "count=0\nwhile [ $count -lt 2000 ]; do\n  echo line\n  count=$((count + 1))\ndone"
+    );
+    await writeFile(join(workspace, "package.json"), "{}\n");
+
+    const result = await inspectWorkspaceCommand(
+      workspace,
+      { command: "cat package.json", workdir: ".", timeout_ms: 10_000 },
+      { pathEnv: bin }
+    );
+
+    expect(result.truncated).toBe(true);
+    expect(result.warning).toBe("inspect_command output was truncated.");
+    expect(result.stdout).toContain("[truncated]");
+  });
+});
+
+async function writeExecutable(path: string, body: string): Promise<void> {
+  await writeFile(path, `#!/bin/sh\n${body}\n`);
+  await chmod(path, 0o755);
 }
