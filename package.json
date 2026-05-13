@@ -1,6 +1,6 @@
 {
   "name": "topchester-ai",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": false,
   "description": "Terminal-native TUI coding agent tightly coupled to a project knowledge base.",
   "license": "MIT",
