@@ -305,15 +305,18 @@ describe("TUI rendering", () => {
     expect(output).toContain("● ready ·  repo · model [provider]");
   });
 
-  it("colors edit_file change summaries dark gray in system messages", () => {
+  it("colors tool call lines dark gray in system messages", () => {
     const previousForceColor = process.env.FORCE_COLOR;
     const previousNoColor = process.env.NO_COLOR;
     delete process.env.NO_COLOR;
     process.env.FORCE_COLOR = "1";
 
     try {
-      expect(renderChatMessage(systemMessage("Tool edit_file: test-foo.ts (changed +1/-1)"))).toContain(
-        "   Tool edit_file: test-foo.ts \u001b[90m(changed +1/-1)\u001b[0m"
+      expect(renderChatMessage(systemMessage("edit_file: test-foo.ts (changed +1/-1)"))).toContain(
+        "   \u001b[90medit_file: test-foo.ts (changed +1/-1)\u001b[0m"
+      );
+      expect(renderChatMessage(systemMessage("inspect_command: pwd && rg --files docs/plans | head -20"))).toContain(
+        "   \u001b[90minspect_command: pwd && rg --files docs/plans | head -20\u001b[0m"
       );
     } finally {
       if (previousForceColor === undefined) {
@@ -1077,11 +1080,11 @@ describe("TUI rendering", () => {
     });
     expect(
       runtimeEventToSessionPayload(
-        agentEvent.toolCall({ tool: "read_file", args: { path: "README.md" } }, "Tool read_file: README.md")
+        agentEvent.toolCall({ tool: "read_file", args: { path: "README.md" } }, "read_file: README.md")
       )
     ).toEqual({
       kind: "tool_call",
-      label: "Tool read_file: README.md",
+      label: "read_file: README.md",
       call: { tool: "read_file", args: { path: "README.md" } },
     });
     expect(runtimeEventToSessionPayload(agentEvent.knowledgeStatus(status))).toBeUndefined();
@@ -1150,7 +1153,7 @@ describe("TUI rendering", () => {
     await session.append({ kind: "message", role: "system", text: "slash command output" });
     await session.append({
       kind: "tool_call",
-      label: "Tool read_file: README.md",
+      label: "read_file: README.md",
       call: { tool: "read_file", args: { path: "README.md" } },
     });
     await session.append({
@@ -1189,7 +1192,7 @@ describe("TUI rendering", () => {
     expect(capturedPrompts[0]).not.toContain("startup row");
     expect(capturedPrompts[0]).not.toContain("/kb status");
     expect(capturedPrompts[0]).not.toContain("slash command output");
-    expect(capturedPrompts[0]).not.toContain("Tool read_file");
+    expect(capturedPrompts[0]).not.toContain("read_file: README.md");
     expect(capturedPrompts[0]).not.toContain("No KB found");
     expect(capturedPrompts[0]).not.toContain("Create KB now");
     expect(capturedPrompts[0]).not.toContain("ready");

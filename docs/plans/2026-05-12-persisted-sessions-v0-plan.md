@@ -119,7 +119,7 @@ V0 event kinds:
 {"version":1,"id":1,"ts":"2026-05-12T18:04:55.000Z","kind":"message","role":"system","text":"startup text"}
 {"version":1,"id":2,"ts":"2026-05-12T18:05:01.000Z","kind":"message","role":"user","text":"hello"}
 {"version":1,"id":3,"ts":"2026-05-12T18:05:03.000Z","kind":"message","role":"assistant","text":"Hi","meta":"model · 1.2 sec"}
-{"version":1,"id":4,"ts":"2026-05-12T18:05:04.000Z","kind":"tool_call","label":"Tool read_file: package.json","call":{"tool":"read_file","args":{"path":"package.json"}}}
+{"version":1,"id":4,"ts":"2026-05-12T18:05:04.000Z","kind":"tool_call","label":"read_file: package.json","call":{"tool":"read_file","args":{"path":"package.json"}}}
 {"version":1,"id":5,"ts":"2026-05-12T18:05:05.000Z","kind":"status","status":"ready"}
 {"version":1,"id":6,"ts":"2026-05-12T18:05:06.000Z","kind":"knowledge_status","status":{"kbPath":"..."}}
 {"version":1,"id":7,"ts":"2026-05-12T18:05:07.000Z","kind":"choice","tone":"warning","title":"No KB found","actions":[{"label":"Create KB now","value":"/kb init"}]}

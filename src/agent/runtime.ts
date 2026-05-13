@@ -237,17 +237,17 @@ function formatToolResultForPrompt(result: ToolResult): string {
 function formatToolCallMessage(call: ToolCall, result?: ToolResult): string {
   switch (call.tool) {
     case "read_file":
-      return `Tool read_file: ${call.args.path}`;
+      return `read_file: ${call.args.path}`;
     case "list_files":
-      return `Tool list_files: ${call.args.path}${call.args.recursive ? " (recursive)" : ""}`;
+      return `list_files: ${call.args.path}${call.args.recursive ? " (recursive)" : ""}`;
     case "grep":
-      return `Tool grep: ${call.args.pattern} in ${call.args.path ?? "."}`;
+      return `grep: ${call.args.pattern} in ${call.args.path ?? "."}`;
     case "find_file":
-      return `Tool find_file: ${call.args.query} in ${call.args.path}`;
+      return `find_file: ${call.args.query} in ${call.args.path}`;
     case "edit_file":
-      return `Tool edit_file: ${call.args.path}${formatEditFileChangeSummary(result)}`;
+      return `edit_file: ${call.args.path}${formatEditFileChangeSummary(result)}`;
     case "inspect_command":
-      return `Tool inspect_command: ${call.args.command}`;
+      return `inspect_command: ${call.args.command}`;
   }
 }
 

@@ -98,7 +98,15 @@ function renderSystemMessage(lines: string[]): string[] {
 }
 
 function formatSystemBodyLine(line: string): string {
+  if (isToolCallLine(line)) {
+    return ui.muted(line);
+  }
+
   return line.replace(/\(changed \+\d+\/-\d+\)$/u, (summary) => ui.muted(summary));
+}
+
+function isToolCallLine(line: string): boolean {
+  return /^(read_file|list_files|grep|find_file|edit_file|inspect_command): /u.test(line);
 }
 
 function getPrefix(kind: TextChatMessage["kind"]): string {

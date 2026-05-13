@@ -240,7 +240,7 @@ describe("session store", () => {
 
     await session.append({
       kind: "tool_call",
-      label: "Tool read_file: package.json",
+      label: "read_file: package.json",
       call: { tool: "read_file", args: { path: "package.json" } },
     });
     await session.append({
@@ -265,7 +265,7 @@ describe("session store", () => {
         version: 1,
         id: 1,
         kind: "tool_call",
-        label: "Tool read_file: package.json",
+        label: "read_file: package.json",
         call: { tool: "read_file", args: { path: "package.json" } },
       }),
       expect.objectContaining({

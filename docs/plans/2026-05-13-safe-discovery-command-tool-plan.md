@@ -406,7 +406,7 @@ This slice should implement:
 - Registry export and `src/agent/tools.ts` export.
 - Tool prompt line that says it is for read-only orientation only.
 - Runtime formatting for prompt feedback.
-- Chat row formatting like `Tool inspect_command: pwd && rg --files docs/plans | head -20`.
+- Chat row formatting like `inspect_command: pwd && rg --files docs/plans | head -20`.
 - Executor log summarization for decision metadata and output sizes.
 
 Expected output:
