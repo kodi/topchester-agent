@@ -32,12 +32,7 @@ async function makeFixture() {
     config,
     [
       "models:",
-      "  defaultPurpose: agent.primary",
-      "  assignments:",
-      "    agent.primary:",
-      "      name: qwen/qwen3-coder:free",
-      "    fallback:",
-      "      name: qwen/qwen3-coder:free",
+      "  default: qwen/qwen3-coder:free",
       "  providers:",
       "    default: openrouter",
       "    openrouter:",
@@ -505,10 +500,7 @@ describe("CLI integration", () => {
   it("fails compile clearly when no kb.summarize model or fallback is configured", async () => {
     const fixture = await makeFixture();
     const badConfig = join(fixture.root, "bad-config.yaml");
-    await writeFile(
-      badConfig,
-      ["models:", "  assignments:", "    agent.primary:", "      name: fake-model"].join("\n")
-    );
+    await writeFile(badConfig, ["models:", "  fast:", "    name: fake-model"].join("\n"));
     await mkdir(fixture.workspace, { recursive: true });
     await writeFile(join(fixture.workspace, "index.ts"), "export const value = 1;\n");
     await runCli(["--workspace", fixture.workspace, "kb", "init"], fixture.root);

@@ -96,7 +96,7 @@ describe("TUI prompt history", () => {
     expect(output).not.toContain("> remembered");
   });
 
-  it("keeps page keys and mouse wheel for thread scrolling", () => {
+  it("keeps page keys and explicit wheel events for viewport thread scrolling", () => {
     const terminal = new FakeTerminal();
     terminal.rows = 7;
     const app = new ChatLayout(
@@ -119,6 +119,26 @@ describe("TUI prompt history", () => {
 
     app.handleInput("\u001b[<65;1;1M");
     expect(app.render(60).join("\n")).toContain("Message 12");
+  });
+
+  it("keeps explicit wheel events ahead of prompt history in viewport mode", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 7;
+    const app = new ChatLayout(
+      terminal,
+      Array.from({ length: 12 }, (_, index) => systemMessage(`Message ${index + 1}`)),
+      "repo",
+      "model [provider]"
+    );
+
+    submit(app, "remembered");
+
+    app.handleInput("\u001b[<64;1;1M");
+
+    const output = app.render(60).join("\n");
+
+    expect(output).not.toContain("You: remembered");
+    expect(promptText(app)).not.toContain("remembered");
   });
 
   it("does not use bare arrows for thread scrolling in normal prompt mode", () => {

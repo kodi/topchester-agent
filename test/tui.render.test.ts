@@ -694,7 +694,7 @@ describe("TUI rendering", () => {
     }
   });
 
-  it("scrolls chat history inside the TUI with page keys and mouse wheel", () => {
+  it("scrolls chat history inside the viewport with page keys and explicit wheel events", () => {
     const terminal = new FakeTerminal();
     terminal.rows = 7;
     const app = new ChatLayout(
@@ -733,6 +733,25 @@ describe("TUI rendering", () => {
     const arrowOutput = app.render(60).join("\n");
 
     expect(arrowOutput).toContain("Message 12");
+  });
+
+  it("renders the full transcript in inline scrollback mode", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 7;
+    const app = new ChatLayout(
+      terminal,
+      Array.from({ length: 12 }, (_, index) => systemMessage(`Message ${index + 1}`)),
+      "repo",
+      "model [provider]",
+      { transcriptMode: "inline" }
+    );
+
+    const lines = app.render(60);
+    const output = lines.join("\n");
+
+    expect(output).toContain("Message 1");
+    expect(output).toContain("Message 12");
+    expect(lines.length).toBeGreaterThan(terminal.rows);
   });
 
   it("appends user messages and calls the submit handler", () => {

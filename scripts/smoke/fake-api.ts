@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { type Socket } from "node:net";
 
 interface FakeApiHandle {
   baseURL: string;
@@ -13,6 +14,7 @@ interface FakeApiRequest {
 
 export async function startFakeApi(): Promise<FakeApiHandle> {
   const requests: FakeApiRequest[] = [];
+  const sockets = new Set<Socket>();
   const server = createServer(async (request, response) => {
     if (request.method !== "POST" || !request.url?.endsWith("/chat/completions")) {
       writeJson(response, 404, { error: { message: "Not found" } });
@@ -46,6 +48,10 @@ export async function startFakeApi(): Promise<FakeApiHandle> {
       writeJson(response, 500, { error: { message: error instanceof Error ? error.message : String(error) } });
     }
   });
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+  });
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -63,7 +69,7 @@ export async function startFakeApi(): Promise<FakeApiHandle> {
   return {
     baseURL: `http://127.0.0.1:${address.port}/v1`,
     requests,
-    close: () => closeServer(server),
+    close: () => closeServer(server, sockets),
   };
 }
 
@@ -291,9 +297,20 @@ function writeJson(response: ServerResponse, statusCode: number, value: unknown)
   response.end(JSON.stringify(value));
 }
 
-function closeServer(server: Server): Promise<void> {
+function closeServer(server: Server, sockets: Set<Socket>): Promise<void> {
+  server.unref();
+  server.closeIdleConnections?.();
+  server.closeAllConnections?.();
+  for (const socket of sockets) {
+    socket.destroy();
+  }
+
   return new Promise((resolve, reject) => {
+    const timeout = setTimeout(resolve, 1000);
+    timeout.unref?.();
+
     server.close((error) => {
+      clearTimeout(timeout);
       if (error) {
         reject(error);
       } else {

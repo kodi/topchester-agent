@@ -13,7 +13,7 @@ The current `topchester kb compile` command handles L1 file knowledge:
 - Requires `topchester kb init` to create the knowledge folders first.
 - Reads workspace `.gitignore` files, lists in-scope project files, and skips generated/cache folders such as `.git/`, `node_modules/`, `dist/`, `coverage/`, `topchester-kb/`, `.agents/topchester/`, and `.agents/topchester-kb-cache/`.
 - Queues L1 work at `.agents/topchester-kb-cache/l1-queue.json`.
-- Processes queued files with the configured `kb.summarize` model, or `fallback` when `kb.summarize` is not configured.
+- Processes queued files with the configured `kb.summarize` model, or the `default` model when `kb.summarize` is not configured.
 - Writes the manifest at `topchester-kb/manifest.json`.
 - Writes current L1 file entries under `topchester-kb/l1-files/`.
 - Exits successfully only when every in-scope file has a current L1 entry.
@@ -69,11 +69,19 @@ Model settings are loaded from YAML config files and merged in this order:
 
 Example configs live in `config/example.yaml` and `config/gemini.yaml`. OpenRouter configs expect `OPENROUTER_API_KEY` in the environment; do not commit API keys or other secrets.
 
+The smallest OpenRouter config uses one model for every Topchester purpose:
+
+```yaml
+models:
+  default: openrouter/google/gemini-3.1-flash-lite
+```
+
 ## Docs
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Knowledge System](docs/KNOWLEDGE.md)
 - [CLI Commands](docs/cli.md)
+- [Configuration](docs/config.md)
 - [TUI Guide](docs/tui.md)
 - [Model Configuration](docs/MODEL_CONFIG.md)
 - [Sessions](docs/SESSIONS.md)

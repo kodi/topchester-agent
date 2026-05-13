@@ -27,6 +27,11 @@ import { PromptHistory } from "./prompt-history.js";
 import { formatKnowledgeFooterStatus, formatStatusLine } from "./status.js";
 import { padLines, padThreadLine, stripAnsi } from "./text.js";
 
+export interface ChatLayoutOptions {
+  exitAgent?: () => void;
+  transcriptMode?: "viewport" | "inline";
+}
+
 export class ChatLayout implements Component, Focusable {
   private readonly input = new Input();
   private status = "ready";
@@ -41,14 +46,18 @@ export class ChatLayout implements Component, Focusable {
   private activeSlashSuggestionIndex = 0;
   private threadScrollOffset = 0;
   private readonly promptHistory = new PromptHistory();
+  private readonly exitAgent: () => void;
+  private readonly transcriptMode: "viewport" | "inline";
 
   constructor(
     private readonly terminal: Terminal,
     private readonly messages: ChatMessage[],
     private readonly folderName: string,
     private readonly modelLabel: string,
-    private readonly exitAgent: () => void = () => {}
+    options: (() => void) | ChatLayoutOptions = {}
   ) {
+    this.exitAgent = typeof options === "function" ? options : (options.exitAgent ?? (() => {}));
+    this.transcriptMode = typeof options === "function" ? "viewport" : (options.transcriptMode ?? "viewport");
     this.input.onSubmit = (value) => {
       if (value.trim().length > 0) {
         const message = value.trim();
@@ -143,11 +152,11 @@ export class ChatLayout implements Component, Focusable {
       return;
     }
 
-    if (this.handlePromptHistoryInput(data)) {
+    if (this.handleThreadScrollInput(data)) {
       return;
     }
 
-    if (this.handleThreadScrollInput(data)) {
+    if (this.handlePromptHistoryInput(data)) {
       return;
     }
 
@@ -167,6 +176,15 @@ export class ChatLayout implements Component, Focusable {
     const footerLines = this.getActiveModal() ? this.renderModalHelp(safeWidth) : this.renderPrompt(safeWidth);
     const threadHeight = Math.max(1, this.terminal.rows - footerLines.length);
     const allThreadLines = this.renderThread(safeWidth);
+
+    if (this.transcriptMode === "inline") {
+      this.threadScrollOffset = 0;
+      const threadLines =
+        allThreadLines.length < threadHeight ? padLines(allThreadLines, threadHeight, safeWidth) : allThreadLines;
+
+      return [...threadLines, ...footerLines];
+    }
+
     const maxScrollOffset = Math.max(0, allThreadLines.length - threadHeight);
     this.threadScrollOffset = Math.min(this.threadScrollOffset, maxScrollOffset);
     const end = allThreadLines.length - this.threadScrollOffset;
@@ -317,6 +335,10 @@ export class ChatLayout implements Component, Focusable {
   }
 
   private handleThreadScrollInput(data: string): boolean {
+    if (this.transcriptMode === "inline") {
+      return false;
+    }
+
     const pageSize = Math.max(1, Math.floor(this.terminal.rows / 2));
     const wheel = parseMouseWheel(data);
 

@@ -47,24 +47,46 @@ Sources:
 V0 should load config in this order. Later entries override earlier entries.
 
 1. Built-in defaults.
-2. User config: `~/.config/topchester/config.jsonc`.
-3. Project config: `topchester.jsonc` at the workspace root.
-4. Local project config: `.topchester/config.local.jsonc`.
-5. Explicit config path: `TOPCHESTER_CONFIG=/path/to/config.jsonc`.
+2. User config: `~/.config/topchester/config.yaml`.
+3. Project config: `topchester.yaml` at the workspace root.
+4. Local project config: `.topchester/config.local.yaml`.
+5. Explicit config path: `TOPCHESTER_CONFIG=/path/to/config.yaml`.
 6. CLI flags.
 
 Rationale:
 
-- `~/.config/topchester/config.jsonc` follows the XDG-style pattern used by OpenCode and other terminal tools.
-- `topchester.jsonc` is visible at the repo root, easy to review, and appropriate for team-shared routing such as "use this model for KB scan".
-- `.topchester/config.local.jsonc` is for personal per-repo overrides and should be gitignored by Topchester when created.
+- `~/.config/topchester/config.yaml` follows the XDG-style pattern used by OpenCode and other terminal tools.
+- `topchester.yaml` is visible at the repo root, easy to review, and appropriate for team-shared routing such as "use this model for KB scan".
+- `.topchester/config.local.yaml` is for personal per-repo overrides and should be gitignored by Topchester when created.
 - API keys should not be committed. Config should reference environment variables or future secret-store entries.
 
 Topchester should not store model config inside `topchester-kb/`. The KB is compiled project knowledge; model configuration is runtime policy. KB entries may record which model generated an entry, but they should not define provider credentials or routing.
 
 ## Config Shape
 
-The model section should map task purposes to provider/model refs and define provider connection details.
+The model section has three public slots:
+
+- `default` covers normal agent work and every internal purpose that is not configured more specifically.
+- `fast` covers quick health checks and lightweight agent calls.
+- `kb.summarize` covers knowledge-base summarization.
+
+For OpenRouter, Topchester expands the `openrouter/...` shorthand into the OpenRouter-compatible provider
+defaults and reads the token from `OPENROUTER_API_KEY`.
+
+```yaml
+models:
+  default: openrouter/google/gemini-3.1-flash-lite
+```
+
+Projects that want a dedicated summarizer can set only that slot:
+
+```yaml
+models:
+  default: openrouter/google/gemini-3.1-flash-lite
+  kb.summarize: openrouter/google/gemini-3.1-pro
+```
+
+Internally this normalizes to explicit task-purpose assignments and provider connection details.
 
 ```ts
 type ModelPurpose =
@@ -80,9 +102,10 @@ type ModelRef = `${providerId}/${modelId}`;
 
 interface TopchesterConfig {
   models?: {
-    defaultPurpose?: ModelPurpose;
-    assignments?: Partial<Record<ModelPurpose, ModelRef>>;
-    providers?: Record<string, ModelProviderConfig>;
+    "default"?: ModelRef;
+    "fast"?: ModelRef;
+    "kb.summarize"?: ModelRef;
+    "providers"?: Record<string, ModelProviderConfig>;
   };
 }
 
@@ -111,7 +134,7 @@ type ModelProviderConfig =
 
 ## Tool Calling
 
-Users do not configure tool schemas. Topchester owns the tool registry and builds model-facing schemas from the same tool definitions used by the runtime. Normal config stays focused on providers, API keys, and model assignments.
+Users do not configure tool schemas. Topchester owns the tool registry and builds model-facing schemas from the same tool definitions used by the runtime. Normal config stays focused on providers, API keys, and the three model slots.
 
 For agent turns, Topchester tries native OpenAI-compatible tool calls first. If a provider or model rejects native tools, Topchester falls back to text JSON tool calls. If a model emits a simple XML-style tool call, Topchester can parse that as a compatibility fallback. All paths validate tool args against the registered Zod schemas before any tool runs.
 
@@ -142,84 +165,36 @@ Advanced debugging overrides are available but should stay out of normal example
 - `text-json` — text JSON tool calls only.
 - `text-xml` — XML-style text tool calls only.
 
-Override precedence is: smoke or runtime override, model assignment override, provider override, then Topchester's `auto` default.
+Override precedence is: smoke or runtime override, model slot override, provider override, then Topchester's `auto` default.
 
 ## Example Config
 
-`topchester.jsonc`:
+`topchester.yaml`:
 
-```jsonc
-{
-  "$schema": "https://topchester.com/schemas/config.v1.json",
-  "models": {
-    "defaultPurpose": "agent.primary",
-    "assignments": {
-      "agent.primary": "openrouter/anthropic/claude-sonnet-4.5",
-      "agent.fast": "openrouter/openai/gpt-4.1-mini",
-      "kb.scan": "ollama/qwen2.5-coder:14b",
-      "kb.summarize": "openrouter/google/gemini-2.5-flash",
-      "kb.extract": "openrouter/qwen/qwen3-coder",
-      "fallback": "openrouter/openai/gpt-4.1-mini",
-    },
-    "providers": {
-      "openrouter": {
-        "type": "openai-compatible",
-        "baseURL": "https://openrouter.ai/api/v1",
-        "apiKeyEnv": "OPENROUTER_API_KEY",
-        "supportsStructuredOutputs": true,
-        "headers": {
-          "HTTP-Referer": "https://topchester.com",
-          "X-Title": "Topchester",
-        },
-      },
-      "ollama": {
-        "type": "openai-compatible",
-        "baseURL": "http://localhost:11434/v1",
-        "apiKey": "ollama",
-        "supportsStructuredOutputs": false,
-      },
-      "litellm": {
-        "type": "openai-compatible",
-        "baseURL": "http://localhost:4000/v1",
-        "apiKeyEnv": "LITELLM_API_KEY",
-      },
-    },
-  },
-}
+```yaml
+models:
+  default: openrouter/google/gemini-3.1-flash-lite
+  fast: openrouter/google/gemini-3.1-flash-lite
+  kb.summarize: openrouter/google/gemini-3.1-pro
 ```
 
 User config can define personal defaults:
 
-`~/.config/topchester/config.jsonc`:
+`~/.config/topchester/config.yaml`:
 
-```jsonc
-{
-  "models": {
-    "assignments": {
-      "agent.primary": "openrouter/anthropic/claude-sonnet-4.5",
-      "fallback": "openrouter/openai/gpt-4.1-mini",
-    },
-    "providers": {
-      "openrouter": {
-        "type": "openai-compatible",
-        "baseURL": "https://openrouter.ai/api/v1",
-        "apiKeyEnv": "OPENROUTER_API_KEY",
-      },
-    },
-  },
-}
+```yaml
+models:
+  default: openrouter/anthropic/claude-sonnet-4.5
 ```
 
-Local project config can override a single purpose without touching committed files:
+Local project config can override one of the public slots without touching committed files:
 
 `.topchester/config.local.jsonc`:
 
 ```jsonc
 {
   "models": {
-    "assignments": {
-      "kb.scan": "ollama/qwen2.5-coder:14b",
-    },
+    "kb.summarize": "ollama/qwen2.5-coder:14b",
     "providers": {
       "ollama": {
         "type": "openai-compatible",
@@ -238,9 +213,9 @@ Config files should be deep-merged.
 - Objects merge recursively.
 - Scalars replace earlier values.
 - Arrays replace earlier values unless a field explicitly defines append semantics.
-- `models.assignments` merges by purpose.
+- `models.default`, `models.fast`, and `models.kb.summarize` replace earlier values independently.
 - `models.providers` merges by provider id.
-- Later files may override only one model purpose without copying the full model config.
+- Later files may override only one model slot without copying the full model config.
 
 Example:
 
@@ -248,10 +223,7 @@ Example:
 // user config
 {
   "models": {
-    "assignments": {
-      "agent.primary": "openrouter/anthropic/claude-sonnet-4.5",
-      "fallback": "openrouter/openai/gpt-4.1-mini",
-    },
+    "default": "openrouter/anthropic/claude-sonnet-4.5",
   },
 }
 ```
@@ -260,14 +232,12 @@ Example:
 // project config
 {
   "models": {
-    "assignments": {
-      "kb.scan": "ollama/qwen2.5-coder:14b",
-    },
+    "kb.summarize": "ollama/qwen2.5-coder:14b",
   },
 }
 ```
 
-Resolved config keeps all three assignments.
+Resolved config keeps the user default and uses the project summarizer for knowledge-base summaries.
 
 ## Project Ignore Paths
 
@@ -326,12 +296,13 @@ interface ModelGatewayConfig {
 }
 ```
 
-The config loader should translate the persisted config:
+The config loader translates the persisted config:
 
 ```text
-models.defaultPurpose   -> ModelGatewayConfig.defaultPurpose
-models.assignments      -> ModelGatewayConfig.models
-models.providers        -> ModelGatewayConfig.providers
+models.default      -> ModelGatewayConfig.models["agent.primary"] and unspecified internal purposes
+models.fast         -> ModelGatewayConfig.models["agent.fast"]
+models.kb.summarize -> ModelGatewayConfig.models["kb.summarize"]
+models.providers    -> ModelGatewayConfig.providers
 ```
 
 The first implementation can skip native provider support and only instantiate OpenAI-compatible providers. That is enough for OpenRouter, Ollama, LiteLLM, vLLM, LM Studio, and most proxy services.

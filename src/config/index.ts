@@ -14,6 +14,7 @@ const modelPurposeSchema = z.enum([
   "fallback",
 ]);
 
+const modelPurposes = modelPurposeSchema.options;
 const toolProtocolSchema = z.enum(["auto", "native", "text-json", "text-xml"]);
 
 const providerSchema = z.object({
@@ -33,11 +34,22 @@ const modelAssignmentSchema = z.object({
   toolProtocol: toolProtocolSchema.optional(),
 });
 
+const modelRefSchema = z.union([z.string(), modelAssignmentSchema]);
+
 const providersSchema = z
   .object({
     default: z.string().optional(),
   })
   .catchall(providerSchema.or(z.string()));
+
+const rawModelsSchema = z
+  .object({
+    "default": modelRefSchema.optional(),
+    "fast": modelRefSchema.optional(),
+    "kb.summarize": modelRefSchema.optional(),
+    "providers": providersSchema.optional(),
+  })
+  .strict();
 
 const ignorePathSchema = z
   .string()
@@ -82,7 +94,17 @@ export const topchesterConfigSchema = z.object({
       assignments: z.partialRecord(modelPurposeSchema, modelAssignmentSchema).optional(),
       providers: providersSchema.optional(),
     })
+    .strict()
     .optional(),
+  ignore: z
+    .object({
+      paths: z.array(ignorePathSchema).optional(),
+    })
+    .optional(),
+});
+
+const rawTopchesterConfigSchema = z.object({
+  models: rawModelsSchema.optional(),
   ignore: z
     .object({
       paths: z.array(ignorePathSchema).optional(),
@@ -134,13 +156,141 @@ function readConfigFile(path: string): unknown {
 }
 
 function parseConfigFile(path: string, value: unknown): TopchesterConfig {
-  const parsed = topchesterConfigSchema.safeParse(value ?? {});
+  const raw = rawTopchesterConfigSchema.safeParse(value ?? {});
+
+  if (!raw.success) {
+    throw new Error(`Invalid Topchester config at ${path}: ${raw.error.issues.map(formatZodIssue).join("; ")}`);
+  }
+
+  const parsed = topchesterConfigSchema.safeParse(normalizeConfigInput(raw.data));
 
   if (!parsed.success) {
     throw new Error(`Invalid Topchester config at ${path}: ${parsed.error.issues.map(formatZodIssue).join("; ")}`);
   }
 
   return parsed.data;
+}
+
+function normalizeConfigInput(value: unknown): unknown {
+  if (!isPlainObject(value) || !isPlainObject(value.models)) {
+    return value;
+  }
+
+  const models = { ...value.models };
+  const providers = isPlainObject(models.providers) ? { ...models.providers } : {};
+  const assignments: Record<string, z.infer<typeof modelAssignmentSchema>> = {};
+  const defaultModelRef = normalizeModelRef(
+    models.default,
+    typeof providers.default === "string" ? providers.default : undefined
+  );
+  const defaultProvider = typeof providers.default === "string" ? providers.default : defaultModelRef?.provider;
+  const fastModelRef = normalizeModelRef(models.fast, defaultProvider);
+  const kbSummarizeModelRef = normalizeModelRef(models["kb.summarize"], defaultProvider);
+
+  if (defaultModelRef) {
+    const assignment = modelRefToAssignment(defaultModelRef);
+
+    for (const purpose of modelPurposes) {
+      assignments[purpose] ??= assignment;
+    }
+
+    providers.default ??= defaultModelRef.provider;
+    ensureKnownProvider(providers, defaultModelRef.provider);
+    delete models.default;
+  }
+
+  if (fastModelRef) {
+    assignments["agent.fast"] = modelRefToAssignment(fastModelRef);
+    ensureKnownProvider(providers, fastModelRef.provider);
+    delete models.fast;
+  }
+
+  if (kbSummarizeModelRef) {
+    assignments["kb.summarize"] = modelRefToAssignment(kbSummarizeModelRef);
+    ensureKnownProvider(providers, kbSummarizeModelRef.provider);
+    delete models["kb.summarize"];
+  }
+
+  return {
+    ...value,
+    models: {
+      ...models,
+      assignments,
+      providers,
+    },
+  };
+}
+
+function normalizeModelRef(
+  ref: unknown,
+  defaultProvider: string | undefined
+): { provider?: string; model: string; toolProtocol?: z.infer<typeof toolProtocolSchema> } | undefined {
+  if (typeof ref === "string") {
+    return parseModelRef(ref, defaultProvider);
+  }
+
+  if (!isPlainObject(ref) || typeof ref.name !== "string") {
+    return undefined;
+  }
+
+  return {
+    model: ref.name,
+    ...(typeof ref.provider === "string"
+      ? { provider: ref.provider }
+      : defaultProvider
+        ? { provider: defaultProvider }
+        : {}),
+    ...(typeof ref.toolProtocol === "string" && toolProtocolSchema.safeParse(ref.toolProtocol).success
+      ? { toolProtocol: ref.toolProtocol as z.infer<typeof toolProtocolSchema> }
+      : {}),
+  };
+}
+
+function modelRefToAssignment(ref: {
+  provider?: string;
+  model: string;
+  toolProtocol?: z.infer<typeof toolProtocolSchema>;
+}): z.infer<typeof modelAssignmentSchema> {
+  return {
+    name: ref.model,
+    ...(ref.provider ? { provider: ref.provider } : {}),
+    ...(ref.toolProtocol ? { toolProtocol: ref.toolProtocol } : {}),
+  };
+}
+
+function parseModelRef(ref: string, defaultProvider: string | undefined): { provider?: string; model: string } {
+  if (defaultProvider) {
+    const providerPrefix = `${defaultProvider}/`;
+
+    return ref.startsWith(providerPrefix)
+      ? { provider: defaultProvider, model: ref.slice(providerPrefix.length) }
+      : { provider: defaultProvider, model: ref };
+  }
+
+  const [provider, ...modelParts] = ref.split("/");
+
+  if (provider && modelParts.length > 0) {
+    return { provider, model: modelParts.join("/") };
+  }
+
+  return { model: ref };
+}
+
+function ensureKnownProvider(providers: Record<string, unknown>, provider: string | undefined) {
+  if (provider !== "openrouter" || providers.openrouter !== undefined) {
+    return;
+  }
+
+  providers.openrouter = {
+    type: "openai-compatible",
+    baseURL: "https://openrouter.ai/api/v1",
+    apiKeyEnv: "OPENROUTER_API_KEY",
+    supportsStructuredOutputs: true,
+    headers: {
+      "HTTP-Referer": "https://topchester.com",
+      "X-Title": "Topchester",
+    },
+  };
 }
 
 function deepMerge<T>(base: T, override: T, path: string[] = []): T {

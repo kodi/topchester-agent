@@ -43,7 +43,7 @@ KB status labels:
 - Use `Up` and `Down` in slash command suggestions to choose an item.
 - Press `Tab` while a slash command suggestion is selected to complete it.
 - Use `Up` and `Down` in the normal prompt to browse submitted prompt history.
-- Use `PageUp`, `PageDown`, `Home`, `End`, or the mouse wheel to scroll chat history.
+- Use your terminal scrollback to review chat history with the mouse wheel, touchpad, scrollbar, or terminal shortcuts such as `Shift+PageUp`.
 - Press `Ctrl-C` once to show `press Ctrl-C again to exit.`.
 - Press `Ctrl-C` again right away to exit.
 
@@ -110,6 +110,6 @@ The TUI shows temporary progress while work is running:
 
 ## Terminal Behavior
 
-- The TUI uses the terminal alternate screen.
-- Mouse capture is not enabled, so normal terminal text selection keeps working.
+- The TUI renders inline instead of using the terminal alternate screen, so scrollback stays available.
+- Mouse reporting is not enabled, so touchpad scrolling and text selection stay native to your terminal.
 - Logging is file-only and does not write into the TUI. See [CLI Commands](./cli.md#logging).

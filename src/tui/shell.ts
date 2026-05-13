@@ -10,7 +10,6 @@ import { ChatLayout } from "./layout.js";
 import { type ChatMessage, systemMessage } from "./messages.js";
 import { renderRuntimeEvent } from "./runtime-events.js";
 import { getFolderName, getModelLabel, getStartupThreadMessages, renderStaticLayout } from "./status.js";
-import { enterAlternateScreen, exitAlternateScreen } from "./terminal.js";
 
 export interface TuiShell {
   render(): Promise<void>;
@@ -53,7 +52,6 @@ export class TopchesterTuiShell implements TuiShell {
     }
 
     const terminal = new ProcessTerminal();
-    enterAlternateScreen(terminal);
     const tui = new TUI(terminal, true);
     let didExit = false;
     const exit = () => {
@@ -63,12 +61,14 @@ export class TopchesterTuiShell implements TuiShell {
 
       didExit = true;
       tui.stop();
-      exitAlternateScreen(terminal);
       printExitBanner(session.sessionId, Date.now() - startedAt);
     };
-    const app = new ChatLayout(terminal, messages, folderName, modelLabel, () => {
-      exit();
-      process.exit(0);
+    const app = new ChatLayout(terminal, messages, folderName, modelLabel, {
+      transcriptMode: "inline",
+      exitAgent: () => {
+        exit();
+        process.exit(0);
+      },
     });
     app.setSubmitMessage((message) => {
       void this.submitChatMessage(app, tui, message);

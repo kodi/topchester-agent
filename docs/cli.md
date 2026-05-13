@@ -106,7 +106,7 @@ Starts local development mode.
 Current behavior:
 
 - Prints `Topchester local dev mode`.
-- Prints the workspace, default model purpose, model assignments, providers, development flags, and log file path when available.
+- Prints the workspace, resolved model slots, providers, development flags, and log file path when available.
 
 ## `topchester kb init`
 
@@ -139,7 +139,7 @@ Current behavior:
 - Excludes `topchester.jsonc` from the compile inventory.
 - Applies `ignore.paths` rules from resolved Topchester config after `.gitignore`.
 - Queues listed files in `.agents/topchester-kb-cache/l1-queue.json`.
-- Processes queued files with the configured `kb.summarize` model. If `kb.summarize` is not configured, it uses `fallback` when available.
+- Processes queued files with the configured `kb.summarize` model. If `kb.summarize` is not configured, it uses the `default` model when available.
 - Writes one current L1 JSON entry per successfully processed file under `topchester-kb/l1-files/`.
 - Writes `topchester-kb/manifest.json` with compiler metadata, input counts, ignore counts, and L1 outcome counts.
 - Prints workspace, queue, manifest, count, and final state details.
@@ -178,7 +178,7 @@ Current behavior:
 - Uses the same project file inventory and sync-status logic as `topchester kb status`.
 - Queues only files whose sync status is not `current`.
 - Writes the sync queue to `.agents/topchester-kb-cache/l1-sync-queue.json`.
-- Processes queued files with the configured `kb.summarize` model. If `kb.summarize` is not configured, it uses `fallback` when available.
+- Processes queued files with the configured `kb.summarize` model. If `kb.summarize` is not configured, it uses the `default` model when available.
 - Does not remove existing current L1 entries that are absent from the dirty-file queue.
 - Writes `topchester-kb/manifest.json` with sync metadata and L1 outcome counts.
 - Prints workspace, queue, manifest, count, and final state details.
