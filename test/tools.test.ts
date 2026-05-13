@@ -247,6 +247,30 @@ describe("agent tools", () => {
     });
   });
 
+  it("does not include inspect_command output in debug logs", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-tools-bin-"));
+    const logFile = join(workspace, "tool.log");
+    await writeExecutable(join(bin, "rg"), "printf 'SECRET_INSPECT_OUTPUT\\n'");
+    const call = parseToolCall('{"tool":"inspect_command","args":{"command":"rg needle"}}');
+
+    if (!call) {
+      throw new Error("Expected inspect_command tool call to parse.");
+    }
+
+    await withEnv({ TOPCHESTER_LOG_LEVEL: "debug", TOPCHESTER_LOG_FILE: logFile }, async () => {
+      const { logger } = createTopchesterLogger(workspace);
+
+      await executeToolCall(workspace, call, { logger, pathEnv: bin });
+
+      const logText = await readFile(logFile, "utf8");
+
+      expect(logText).toContain('"tool":"inspect_command"');
+      expect(logText).toContain('"stdoutLength":22');
+      expect(logText).not.toContain("SECRET_INSPECT_OUTPUT");
+    });
+  });
+
   it("reads files scoped to the workspace", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
     await writeFile(join(workspace, "package.json"), '{"name":"real"}\n');

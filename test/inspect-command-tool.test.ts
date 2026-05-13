@@ -193,6 +193,60 @@ describe("inspect_command execution engine", () => {
     expect(result.decision.commands).toEqual(["rg --files docs/plans", "head -2"]);
   });
 
+  it("runs the exact repo-orientation pipeline example", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-inspect-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-inspect-bin-"));
+    await writeExecutable(join(bin, "rg"), "printf 'docs/plans/a.md\\ndocs/plans/b.md\\n'");
+    await writeExecutable(
+      join(bin, "head"),
+      'count=0\nwhile read line && [ $count -lt 20 ]; do\n  echo "$line"\n  count=$((count + 1))\ndone'
+    );
+
+    const result = await inspectWorkspaceCommand(
+      workspace,
+      { command: "rg --files docs/plans | head -20", workdir: ".", timeout_ms: 10_000 },
+      { pathEnv: bin }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("docs/plans/a.md\ndocs/plans/b.md\n");
+  });
+
+  it("runs the exact repo-orientation command-list example", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-inspect-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-inspect-bin-"));
+    await writeExecutable(join(bin, "rg"), "printf 'docs/plans/a.md\\n'");
+    await writeExecutable(
+      join(bin, "head"),
+      'count=0\nwhile read line && [ $count -lt 20 ]; do\n  echo "$line"\n  count=$((count + 1))\ndone'
+    );
+
+    const result = await inspectWorkspaceCommand(
+      workspace,
+      { command: "pwd && rg --files docs/plans | head -20", workdir: ".", timeout_ms: 10_000 },
+      { pathEnv: bin }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain(`${await realpath(workspace)}\n`);
+    expect(result.stdout).toContain("docs/plans/a.md\n");
+  });
+
+  it("runs git status --short as read-only repo metadata", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-inspect-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-inspect-bin-"));
+    await writeExecutable(join(bin, "git"), "printf ' M src/example.ts\\n'");
+
+    const result = await inspectWorkspaceCommand(
+      workspace,
+      { command: "git status --short", workdir: ".", timeout_ms: 10_000 },
+      { pathEnv: bin }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe(" M src/example.ts\n");
+  });
+
   it("applies command-list control flow", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-inspect-"));
     const bin = await mkdtemp(join(tmpdir(), "topchester-inspect-bin-"));

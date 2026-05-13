@@ -453,7 +453,7 @@ Dependencies: Slice 3.
 
 ### Slice 5: Integration Hardening
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Cover real repo-orientation examples and denial cases end to end.
 
