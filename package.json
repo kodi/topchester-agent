@@ -23,6 +23,7 @@
     "hooks:install": "lefthook install",
     "format:check": "pnpm format-check",
     "lint": "oxlint",
+    "smoke": "tsx scripts/smoke/run-smoke.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check": "pnpm typecheck && pnpm format-check && pnpm lint && pnpm test",

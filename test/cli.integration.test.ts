@@ -63,6 +63,9 @@ describe("CLI integration", () => {
     expect(docs).toContain("append to the selected session log");
     expect(docs).toContain("fail before the TUI/static layout opens");
     expect(docs).toContain("V0 does not include a `topchester sessions list` command");
+    expect(docs).toContain("## `topchester run`");
+    expect(docs).toContain("Routes slash-command prompts such as `/kb status`");
+    expect(docs).toContain("Includes a per-run `runId` in structured logs");
   });
 
   it("lists resume as a top-level help option", async () => {
@@ -71,6 +74,15 @@ describe("CLI integration", () => {
     const { stdout } = await runCli(["--help"], fixture.root);
 
     expect(stdout).toContain("--resume <session>");
+  });
+
+  it("lists run as a top-level command", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout } = await runCli(["--help"], fixture.root);
+
+    expect(stdout).toContain("run");
+    expect(stdout).toContain("run one prompt or slash command");
   });
 
   it("prints the package version", async () => {
@@ -330,6 +342,33 @@ describe("CLI integration", () => {
     expect(stdout).toContain("non-clean files: 1\n\nmissing_entry\tsrc/index.ts");
     expect(stdout).toContain("missing_entry\tsrc/index.ts");
     expect(stdout).toContain("----\ntotal non-clean files: 1");
+  });
+
+  it("runs slash commands without opening the TUI and writes run-scoped logs", async () => {
+    const fixture = await makeFixture();
+    await mkdir(join(fixture.workspace, "src"), { recursive: true });
+    await writeFile(join(fixture.workspace, "src", "index.ts"), "export const value = 1;\n");
+
+    const { stdout } = await runCli(
+      ["--workspace", fixture.workspace, "run", "--json", "/kb", "status"],
+      fixture.root,
+      { TOPCHESTER_LOG_LEVEL: "debug" }
+    );
+    const events = stdout
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { type: string; runId?: string; event?: { type?: string } });
+    const runId = events.find((event) => event.runId)?.runId;
+
+    expect(runId).toBeTruthy();
+    expect(events.map((event) => event.type)).toContain("run.started");
+    expect(events.map((event) => event.event?.type)).toContain("knowledge_status");
+    expect(events.map((event) => event.type)).toContain("session.persisted");
+    await expect(readdir(join(fixture.workspace, ".agents", "topchester", "sessions"))).resolves.toHaveLength(1);
+
+    const log = await readFile(join(fixture.workspace, ".agents", "topchester", "logs", "topchester.log"), "utf8");
+    expect(log).toContain(`"runId":"${runId}"`);
+    expect(log).toContain('"event":"slash_command_dispatch"');
   });
 
   it("initializes project knowledge folders", async () => {

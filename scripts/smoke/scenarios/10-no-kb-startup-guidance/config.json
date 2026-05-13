@@ -1,0 +1,7 @@
+{
+  "id": "10-no-kb-startup-guidance",
+  "name": "No KB startup guidance",
+  "description": "Checks startup KB guidance is visible when no KB exists.",
+  "prompt": "What should I do before using project knowledge here?",
+  "expectedOutputContains": ["/kb init"]
+}

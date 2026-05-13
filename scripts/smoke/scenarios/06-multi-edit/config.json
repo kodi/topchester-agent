@@ -1,0 +1,11 @@
+{
+  "id": "06-multi-edit",
+  "name": "Multi edit",
+  "description": "Checks one edit_file call can make multiple exact replacements.",
+  "prompt": "In config.txt, set debug to true and retries to 3.",
+  "requiredToolCalls": ["read_file", "edit_file"],
+  "expectedContent": [
+    { "file": "config.txt", "contains": "debug=true" },
+    { "file": "config.txt", "contains": "retries=3" }
+  ]
+}

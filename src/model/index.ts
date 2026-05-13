@@ -52,6 +52,21 @@ export class ModelGateway {
     this.#config = config;
   }
 
+  withModelOverride(modelId: string, purpose: ModelPurpose = "agent.primary"): ModelGateway {
+    const current = this.#config.models[purpose] ?? this.#config.models.fallback;
+
+    return new ModelGateway({
+      ...this.#config,
+      models: {
+        ...this.#config.models,
+        [purpose]: {
+          ...(current?.provider === undefined ? {} : { provider: current.provider }),
+          name: modelId,
+        },
+      },
+    });
+  }
+
   resolveModel(purpose = this.#config.defaultPurpose): {
     model: LanguageModel;
     providerId: string;

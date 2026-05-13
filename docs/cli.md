@@ -9,6 +9,8 @@ For the interactive terminal UI, keyboard controls, slash commands, and status l
 ```sh
 topchester
 topchester --resume latest
+topchester run "Edit greeting.txt and change Hello to Goodbye."
+topchester run /kb status
 
 topchester kb init
 topchester kb compile
@@ -30,16 +32,17 @@ These options can be used with the top-level command and subcommands:
 
 ## Command Overview
 
-| Command                 | Purpose                                                 |
-| ----------------------- | ------------------------------------------------------- |
-| `topchester`            | Start the interactive coding agent.                     |
-| `topchester dev`        | Print local development startup details.                |
-| `topchester kb init`    | Create the project knowledge folders.                   |
-| `topchester kb compile` | Build current L1 file knowledge for all in-scope files. |
-| `topchester kb dry-run` | Preview which files would be compiled.                  |
-| `topchester kb sync`    | Rebuild L1 entries only for non-clean files.            |
-| `topchester kb reset`   | Delete the local knowledge base and cache.              |
-| `topchester kb status`  | Show files that are not current in the knowledge base.  |
+| Command                 | Purpose                                                  |
+| ----------------------- | -------------------------------------------------------- |
+| `topchester`            | Start the interactive coding agent.                      |
+| `topchester run`        | Run one prompt or slash command without opening the TUI. |
+| `topchester dev`        | Print local development startup details.                 |
+| `topchester kb init`    | Create the project knowledge folders.                    |
+| `topchester kb compile` | Build current L1 file knowledge for all in-scope files.  |
+| `topchester kb dry-run` | Preview which files would be compiled.                   |
+| `topchester kb sync`    | Rebuild L1 entries only for non-clean files.             |
+| `topchester kb reset`   | Delete the local knowledge base and cache.               |
+| `topchester kb status`  | Show files that are not current in the knowledge base.   |
 
 ## `topchester`
 
@@ -65,6 +68,36 @@ Current behavior:
 - V0 does not include a `topchester sessions list` command.
 - In an interactive terminal, the command opens the TUI. See [TUI Guide](./tui.md).
 - In non-interactive output, the command prints a static version of the layout.
+
+## `topchester run`
+
+Runs one prompt without opening the TUI.
+
+Common examples:
+
+```sh
+topchester run "Read data.txt and summarize it."
+topchester run --json "Edit greeting.txt and change Hello to Goodbye."
+topchester run --output-json /tmp/topchester-events.jsonl "Run /kb status"
+topchester run /kb status
+```
+
+Options:
+
+- `--model <model>` — override the `agent.primary` model for this run.
+- `--timeout <ms>` — stop the run after this many milliseconds.
+- `--json` — write JSONL run events to stdout.
+- `--output-json <path>` — write JSONL run events to a file.
+
+Current behavior:
+
+- Creates a project-local session under `.agents/topchester/sessions/`.
+- Emits startup KB status before the prompt runs.
+- Persists user messages and runtime events to the session log.
+- Includes a per-run `runId` in structured logs when `TOPCHESTER_LOG_LEVEL` enables logging.
+- Routes slash-command prompts such as `/kb status` through the same command dispatcher used by the TUI.
+- Does not open the interactive TUI.
+- Exits non-zero on runtime failure or timeout.
 
 ## `topchester dev`
 

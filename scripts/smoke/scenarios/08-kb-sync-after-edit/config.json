@@ -1,0 +1,8 @@
+{
+  "id": "08-kb-sync-after-edit",
+  "name": "KB sync after edit",
+  "description": "Checks edit state followed by slash-command sync routing.",
+  "prompt": ["/kb init", "Change src/value.ts so value is 2.", "/kb sync"],
+  "requiredToolCalls": ["read_file", "edit_file"],
+  "expectedContent": [{ "file": "src/value.ts", "contains": "value = 2" }]
+}

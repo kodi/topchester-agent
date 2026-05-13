@@ -533,7 +533,7 @@ Likely files:
 
 ### Slice 1: Non-Interactive Runtime Command
 
-Status: `[ ]` Not started
+Status: `[x]` Implemented
 
 Goal: Add `topchester run <prompt>` as the automation entrypoint.
 
@@ -566,7 +566,7 @@ Dependencies: none.
 
 ### Slice 2: Scenario Format and Loader
 
-Status: `[ ]` Not started
+Status: `[x]` Implemented
 
 Goal: Add scenario config schema, fixture copying, and assertion helpers.
 
@@ -597,7 +597,7 @@ Dependencies: Slice 1 for real execution, but loader work can begin independentl
 
 ### Slice 3: First Scenario Battery
 
-Status: `[ ]` Not started
+Status: `[x]` Implemented
 
 Goal: Add the first ten scenarios listed in this plan.
 
@@ -625,7 +625,7 @@ Dependencies: Slices 1 and 2.
 
 ### Slice 4: Reports and Local Run Command
 
-Status: `[ ]` Not started
+Status: `[x]` Implemented
 
 Goal: Make smoke results useful for local runs.
 
@@ -653,7 +653,7 @@ Dependencies: Slice 3.
 
 ### Slice 5: Deterministic Fake-Model Companion Tests
 
-Status: `[ ]` Not started
+Status: `[x]` Implemented
 
 Goal: Add fake-model tests for exact tool-loop and event-shape contracts.
 
@@ -752,3 +752,5 @@ pnpm exec tsx scripts/smoke/run-smoke.ts --trials 3 --scenario 05-edit-file
 ```
 
 The smoke suite is ready when a clean checkout can run the full fake API battery locally, and a developer machine with API keys can run the one-trial live battery with artifacts.
+
+Implementation note: the smoke commands above are intentionally not run by the implementation agent. The user runs them locally with the desired API key environment.

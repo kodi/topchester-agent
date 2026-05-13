@@ -21,6 +21,7 @@ import { formatKnowledgeResetResult, resetKnowledgeBase } from "./knowledge/rese
 import { loadSession, loadSessionForAppend, rehydrateSession } from "./session/store.js";
 import { TopchesterTuiShell } from "./tui/index.js";
 import { getTopchesterVersion } from "./version.js";
+import { executeRunCommand } from "./cli/run.js";
 
 const program = new Command();
 
@@ -62,6 +63,38 @@ program
     console.log("Topchester local dev mode");
     printStartupSummary(context);
   });
+
+program
+  .command("run")
+  .description("run one prompt or slash command without opening the TUI")
+  .argument("<prompt...>", "prompt text or slash command")
+  .option("--model <model>", "override the agent.primary model for this run")
+  .option("--timeout <ms>", "timeout for the run in milliseconds", parsePositiveInteger)
+  .option("--json", "write JSONL run events to stdout")
+  .option("--output-json <path>", "write JSONL run events to a file")
+  .action(
+    async (
+      promptParts: string[],
+      options: { model?: string; timeout?: number; json?: boolean; outputJson?: string }
+    ) => {
+      const context = createContextFromOptions();
+      const globalOptions = program.opts<{ resume?: string }>();
+
+      try {
+        await executeRunCommand(context, {
+          prompt: promptParts.join(" "),
+          model: options.model,
+          timeoutMs: options.timeout,
+          json: options.json,
+          outputJson: options.outputJson,
+          resume: globalOptions.resume,
+        });
+      } catch (error) {
+        console.error(formatStartupError(error));
+        process.exitCode = 1;
+      }
+    }
+  );
 
 const kbCommand = program.command("kb").description("knowledge base commands");
 
@@ -224,6 +257,16 @@ function formatStartupError(error: unknown): string {
 
 function collectDevFlag(flag: string, flags: string[]): string[] {
   return [...flags, flag];
+}
+
+function parsePositiveInteger(value: string): number {
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error("Expected a positive integer.");
+  }
+
+  return parsed;
 }
 
 function formatDryRunSyncStatus(status: L1FileScanStatus): string {

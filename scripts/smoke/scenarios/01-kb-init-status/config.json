@@ -1,0 +1,8 @@
+{
+  "id": "01-kb-init-status",
+  "name": "KB init status",
+  "description": "Checks slash command routing and KB folder creation.",
+  "prompt": "/kb init",
+  "requiredToolCalls": [],
+  "expectedFiles": [".agents/topchester/sessions", ".agents/topchester/logs", "topchester-kb"]
+}

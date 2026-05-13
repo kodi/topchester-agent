@@ -1,0 +1,8 @@
+{
+  "id": "03-find-then-read",
+  "name": "Find then read",
+  "description": "Checks path discovery before reading file contents.",
+  "prompt": "Find the file whose name includes runtime notes, read it, and tell me the configured port.",
+  "requiredToolCalls": ["find_file", "read_file"],
+  "expectedOutputContains": ["4173"]
+}
