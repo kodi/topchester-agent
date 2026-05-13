@@ -329,17 +329,17 @@ describe("CLI integration", () => {
     await expect(stat(join(fixture.workspace, "topchester-kb"))).resolves.toMatchObject({});
   });
 
-  it("reports present KB status", async () => {
+  it("reports empty KB status", async () => {
     const fixture = await makeFixture();
     await mkdir(join(fixture.workspace, "topchester-kb"), { recursive: true });
 
     const { stdout } = await runCli(["--workspace", fixture.workspace, "kb", "status"], fixture.root);
 
-    expect(stdout).toContain(`knowledge folder: ${join(fixture.workspace, "topchester-kb")} [ok] (default)`);
+    expect(stdout).toContain(`knowledge folder: ${join(fixture.workspace, "topchester-kb")} [empty] (default)`);
     expect(stdout).toContain(
       `local cache folder: ${join(fixture.workspace, ".agents/topchester-kb-cache")} [missing] (default)`
     );
-    expect(stdout).toContain("state: knowledge base found");
+    expect(stdout).toContain("state: knowledge base folder is empty");
   });
 
   it("resets project knowledge folders", async () => {

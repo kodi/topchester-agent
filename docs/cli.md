@@ -148,7 +148,7 @@ Current behavior:
 
 Shows project knowledge base status.
 
-Status: implemented, simple path checks only.
+Status: implemented, path checks plus knowledge-folder content state.
 
 Current behavior:
 
@@ -159,8 +159,9 @@ Current behavior:
 - Checks the local cache folder path:
   - Default: `.agents/topchester-kb-cache/`
   - Override: `TOPCHESTER_KB_CACHE_DIR`
-- Reports each path as `[ok]`, `[missing]`, or `[not a folder]`.
+- Reports each path as `[ok]`, `[missing]`, or `[not a folder]`; the knowledge folder can also report `[empty]`.
 - Prints one state line:
   - `state: no knowledge base found yet`
   - `state: knowledge base path is not a folder`
+  - `state: knowledge base folder is empty`
   - `state: knowledge base found`

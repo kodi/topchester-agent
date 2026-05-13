@@ -12,6 +12,7 @@ import {
   enterAlternateScreen,
   exitAlternateScreen,
   formatKnowledgeFooterStatus,
+  formatKnowledgePathStatus,
   formatStatusLine,
   getKnowledgeStatusMessages,
   getStartupThreadMessages,
@@ -929,12 +930,70 @@ describe("TUI rendering", () => {
 
     const output = app.render(80).join("\n");
 
-    expect(output).toContain("KB status: /repo/topchester-kb [missing] (default)");
+    expect(output).toContain("KB status:  topchester-kb [missing]");
     expect(output).toContain("⚠️  No KB found:");
     expect(output).toContain("Topchester needs a project knowledge base before normal coding can start.");
     expect(output).toContain("> 1) Create KB now");
     expect(output).toContain("  2) Exit");
     expect(output).not.toContain("Add custom KB setup notes");
+  });
+
+  it("reports an empty KB folder in the startup status message", () => {
+    const messages = getKnowledgeStatusMessages({
+      workspaceRoot: "/repo",
+      kbPath: "/repo/topchester-kb",
+      cachePath: "/repo/.agents/topchester-kb-cache",
+      kbExists: true,
+      kbIsDirectory: true,
+      cacheExists: false,
+      cacheIsDirectory: false,
+      kbContentState: "empty",
+      kbPathSource: "default",
+      cachePathSource: "default",
+    });
+    const app = new ChatLayout(new FakeTerminal(), messages, "repo", "model [provider]");
+
+    const output = app.render(80).join("\n");
+
+    expect(output).toContain("KB status:  topchester-kb [empty]");
+    expect(output).not.toContain("KB status:  topchester-kb [ok] (default)");
+  });
+
+  it("labels custom KB paths in TUI status messages", () => {
+    const messages = getKnowledgeStatusMessages({
+      workspaceRoot: "/repo",
+      kbPath: "/external/topchester-kb",
+      cachePath: "/repo/.agents/topchester-kb-cache",
+      kbExists: true,
+      kbIsDirectory: true,
+      cacheExists: false,
+      cacheIsDirectory: false,
+      kbContentState: "empty",
+      kbPathSource: "env",
+      cachePathSource: "default",
+    });
+    const app = new ChatLayout(new FakeTerminal(), messages, "repo", "model [provider]");
+
+    const output = app.render(80).join("\n");
+
+    expect(output).toContain("KB status:  /external/topchester-kb [empty] (custom)");
+  });
+
+  it("keeps external KB paths absolute in TUI status messages", () => {
+    expect(
+      formatKnowledgePathStatus({
+        workspaceRoot: "/repo",
+        kbPath: "/external/topchester-kb",
+        cachePath: "/repo/.agents/topchester-kb-cache",
+        kbExists: true,
+        kbIsDirectory: true,
+        cacheExists: false,
+        cacheIsDirectory: false,
+        kbContentState: "empty",
+        kbPathSource: "env",
+        cachePathSource: "default",
+      })
+    ).toBe(" /external/topchester-kb [empty]");
   });
 
   it("hides the KB status modal when the dev flag disables it", () => {

@@ -185,14 +185,37 @@ describe("slash commands", () => {
     ]);
   });
 
+  it("formats empty KB status", () => {
+    expect(
+      formatKnowledgeStatus({
+        workspaceRoot: "/repo",
+        kbPath: "/repo/topchester-kb",
+        cachePath: "/repo/.agents/topchester-kb-cache",
+        kbExists: true,
+        kbIsDirectory: true,
+        cacheExists: false,
+        cacheIsDirectory: false,
+        kbContentState: "empty",
+        kbPathSource: "default",
+        cachePathSource: "default",
+      })
+    ).toEqual([
+      "KB status",
+      "workspace: /repo",
+      "knowledge folder: /repo/topchester-kb [empty] (default)",
+      "local cache folder: /repo/.agents/topchester-kb-cache [missing] (default)",
+      "state: knowledge base folder is empty",
+    ]);
+  });
+
   it("executes /kb status against the workspace", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     await mkdir(join(workspace, "topchester-kb"), { recursive: true });
 
     const result = await executeSlashCommand("/kb status", { workspaceRoot: workspace });
 
-    expect(result.messages).toContain(`knowledge folder: ${join(workspace, "topchester-kb")} [ok] (default)`);
-    expect(result.messages).toContain("state: knowledge base found");
+    expect(result.messages).toContain(`knowledge folder: ${join(workspace, "topchester-kb")} [empty] (default)`);
+    expect(result.messages).toContain("state: knowledge base folder is empty");
   });
 
   it("refreshes runtime KB status after KB slash commands", async () => {

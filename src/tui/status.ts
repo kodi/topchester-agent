@@ -1,4 +1,4 @@
-import { basename } from "node:path";
+import { basename, isAbsolute, relative } from "node:path";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type AppContext } from "../app/context.js";
 import { ui } from "../cli/ui.js";
@@ -131,6 +131,34 @@ export function formatKnowledgeFooterStatus(status: KnowledgeStatus): string {
   }
 
   return `${ui.ok("✅")} kb: ${ui.ok("ready")}`;
+}
+
+export function formatKnowledgePathStatus(status: KnowledgeStatus): string {
+  const pathLabel = `${ui.label("")} ${formatWorkspaceRelativePath(status.kbPath, status.workspaceRoot)}`;
+
+  if (!status.kbExists) {
+    return `${pathLabel} ${ui.warn("[missing]")}`;
+  }
+
+  if (!status.kbIsDirectory) {
+    return `${pathLabel} ${ui.error("[not a folder]")}`;
+  }
+
+  if (status.kbContentState !== "ready") {
+    return `${pathLabel} ${ui.label("[empty]")}`;
+  }
+
+  return `${pathLabel} ${ui.ok("[ok]")}`;
+}
+
+function formatWorkspaceRelativePath(path: string, workspaceRoot: string): string {
+  const relativePath = relative(workspaceRoot, path);
+
+  if (relativePath && !relativePath.startsWith("..") && !isAbsolute(relativePath)) {
+    return relativePath;
+  }
+
+  return path;
 }
 
 export function formatPathStatus(path: string, exists: boolean, isDirectory: boolean): string {

@@ -111,7 +111,7 @@ kbCommand
     console.log(ui.heading("KB status"));
     console.log(`${ui.label("workspace")}: ${status.workspaceRoot}`);
     console.log(
-      `${ui.label("knowledge folder")}: ${formatPathStatus(status.kbPath, status.kbExists, status.kbIsDirectory)} ${ui.label(`(${status.kbPathSource})`)}`
+      `${ui.label("knowledge folder")}: ${formatKnowledgePathStatus(status)} ${ui.label(`(${status.kbPathSource})`)}`
     );
     console.log(
       `${ui.label("local cache folder")}: ${formatPathStatus(status.cachePath, status.cacheExists, status.cacheIsDirectory)} ${ui.label(`(${status.cachePathSource})`)}`
@@ -121,6 +121,8 @@ kbCommand
       console.log(`${ui.label("state")}: ${ui.warn("no knowledge base found yet")}`);
     } else if (!status.kbIsDirectory) {
       console.log(`${ui.label("state")}: ${ui.error("knowledge base path is not a folder")}`);
+    } else if (status.kbContentState !== "ready") {
+      console.log(`${ui.label("state")}: ${ui.label("knowledge base folder is empty")}`);
     } else {
       console.log(`${ui.label("state")}: ${ui.ok("knowledge base found")}`);
     }
@@ -207,4 +209,20 @@ function formatPathStatus(path: string, exists: boolean, isDirectory: boolean): 
   }
 
   return `${path} ${ui.ok("[ok]")}`;
+}
+
+function formatKnowledgePathStatus(status: ReturnType<typeof getKnowledgeStatus>): string {
+  if (!status.kbExists) {
+    return `${status.kbPath} ${ui.warn("[missing]")}`;
+  }
+
+  if (!status.kbIsDirectory) {
+    return `${status.kbPath} ${ui.error("[not a folder]")}`;
+  }
+
+  if (status.kbContentState !== "ready") {
+    return `${status.kbPath} ${ui.label("[empty]")}`;
+  }
+
+  return `${status.kbPath} ${ui.ok("[ok]")}`;
 }

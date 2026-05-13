@@ -148,7 +148,7 @@ export function formatKnowledgeStatus(status: KnowledgeStatus): string[] {
   const lines = [
     "KB status",
     `workspace: ${status.workspaceRoot}`,
-    `knowledge folder: ${formatPathStatus(status.kbPath, status.kbExists, status.kbIsDirectory)} (${status.kbPathSource})`,
+    `knowledge folder: ${formatKnowledgePathStatus(status)} (${status.kbPathSource})`,
     `local cache folder: ${formatPathStatus(status.cachePath, status.cacheExists, status.cacheIsDirectory)} (${status.cachePathSource})`,
   ];
 
@@ -156,6 +156,8 @@ export function formatKnowledgeStatus(status: KnowledgeStatus): string[] {
     lines.push("state: no knowledge base found yet");
   } else if (!status.kbIsDirectory) {
     lines.push("state: knowledge base path is not a folder");
+  } else if (status.kbContentState !== "ready") {
+    lines.push("state: knowledge base folder is empty");
   } else {
     lines.push("state: knowledge base found");
   }
@@ -173,4 +175,20 @@ function formatPathStatus(path: string, exists: boolean, isDirectory: boolean): 
   }
 
   return `${path} [ok]`;
+}
+
+function formatKnowledgePathStatus(status: KnowledgeStatus): string {
+  if (!status.kbExists) {
+    return `${status.kbPath} [missing]`;
+  }
+
+  if (!status.kbIsDirectory) {
+    return `${status.kbPath} [not a folder]`;
+  }
+
+  if (status.kbContentState !== "ready") {
+    return `${status.kbPath} [empty]`;
+  }
+
+  return `${status.kbPath} [ok]`;
 }

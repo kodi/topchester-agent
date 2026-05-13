@@ -11,6 +11,7 @@ export { getKnowledgeStatusMessages, renderRuntimeEvent, renderRuntimeEvents } f
 export { TopchesterTuiShell, type TuiShell } from "./shell.js";
 export {
   formatKnowledgeFooterStatus,
+  formatKnowledgePathStatus,
   formatPathStatus,
   formatStatusLine,
   getFolderName,
