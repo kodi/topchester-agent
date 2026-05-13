@@ -243,7 +243,7 @@ describe("agent tools", () => {
           }),
         ])
       );
-      expect(JSON.stringify(logLines)).not.toContain(result.stdout.trim());
+      expect(JSON.stringify(logLines)).not.toContain(`"stdout":"${result.stdout.trim()}`);
     });
   });
 

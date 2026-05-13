@@ -240,8 +240,10 @@ function runSpawnedCommand(
   context: { cwd: string; pathEnv: string; timeoutMs: number }
 ): Promise<CommandExecutionResult> {
   return new Promise((resolveCommand) => {
+    const detached = process.platform !== "win32";
     const child = spawn(command, args, {
       cwd: context.cwd,
+      detached,
       env: {
         ...process.env,
         PATH: context.pathEnv,
@@ -249,7 +251,7 @@ function runSpawnedCommand(
         GIT_PAGER: "cat",
         LESS: "-F -X",
       },
-      stdio: ["pipe", "pipe", "pipe"],
+      stdio: [input.length > 0 ? "pipe" : "ignore", "pipe", "pipe"],
     });
     let stdout = "";
     let stderr = "";
@@ -258,20 +260,20 @@ function runSpawnedCommand(
     let timedOut = false;
     const timeout = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGTERM");
+      killChild(child.pid, detached, "SIGTERM");
       setTimeout(() => {
         if (!settled) {
-          child.kill("SIGKILL");
+          killChild(child.pid, detached, "SIGKILL");
         }
       }, 250).unref();
     }, context.timeoutMs);
 
-    child.stdout.on("data", (chunk: Buffer) => {
+    child.stdout?.on("data", (chunk: Buffer) => {
       const next = appendBoundedOutput(stdout, stripUnsafeControlCharacters(chunk.toString("utf8")));
       stdout = next.output;
       truncated = truncated || next.truncated;
     });
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr?.on("data", (chunk: Buffer) => {
       const next = appendBoundedOutput(stderr, stripUnsafeControlCharacters(chunk.toString("utf8")));
       stderr = next.output;
       truncated = truncated || next.truncated;
@@ -299,8 +301,33 @@ function runSpawnedCommand(
       });
     });
 
-    child.stdin.end(input);
+    if (child.stdin) {
+      child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+        if (error.code !== "EPIPE") {
+          const next = appendBoundedOutput(stderr, `${error.message}\n`);
+          stderr = next.output;
+          truncated = truncated || next.truncated;
+        }
+      });
+      child.stdin.end(input);
+    }
   });
+}
+
+function killChild(pid: number | undefined, detached: boolean, signal: NodeJS.Signals): void {
+  if (pid === undefined) {
+    return;
+  }
+
+  try {
+    process.kill(detached ? -pid : pid, signal);
+  } catch {
+    try {
+      process.kill(pid, signal);
+    } catch {
+      // The process may already have exited.
+    }
+  }
 }
 
 async function resolveWorkspaceCwd(workspaceRoot: string, workdir: string): Promise<string> {

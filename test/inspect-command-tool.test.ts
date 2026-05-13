@@ -284,7 +284,7 @@ describe("inspect_command execution engine", () => {
   it("times out long-running commands", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-inspect-"));
     const bin = await mkdtemp(join(tmpdir(), "topchester-inspect-bin-"));
-    await writeExecutable(join(bin, "rg"), "sleep 2\nprintf 'late\\n'");
+    await writeNodeExecutable(join(bin, "rg"), "setTimeout(() => console.log('late'), 2_000);\n");
 
     const result = await inspectWorkspaceCommand(
       workspace,
@@ -320,5 +320,10 @@ describe("inspect_command execution engine", () => {
 
 async function writeExecutable(path: string, body: string): Promise<void> {
   await writeFile(path, `#!/bin/sh\n${body}\n`);
+  await chmod(path, 0o755);
+}
+
+async function writeNodeExecutable(path: string, body: string): Promise<void> {
+  await writeFile(path, `#!${process.execPath}\n${body}`);
   await chmod(path, 0o755);
 }
