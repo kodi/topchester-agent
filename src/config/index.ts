@@ -211,6 +211,8 @@ function normalizeConfigInput(value: unknown): unknown {
     delete models["kb.summarize"];
   }
 
+  applyKnownProviderDefaults(providers);
+
   return {
     ...value,
     models: {
@@ -291,6 +293,31 @@ function ensureKnownProvider(providers: Record<string, unknown>, provider: strin
       "X-Title": "Topchester",
     },
   };
+}
+
+function applyKnownProviderDefaults(providers: Record<string, unknown>) {
+  for (const [providerId, provider] of Object.entries(providers)) {
+    if (!isPlainObject(provider) || provider.type !== "openai-compatible" || typeof provider.baseURL !== "string") {
+      continue;
+    }
+
+    if (isOpenAIProvider(providerId, provider.baseURL)) {
+      provider.supportsStructuredOutputs ??= true;
+      provider.toolProtocol ??= "native";
+    }
+  }
+}
+
+function isOpenAIProvider(providerId: string, baseURL: string): boolean {
+  const normalizedProvider = providerId.toLowerCase();
+  const normalizedBaseURL = baseURL.toLowerCase();
+
+  return (
+    normalizedProvider === "openai" ||
+    normalizedProvider === "gpt" ||
+    normalizedProvider.includes("openai") ||
+    normalizedBaseURL.includes("api.openai.com")
+  );
 }
 
 function deepMerge<T>(base: T, override: T, path: string[] = []): T {

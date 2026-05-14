@@ -79,6 +79,7 @@ describe("inspect_command parser and policy", () => {
       "rg --files docs/plans | head -20",
       "grep -R -n needle src",
       "find . -maxdepth 2 -type f -print",
+      "find . -maxdepth 2 -type f | sed 's#^./##' | sort | head -50",
       "fd runtime src",
       "cat package.json",
       "head -20 docs/cli.md",
@@ -122,6 +123,9 @@ describe("inspect_command parser and policy", () => {
       "rg --pre needle",
       "rg -z needle",
       "fd --exec cat",
+      "sed -i 's/a/b/' docs/guide.md",
+      "sed 's/a/b/w out.txt' docs/guide.md",
+      "sed 's/a/b/e' docs/guide.md",
     ]) {
       expect(
         validateInspectCommand({ command, workdir: ".", timeout_ms: 10_000 }, policyContext()),
@@ -230,6 +234,28 @@ describe("inspect_command execution engine", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain(`${await realpath(workspace)}\n`);
     expect(result.stdout).toContain("docs/plans/a.md\n");
+  });
+
+  it("runs a safe sed filter in an inspect pipeline", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-inspect-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-inspect-bin-"));
+    await writeExecutable(join(bin, "find"), "printf './docs/guide.md\\n./docs/notes.md\\n'");
+    await writeExecutable(join(bin, "sed"), "while read line; do printf '%s\\n' \"${line#./}\"; done");
+    await writeExecutable(join(bin, "sort"), 'while read line; do echo "$line"; done');
+    await writeExecutable(
+      join(bin, "head"),
+      'count=0\nwhile read line && [ $count -lt 50 ]; do\n  echo "$line"\n  count=$((count + 1))\ndone'
+    );
+
+    const result = await inspectWorkspaceCommand(
+      workspace,
+      { command: "find . -maxdepth 2 -type f | sed 's#^./##' | sort | head -50", workdir: ".", timeout_ms: 10_000 },
+      { pathEnv: bin }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("docs/guide.md\ndocs/notes.md\n");
+    expect(result.decision.commands).toContain("sed s#^./##");
   });
 
   it("runs git status --short as read-only repo metadata", async () => {

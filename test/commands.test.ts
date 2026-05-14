@@ -594,6 +594,9 @@ describe("slash commands", () => {
       ])
     );
     expect(prompts).toHaveLength(4);
+    expect(prompts[1]).toContain(
+      "find_file results are paths only; if the user asked to read or answer from file contents, call read_file on the relevant path before answering. Do not ask the user to provide the read_file result or permission."
+    );
   });
 
   it("keeps using text JSON for the rest of a turn after native tools are rejected", async () => {

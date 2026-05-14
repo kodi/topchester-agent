@@ -40,7 +40,8 @@ const ignoredDirectories = new Set([
 
 export const findFileTool = defineTool({
   name: "find_file",
-  description: "Find files by fuzzy name inside the workspace.",
+  description:
+    "Find files by fuzzy name inside the workspace. Results are file paths, not file contents; use read_file next when the user needs contents.",
   prompt:
     'find_file: find existing files by fuzzy path or filename inside the workspace; matches may appear in the middle of a filename, and results are file paths, not file contents. To use it, reply with only JSON: {"tool":"find_file","args":{"query":"runtime"}}',
   argsSchema: findFileArgsSchema,

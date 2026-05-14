@@ -154,6 +154,23 @@ models:
       apiKeyEnv: LITELLM_API_KEY
 ```
 
+## Example 8: Local GPT Or OpenAI Proxy
+
+Providers named `openai` automatically use OpenAI-native tool calls and structured-output support. You only need to provide the model and endpoint.
+
+```yaml
+models:
+  default:
+    name: "gpt-5.5(low)"
+    provider: openai
+  providers:
+    default: openai
+    openai:
+      type: openai-compatible
+      baseURL: http://localhost:8317/v1
+      apiKey: dummy-not-used
+```
+
 ## Advanced Options
 
 Each provider supports:

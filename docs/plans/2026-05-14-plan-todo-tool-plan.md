@@ -259,7 +259,7 @@ If resume hydration currently happens outside the layout, add the smallest adapt
 - `src/agent/task-plan.ts`
 - `src/agent/tools/plan-todo.ts`
 - Focused tests if the current test files become too broad, for example `test/task-plan.test.ts`.
-- Optional smoke scenario such as `scripts/smoke/scenarios/10-plan-todo/`.
+- Optional smoke scenario such as `scripts/smoke/scenarios/15-plan-todo/`.
 
 ## Files To Change
 
@@ -564,7 +564,7 @@ Why here: The alpha tool gap plan treats visible planning as a product trust fea
 This slice should implement:
 
 - Add a fake API response path in `scripts/smoke/fake-api.ts` for a multi-step scenario that uses `plan_todo`.
-- Add `scripts/smoke/scenarios/10-plan-todo/config.json` and any small fixture files needed.
+- Add `scripts/smoke/scenarios/15-plan-todo/config.json` and any small fixture files needed.
 - Require `plan_todo` in `requiredToolCalls`.
 - If existing smoke assertions cannot inspect task-plan events, extend the report minimally with:
   - `taskPlanUpdateCount`
@@ -579,12 +579,12 @@ Expected output:
 
 - Fake API smoke verifies that visible planning can run through the real agent loop and CLI path.
 - TUI rendering confidence still comes from `test/tui.render.test.ts`, not this smoke slice.
-- Added `scripts/smoke/scenarios/10-plan-todo/`, fake API responses, task-plan smoke assertions, and compact report fields.
+- Added `scripts/smoke/scenarios/15-plan-todo/`, fake API responses, task-plan smoke assertions, and compact report fields.
 
 Verification:
 
 ```sh
-pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --scenario 10-plan-todo --trials 1
+pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --scenario 15-plan-todo --trials 1
 pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --trials 1
 pnpm run typecheck
 ```
@@ -592,7 +592,7 @@ pnpm run typecheck
 Actual verification:
 
 ```sh
-node_modules/.bin/tsx scripts/smoke/run-smoke.ts --fake-api --scenario 10-plan-todo --trials 1
+node_modules/.bin/tsx scripts/smoke/run-smoke.ts --fake-api --scenario 15-plan-todo --trials 1
 ```
 
 Optional live confidence check when provider keys are available:

@@ -55,7 +55,7 @@ Useful options:
 - `mise run smoke-live <config> <trials> <model> <timeout_ms>` runs the live-model battery.
 - `--config <path>` passes an explicit Topchester config file to live-model runs.
 - `--timeout <ms>` overrides each scenario prompt timeout.
-- `--scenario <id>` runs one scenario.
+- `--scenario <id>` runs one scenario; repeat it or pass comma-separated ids/prefixes to run a slice.
 - `--trials <n>` repeats each selected scenario.
 - `--parallel <n>` limits concurrent trials.
 - `--output <path>` chooses the report path.

@@ -370,6 +370,66 @@ describe("Topchester config loading", () => {
     });
   });
 
+  it("infers native OpenAI tool defaults for OpenAI-compatible providers named openai", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      join(workspace, "topchester.yaml"),
+      [
+        "models:",
+        "  default:",
+        "    name: gpt-5.5(low)",
+        "    provider: openai",
+        "  providers:",
+        "    default: openai",
+        "    openai:",
+        "      type: openai-compatible",
+        "      baseURL: http://localhost:8317/v1",
+        "      apiKey: dummy-not-used",
+      ].join("\n")
+    );
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(config.models?.providers?.openai).toMatchObject({
+      type: "openai-compatible",
+      baseURL: "http://localhost:8317/v1",
+      apiKey: "dummy-not-used",
+      supportsStructuredOutputs: true,
+      toolProtocol: "native",
+    });
+  });
+
+  it("preserves explicit OpenAI-compatible provider capability overrides", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      join(workspace, "topchester.yaml"),
+      [
+        "models:",
+        "  default:",
+        "    name: gpt-5.5(low)",
+        "    provider: openai",
+        "  providers:",
+        "    openai:",
+        "      type: openai-compatible",
+        "      baseURL: https://api.openai.com/v1",
+        "      apiKeyEnv: OPENAI_API_KEY",
+        "      supportsStructuredOutputs: false",
+        "      toolProtocol: auto",
+      ].join("\n")
+    );
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(config.models?.providers?.openai).toMatchObject({
+      supportsStructuredOutputs: false,
+      toolProtocol: "auto",
+    });
+  });
+
   it("supports a full config with all public model and provider options", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const workspace = join(root, "workspace");

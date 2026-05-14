@@ -170,7 +170,10 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         await emit(agentEvent.taskPlan(toolResult.plan));
       }
       afterTool = executableToolCall.tool;
-      nextPrompt = `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(result.toolProtocol)}`;
+      nextPrompt = `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(
+        result.toolProtocol,
+        toolResult
+      )}`;
     }
 
     await emit(
@@ -460,15 +463,27 @@ function formatToolResultForPrompt(result: ToolResult): string {
   return [`Tool result from ${result.tool}${path}${command}:${warning}`, "```", result.content, "```"].join("\n");
 }
 
-function formatContinuationInstruction(protocol: ToolProtocol): string {
+function formatContinuationInstruction(protocol: ToolProtocol, result: ToolResult): string {
   const toolInstruction =
     protocol === "text-xml"
       ? "If another tool is needed, reply with only one XML tool call."
       : protocol === "text-json"
         ? "If another tool is needed, reply with only that tool JSON."
         : "If another tool is needed, use the available tool calling path.";
+  const resultInstruction =
+    result.tool === "find_file"
+      ? "find_file results are paths only; if the user asked to read or answer from file contents, call read_file on the relevant path before answering. Do not ask the user to provide the read_file result or permission."
+      : "";
 
-  return `Continue the user's request using the tool result above and the visible plan when one is active. Update plan_todo after major progress changes. ${toolInstruction} Otherwise answer the user. Do not guess.`;
+  return [
+    "Continue the user's request using the tool result above and the visible plan when one is active.",
+    resultInstruction,
+    "Update plan_todo after major progress changes.",
+    toolInstruction,
+    "Otherwise answer the user. Do not guess.",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function formatToolCallMessage(call: ToolCall, result?: ToolResult): string {

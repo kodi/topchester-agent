@@ -79,7 +79,7 @@ const scenarioSchema = z.object({
 type Scenario = z.infer<typeof scenarioSchema>;
 
 interface CliOptions {
-  scenario?: string;
+  scenarios: string[];
   trials: number;
   model?: string;
   configPath?: string;
@@ -156,7 +156,7 @@ try {
     fakeApi = await startFakeApi();
   }
 
-  const scenarios = await loadScenarios(options.scenario);
+  const scenarios = await loadScenarios(options.scenarios);
 
   if (options.dryRun) {
     console.log(`loaded ${scenarios.length} smoke scenario${scenarios.length === 1 ? "" : "s"}`);
@@ -514,17 +514,13 @@ async function expectFileContent(
   }
 }
 
-async function loadScenarios(filter: string | undefined): Promise<Scenario[]> {
+async function loadScenarios(filters: readonly string[]): Promise<Scenario[]> {
   const entries = await readdir(scenariosRoot, { withFileTypes: true });
-  const scenarios: Scenario[] = [];
+  const allScenarios: Scenario[] = [];
 
   for (const entry of entries
     .filter((candidate) => candidate.isDirectory())
     .sort((left, right) => left.name.localeCompare(right.name))) {
-    if (filter && entry.name !== filter) {
-      continue;
-    }
-
     const configPath = join(scenariosRoot, entry.name, "config.json");
     const raw = JSON.parse(await readFile(configPath, "utf8")) as unknown;
     const scenario = scenarioSchema.parse(raw);
@@ -533,14 +529,49 @@ async function loadScenarios(filter: string | undefined): Promise<Scenario[]> {
       throw new Error(`Scenario ${entry.name} config id must match folder name.`);
     }
 
-    scenarios.push(scenario);
+    allScenarios.push(scenario);
   }
 
-  if (scenarios.length === 0) {
-    throw new Error(filter ? `No scenario found for ${filter}.` : "No smoke scenarios found.");
+  if (allScenarios.length === 0) {
+    throw new Error("No smoke scenarios found.");
   }
 
-  return scenarios;
+  if (filters.length === 0) {
+    return allScenarios;
+  }
+
+  const selectedIds = resolveScenarioFilters(
+    filters,
+    allScenarios.map((scenario) => scenario.id)
+  );
+  const selected = allScenarios.filter((scenario) => selectedIds.has(scenario.id));
+
+  return selected;
+}
+
+function resolveScenarioFilters(filters: readonly string[], scenarioIds: readonly string[]): Set<string> {
+  const selected = new Set<string>();
+
+  for (const filter of filters) {
+    if (scenarioIds.includes(filter)) {
+      selected.add(filter);
+      continue;
+    }
+
+    const matches = scenarioIds.filter((scenarioId) => scenarioId.startsWith(filter));
+
+    if (matches.length === 0) {
+      throw new Error(`No scenario found for ${filter}.`);
+    }
+
+    if (matches.length > 1) {
+      throw new Error(`Scenario filter ${filter} is ambiguous: ${matches.join(", ")}.`);
+    }
+
+    selected.add(matches[0]!);
+  }
+
+  return selected;
 }
 
 async function copyTemplate(source: string, target: string): Promise<void> {
@@ -730,6 +761,7 @@ function git(cwd: string, args: string[]): Promise<{ stdout: string; stderr: str
 
 function parseArgs(args: string[]): CliOptions {
   const options: CliOptions = {
+    scenarios: [],
     trials: 1,
     fakeApi: false,
     keepWorkspaces: false,
@@ -741,7 +773,7 @@ function parseArgs(args: string[]): CliOptions {
     const arg = args[index]!;
 
     if (arg === "--scenario") {
-      options.scenario = readArgValue(args, ++index, arg);
+      options.scenarios.push(...parseScenarioFilter(readArgValue(args, ++index, arg)));
     } else if (arg === "--trials") {
       options.trials = parsePositiveInteger(readArgValue(args, ++index, arg), arg);
     } else if (arg === "--model") {
@@ -776,6 +808,13 @@ function parseToolProtocol(value: string, option: string): NonNullable<CliOption
   }
 
   throw new Error(`${option} must be one of: auto, native, text-json, text-xml.`);
+}
+
+function parseScenarioFilter(value: string): string[] {
+  return value
+    .split(",")
+    .map((scenario) => scenario.trim())
+    .filter(Boolean);
 }
 
 async function runWithConcurrency<T, R>(

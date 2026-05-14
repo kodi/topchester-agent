@@ -37,6 +37,8 @@ const READ_ONLY_COMMANDS = new Set([
   "find",
   "fd",
   "cat",
+  "sed",
+  "sort",
   "head",
   "tail",
   "wc",
@@ -234,6 +236,8 @@ function validateSimpleCommand(
       return validateFindCommand(command, context);
     case "fd":
       return validateGenericCommandArgs(command, context, FD_OPTIONS_WITH_VALUES);
+    case "sed":
+      return validateSedCommand(command, context);
     default:
       return validateGenericCommandArgs(command, context, COMMON_OPTIONS_WITH_VALUES);
   }
@@ -271,6 +275,131 @@ function validateFindCommand(
   context: { workspaceRoot: string; cwd: string }
 ): { allowed: true } | { allowed: false; reason: string } {
   return validateGenericCommandArgs(command, context, FIND_OPTIONS_WITH_VALUES);
+}
+
+function validateSedCommand(
+  command: InspectSimpleCommand,
+  context: { workspaceRoot: string; cwd: string }
+): { allowed: true } | { allowed: false; reason: string } {
+  let sawScript = false;
+
+  for (let index = 0; index < command.args.length; index += 1) {
+    const arg = command.args[index] ?? "";
+
+    if (arg === "-i" || arg.startsWith("-i") || arg === "--in-place" || arg.startsWith("--in-place=")) {
+      return { allowed: false, reason: "inspect_command rejected 'sed' because in-place edits are unsafe." };
+    }
+
+    if (arg === "-e" || arg === "--expression") {
+      const script = command.args[index + 1];
+
+      if (!script) {
+        return { allowed: false, reason: "inspect_command rejected 'sed' because -e requires a script." };
+      }
+
+      const scriptResult = validateSedScript(script);
+
+      if (!scriptResult.allowed) {
+        return scriptResult;
+      }
+
+      sawScript = true;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "-n" || arg === "--quiet" || arg === "--silent" || /^-[Erun]+$/.test(arg)) {
+      continue;
+    }
+
+    if (arg.startsWith("-")) {
+      return { allowed: false, reason: `inspect_command rejected 'sed' because '${arg}' is not allowed.` };
+    }
+
+    if (!sawScript && looksLikeSedScript(arg)) {
+      const scriptResult = validateSedScript(arg);
+
+      if (!scriptResult.allowed) {
+        return scriptResult;
+      }
+
+      sawScript = true;
+      continue;
+    }
+
+    const scoped = resolveWorkspacePath(context.workspaceRoot, arg, context.cwd);
+
+    if (!scoped.allowed) {
+      return { allowed: false, reason: scoped.reason };
+    }
+  }
+
+  return sawScript
+    ? { allowed: true }
+    : { allowed: false, reason: "inspect_command rejected 'sed' because it requires an inline script." };
+}
+
+function looksLikeSedScript(arg: string): boolean {
+  return arg.startsWith("s") || /^(\d+|\$)?(,(\d+|\$))?[pdq]$/.test(arg);
+}
+
+function validateSedScript(script: string): { allowed: true } | { allowed: false; reason: string } {
+  if (script.includes("\n")) {
+    return { allowed: false, reason: "inspect_command rejected 'sed' because multiline scripts are unsafe." };
+  }
+
+  if (/^(\d+|\$)?(,(\d+|\$))?[pdq]$/.test(script)) {
+    return { allowed: true };
+  }
+
+  if (!script.startsWith("s") || script.length < 4) {
+    return {
+      allowed: false,
+      reason: "inspect_command rejected 'sed' because only simple read-only scripts are allowed.",
+    };
+  }
+
+  const delimiter = script[1] ?? "";
+
+  if (!delimiter || /[A-Za-z0-9\\\n]/.test(delimiter)) {
+    return { allowed: false, reason: "inspect_command rejected 'sed' because the substitution delimiter is invalid." };
+  }
+
+  const delimiters = findUnescapedDelimiterIndexes(script, delimiter);
+
+  if (delimiters.length < 3) {
+    return { allowed: false, reason: "inspect_command rejected 'sed' because the substitution script is incomplete." };
+  }
+
+  const flags = script.slice(delimiters[2]! + 1);
+
+  if (/[^gIpM0-9]/.test(flags) || /[ew]/.test(flags)) {
+    return { allowed: false, reason: "inspect_command rejected 'sed' because substitution flags are unsafe." };
+  }
+
+  return { allowed: true };
+}
+
+function findUnescapedDelimiterIndexes(script: string, delimiter: string): number[] {
+  const indexes: number[] = [];
+
+  for (let index = 0; index < script.length; index += 1) {
+    if (script[index] !== delimiter) {
+      continue;
+    }
+
+    let slashCount = 0;
+
+    for (let back = index - 1; back >= 0 && script[back] === "\\"; back -= 1) {
+      slashCount += 1;
+    }
+
+    if (slashCount % 2 === 0) {
+      indexes.push(index);
+    }
+  }
+
+  return indexes;
 }
 
 function validateGenericCommandArgs(
