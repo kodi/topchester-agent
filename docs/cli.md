@@ -68,6 +68,9 @@ Current behavior:
 - V0 does not include a `topchester sessions list` command.
 - In an interactive terminal, the command opens the TUI. See [TUI Guide](./tui.md).
 - In non-interactive output, the command prints a static version of the layout.
+- The coding loop can use workspace-scoped file tools: `read_file`, `list_files`, `grep`, `find_file`, `edit_file`, `write_file`, and `inspect_command`.
+- `write_file` creates new UTF-8 files by default. It can create parent directories when explicitly requested, marks the file dirty-known and `needs_sync`, and fails if the target file already exists unless `overwrite: true` is paired with the current `expected_hash`.
+- `edit_file` remains the targeted edit tool for existing files; `inspect_command` remains read-only orientation and is not used for file creation.
 
 ## `topchester run`
 
@@ -227,8 +230,8 @@ topchester kb sync
 
 - `TOPCHESTER_LOG_LEVEL=debug` writes structured JSON logs to `.agents/topchester/logs/topchester.log`.
 - `TOPCHESTER_LOG_FILE=<path>` overrides the log file path. Relative paths are resolved from the workspace root.
-- `debug` logs tool calls, tool result metadata, edit metadata, command metadata, and model response metadata.
-- `debug` does not log full old/new edit text or full `inspect_command` output.
+- `debug` logs tool calls, tool result metadata, edit/write metadata, command metadata, and model response metadata.
+- `debug` does not log full old/new edit text, full `write_file` content, or full `inspect_command` output.
 - `trace` also logs full model and tool response text.
 - Logging is file-only and does not write to the TUI.
 

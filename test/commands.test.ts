@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -411,6 +411,58 @@ describe("slash commands", () => {
     expect(prompts[1]).toContain("-enabled=false");
     expect(prompts[1]).toContain("+enabled=true");
     expect(prompts[1]).not.toContain("Edited example.txt");
+  });
+
+  it("formats write_file tool calls and results for the final model prompt", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          return prompts.length === 1
+            ? {
+                text: JSON.stringify({
+                  tool: "write_file",
+                  args: {
+                    path: "test/example.test.ts",
+                    content: "it('works', () => {});\n",
+                    create_parent_dirs: true,
+                  },
+                }),
+                providerId: "fake",
+                modelId: "fake-agent",
+                purpose: "agent.primary" as const,
+              }
+            : {
+                text: "Created test/example.test.ts.",
+                providerId: "fake",
+                modelId: "fake-agent",
+                purpose: "agent.primary" as const,
+              };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "add a test");
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "tool_call", label: "write_file: test/example.test.ts (created +1)" }),
+        expect.objectContaining({ type: "message", role: "assistant", text: "Created test/example.test.ts." }),
+      ])
+    );
+    expect(await readFile(join(workspace, "test", "example.test.ts"), "utf8")).toBe("it('works', () => {});\n");
+    expect(prompts[1]).toContain('Tool result from write_file "test/example.test.ts":');
+    expect(prompts[1]).toContain("after_hash: sha256:");
+    expect(prompts[1]).toContain("bytes_written: 23");
+    expect(prompts[1]).toContain("line_count: 1");
+    expect(prompts[1]).toContain("kb_state: needs_sync");
+    expect(prompts[1]).toContain("created_parent_dirs: test");
+    expect(prompts[1]).toContain("summary: created +1");
+    expect(prompts[1]).not.toContain("it('works'");
   });
 
   it("continues executing tool calls until the model gives a final answer", async () => {

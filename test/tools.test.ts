@@ -15,9 +15,11 @@ import {
   parseToolCallWithSource,
   readWorkspaceFile,
   toAiSdkToolSet,
+  writeWorkspaceFile,
 } from "../src/agent/tools.js";
 import { toolRegistry } from "../src/agent/tools/registry.js";
 import { editFileArgsSchema } from "../src/agent/tools/edit-file.js";
+import { writeFileArgsSchema } from "../src/agent/tools/write-file.js";
 import { getChatSystemPrompt } from "../src/agent/prompts.js";
 import { createTopchesterLogger } from "../src/logging/index.js";
 import { clearSessionOverlay, getSessionOverlayState } from "../src/knowledge/session-overlay.js";
@@ -76,6 +78,21 @@ describe("agent tools", () => {
         path: "src/example.ts",
         expected_hash: "sha256:abc",
         edits: [{ old_text: "off", new_text: "on" }],
+      },
+    });
+  });
+
+  it("parses write_file tool calls from JSON", () => {
+    expect(
+      parseToolCall(
+        '{"tool":"write_file","args":{"path":"test/example.test.ts","content":"it(\\"works\\", () => {});\\n","create_parent_dirs":true}}'
+      )
+    ).toEqual({
+      tool: "write_file",
+      args: {
+        path: "test/example.test.ts",
+        content: 'it("works", () => {});\n',
+        create_parent_dirs: true,
       },
     });
   });
@@ -201,6 +218,7 @@ describe("agent tools", () => {
       'grep: search text inside file contents in the workspace; output lines are the files containing the matched text, and paths mentioned inside those lines are not confirmed files unless checked with find_file or read_file. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
       'find_file: find existing files by fuzzy path or filename inside the workspace; matches may appear in the middle of a filename, and results are file paths, not file contents. To use it, reply with only JSON: {"tool":"find_file","args":{"query":"runtime"}}',
       'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_hash":"sha256:optional-current-file-hash","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
+      'write_file: create a new UTF-8 file inside the workspace by default; use edit_file for targeted changes to existing files, pass create_parent_dirs:true only when creating the folder path is intended, and replace an existing whole file only with overwrite:true and expected_hash from read_file. To use it, reply with only JSON: {"tool":"write_file","args":{"path":"test/example.test.ts","content":"import { it, expect } from \\"vitest\\";\\n\\nit(\\"works\\", () => {\\n  expect(true).toBe(true);\\n});\\n","create_parent_dirs":true}}',
       'inspect_command: run a safe read-only discovery command inside the workspace for quick orientation; prefer read_file, list_files, grep, and find_file for exact file tasks, and do not use it for builds, tests, installs, network, shell scripts, or edits. To use it, reply with only JSON: {"tool":"inspect_command","args":{"command":"pwd && rg --files docs/plans | head -20","workdir":".","timeout_ms":10000}}',
     ]);
   });
@@ -220,6 +238,18 @@ describe("agent tools", () => {
     expect(prompt).toContain("Use edit_file for targeted edits to existing files");
     expect(prompt).toContain("Keep edit_file old_text small but unique");
     expect(prompt).toContain("Do not include line labels or grep prefixes in old_text");
+  });
+
+  it("tells the model how to use write_file safely", () => {
+    const prompt = getChatSystemPrompt();
+
+    expect(prompt).toContain("Use write_file to create new files by default");
+    expect(prompt).toContain("It fails when the file already exists");
+    expect(prompt).toContain("Pass write_file create_parent_dirs:true only when");
+    expect(prompt).toContain(
+      "replace an existing whole file only with overwrite:true and expected_hash from read_file"
+    );
+    expect(prompt).toContain("Do not use inspect_command for file creation or file mutation");
   });
 
   it("tells the model inspect_command is only for read-only orientation", () => {
@@ -622,6 +652,233 @@ describe("agent tools", () => {
     expect(result.content).toContain("+enabled=true");
   });
 
+  it("creates new workspace files through the tool executor", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    clearSessionOverlay(workspace);
+    const call = parseToolCall('{"tool":"write_file","args":{"path":"example.txt","content":"alpha\\nbeta\\n"}}');
+
+    if (!call) {
+      throw new Error("Expected write_file tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call);
+
+    expect(await readFile(join(workspace, "example.txt"), "utf8")).toBe("alpha\nbeta\n");
+    expect(result).toMatchObject({
+      tool: "write_file",
+      path: "example.txt",
+      hash: hashContent("alpha\nbeta\n"),
+      bytesWritten: 11,
+      lineCount: 2,
+      createdParentDirs: [],
+      kbState: "needs_sync",
+      writeEvent: {
+        kind: "file_create",
+        source: "agent",
+        path: "example.txt",
+        afterHash: hashContent("alpha\nbeta\n"),
+        firstChangedLine: 1,
+        writeSummary: "created +2",
+      },
+    });
+    expect(result.content).toContain("Created example.txt");
+    expect(result.content).toContain("hash: sha256:");
+    expect(result.content).toContain("line_count: 2");
+    expect(result.content).not.toContain("alpha");
+  });
+
+  it("rejects write_file paths outside the workspace and invalid paths", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+
+    await expect(writeWorkspaceFile(workspace, { path: "../example.txt", content: "new\n" })).rejects.toThrow(
+      "write_file can only write files inside the workspace"
+    );
+    await expect(writeWorkspaceFile(workspace, { path: ".", content: "new\n" })).rejects.toThrow(
+      "write_file path must point to a file inside the workspace"
+    );
+    await expect(writeWorkspaceFile(workspace, { path: "bad\0name.txt", content: "new\n" })).rejects.toThrow(
+      "write_file path is invalid"
+    );
+  });
+
+  it("rejects existing write_file targets", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await writeFile(join(workspace, "example.txt"), "old\n");
+
+    await expect(writeWorkspaceFile(workspace, { path: "example.txt", content: "new\n" })).rejects.toThrow(
+      "write_file can only create new files: example.txt"
+    );
+    expect(await readFile(join(workspace, "example.txt"), "utf8")).toBe("old\n");
+  });
+
+  it("replaces existing write_file targets only with overwrite and expected_hash", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    clearSessionOverlay(workspace);
+    const file = join(workspace, "example.txt");
+    await writeFile(file, "old\nline\n");
+    const beforeHash = hashContent("old\nline\n");
+
+    const result = await writeWorkspaceFile(workspace, {
+      path: "example.txt",
+      content: "new\n",
+      overwrite: true,
+      expected_hash: beforeHash,
+    });
+
+    expect(await readFile(file, "utf8")).toBe("new\n");
+    expect(result).toMatchObject({
+      tool: "write_file",
+      path: "example.txt",
+      hash: hashContent("new\n"),
+      beforeHash,
+      bytesWritten: 4,
+      bytesChanged: -5,
+      lineCount: 1,
+      lineDelta: -1,
+      writeEvent: {
+        kind: "file_overwrite",
+        path: "example.txt",
+        beforeHash,
+        afterHash: hashContent("new\n"),
+        writeSummary: "overwritten +1/-2",
+      },
+    });
+    expect(result.content).toContain("before_hash: sha256:");
+    expect(result.content).toContain("line_delta: -1");
+    expect(getSessionOverlayState(workspace).mutationEvents).toEqual([
+      expect.objectContaining({
+        kind: "file_overwrite",
+        path: "example.txt",
+        beforeHash,
+        afterHash: hashContent("new\n"),
+      }),
+    ]);
+  });
+
+  it("rejects write_file overwrite without expected_hash or an existing file", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+
+    await expect(
+      writeWorkspaceFile(workspace, { path: "example.txt", content: "new\n", overwrite: true })
+    ).rejects.toThrow("write_file overwrite requires expected_hash for example.txt");
+    await expect(
+      writeWorkspaceFile(workspace, {
+        path: "example.txt",
+        content: "new\n",
+        overwrite: true,
+        expected_hash: hashContent("old\n"),
+      })
+    ).rejects.toThrow("write_file overwrite requires an existing file: example.txt");
+  });
+
+  it("rejects write_file overwrite when expected_hash does not match", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const file = join(workspace, "example.txt");
+    await writeFile(file, "old\n");
+
+    await expect(
+      writeWorkspaceFile(workspace, {
+        path: "example.txt",
+        content: "new\n",
+        overwrite: true,
+        expected_hash: `sha256:${"0".repeat(64)}`,
+      })
+    ).rejects.toThrow("write_file expected_hash did not match example.txt");
+    expect(await readFile(file, "utf8")).toBe("old\n");
+  });
+
+  it("rejects missing write_file parent directories by default", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+
+    await expect(writeWorkspaceFile(workspace, { path: "src/example.txt", content: "new\n" })).rejects.toThrow(
+      "write_file parent directory does not exist: src"
+    );
+  });
+
+  it("creates write_file parent directories only when requested", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+
+    const result = await writeWorkspaceFile(workspace, {
+      path: "src/generated/example.txt",
+      content: "new\n",
+      create_parent_dirs: true,
+    });
+
+    expect(await readFile(join(workspace, "src", "generated", "example.txt"), "utf8")).toBe("new\n");
+    expect(result.createdParentDirs).toEqual(["src", "src/generated"]);
+    expect(result.content).toContain("created_parent_dirs: src, src/generated");
+  });
+
+  it("rejects write_file content with NUL bytes", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+
+    await expect(writeWorkspaceFile(workspace, { path: "example.txt", content: "bad\0content" })).rejects.toThrow(
+      "write_file content must not contain NUL bytes"
+    );
+  });
+
+  it("marks created files dirty in the session overlay", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    clearSessionOverlay(workspace);
+
+    await writeWorkspaceFile(workspace, { path: "example.txt", content: "new\n" });
+
+    expect(getSessionOverlayState(workspace)).toMatchObject({
+      drift: "dirty_known",
+      kbState: "needs_sync",
+      needsSync: true,
+      dirtyFiles: [
+        {
+          path: "example.txt",
+          source: "agent",
+          drift: "dirty_known",
+          kbState: "needs_sync",
+          l1State: "stale",
+          derivedState: "suspect",
+          afterHash: hashContent("new\n"),
+          firstChangedLine: 1,
+          editCount: 1,
+        },
+      ],
+      editEvents: [],
+      mutationEvents: [
+        {
+          kind: "file_create",
+          source: "agent",
+          path: "example.txt",
+          afterHash: hashContent("new\n"),
+          writeSummary: "created +1",
+        },
+      ],
+    });
+  });
+
+  it("does not leave a write_file target when creation fails", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await mkdir(join(workspace, "src"));
+    await chmod(join(workspace, "src"), 0o500);
+
+    try {
+      await expect(writeWorkspaceFile(workspace, { path: "src/example.txt", content: "new\n" })).rejects.toThrow();
+      await expect(readFile(join(workspace, "src", "example.txt"), "utf8")).rejects.toThrow();
+    } finally {
+      await chmod(join(workspace, "src"), 0o700);
+    }
+  });
+
+  it("serializes concurrent same-file writes", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+
+    const results = await Promise.allSettled([
+      writeWorkspaceFile(workspace, { path: "example.txt", content: "first\n" }),
+      writeWorkspaceFile(workspace, { path: "example.txt", content: "second\n" }),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(["first\n", "second\n"]).toContain(await readFile(join(workspace, "example.txt"), "utf8"));
+  });
+
   it("rejects edit_file paths outside the workspace", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
 
@@ -847,6 +1104,24 @@ describe("edit_file pure edit engine", () => {
     const result = applyExactEdits("\uFEFFalpha\nbeta\n", [{ old_text: "beta\n", new_text: "bravo\n" }]);
 
     expect(result.newContent).toBe("\uFEFFalpha\nbravo\n");
+  });
+});
+
+describe("write_file arguments", () => {
+  it("defines the write_file argument schema", () => {
+    expect(() =>
+      writeFileArgsSchema.parse({
+        path: "src/example.ts",
+        content: "export const value = 1;\n",
+        create_parent_dirs: true,
+        overwrite: true,
+        expected_hash: "sha256:optional",
+      })
+    ).not.toThrow();
+    expect(() => writeFileArgsSchema.parse({ path: "src/example.ts", content: 123 })).toThrow();
+    expect(() =>
+      writeFileArgsSchema.parse({ path: "src/example.ts", content: "", create_parent_dirs: "yes" })
+    ).toThrow();
   });
 });
 

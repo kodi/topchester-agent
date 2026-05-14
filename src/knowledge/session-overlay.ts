@@ -14,6 +14,29 @@ export interface FileEditEvent {
   timestamp: string;
 }
 
+export interface FileCreateEvent {
+  kind: "file_create";
+  source: "agent";
+  path: string;
+  afterHash: string;
+  firstChangedLine: 1;
+  writeSummary: string;
+  timestamp: string;
+}
+
+export interface FileOverwriteEvent {
+  kind: "file_overwrite";
+  source: "agent";
+  path: string;
+  beforeHash: string;
+  afterHash: string;
+  firstChangedLine: 1;
+  writeSummary: string;
+  timestamp: string;
+}
+
+export type FileMutationEvent = FileEditEvent | FileCreateEvent | FileOverwriteEvent;
+
 export interface DirtyFileState {
   path: string;
   source: "agent";
@@ -21,7 +44,7 @@ export interface DirtyFileState {
   kbState: "needs_sync";
   l1State: "stale";
   derivedState: "suspect";
-  beforeHash: string;
+  beforeHash?: string;
   afterHash: string;
   firstChangedLine: number;
   lastEditedAt: string;
@@ -35,17 +58,27 @@ export interface SessionOverlayState {
   needsSync: boolean;
   dirtyFiles: DirtyFileState[];
   editEvents: FileEditEvent[];
+  mutationEvents: FileMutationEvent[];
   updatedAt?: string;
 }
 
-interface MutableSessionOverlayState extends Omit<SessionOverlayState, "dirtyFiles" | "editEvents"> {
+interface MutableSessionOverlayState extends Omit<SessionOverlayState, "dirtyFiles" | "editEvents" | "mutationEvents"> {
   dirtyFiles: Map<string, DirtyFileState>;
   editEvents: FileEditEvent[];
+  mutationEvents: FileMutationEvent[];
 }
 
 const overlays = new Map<string, MutableSessionOverlayState>();
 
 export function recordAgentFileEdit(workspaceRoot: string, event: FileEditEvent): SessionOverlayState {
+  return recordAgentFileMutation(workspaceRoot, event);
+}
+
+export function recordAgentFileCreate(workspaceRoot: string, event: FileCreateEvent): SessionOverlayState {
+  return recordAgentFileMutation(workspaceRoot, event);
+}
+
+export function recordAgentFileMutation(workspaceRoot: string, event: FileMutationEvent): SessionOverlayState {
   const key = resolve(workspaceRoot);
   const overlay = getOrCreateOverlay(key);
   const previous = overlay.dirtyFiles.get(event.path);
@@ -54,7 +87,12 @@ export function recordAgentFileEdit(workspaceRoot: string, event: FileEditEvent)
   overlay.kbState = "needs_sync";
   overlay.needsSync = true;
   overlay.updatedAt = event.timestamp;
-  overlay.editEvents.push(event);
+  overlay.mutationEvents.push(event);
+
+  if (event.kind === "file_edit") {
+    overlay.editEvents.push(event);
+  }
+
   overlay.dirtyFiles.set(event.path, {
     path: event.path,
     source: "agent",
@@ -62,7 +100,7 @@ export function recordAgentFileEdit(workspaceRoot: string, event: FileEditEvent)
     kbState: "needs_sync",
     l1State: "stale",
     derivedState: "suspect",
-    beforeHash: previous?.beforeHash ?? event.beforeHash,
+    beforeHash: previous?.beforeHash ?? (event.kind === "file_create" ? undefined : event.beforeHash),
     afterHash: event.afterHash,
     firstChangedLine: event.firstChangedLine,
     lastEditedAt: event.timestamp,
@@ -97,6 +135,7 @@ function getOrCreateOverlay(workspaceRoot: string): MutableSessionOverlayState {
     needsSync: false,
     dirtyFiles: new Map(),
     editEvents: [],
+    mutationEvents: [],
   };
   overlays.set(workspaceRoot, overlay);
 
@@ -111,6 +150,7 @@ function snapshotOverlay(overlay: MutableSessionOverlayState): SessionOverlaySta
     needsSync: overlay.needsSync,
     dirtyFiles: [...overlay.dirtyFiles.values()].map((file) => ({ ...file })),
     editEvents: overlay.editEvents.map((event) => ({ ...event })),
+    mutationEvents: overlay.mutationEvents.map((event) => ({ ...event })),
     updatedAt: overlay.updatedAt,
   };
 }

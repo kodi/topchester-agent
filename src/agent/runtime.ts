@@ -318,6 +318,23 @@ function formatToolResultForPrompt(result: ToolResult): string {
     ].join("\n");
   }
 
+  if (result.tool === "write_file") {
+    return [
+      `Tool result from ${result.tool}${path}:`,
+      result.beforeHash ? `before_hash: ${result.beforeHash}` : "",
+      `after_hash: ${result.hash}`,
+      `bytes_written: ${result.bytesWritten}`,
+      result.bytesChanged !== undefined ? `bytes_changed: ${result.bytesChanged}` : "",
+      `line_count: ${result.lineCount}`,
+      result.lineDelta !== undefined ? `line_delta: ${result.lineDelta}` : "",
+      `kb_state: ${result.kbState}`,
+      result.createdParentDirs.length > 0 ? `created_parent_dirs: ${result.createdParentDirs.join(", ")}` : "",
+      `summary: ${result.writeEvent.writeSummary}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
   if (result.tool === "inspect_command") {
     return [
       `Tool result from ${result.tool} via ${result.command}:`,
@@ -361,6 +378,8 @@ function formatToolCallMessage(call: ToolCall, result?: ToolResult): string {
       return `find_file: ${call.args.query} in ${call.args.path}`;
     case "edit_file":
       return `edit_file: ${call.args.path}${formatEditFileChangeSummary(result)}`;
+    case "write_file":
+      return `write_file: ${call.args.path}${formatWriteFileChangeSummary(result)}`;
     case "inspect_command":
       return `inspect_command: ${call.args.command}`;
   }
@@ -372,6 +391,14 @@ function formatEditFileChangeSummary(result: ToolResult | undefined): string {
   }
 
   return ` (changed ${result.editEvent.diffSummary})`;
+}
+
+function formatWriteFileChangeSummary(result: ToolResult | undefined): string {
+  if (result?.tool !== "write_file") {
+    return "";
+  }
+
+  return ` (${result.writeEvent.writeSummary})`;
 }
 
 function formatAgentMessageMeta(model: string, durationMs: number): string {

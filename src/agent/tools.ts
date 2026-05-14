@@ -11,6 +11,14 @@ export {
   type EditFileToolArgs,
 } from "./tools/edit-file.js";
 export {
+  writeFileTool,
+  writeWorkspaceFile,
+  writeFileArgsSchema,
+  type WriteFileToolCall,
+  type WriteFileToolResult,
+  type WriteFileToolArgs,
+} from "./tools/write-file.js";
+export {
   findFileTool,
   findWorkspaceFilesByName,
   type FindFileToolArgs,

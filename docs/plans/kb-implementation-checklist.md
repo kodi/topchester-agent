@@ -19,7 +19,7 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [x] CLI `topchester kb compile`
 - [x] Slash command `/kb compile`
 - [x] CLI L1 progress with count, percentage, progress bar, and current file
-- [x] Workspace-scoped `edit_file` tool marks edited files dirty-known and `needs_sync` in the runtime session overlay
+- [x] Workspace-scoped `edit_file` and create-by-default `write_file` tools mark changed files dirty-known and `needs_sync` in the runtime session overlay
 
 ## Global KB Setup and Configuration
 
@@ -151,11 +151,18 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [x] Add workspace-scoped `grep`
 - [x] Add workspace-scoped `find_file`
 - [x] Add workspace-scoped `edit_file` for exact existing-file replacements
+- [x] Add workspace-scoped `write_file` for create-by-default UTF-8 file writes
 - [x] Add workspace-scoped `inspect_command` for read-only repo orientation through a narrow allowlist
 - [x] Add `edit_file` path containment, existing-file checks, UTF-8 validation, optional expected-hash checks, and atomic-ish same-directory writes
+- [x] Add `write_file` path containment, existing-file rejection, optional parent-directory creation, UTF-8 validation, and atomic-ish same-directory writes
 - [x] Add per-file mutation serialization for `edit_file`
+- [x] Add per-file mutation serialization for `write_file`
 - [x] Return edit diff, before/after hashes, byte delta, first changed line, and KB dirty-state metadata
+- [x] Return write hash, byte count, line count, parent directory list, and KB dirty-state metadata
+- [x] Add hash-guarded whole-file overwrite support to `write_file`
+- [x] Return overwrite before/after hashes, byte delta, and line delta
 - [x] Avoid debug-level logging of full `edit_file` old/new edit text
+- [x] Avoid debug-level logging of full `write_file` content
 
 ## MCP Adapter
 
@@ -175,9 +182,11 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [ ] Use KB context to orient, plan, estimate impact, and identify verification
 - [ ] Resolve task-critical facts against current working tree before acting
 - [x] Track dirty files and suspect nodes in a session overlay during `edit_file` edits
+- [x] Track created files in the session overlay during `write_file` writes
 - [ ] Warn clearly when relevant KB is stale
 - [x] Update or mark KB stale after `edit_file` edits
-- [x] Mark session as `needs_sync` after `edit_file` edits
+- [x] Update or mark KB stale after `write_file` writes
+- [x] Mark session as `needs_sync` after `edit_file` edits and `write_file` writes
 - [ ] Include KB updates with in-scope code changes
 - [ ] Prevent normal coding path from bypassing KB once strict mode exists
 - [ ] Add agent behavior tests

@@ -104,11 +104,13 @@ function formatSystemBodyLine(line: string): string {
     return ui.muted(expandedLine);
   }
 
-  return expandedLine.replace(/\(changed \+\d+\/-\d+\)$/u, (summary) => ui.muted(summary));
+  return expandedLine
+    .replace(/\(changed \+\d+\/-\d+\)$/u, (summary) => ui.muted(summary))
+    .replace(/\(created \+\d+\)$/u, (summary) => ui.muted(summary));
 }
 
 function isToolCallLine(line: string): boolean {
-  return /^(read_file|list_files|grep|find_file|edit_file|inspect_command): /u.test(line);
+  return /^(read_file|list_files|grep|find_file|edit_file|write_file|inspect_command): /u.test(line);
 }
 
 function expandTabs(line: string): string {

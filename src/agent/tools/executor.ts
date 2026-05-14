@@ -67,6 +67,17 @@ export async function executeToolCall(
 }
 
 function summarizeToolArgs(call: ToolCall): unknown {
+  if (call.tool === "write_file") {
+    return {
+      path: call.args.path,
+      contentLength: call.args.content.length,
+      lineCount: countLogicalLines(call.args.content),
+      createParentDirs: Boolean(call.args.create_parent_dirs),
+      overwrite: Boolean(call.args.overwrite),
+      expectedHashProvided: Boolean(call.args.expected_hash),
+    };
+  }
+
   if (call.tool !== "edit_file") {
     return call.args;
   }
@@ -93,6 +104,19 @@ function summarizeToolResult(result: ToolResult): Record<string, unknown> {
     };
   }
 
+  if (result.tool === "write_file") {
+    return {
+      hash: result.hash,
+      bytesWritten: result.bytesWritten,
+      lineCount: result.lineCount,
+      bytesChanged: result.bytesChanged,
+      lineDelta: result.lineDelta,
+      createdParentDirs: result.createdParentDirs,
+      kbState: result.kbState,
+      writeEvent: result.writeEvent,
+    };
+  }
+
   if (result.tool !== "edit_file") {
     return {};
   }
@@ -105,4 +129,14 @@ function summarizeToolResult(result: ToolResult): Record<string, unknown> {
     kbState: result.kbState,
     editEvent: result.editEvent,
   };
+}
+
+function countLogicalLines(content: string): number {
+  if (content.length === 0) {
+    return 0;
+  }
+
+  const withoutTrailingLineEnding = content.replace(/\r?\n$/u, "");
+
+  return withoutTrailingLineEnding.length === 0 ? 1 : withoutTrailingLineEnding.split(/\r?\n/u).length;
 }

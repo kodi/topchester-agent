@@ -101,6 +101,61 @@ describe("logging", () => {
       expect(logText).not.toContain("secret=new");
     });
   });
+
+  it("logs write_file metadata without debug-level file content", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-logging-"));
+
+    await withEnv({ TOPCHESTER_LOG_LEVEL: "debug", TOPCHESTER_LOG_FILE: "" }, async () => {
+      const loggerInfo = createTopchesterLogger(workspace);
+      const call = parseToolCall(
+        '{"tool":"write_file","args":{"path":"example.txt","content":"SECRET_CREATED_CONTENT\\n"}}'
+      );
+
+      if (!call) {
+        throw new Error("Expected write_file tool call to parse.");
+      }
+
+      await executeToolCall(workspace, call, { logger: loggerInfo.logger });
+
+      const logFilePath = loggerInfo.logFilePath;
+
+      if (!logFilePath) {
+        throw new Error("Expected logger to create a log file path.");
+      }
+
+      const logText = await readFile(logFilePath, "utf8");
+      const logLines = logText
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+      expect(logLines).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "tool_call",
+            tool: "write_file",
+            args: expect.objectContaining({ path: "example.txt", contentLength: 23, lineCount: 1 }),
+          }),
+          expect.objectContaining({
+            event: "file_create",
+            path: "example.txt",
+            afterHash: expect.stringMatching(/^sha256:/),
+            kbState: "needs_sync",
+            writeSummary: "created +1",
+          }),
+          expect.objectContaining({
+            event: "tool_result",
+            tool: "write_file",
+            hash: expect.stringMatching(/^sha256:/),
+            bytesWritten: 23,
+            lineCount: 1,
+            kbState: "needs_sync",
+          }),
+        ])
+      );
+      expect(logText).not.toContain("SECRET_CREATED_CONTENT");
+    });
+  });
 });
 
 async function withEnv(env: Record<string, string>, run: () => Promise<void>): Promise<void> {

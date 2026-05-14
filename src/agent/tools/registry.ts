@@ -5,6 +5,7 @@ import { inspectCommandTool } from "./inspect-command.js";
 import { listFilesTool } from "./list-files.js";
 import { readFileTool } from "./read-file.js";
 import { type ToolCallForDefinition, type ToolResultForDefinition } from "./types.js";
+import { writeFileTool } from "./write-file.js";
 
 export const toolRegistry = {
   [readFileTool.name]: readFileTool,
@@ -12,6 +13,7 @@ export const toolRegistry = {
   [grepTool.name]: grepTool,
   [findFileTool.name]: findFileTool,
   [editFileTool.name]: editFileTool,
+  [writeFileTool.name]: writeFileTool,
   [inspectCommandTool.name]: inspectCommandTool,
 } as const;
 

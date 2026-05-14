@@ -343,6 +343,9 @@ describe("TUI rendering", () => {
       expect(renderChatMessage(systemMessage("edit_file: test-foo.ts (changed +1/-1)"))).toContain(
         "   \u001b[90medit_file: test-foo.ts (changed +1/-1)\u001b[0m"
       );
+      expect(renderChatMessage(systemMessage("write_file: test/example.test.ts (created +6)"))).toContain(
+        "   \u001b[90mwrite_file: test/example.test.ts (created +6)\u001b[0m"
+      );
       expect(renderChatMessage(systemMessage("inspect_command: pwd && rg --files docs/plans | head -20"))).toContain(
         "   \u001b[90minspect_command: pwd && rg --files docs/plans | head -20\u001b[0m"
       );
