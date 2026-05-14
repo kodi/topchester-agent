@@ -43,7 +43,11 @@ program.action(async () => {
       const session = await loadSessionForAppend(context.workspaceRoot, loaded.sessionId);
       const rehydrated = rehydrateSession(loaded.events);
 
-      await new TopchesterTuiShell(context, undefined, { session, initialMessages: rehydrated.messages }).render();
+      await new TopchesterTuiShell(context, undefined, {
+        session,
+        initialMessages: rehydrated.messages,
+        initialTaskPlan: rehydrated.taskPlan,
+      }).render();
       return;
     }
 

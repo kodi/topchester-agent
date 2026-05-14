@@ -1,5 +1,6 @@
 import { isKeyRelease, isKeyRepeat, matchesKey, ProcessTerminal, TUI } from "@earendil-works/pi-tui";
 import { type AgentRuntimeEvent } from "../agent/events.js";
+import { formatTaskPlanNotice, type TaskPlanState } from "../agent/task-plan.js";
 import { TopchesterAgentRuntime, type AgentRuntime } from "../agent/runtime.js";
 import { type AppContext } from "../app/context.js";
 import { ui } from "../cli/ui.js";
@@ -18,11 +19,13 @@ export interface TuiShell {
 export interface TuiShellOptions {
   session?: SessionHandle;
   initialMessages?: ChatMessage[];
+  initialTaskPlan?: TaskPlanState;
 }
 
 export class TopchesterTuiShell implements TuiShell {
   private readonly runtime: AgentRuntime;
   private session: SessionHandle | undefined;
+  private taskPlanNoticeTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     private readonly context: AppContext,
@@ -47,7 +50,7 @@ export class TopchesterTuiShell implements TuiShell {
     const modelLabel = getModelLabel(this.context);
 
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
-      console.log(renderStaticLayout(messages, folderName, modelLabel));
+      console.log(renderStaticLayout(messages, folderName, modelLabel, this.options.initialTaskPlan));
       return;
     }
 
@@ -70,6 +73,7 @@ export class TopchesterTuiShell implements TuiShell {
         process.exit(0);
       },
     });
+    app.setTaskPlan(this.options.initialTaskPlan);
     app.setSubmitMessage((message) => {
       void this.submitChatMessage(app, tui, message);
     });
@@ -114,7 +118,7 @@ export class TopchesterTuiShell implements TuiShell {
     tui.requestRender();
 
     try {
-      await this.applyRuntimeEvents(app, await this.runtime.checkAgent(abortController.signal));
+      await this.applyRuntimeEvents(app, await this.runtime.checkAgent(abortController.signal), tui);
     } catch (error) {
       if (cancelled) {
         app.addMessage(systemMessage("Agent check stopped."));
@@ -130,7 +134,7 @@ export class TopchesterTuiShell implements TuiShell {
     }
 
     if (app.isReady()) {
-      await this.applyRuntimeEvents(app, await this.runtime.checkKnowledgeBase());
+      await this.applyRuntimeEvents(app, await this.runtime.checkKnowledgeBase(), tui);
     }
 
     tui.requestRender();
@@ -160,7 +164,8 @@ export class TopchesterTuiShell implements TuiShell {
       });
       await this.applyRuntimeEvents(
         app,
-        await this.runtime.submitMessage(app.getConversationTurns(), message, abortController.signal)
+        await this.runtime.submitMessage(app.getConversationTurns(), message, abortController.signal),
+        tui
       );
     } catch (error) {
       if (cancelled) {
@@ -199,7 +204,8 @@ export class TopchesterTuiShell implements TuiShell {
         app,
         await this.runtime.submitSlashCommand(command, (event) => {
           busy.setActivity(event.message);
-        })
+        }),
+        tui
       );
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -215,7 +221,11 @@ export class TopchesterTuiShell implements TuiShell {
     }
   }
 
-  private async applyRuntimeEvents(app: ChatLayout, events: AgentRuntimeEvent[]): Promise<void> {
+  private async applyRuntimeEvents(
+    app: ChatLayout,
+    events: AgentRuntimeEvent[],
+    renderRequester?: { requestRender(): void }
+  ): Promise<void> {
     for (const event of events) {
       if (event.type === "status") {
         app.setStatus(event.status);
@@ -225,12 +235,36 @@ export class TopchesterTuiShell implements TuiShell {
         app.setKnowledgeStatus(event.status);
       }
 
+      if (event.type === "task_plan") {
+        const change = app.setTaskPlan(event.plan);
+        app.setTaskPlanNotice(formatTaskPlanNotice(change, event.plan));
+        this.scheduleTaskPlanNoticeClear(app, renderRequester);
+      }
+
       for (const message of renderRuntimeEvent(event)) {
         app.addMessage(message);
       }
 
       await this.persistPayloadWithWarning(app, runtimeEventToSessionPayload(event));
     }
+  }
+
+  private scheduleTaskPlanNoticeClear(app: ChatLayout, renderRequester: { requestRender(): void } | undefined): void {
+    if (this.taskPlanNoticeTimer) {
+      clearTimeout(this.taskPlanNoticeTimer);
+      this.taskPlanNoticeTimer = undefined;
+    }
+
+    if (!renderRequester) {
+      return;
+    }
+
+    this.taskPlanNoticeTimer = setTimeout(() => {
+      this.taskPlanNoticeTimer = undefined;
+      app.setTaskPlanNotice(undefined);
+      renderRequester.requestRender();
+    }, 2500);
+    this.taskPlanNoticeTimer.unref?.();
   }
 
   private async persistPayloadWithWarning(app: ChatLayout, payload: SessionEventPayload | undefined): Promise<void> {
@@ -319,6 +353,12 @@ export function runtimeEventToSessionPayload(event: AgentRuntimeEvent): SessionE
         kind: "tool_call",
         label: event.label,
         call: event.call as unknown as Record<string, unknown>,
+      };
+    case "task_plan":
+      return {
+        kind: "task_plan",
+        items: event.plan.items,
+        updatedAt: event.plan.updatedAt,
       };
     case "knowledge_status":
       return undefined;

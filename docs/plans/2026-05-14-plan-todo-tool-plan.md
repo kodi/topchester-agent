@@ -301,7 +301,7 @@ If resume hydration currently happens outside the layout, add the smallest adapt
 
 ### Slice 1: Task Plan Domain And Validation
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Define the session task-plan contract and enforce its invariants without touching the runtime loop yet.
 
@@ -322,6 +322,7 @@ This slice should implement:
 Expected output:
 
 - A tested task-plan module with no model/runtime behavior change.
+- Implemented `src/agent/task-plan.ts` and `test/task-plan.test.ts`.
 
 Verification:
 
@@ -330,11 +331,18 @@ pnpm test -- test/task-plan.test.ts
 pnpm run typecheck
 ```
 
+Actual verification:
+
+```sh
+node_modules/.bin/vitest run test/task-plan.test.ts test/tools.test.ts test/commands.test.ts test/tui.render.test.ts test/session.test.ts
+node_modules/.bin/tsgo --noEmit
+```
+
 Dependencies: None.
 
 ### Slice 2: Registered `plan_todo` Tool
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Register `plan_todo` as a normal Topchester tool that updates runtime-provided task-plan state.
 
@@ -356,6 +364,7 @@ This slice should implement:
 Expected output:
 
 - The model can call `plan_todo`, but runtime/TUI may not yet display the state.
+- Implemented `src/agent/tools/plan-todo.ts`, registered it, exported it, passed runtime task-plan state through `executeToolCall`, and added parser/native registry coverage.
 
 Verification:
 
@@ -364,11 +373,18 @@ pnpm test -- test/tools.test.ts test/task-plan.test.ts
 pnpm run typecheck
 ```
 
+Actual verification:
+
+```sh
+node_modules/.bin/vitest run test/task-plan.test.ts test/tools.test.ts test/commands.test.ts test/tui.render.test.ts test/session.test.ts
+node_modules/.bin/tsgo --noEmit
+```
+
 Dependencies: Slice 1.
 
 ### Slice 3: Runtime State And Events
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Make `TopchesterAgentRuntime` own task-plan state and emit updates after successful `plan_todo` calls.
 
@@ -392,6 +408,7 @@ This slice should implement:
 Expected output:
 
 - Runtime events include visible task-plan state for successful plan updates.
+- Implemented `AgentTaskPlanEvent`, runtime-owned task-plan controller, prompt result formatting, compact tool rows, and continuation guidance.
 
 Verification:
 
@@ -400,11 +417,18 @@ pnpm test -- test/commands.test.ts test/tools.test.ts test/task-plan.test.ts
 pnpm run typecheck
 ```
 
+Actual verification:
+
+```sh
+node_modules/.bin/vitest run test/task-plan.test.ts test/tools.test.ts test/commands.test.ts test/tui.render.test.ts test/session.test.ts
+node_modules/.bin/tsgo --noEmit
+```
+
 Dependencies: Slice 2.
 
 ### Slice 4: TUI Rendering
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Show the current plan in the TUI during multi-step work.
 
@@ -430,6 +454,7 @@ This slice should implement:
 Expected output:
 
 - Interactive users see a pinned current plan that updates when `plan_todo` runs.
+- Implemented `ChatLayout.setTaskPlan`, compact prompt-adjacent rendering, and runtime-event filtering so task plans do not become repeated chat messages.
 
 Verification:
 
@@ -438,11 +463,18 @@ pnpm test -- test/tui.render.test.ts
 pnpm run typecheck
 ```
 
+Actual verification:
+
+```sh
+node_modules/.bin/vitest run test/task-plan.test.ts test/tools.test.ts test/commands.test.ts test/tui.render.test.ts test/session.test.ts
+node_modules/.bin/tsgo --noEmit
+```
+
 Dependencies: Slice 3.
 
 ### Slice 5: Session Persistence And Resume
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Persist task-plan updates and restore the latest visible plan on session resume.
 
@@ -461,6 +493,8 @@ This slice should implement:
 Expected output:
 
 - Resumed TUI sessions restore the last visible plan without adding plan internals to model prompts.
+- Implemented `task_plan` session payloads, rehydrated latest-plan state, static rendering support, and model-context filtering tests.
+- Session event version decision: no version bump; adding a discriminated union member preserves existing v1 event compatibility.
 
 Verification:
 
@@ -469,11 +503,18 @@ pnpm test -- test/session.test.ts test/tui.render.test.ts
 pnpm run typecheck
 ```
 
+Actual verification:
+
+```sh
+node_modules/.bin/vitest run test/task-plan.test.ts test/tools.test.ts test/commands.test.ts test/tui.render.test.ts test/session.test.ts
+node_modules/.bin/tsgo --noEmit
+```
+
 Dependencies: Slice 4.
 
 ### Slice 6: Prompt Guidance And Behavioral Tests
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Teach the model when to use `plan_todo` and prove the fake model path exercises it deterministically.
 
@@ -494,6 +535,7 @@ This slice should implement:
 Expected output:
 
 - The model prompt makes visible planning the expected path for non-trivial work.
+- Updated `src/agent/prompts.ts` with `plan_todo` usage rules and continuation guidance.
 
 Verification:
 
@@ -502,11 +544,18 @@ pnpm test -- test/commands.test.ts test/tools.test.ts
 pnpm run typecheck
 ```
 
+Actual verification:
+
+```sh
+node_modules/.bin/vitest run test/task-plan.test.ts test/tools.test.ts test/commands.test.ts test/tui.render.test.ts test/session.test.ts
+node_modules/.bin/tsgo --noEmit
+```
+
 Dependencies: Slices 3 and 4.
 
 ### Slice 7: Smoke Scenario And Reports
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Add runtime/CLI smoke coverage that proves `plan_todo` works in the fake API battery.
 
@@ -530,6 +579,7 @@ Expected output:
 
 - Fake API smoke verifies that visible planning can run through the real agent loop and CLI path.
 - TUI rendering confidence still comes from `test/tui.render.test.ts`, not this smoke slice.
+- Added `scripts/smoke/scenarios/10-plan-todo/`, fake API responses, task-plan smoke assertions, and compact report fields.
 
 Verification:
 
@@ -537,6 +587,12 @@ Verification:
 pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --scenario 10-plan-todo --trials 1
 pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --trials 1
 pnpm run typecheck
+```
+
+Actual verification:
+
+```sh
+node_modules/.bin/tsx scripts/smoke/run-smoke.ts --fake-api --scenario 10-plan-todo --trials 1
 ```
 
 Optional live confidence check when provider keys are available:
@@ -549,7 +605,7 @@ Dependencies: Slice 6.
 
 ### Slice 8: Docs And Checklist
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Document visible planning behavior and mark the alpha checklist item only after implementation is verified.
 
@@ -565,6 +621,7 @@ This slice should implement:
 Expected output:
 
 - User-facing docs match the implemented visible planning behavior.
+- Updated `docs/cli.md`, `docs/tui.md`, `docs/plans/kb-implementation-checklist.md`, and `docs/plans/2026-05-13-alpha-tool-gap-analysis-plan.md`.
 
 Verification:
 
@@ -617,6 +674,14 @@ Final confidence check:
 ```sh
 pnpm run check
 pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --trials 1
+```
+
+Actual final verification:
+
+```sh
+pnpm test
+node_modules/.bin/tsx scripts/smoke/run-smoke.ts --fake-api --trials 1
+mise run local-ci
 ```
 
 ## Open Questions

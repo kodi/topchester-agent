@@ -9,6 +9,12 @@ import {
 } from "@earendil-works/pi-tui";
 import { getSlashCommandSuggestions, type SlashCommandSuggestion } from "../agent/commands.js";
 import { type ConversationTurn } from "../agent/conversation.js";
+import {
+  detectTaskPlanChange,
+  formatTaskPlanForTui,
+  type TaskPlanChangeKind,
+  type TaskPlanState,
+} from "../agent/task-plan.js";
 import { ui } from "../cli/ui.js";
 import { type KnowledgeStatus } from "../knowledge/status.js";
 import { renderChatMessage, userMessage, type ChatMessage } from "./messages.js";
@@ -37,8 +43,10 @@ export class ChatLayout implements Component, Focusable {
   private status = "ready";
   private knowledgeStatus: string | undefined;
   private ephemeralLine: string | undefined;
+  private taskPlanNoticeLine: string | undefined;
   private noticeLine: string | undefined;
   private promptHint: string | undefined;
+  private taskPlan: TaskPlanState | undefined;
   private cancelPending: (() => void) | undefined;
   private submitMessage: ((message: string) => void) | undefined;
   private submitCommand: ((command: string) => void) | undefined;
@@ -82,6 +90,18 @@ export class ChatLayout implements Component, Focusable {
 
   setKnowledgeStatus(status: KnowledgeStatus): void {
     this.knowledgeStatus = formatKnowledgeFooterStatus(status);
+  }
+
+  setTaskPlan(plan: TaskPlanState | undefined): TaskPlanChangeKind {
+    const change = detectTaskPlanChange(this.taskPlan, plan);
+
+    this.taskPlan = plan && plan.items.length > 0 ? plan : undefined;
+
+    return change;
+  }
+
+  setTaskPlanNotice(line: string | undefined): void {
+    this.taskPlanNoticeLine = line;
   }
 
   isReady(): boolean {
@@ -215,6 +235,10 @@ export class ChatLayout implements Component, Focusable {
       lines.push(...this.renderThreadMessageLines([` ${this.ephemeralLine}`], innerWidth, width, false));
     }
 
+    if (this.taskPlanNoticeLine) {
+      lines.push(...this.renderThreadMessageLines([` ${this.taskPlanNoticeLine}`], innerWidth, width, false));
+    }
+
     if (this.noticeLine) {
       lines.push(...this.renderThreadMessageLines([` ${this.noticeLine}`], innerWidth, width, false));
     }
@@ -250,7 +274,22 @@ export class ChatLayout implements Component, Focusable {
       true
     );
 
-    return [...this.renderSlashSuggestions(width), top, `│ ${prefix}${inputLine} │`, bottom, status];
+    return [
+      ...this.renderSlashSuggestions(width),
+      ...this.renderTaskPlan(width),
+      top,
+      `│ ${prefix}${inputLine} │`,
+      bottom,
+      status,
+    ];
+  }
+
+  private renderTaskPlan(width: number): string[] {
+    if (!this.taskPlan) {
+      return [];
+    }
+
+    return formatTaskPlanForTui(this.taskPlan, Math.max(1, width));
   }
 
   private renderSlashSuggestions(width: number): string[] {
@@ -457,6 +496,7 @@ export class ChatLayout implements Component, Focusable {
   }
 
   private submitUserInput(message: string): void {
+    this.setTaskPlanNotice(undefined);
     this.promptHistory.add(message);
     if (message.startsWith("/")) {
       this.submitCommand?.(message);

@@ -465,6 +465,71 @@ describe("slash commands", () => {
     expect(prompts[1]).not.toContain("it('works'");
   });
 
+  it("emits task-plan events after successful plan_todo calls", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    await writeFile(join(workspace, "notes.txt"), "hello\n");
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (prompts.length === 1) {
+            return {
+              text: JSON.stringify({
+                tool: "plan_todo",
+                args: {
+                  items: [
+                    { text: "Create visible plan", status: "completed" },
+                    { text: "Read notes", status: "in_progress" },
+                  ],
+                },
+              }),
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          if (prompts.length === 2) {
+            return {
+              text: JSON.stringify({ tool: "read_file", args: { path: "notes.txt" } }),
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          return {
+            text: "Read notes.txt.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "read notes with a plan");
+    const taskPlanEvent = events.find((event) => event.type === "task_plan");
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "tool_call", label: "plan_todo: 2 items, 1 active" }),
+        expect.objectContaining({ type: "tool_call", label: "read_file: notes.txt" }),
+        expect.objectContaining({ type: "message", role: "assistant", text: "Read notes.txt." }),
+      ])
+    );
+    expect(taskPlanEvent?.type === "task_plan" ? taskPlanEvent.plan.items : undefined).toEqual([
+      { text: "Create visible plan", status: "completed" },
+      { text: "Read notes", status: "in_progress" },
+    ]);
+    expect(prompts[1]).toContain("Tool result from plan_todo:");
+    expect(prompts[1]).toContain("current: Read notes");
+    expect(prompts[1]).toContain("visible plan when one is active");
+  });
+
   it("continues executing tool calls until the model gives a final answer", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     await writeFile(join(workspace, "test-foo.ts"), 'console.log("hello");\n');

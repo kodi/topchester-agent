@@ -16,6 +16,7 @@ import {
   formatStatusLine,
   getKnowledgeStatusMessages,
   getStartupThreadMessages,
+  renderStaticLayout,
   renderRuntimeEvent,
 } from "../src/tui/index.js";
 import { getKnowledgeStatus } from "../src/knowledge/status.js";
@@ -335,6 +336,82 @@ describe("TUI rendering", () => {
     expect(output).toContain("   Welcome");
     expect(output).toContain("│ >");
     expect(output).toContain("● ready ·  repo · model [provider]");
+  });
+
+  it("hides the task plan block when there are no plan items", () => {
+    const app = new ChatLayout(new FakeTerminal(), [systemMessage("Welcome")], "repo", "model [provider]");
+
+    app.setTaskPlan({ items: [], updatedAt: "2026-05-14T00:00:00.000Z" });
+
+    expect(app.render(60).join("\n")).not.toContain("plan\n");
+  });
+
+  it("renders the current task plan above the prompt", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 14;
+    const app = new ChatLayout(terminal, [systemMessage("Welcome")], "repo", "model [provider]");
+
+    app.setTaskPlan({
+      updatedAt: "2026-05-14T00:00:00.000Z",
+      items: [
+        { text: "Inspect runtime flow", status: "completed" },
+        { text: "Render visible plan", status: "in_progress" },
+        { text: "Run checks", status: "pending" },
+      ],
+    });
+    const output = app.render(80).join("\n");
+
+    expect(output).toContain("plan\n  [x] Inspect runtime flow\n  [>] Render visible plan\n  [ ] Run checks\n┌");
+  });
+
+  it("truncates long plan items and caps visible plan rows", () => {
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+
+    app.setTaskPlan({
+      updatedAt: "2026-05-14T00:00:00.000Z",
+      items: [
+        { text: "Inspect a very long runtime and TUI event flow item", status: "completed" },
+        { text: "Implement rendering", status: "in_progress" },
+        { text: "Write tests", status: "pending" },
+        { text: "Update docs", status: "pending" },
+        { text: "Run pnpm test", status: "pending" },
+        { text: "Run local ci", status: "pending" },
+        { text: "Audit completion", status: "pending" },
+      ],
+    });
+    const output = app.render(34).join("\n");
+
+    expect(output).toContain("  [x] Inspect a very long runti...");
+    expect(output).toContain("  +1 more");
+  });
+
+  it("keeps the prompt visible when task plan rendering uses narrow height", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 6;
+    const app = new ChatLayout(terminal, [systemMessage("Welcome")], "repo", "model [provider]");
+
+    app.setTaskPlan({
+      updatedAt: "2026-05-14T00:00:00.000Z",
+      items: [
+        { text: "Inspect", status: "completed" },
+        { text: "Implement", status: "in_progress" },
+        { text: "Verify", status: "pending" },
+      ],
+    });
+    const output = app.render(40).join("\n");
+
+    expect(output).toContain("│ >");
+    expect(output).toContain("● ready");
+  });
+
+  it("renders restored task plan once in static output", () => {
+    const output = renderStaticLayout([systemMessage("Welcome")], "repo", "model [provider]", {
+      updatedAt: "2026-05-14T00:00:00.000Z",
+      items: [{ text: "Inspect restored state", status: "in_progress" }],
+    });
+
+    expect(output).toContain("plan\n  [>] Inspect restored state\n\n┌");
+    expect(output.match(/Inspect restored state/gu)).toHaveLength(1);
   });
 
   it("renders structured tool call rows dark gray", () => {
@@ -1194,6 +1271,26 @@ describe("TUI rendering", () => {
         agentEvent.toolCall({ tool: "read_file", args: { path: "README.md" } }, "read_file: README.md")
       )
     ).toEqual([toolCallMessage({ tool: "read_file", args: { path: "README.md" } }, "read_file: README.md")]);
+    expect(
+      runtimeEventToSessionPayload(
+        agentEvent.taskPlan({
+          updatedAt: "2026-05-14T00:00:00.000Z",
+          items: [{ text: "Inspect", status: "in_progress" }],
+        })
+      )
+    ).toEqual({
+      kind: "task_plan",
+      updatedAt: "2026-05-14T00:00:00.000Z",
+      items: [{ text: "Inspect", status: "in_progress" }],
+    });
+    expect(
+      renderRuntimeEvent(
+        agentEvent.taskPlan({
+          updatedAt: "2026-05-14T00:00:00.000Z",
+          items: [{ text: "Inspect", status: "in_progress" }],
+        })
+      )
+    ).toEqual([]);
     expect(runtimeEventToSessionPayload(agentEvent.knowledgeStatus(status))).toBeUndefined();
     expect(
       runtimeEventToSessionPayload(
@@ -1264,6 +1361,11 @@ describe("TUI rendering", () => {
       call: { tool: "read_file", args: { path: "README.md" } },
     });
     await session.append({
+      kind: "task_plan",
+      updatedAt: "2026-05-14T00:00:00.000Z",
+      items: [{ text: "Inspect", status: "in_progress" }],
+    });
+    await session.append({
       kind: "knowledge_status",
       status: {
         workspaceRoot: workspace,
@@ -1300,6 +1402,7 @@ describe("TUI rendering", () => {
     expect(capturedPrompts[0]).not.toContain("/kb status");
     expect(capturedPrompts[0]).not.toContain("slash command output");
     expect(capturedPrompts[0]).not.toContain("read_file: README.md");
+    expect(capturedPrompts[0]).not.toContain("Inspect");
     expect(capturedPrompts[0]).not.toContain("No KB found");
     expect(capturedPrompts[0]).not.toContain("Create KB now");
     expect(capturedPrompts[0]).not.toContain("ready");
@@ -1420,6 +1523,76 @@ describe("TUI rendering", () => {
 
     expect(appendFinished).toEqual(["First", "Second"]);
     expect(applyFinished).toBe(true);
+  });
+
+  it("applies task-plan runtime events as pinned UI state", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-task-plan-"));
+    const context = createTestContext(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    const appended: SessionEventPayload[] = [];
+    const shell = new TopchesterTuiShell(context, undefined, {
+      session: {
+        async append(payload: SessionEventPayload) {
+          appended.push(payload);
+          return payload;
+        },
+      } as unknown as SessionHandle,
+    });
+
+    await (
+      shell as unknown as { applyRuntimeEvents(app: ChatLayout, events: unknown[]): Promise<void> }
+    ).applyRuntimeEvents(app, [
+      agentEvent.taskPlan({
+        updatedAt: "2026-05-14T00:00:00.000Z",
+        items: [{ text: "Inspect", status: "in_progress" }],
+      }),
+    ]);
+
+    const output = app.render(60).join("\n");
+
+    expect(output).toContain("todo plan created: Inspect");
+    expect(output).toContain("plan\n  [>] Inspect\n┌");
+    expect(app.getConversationTurns()).toEqual([]);
+    expect(appended).toEqual([
+      {
+        kind: "task_plan",
+        updatedAt: "2026-05-14T00:00:00.000Z",
+        items: [{ text: "Inspect", status: "in_progress" }],
+      },
+    ]);
+  });
+
+  it("prints task-plan update and clear notices without chat messages", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-task-plan-notice-"));
+    const context = createTestContext(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    const shell = new TopchesterTuiShell(context);
+
+    await (
+      shell as unknown as { applyRuntimeEvents(app: ChatLayout, events: unknown[]): Promise<void> }
+    ).applyRuntimeEvents(app, [
+      agentEvent.taskPlan({
+        updatedAt: "2026-05-14T00:00:00.000Z",
+        items: [{ text: "Inspect", status: "in_progress" }],
+      }),
+      agentEvent.taskPlan({
+        updatedAt: "2026-05-14T00:01:00.000Z",
+        items: [
+          { text: "Inspect", status: "completed" },
+          { text: "Verify", status: "in_progress" },
+        ],
+      }),
+      agentEvent.taskPlan({
+        updatedAt: "2026-05-14T00:02:00.000Z",
+        items: [],
+      }),
+    ]);
+
+    const output = app.render(60).join("\n");
+
+    expect(output).toContain("todo plan cleared");
+    expect(output).not.toContain("  [>] Inspect");
+    expect(app.getConversationTurns()).toEqual([]);
   });
 
   it("adds runtime append failure warnings before runtime event processing returns without recursive persistence", async () => {

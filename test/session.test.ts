@@ -248,6 +248,11 @@ describe("session store", () => {
       status: { state: "ready", label: "KB ready", detail: "2 files" },
     });
     await session.append({
+      kind: "task_plan",
+      updatedAt: "2026-05-14T00:00:00.000Z",
+      items: [{ text: "Inspect", status: "in_progress" }],
+    });
+    await session.append({
       kind: "choice",
       tone: "warning",
       title: "Continue?",
@@ -277,6 +282,13 @@ describe("session store", () => {
       expect.objectContaining({
         version: 1,
         id: 3,
+        kind: "task_plan",
+        updatedAt: "2026-05-14T00:00:00.000Z",
+        items: [{ text: "Inspect", status: "in_progress" }],
+      }),
+      expect.objectContaining({
+        version: 1,
+        id: 4,
         kind: "choice",
         tone: "warning",
         title: "Continue?",
@@ -435,6 +447,19 @@ describe("session store", () => {
       status: { kbPath: "topchester-kb", kbExists: false, kbIsDirectory: false, kbPathSource: "workspace" },
     });
     await session.append({
+      kind: "task_plan",
+      updatedAt: "2026-05-14T00:00:00.000Z",
+      items: [
+        { text: "Old", status: "completed" },
+        { text: "Current", status: "in_progress" },
+      ],
+    });
+    await session.append({
+      kind: "task_plan",
+      updatedAt: "2026-05-14T00:01:00.000Z",
+      items: [{ text: "Latest", status: "completed" }],
+    });
+    await session.append({
       kind: "choice",
       tone: "warning",
       title: "Continue?",
@@ -453,6 +478,10 @@ describe("session store", () => {
       { kind: "tool_call", label: "Tool shell: echo hi", call: { command: "echo hi" } },
       { kind: "modal", tone: "warning", title: "Continue?", body: "Pick", actions: [{ label: "No", value: "no" }] },
     ]);
+    expect(rehydrated.taskPlan).toEqual({
+      updatedAt: "2026-05-14T00:01:00.000Z",
+      items: [{ text: "Latest", status: "completed" }],
+    });
     expect(rehydrated.status).toBe("ready");
   });
 

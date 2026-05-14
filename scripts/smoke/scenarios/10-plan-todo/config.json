@@ -1,0 +1,19 @@
+{
+  "id": "10-plan-todo",
+  "name": "Visible plan todo",
+  "description": "Checks a multi-step fake API run updates and completes the visible task plan.",
+  "timeoutMs": 10000,
+  "prompt": "PLAN_TODO_SMOKE update notes.txt so the plan status is visible.",
+  "requiredToolCalls": ["plan_todo", "read_file", "edit_file"],
+  "expectedContent": [
+    {
+      "file": "notes.txt",
+      "contains": "plan status: visible"
+    }
+  ],
+  "expectedOutputContains": ["Updated notes.txt with a visible plan."],
+  "expectedTaskPlan": {
+    "updateCount": 3,
+    "lastStatus": "completed"
+  }
+}

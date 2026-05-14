@@ -1,4 +1,21 @@
 export { executeToolCall, type ExecuteToolCallOptions } from "./tools/executor.js";
+export { planTodoTool, type PlanTodoToolCall, type PlanTodoToolResult } from "./tools/plan-todo.js";
+export {
+  applyTaskPlanUpdate,
+  createEmptyTaskPlanState,
+  createTaskPlanController,
+  formatTaskPlanForPrompt,
+  formatTaskPlanForTui,
+  planTodoArgsSchema,
+  planTodoStatusSchema,
+  summarizeTaskPlan,
+  type PlanTodoStatus,
+  type PlanTodoToolArgs,
+  type TaskPlanController,
+  type TaskPlanItem,
+  type TaskPlanState,
+  type TaskPlanSummary,
+} from "./task-plan.js";
 export {
   applyExactEdits,
   editFileTool,

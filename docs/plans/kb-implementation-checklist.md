@@ -156,6 +156,7 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [x] Add workspace-scoped `git_status`, `git_diff`, and `git_log` for structured Git inspection
 - [x] Add guarded `git_add` for explicit-path staging after current status acknowledgement
 - [x] Add guarded `git_commit` for exact staged-path commits when the user explicitly asks
+- [x] Add session-only `plan_todo` for visible multi-step task plans
 - [x] Add `edit_file` path containment, existing-file checks, UTF-8 validation, optional expected-hash checks, and atomic-ish same-directory writes
 - [x] Add `write_file` path containment, existing-file rejection, optional parent-directory creation, UTF-8 validation, and atomic-ish same-directory writes
 - [x] Add per-file mutation serialization for `edit_file`
@@ -185,6 +186,7 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [ ] Request context pack before non-trivial coding tasks
 - [ ] Run drift check before editing relevant files
 - [ ] Use KB context to orient, plan, estimate impact, and identify verification
+- [x] Keep non-trivial runtime work visible through session-only `plan_todo` state
 - [ ] Resolve task-critical facts against current working tree before acting
 - [x] Track dirty files and suspect nodes in a session overlay during `edit_file` edits
 - [x] Track created files in the session overlay during `write_file` writes
@@ -205,7 +207,9 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [ ] Add context pack preview
 - [ ] Add drift warning panel
 - [ ] Add knowledge diff view
+- [x] Show current `plan_todo` state above the prompt during multi-step work
 - [x] Add TUI tests for KB footer path health
+- [x] Add TUI tests for visible task-plan rendering
 
 ## Validation and CI
 

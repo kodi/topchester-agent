@@ -15,17 +15,17 @@ Topchester currently exposes these workspace-scoped agent tools:
 - `grep` — search text inside workspace file contents.
 - `find_file` — find existing workspace files by fuzzy path or filename.
 - `edit_file` — edit existing UTF-8 files with exact `old_text` and `new_text` replacements.
+- `write_file` — create new UTF-8 files by default, with guarded whole-file overwrite support.
+- `git_status`, `git_diff`, `git_log`, `git_add`, and `git_commit` — inspect Git state and perform guarded explicit staging/commit operations.
 - `inspect_command` — run a small allowlisted set of read-only discovery commands.
+- `plan_todo` — keep a visible session-only task plan for multi-step work.
 
 Important limits:
 
 - No general command execution.
 - No test, lint, typecheck, or build runner.
-- No file creation tool.
 - No directory creation tool.
-- No git mutation tool.
 - No web fetch or web search tool.
-- No visible planning or todo tool.
 - No browser automation.
 - No external MCP/custom tool support beyond the KB architecture.
 
@@ -140,6 +140,8 @@ Weight: `13`
 
 Topchester's prompt tells the model to make an internal plan, but users cannot see or trust that plan as work progresses.
 
+Status: shipped in the `2026-05-14-plan-todo-tool-plan.md` implementation. The remaining work in this gap area is product refinement, not V0 capability.
+
 Suggested scope:
 
 - Add a lightweight task tracker tool with statuses such as `pending`, `in_progress`, and `completed`.
@@ -160,7 +162,7 @@ Why fifth:
 2. Ship `write_file` and directory creation.
 3. Ship structured git read tools, then guarded git mutation tools.
 4. Ship web fetch/search.
-5. Ship visible planning/todo state.
+5. Ship visible planning/todo state. `[x]`
 
 ## Just Outside The Top 5
 

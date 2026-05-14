@@ -6,6 +6,7 @@ import { parseSlashCommand } from "../agent/commands.js";
 import { type ConversationTurn } from "../agent/conversation.js";
 import { type AgentRuntimeEvent } from "../agent/events.js";
 import { TopchesterAgentRuntime } from "../agent/runtime.js";
+import { formatTaskPlanNotice } from "../agent/task-plan.js";
 import { type AppContext } from "../app/context.js";
 import {
   createSession,
@@ -214,6 +215,15 @@ function printPlainEvent(event: AgentRuntimeEvent): void {
 
   if (event.type === "knowledge_status" && event.guidance) {
     console.log(event.guidance);
+    return;
+  }
+
+  if (event.type === "task_plan") {
+    const notice = formatTaskPlanNotice("updated", event.plan);
+
+    if (notice) {
+      console.log(notice);
+    }
   }
 }
 

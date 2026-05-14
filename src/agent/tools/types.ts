@@ -1,10 +1,12 @@
 import { type z } from "zod";
 import { type Logger } from "pino";
+import { type TaskPlanController } from "../task-plan.js";
 
 export interface ToolContext {
   workspaceRoot: string;
   pathEnv?: string;
   logger?: Logger;
+  taskPlan?: TaskPlanController;
 }
 
 export interface ToolCall<Name extends string = string, Args = unknown> {

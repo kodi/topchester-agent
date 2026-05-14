@@ -18,6 +18,7 @@ Running `topchester` in an interactive terminal opens the chat-style TUI. A plai
 The TUI has three main areas:
 
 - Thread area — shows startup context, system messages, your messages, agent replies, and compact tool rows.
+- Visible plan block — appears above the prompt when the agent is working through a session task plan.
 - Prompt box — where you type chat messages or slash commands.
 - Status line — shows readiness, folder name, active model, provider, and KB state.
 
@@ -84,6 +85,7 @@ If the KB is missing, empty, misconfigured, or not current, the startup KB statu
 
 The agent can use these workspace-scoped tools from the TUI:
 
+- `plan_todo` — replace the visible session task plan for multi-step work.
 - `read_file` — read a UTF-8 file inside the workspace and return hash metadata.
 - `list_files` — list files and folders inside a workspace folder.
 - `grep` — search text inside workspace file contents.
@@ -93,9 +95,12 @@ The agent can use these workspace-scoped tools from the TUI:
 
 Tool activity appears as compact rows in the thread. These rows come from tool events, so regular system messages are still rendered as system messages even if their text mentions a tool name.
 
+When the agent uses `plan_todo`, the current plan is pinned above the prompt instead of repeated as chat prose. It also prints a short transient notice such as `todo plan created`, `todo plan updated`, `todo plan completed`, or `todo plan cleared`. The pinned plan uses `completed`, `in_progress`, and `pending` markers, hides when empty, caps long plans, and is restored from the latest session event on resume.
+
 Examples:
 
 ```text
+plan_todo: 3 items, 1 active
 read_file: README.md
 edit_file: src/example.ts (changed +1/-1)
 inspect_command: pwd && rg --files docs/plans | head -20

@@ -35,6 +35,8 @@ export function renderRuntimeEvent(event: AgentRuntimeEvent): ChatMessage[] {
           actions: event.actions,
         }),
       ];
+    case "task_plan":
+      return [];
     case "status":
       return [];
   }

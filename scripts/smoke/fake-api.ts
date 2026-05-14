@@ -145,6 +145,48 @@ function chooseResponse(prompt: string): string {
     });
   }
 
+  if (prompt.includes("PLAN_TODO_SMOKE") && prompt.includes("Tool result from edit_file")) {
+    if (prompt.includes("completed: 2")) {
+      return "Updated notes.txt with a visible plan.";
+    }
+
+    return toolCall("plan_todo", {
+      items: [
+        { text: "Inspect notes file", status: "completed" },
+        { text: "Update notes file", status: "completed" },
+      ],
+    });
+  }
+
+  if (prompt.includes("PLAN_TODO_SMOKE") && prompt.includes("Tool result from read_file")) {
+    if (prompt.includes("completed: 1")) {
+      return toolCall("edit_file", {
+        path: "notes.txt",
+        edits: [{ old_text: "plan status: pending\n", new_text: "plan status: visible\n" }],
+      });
+    }
+
+    return toolCall("plan_todo", {
+      items: [
+        { text: "Inspect notes file", status: "completed" },
+        { text: "Update notes file", status: "in_progress" },
+      ],
+    });
+  }
+
+  if (prompt.includes("PLAN_TODO_SMOKE") && prompt.includes("Tool result from plan_todo")) {
+    return toolCall("read_file", { path: "notes.txt" });
+  }
+
+  if (prompt.includes("PLAN_TODO_SMOKE")) {
+    return toolCall("plan_todo", {
+      items: [
+        { text: "Inspect notes file", status: "in_progress" },
+        { text: "Update notes file", status: "pending" },
+      ],
+    });
+  }
+
   if (prompt.includes("Tool result from edit_file")) {
     return "Done.";
   }

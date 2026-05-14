@@ -1,10 +1,12 @@
 import { type KnowledgeStatus } from "../knowledge/status.js";
+import { type TaskPlanState } from "./task-plan.js";
 import { type ToolCall } from "./tools.js";
 
 export type AgentRuntimeEvent =
   | AgentStatusEvent
   | AgentMessageEvent
   | AgentToolCallEvent
+  | AgentTaskPlanEvent
   | AgentKnowledgeStatusEvent
   | AgentChoiceEvent;
 
@@ -24,6 +26,11 @@ export interface AgentToolCallEvent {
   type: "tool_call";
   call: ToolCall;
   label: string;
+}
+
+export interface AgentTaskPlanEvent {
+  type: "task_plan";
+  plan: TaskPlanState;
 }
 
 export interface AgentKnowledgeStatusEvent {
@@ -69,6 +76,10 @@ export const agentEvent = {
 
   toolCall(call: ToolCall, label: string): AgentToolCallEvent {
     return { type: "tool_call", call, label };
+  },
+
+  taskPlan(plan: TaskPlanState): AgentTaskPlanEvent {
+    return { type: "task_plan", plan };
   },
 
   knowledgeStatus(status: KnowledgeStatus, guidance?: string): AgentKnowledgeStatusEvent {

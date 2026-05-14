@@ -4,11 +4,13 @@ import { gitAddTool, gitCommitTool, gitDiffTool, gitLogTool, gitStatusTool } fro
 import { grepTool } from "./grep.js";
 import { inspectCommandTool } from "./inspect-command.js";
 import { listFilesTool } from "./list-files.js";
+import { planTodoTool } from "./plan-todo.js";
 import { readFileTool } from "./read-file.js";
 import { type ToolCallForDefinition, type ToolResultForDefinition } from "./types.js";
 import { writeFileTool } from "./write-file.js";
 
 export const toolRegistry = {
+  [planTodoTool.name]: planTodoTool,
   [readFileTool.name]: readFileTool,
   [listFilesTool.name]: listFilesTool,
   [grepTool.name]: grepTool,

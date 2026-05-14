@@ -58,6 +58,13 @@ const scenarioSchema = z.object({
       statusAfter: z.string().optional(),
     })
     .optional(),
+  expectedTaskPlan: z
+    .object({
+      updateCount: z.number().int().min(0).optional(),
+      lastStatus: z.enum(["empty", "completed", "in_progress", "pending"]).optional(),
+      lastActiveItem: z.string().optional(),
+    })
+    .optional(),
   expectedGit: z
     .object({
       stagedPaths: z.array(z.string()).optional(),
@@ -99,6 +106,9 @@ interface TrialResult {
   textXmlToolCallCount: number;
   providerRejectedTools: boolean;
   fallbackReason?: string;
+  taskPlanUpdateCount: number;
+  lastTaskPlanStatus?: "empty" | "completed" | "in_progress" | "pending";
+  lastTaskPlanActiveItem?: string;
 }
 
 interface JsonLine {
@@ -109,6 +119,9 @@ interface JsonLine {
     type?: string;
     call?: {
       tool?: string;
+    };
+    plan?: {
+      items?: unknown;
     };
     status?: Record<string, unknown>;
   };
@@ -121,6 +134,9 @@ interface ProtocolMetadata {
   textXmlToolCallCount: number;
   providerRejectedTools: boolean;
   fallbackReason?: string;
+  taskPlanUpdateCount: number;
+  lastTaskPlanStatus?: "empty" | "completed" | "in_progress" | "pending";
+  lastTaskPlanActiveItem?: string;
 }
 
 class DryRunComplete extends Error {}
@@ -394,7 +410,40 @@ async function assertScenario(
     }
   }
 
+  await expectTaskPlanState(outputDir, scenario.expectedTaskPlan, failures);
   await expectGitState(workspace, scenario.expectedGit, failures);
+}
+
+async function expectTaskPlanState(
+  outputDir: string,
+  expectation: Scenario["expectedTaskPlan"],
+  failures: string[]
+): Promise<void> {
+  if (!expectation) {
+    return;
+  }
+
+  const taskPlanEvents = await readTaskPlanJsonEvents(outputDir);
+  const lastTaskPlan = taskPlanEvents.at(-1);
+  const lastActiveItem = lastTaskPlan?.items.find((item) => item.status === "in_progress")?.text;
+
+  if (expectation.updateCount !== undefined && taskPlanEvents.length !== expectation.updateCount) {
+    failures.push(`task plan update count was ${taskPlanEvents.length}, expected ${expectation.updateCount}`);
+  }
+
+  if (expectation.lastStatus !== undefined) {
+    const actualStatus = lastTaskPlan ? summarizeTaskPlanStatus(lastTaskPlan.items) : "empty";
+
+    if (actualStatus !== expectation.lastStatus) {
+      failures.push(`last task plan status was ${actualStatus}, expected ${expectation.lastStatus}`);
+    }
+  }
+
+  if (expectation.lastActiveItem !== undefined && lastActiveItem !== expectation.lastActiveItem) {
+    failures.push(
+      `last task plan active item was ${JSON.stringify(lastActiveItem)}, expected ${JSON.stringify(expectation.lastActiveItem)}`
+    );
+  }
 }
 
 async function collectGlobalLogs(
@@ -783,6 +832,9 @@ function formatSummary(results: TrialResult[]): string {
       `duration_ms: ${result.durationMs}`,
       `tool_protocol: ${result.toolProtocol ?? "none"}`,
       `tool_calls: native=${result.nativeToolCallCount}, text_json=${result.textJsonToolCallCount}, text_xml=${result.textXmlToolCallCount}`,
+      `task_plan_updates: ${result.taskPlanUpdateCount}`,
+      `last_task_plan_status: ${result.lastTaskPlanStatus ?? "none"}`,
+      ...(result.lastTaskPlanActiveItem ? [`last_task_plan_active_item: ${result.lastTaskPlanActiveItem}`] : []),
       `provider_rejected_tools: ${result.providerRejectedTools}`,
       ...(result.fallbackReason ? [`fallback_reason: ${result.fallbackReason}`] : []),
       `workspace: ${result.workspace}`,
@@ -842,6 +894,9 @@ async function readProtocolMetadata(outputDir: string): Promise<ProtocolMetadata
     .map((event) => event.toolProtocol)
     .filter((protocol): protocol is string => typeof protocol === "string")
     .at(-1);
+  const taskPlanEvents = await readTaskPlanJsonEvents(outputDir);
+  const lastTaskPlan = taskPlanEvents.at(-1);
+  const lastTaskPlanActiveItem = lastTaskPlan?.items.find((item) => item.status === "in_progress")?.text;
 
   return {
     toolProtocol: lastToolProtocol ?? lastResponseProtocol,
@@ -850,7 +905,57 @@ async function readProtocolMetadata(outputDir: string): Promise<ProtocolMetadata
     textXmlToolCallCount: sources.filter((source) => source === "text-xml").length,
     providerRejectedTools: modelResponses.some((event) => event.providerRejectedTools === true),
     ...(fallbackReason ? { fallbackReason } : {}),
+    taskPlanUpdateCount: taskPlanEvents.length,
+    ...(lastTaskPlan ? { lastTaskPlanStatus: summarizeTaskPlanStatus(lastTaskPlan.items) } : {}),
+    ...(lastTaskPlanActiveItem ? { lastTaskPlanActiveItem } : {}),
   };
+}
+
+async function readTaskPlanJsonEvents(outputDir: string): Promise<Array<{ items: TaskPlanJsonItem[] }>> {
+  const eventFiles = (await readdir(outputDir))
+    .filter((entry) => /^events-\d+\.jsonl$/u.test(entry))
+    .sort((left, right) => left.localeCompare(right));
+  const events = (await Promise.all(eventFiles.map((entry) => readJsonLines<JsonLine>(join(outputDir, entry))))).flat();
+
+  return events
+    .map((event) => event.event?.plan)
+    .filter((plan): plan is { items: TaskPlanJsonItem[] } => {
+      return Boolean(plan) && Array.isArray(plan.items) && plan.items.every(isTaskPlanJsonItem);
+    });
+}
+
+interface TaskPlanJsonItem {
+  text: string;
+  status: "pending" | "in_progress" | "completed";
+}
+
+function isTaskPlanJsonItem(value: unknown): value is TaskPlanJsonItem {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const item = value as { text?: unknown; status?: unknown };
+
+  return (
+    typeof item.text === "string" &&
+    (item.status === "pending" || item.status === "in_progress" || item.status === "completed")
+  );
+}
+
+function summarizeTaskPlanStatus(items: TaskPlanJsonItem[]): "empty" | "completed" | "in_progress" | "pending" {
+  if (items.length === 0) {
+    return "empty";
+  }
+
+  if (items.every((item) => item.status === "completed")) {
+    return "completed";
+  }
+
+  if (items.some((item) => item.status === "in_progress")) {
+    return "in_progress";
+  }
+
+  return "pending";
 }
 
 function gray(text: string): string {

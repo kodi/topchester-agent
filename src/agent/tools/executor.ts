@@ -1,10 +1,12 @@
 import { getToolDefinition, type ToolCall, type ToolResult } from "./registry.js";
 import { type ToolDefinition, type ToolContext } from "./types.js";
 import { type Logger } from "pino";
+import { type TaskPlanController } from "../task-plan.js";
 
 export interface ExecuteToolCallOptions {
   pathEnv?: string;
   logger?: Logger;
+  taskPlan?: TaskPlanController;
 }
 
 type RuntimeToolDefinition = ToolDefinition<string, unknown, ToolResult>;
@@ -20,12 +22,18 @@ export async function executeToolCall(
     workspaceRoot,
     pathEnv: options.pathEnv,
     logger: options.logger,
+    taskPlan: options.taskPlan,
   };
 
-  options.logger?.debug({ event: "tool_call", tool: call.tool, args: summarizeToolArgs(call) }, "tool call");
-
   try {
-    const result = await definition.execute(context, call.args);
+    const parsedCall = { ...call, args: definition.argsSchema.parse(call.args) } as ToolCall;
+
+    options.logger?.debug(
+      { event: "tool_call", tool: parsedCall.tool, args: summarizeToolArgs(parsedCall) },
+      "tool call"
+    );
+
+    const result = await definition.execute(context, parsedCall.args);
     const durationMs = Date.now() - startedAt;
 
     options.logger?.debug(
@@ -67,6 +75,16 @@ export async function executeToolCall(
 }
 
 function summarizeToolArgs(call: ToolCall): unknown {
+  if (call.tool === "plan_todo") {
+    const activeItem = call.args.items.find((item) => item.status === "in_progress")?.text;
+
+    return {
+      itemCount: call.args.items.length,
+      activeItem,
+      completedCount: call.args.items.filter((item) => item.status === "completed").length,
+    };
+  }
+
   if (call.tool === "write_file") {
     return {
       path: call.args.path,
@@ -92,6 +110,14 @@ function summarizeToolArgs(call: ToolCall): unknown {
 }
 
 function summarizeToolResult(result: ToolResult): Record<string, unknown> {
+  if (result.tool === "plan_todo") {
+    return {
+      itemCount: result.plan.items.length,
+      activeItem: result.currentItem,
+      completedCount: result.completedCount,
+    };
+  }
+
   if (result.tool === "inspect_command") {
     return {
       cwd: result.cwd,

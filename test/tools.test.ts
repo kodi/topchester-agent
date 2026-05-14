@@ -16,6 +16,7 @@ import {
   readWorkspaceFile,
   toAiSdkToolSet,
   writeWorkspaceFile,
+  createTaskPlanController,
 } from "../src/agent/tools.js";
 import { toolRegistry } from "../src/agent/tools/registry.js";
 import { editFileArgsSchema } from "../src/agent/tools/edit-file.js";
@@ -25,6 +26,22 @@ import { createTopchesterLogger } from "../src/logging/index.js";
 import { clearSessionOverlay, getSessionOverlayState } from "../src/knowledge/session-overlay.js";
 
 describe("agent tools", () => {
+  it("parses plan_todo tool calls from JSON", () => {
+    expect(
+      parseToolCall(
+        '{"tool":"plan_todo","args":{"items":[{"text":"Inspect files","status":"completed"},{"text":"Run tests","status":"in_progress"}]}}'
+      )
+    ).toEqual({
+      tool: "plan_todo",
+      args: {
+        items: [
+          { text: "Inspect files", status: "completed" },
+          { text: "Run tests", status: "in_progress" },
+        ],
+      },
+    });
+  });
+
   it("parses read_file tool calls from JSON", () => {
     expect(parseToolCall('{"tool":"read_file","args":{"path":"package.json"}}')).toEqual({
       tool: "read_file",
@@ -137,6 +154,11 @@ describe("agent tools", () => {
 
   it("rejects unknown tools and invalid tool args", () => {
     expect(parseToolCall('{"tool":"unknown","args":{}}')).toBeUndefined();
+    expect(
+      parseToolCall(
+        '{"tool":"plan_todo","args":{"items":[{"text":"One","status":"in_progress"},{"text":"Two","status":"in_progress"}]}}'
+      )
+    ).toBeUndefined();
     expect(parseToolCall('{"tool":"read_file","args":{"path":123}}')).toBeUndefined();
     expect(parseToolCall('{"tool":"list_files","args":{"limit":0}}')).toBeUndefined();
     expect(parseToolCall('{"tool":"grep","args":{"path":"src"}}')).toBeUndefined();
@@ -183,6 +205,17 @@ describe("agent tools", () => {
         args: { pattern: "needle", path: "src" },
       },
     });
+    expect(
+      parseToolCallWithSource(
+        '<tool_call>plan_todo {"items":[{"text":"Inspect files","status":"in_progress"}]}</tool_call>'
+      )
+    ).toEqual({
+      source: "text-xml",
+      call: {
+        tool: "plan_todo",
+        args: { items: [{ text: "Inspect files", status: "in_progress" }] },
+      },
+    });
   });
 
   it("rejects ambiguous or invalid XML tool calls", () => {
@@ -211,8 +244,47 @@ describe("agent tools", () => {
     });
   });
 
+  it("executes plan_todo through runtime-provided task-plan state", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const taskPlan = createTaskPlanController();
+    const call = parseToolCall(
+      '{"tool":"plan_todo","args":{"items":[{"text":"Inspect files","status":"completed"},{"text":"Run tests","status":"in_progress"}]}}'
+    );
+
+    if (!call) {
+      throw new Error("Expected plan_todo tool call to parse.");
+    }
+
+    await expect(executeToolCall(workspace, call, { taskPlan })).resolves.toMatchObject({
+      tool: "plan_todo",
+      pendingCount: 0,
+      inProgressCount: 1,
+      completedCount: 1,
+      currentItem: "Run tests",
+      content: expect.stringContaining("current: Run tests"),
+    });
+    expect(taskPlan.get().items).toEqual([
+      { text: "Inspect files", status: "completed" },
+      { text: "Run tests", status: "in_progress" },
+    ]);
+  });
+
+  it("requires runtime task-plan state for plan_todo", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const call = parseToolCall(
+      '{"tool":"plan_todo","args":{"items":[{"text":"Inspect files","status":"in_progress"}]}}'
+    );
+
+    if (!call) {
+      throw new Error("Expected plan_todo tool call to parse.");
+    }
+
+    await expect(executeToolCall(workspace, call)).rejects.toThrow(/requires runtime task-plan state/u);
+  });
+
   it("gets model prompt lines from the tool registry", () => {
     expect(getToolPromptLines()).toEqual([
+      'plan_todo: replace the visible session task plan for non-trivial multi-step work; keep 2-6 short items, exactly one in_progress item while work remains, and use [] only to clear. To use it, reply with only JSON: {"tool":"plan_todo","args":{"items":[{"text":"Inspect relevant files","status":"in_progress"},{"text":"Implement focused change","status":"pending"}]}}',
       'read_file: read a UTF-8 file inside the workspace. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
       'list_files: list files and directories inside the workspace; top-level by default, recursive only when requested, with "/" after directory names. To use it, reply with only JSON: {"tool":"list_files","args":{"path":"src","recursive":false,"limit":500}}',
       'grep: search text inside file contents in the workspace; output lines are the files containing the matched text, and paths mentioned inside those lines are not confirmed files unless checked with find_file or read_file. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
@@ -232,6 +304,14 @@ describe("agent tools", () => {
     expect(getChatSystemPrompt()).toContain(
       "If grep output mentions another path, treat that mentioned path as content until find_file or read_file confirms it exists."
     );
+  });
+
+  it("tells the model when to use plan_todo", () => {
+    const prompt = getChatSystemPrompt();
+
+    expect(prompt).toContain("Use plan_todo for non-trivial multi-step work");
+    expect(prompt).toContain("Keep plan_todo items short");
+    expect(prompt).toContain("Do not use plan_todo for simple one-step answers");
   });
 
   it("tells the model how to use edit_file safely", () => {

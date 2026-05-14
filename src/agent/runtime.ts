@@ -9,6 +9,7 @@ import { type ConversationTurn, buildConversationPrompt } from "./conversation.j
 import { agentEvent, type AgentRuntimeEvent } from "./events.js";
 import { checkAgentReady } from "./health.js";
 import { getChatSystemPrompt } from "./prompts.js";
+import { createTaskPlanController } from "./task-plan.js";
 import {
   executeToolCall,
   parseToolCallWithSource,
@@ -36,6 +37,8 @@ export interface AgentRuntime {
 }
 
 export class TopchesterAgentRuntime implements AgentRuntime {
+  private readonly taskPlan = createTaskPlanController();
+
   constructor(private readonly context: AppContext) {}
 
   async checkAgent(abortSignal?: AbortSignal): Promise<AgentRuntimeEvent[]> {
@@ -145,8 +148,12 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       const executableToolCall = toolCall as ToolCall;
       const toolResult = await executeToolCall(this.context.workspaceRoot, executableToolCall, {
         logger: this.context.logger,
+        taskPlan: this.taskPlan,
       });
       events.push(agentEvent.toolCall(executableToolCall, formatToolCallMessage(executableToolCall, toolResult)));
+      if (toolResult.tool === "plan_todo") {
+        events.push(agentEvent.taskPlan(toolResult.plan));
+      }
       afterTool = executableToolCall.tool;
       nextPrompt = `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(result.toolProtocol)}`;
     }
@@ -304,6 +311,10 @@ function formatToolResultForPrompt(result: ToolResult): string {
     ].join("\n");
   }
 
+  if (result.tool === "plan_todo") {
+    return [`Tool result from ${result.tool}:`, result.content].join("\n");
+  }
+
   if (result.tool === "edit_file") {
     return [
       `Tool result from ${result.tool}${path}:`,
@@ -441,11 +452,15 @@ function formatContinuationInstruction(protocol: ToolProtocol): string {
         ? "If another tool is needed, reply with only that tool JSON."
         : "If another tool is needed, use the available tool calling path.";
 
-  return `Continue the user's request using the tool result above. ${toolInstruction} Otherwise answer the user. Do not guess.`;
+  return `Continue the user's request using the tool result above and the visible plan when one is active. Update plan_todo after major progress changes. ${toolInstruction} Otherwise answer the user. Do not guess.`;
 }
 
 function formatToolCallMessage(call: ToolCall, result?: ToolResult): string {
   switch (call.tool) {
+    case "plan_todo":
+      return result?.tool === "plan_todo"
+        ? `plan_todo: ${result.plan.items.length} items, ${result.inProgressCount} active`
+        : `plan_todo: ${call.args.items.length} items`;
     case "read_file":
       return `read_file: ${call.args.path}`;
     case "list_files":

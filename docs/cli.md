@@ -70,6 +70,7 @@ Current behavior:
 - In non-interactive output, the command prints a static version of the layout.
 - The coding loop can use workspace-scoped file tools: `read_file`, `list_files`, `grep`, `find_file`, `edit_file`, `write_file`, and `inspect_command`.
 - The coding loop can use structured Git tools: `git_status`, `git_diff`, `git_log`, `git_add`, and `git_commit`.
+- The coding loop can use `plan_todo` to keep a visible session-only task plan during non-trivial multi-step work.
 - `git_status`, `git_diff`, and `git_log` are the preferred path for Git state, diffs, and recent history. `inspect_command` can still inspect read-only Git commands, but it is an orientation fallback rather than the normal Git workflow.
 - `git_add` stages only explicit paths whose current status was acknowledged. It rejects broad pathspecs such as `.` and does not stage unrelated files by default.
 - `git_commit` commits only when staged paths exactly match `expected_staged_paths`. The model prompt still tells the agent not to stage or commit unless the user explicitly asks.
@@ -101,6 +102,7 @@ Current behavior:
 - Creates a project-local session under `.agents/topchester/sessions/`.
 - Emits startup KB status before the prompt runs.
 - Persists user messages and runtime events to the session log.
+- Persists `plan_todo` task-plan events to the session log. Resume restores the latest visible plan without adding task-plan rows to future model context.
 - Includes a per-run `runId` in structured logs when `TOPCHESTER_LOG_LEVEL` enables logging.
 - Routes slash-command prompts such as `/kb status` through the same command dispatcher used by the TUI.
 - Does not open the interactive TUI.

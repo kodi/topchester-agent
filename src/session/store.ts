@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { uuidv7 } from "uuidv7";
 import { ZodError } from "zod";
 import { getTopchesterSessionsPath } from "../app/paths.js";
+import { type TaskPlanState } from "../agent/task-plan.js";
 import { type ToolCall } from "../agent/tools.js";
 import { toolCallMessage, type ChatMessage } from "../tui/messages.js";
 import {
@@ -36,6 +37,7 @@ export interface LoadedSession {
 export interface RehydratedSession {
   messages: ChatMessage[];
   status?: string;
+  taskPlan?: TaskPlanState;
 }
 
 export function generateSessionId(): string {
@@ -143,6 +145,7 @@ export async function resolveLatestSessionId(workspaceRoot: string): Promise<str
 export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
   const messages: ChatMessage[] = [];
   let status: string | undefined;
+  let taskPlan: TaskPlanState | undefined;
   let visibleOnlyActionValues = new Set<string>();
 
   for (const event of events) {
@@ -166,6 +169,12 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
       case "tool_call":
         messages.push(toolCallMessage(event.call as unknown as ToolCall, event.label));
         break;
+      case "task_plan":
+        taskPlan = {
+          items: event.items,
+          updatedAt: event.updatedAt,
+        };
+        break;
       case "knowledge_status":
         break;
       case "choice":
@@ -188,7 +197,7 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
     }
   }
 
-  return { messages, status };
+  return { messages, status, ...(taskPlan === undefined ? {} : { taskPlan }) };
 }
 
 function buildHandle(sessionDir: string, metadata: SessionMetadata): SessionHandle {

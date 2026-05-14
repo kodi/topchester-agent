@@ -43,6 +43,17 @@ const toolCallPayloadSchema = z.object({
   call: z.record(z.string(), jsonValueSchema),
 });
 
+const taskPlanItemPayloadSchema = z.object({
+  text: z.string(),
+  status: z.enum(["pending", "in_progress", "completed"]),
+});
+
+const taskPlanPayloadSchema = z.object({
+  kind: z.literal("task_plan"),
+  items: z.array(taskPlanItemPayloadSchema),
+  updatedAt: isoTimestampSchema,
+});
+
 const statusPayloadSchema = z.object({
   kind: z.literal("status"),
   status: z.string(),
@@ -69,6 +80,7 @@ const choicePayloadSchema = z.object({
 export const sessionEventPayloadSchema = z.discriminatedUnion("kind", [
   messagePayloadSchema,
   toolCallPayloadSchema,
+  taskPlanPayloadSchema,
   statusPayloadSchema,
   knowledgeStatusPayloadSchema,
   choicePayloadSchema,

@@ -1,6 +1,7 @@
 import { basename, isAbsolute, relative } from "node:path";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type AppContext } from "../app/context.js";
+import { formatTaskPlanForTui, type TaskPlanState } from "../agent/task-plan.js";
 import { ui } from "../cli/ui.js";
 import { type KnowledgeStatus } from "../knowledge/status.js";
 import { type ModelPurpose } from "../model/index.js";
@@ -52,13 +53,20 @@ export function getStartupThreadMessages(context: AppContext): ChatMessage[] {
   return [systemMessage(lines.join("\n"))];
 }
 
-export function renderStaticLayout(messages: ChatMessage[], folderName = "", modelLabel = ""): string {
+export function renderStaticLayout(
+  messages: ChatMessage[],
+  folderName = "",
+  modelLabel = "",
+  taskPlan?: TaskPlanState
+): string {
   const threadLines = messages.flatMap((message) => renderChatMessage(message));
   const status = formatStatusLine(folderName, modelLabel);
+  const planLines = taskPlan && taskPlan.items.length > 0 ? [...formatTaskPlanForTui(taskPlan, 72), ""] : [];
 
   return [
     ...threadLines,
     "",
+    ...planLines,
     "┌──────────────────────────────────────────────────────────────────────┐",
     "│ >                                                                    │",
     "└──────────────────────────────────────────────────────────────────────┘",
