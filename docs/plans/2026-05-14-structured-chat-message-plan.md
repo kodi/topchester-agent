@@ -23,7 +23,7 @@ type ChatMessage =
 - Existing runtime execution semantics stay unchanged. `AgentToolCallEvent.call` is already structured and remains the source of truth for executed tools.
 - Existing session `tool_call` events remain valid. Old events that only have `label` and `call` should rehydrate into `ChatMessage.kind === "tool_call"` with no migration.
 - `label` remains the compact visible row text for now, so this migration can avoid rebuilding every tool label formatter in the first slice.
-- `resultSummary` is optional. It can be introduced where the runtime already knows structured edit/create summaries, but rendering must not require it for old sessions.
+- `resultSummary` is optional. It stays TUI-only for this implementation; durable session records continue to rely on existing `label` and `call` fields so old sessions need no migration.
 - Model context stays explicit. Tool-call rows should not become model-facing chat turns just because they are visible in the TUI.
 
 ## Scope
@@ -92,7 +92,7 @@ The session layer should preserve the existing durable event shape and simply re
 
 ### Slice 1: Add Structured Tool ChatMessage
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Make the TUI message model capable of representing tool calls without changing behavior yet.
 
@@ -121,7 +121,7 @@ Dependencies:
 
 ### Slice 2: Render Tool Rows by Kind
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Remove `isToolCallLine(...)` as the authority for tool-row rendering.
 
@@ -151,7 +151,7 @@ Dependencies:
 
 ### Slice 3: Preserve Tool Structure Through Runtime Events
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Convert live runtime tool events into structured TUI messages.
 
@@ -181,7 +181,7 @@ Dependencies:
 
 ### Slice 4: Rehydrate And Persist Structured Chat Messages
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Keep tool calls structured across session resume and persistence helpers.
 
@@ -212,7 +212,7 @@ Dependencies:
 
 ### Slice 5: Guard Model Context And Non-Interactive Resume
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Make all conversation-turn builders intentionally ignore `tool_call` chat messages.
 
@@ -241,7 +241,7 @@ Dependencies:
 
 ### Slice 6: Documentation And Cleanup
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Align docs and remove obsolete regex-based assumptions.
 

@@ -1,7 +1,7 @@
 import { type AgentRuntimeEvent } from "../agent/events.js";
 import { getKnowledgeStatusEvents } from "../agent/runtime.js";
 import { type KnowledgeStatus } from "../knowledge/status.js";
-import { agentMessage, modalMessage, systemMessage, type ChatMessage } from "./messages.js";
+import { agentMessage, modalMessage, systemMessage, toolCallMessage, type ChatMessage } from "./messages.js";
 import { formatKnowledgePathStatus } from "./status.js";
 
 export function getKnowledgeStatusMessages(status: KnowledgeStatus): ChatMessage[] {
@@ -17,7 +17,7 @@ export function renderRuntimeEvent(event: AgentRuntimeEvent): ChatMessage[] {
     case "message":
       return [event.role === "assistant" ? agentMessage(event.text, event.meta) : systemMessage(event.text)];
     case "tool_call":
-      return [systemMessage(event.label)];
+      return [toolCallMessage(event.call, event.label)];
     case "knowledge_status":
       return [
         systemMessage(

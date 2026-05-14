@@ -156,19 +156,16 @@ async function loadConversation(workspaceRoot: string, resume: string): Promise<
   const rehydrated = rehydrateSession(loaded.events);
 
   return rehydrated.messages.flatMap((message): ConversationTurn[] => {
-    if (message.kind === "modal" || message.modelContext === false) {
-      return [];
+    switch (message.kind) {
+      case "user":
+        return message.modelContext === false ? [] : [{ role: "user", text: message.text }];
+      case "agent":
+        return message.modelContext === false ? [] : [{ role: "assistant", text: message.text }];
+      case "system":
+      case "tool_call":
+      case "modal":
+        return [];
     }
-
-    if (message.kind === "user") {
-      return [{ role: "user", text: message.text }];
-    }
-
-    if (message.kind === "agent") {
-      return [{ role: "assistant", text: message.text }];
-    }
-
-    return [];
   });
 }
 

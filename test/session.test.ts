@@ -450,7 +450,7 @@ describe("session store", () => {
       { kind: "system", text: "startup" },
       { kind: "user", text: "/help" },
       { kind: "agent", text: "answer", meta: "model" },
-      { kind: "system", text: "Tool shell: echo hi" },
+      { kind: "tool_call", label: "Tool shell: echo hi", call: { command: "echo hi" } },
       { kind: "modal", tone: "warning", title: "Continue?", body: "Pick", actions: [{ label: "No", value: "no" }] },
     ]);
     expect(rehydrated.status).toBe("ready");

@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { uuidv7 } from "uuidv7";
 import { ZodError } from "zod";
 import { getTopchesterSessionsPath } from "../app/paths.js";
-import { type ChatMessage } from "../tui/messages.js";
+import { type ToolCall } from "../agent/tools.js";
+import { toolCallMessage, type ChatMessage } from "../tui/messages.js";
 import {
   SESSION_EVENT_VERSION,
   SESSION_METADATA_VERSION,
@@ -163,7 +164,7 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
         }
         break;
       case "tool_call":
-        messages.push({ kind: "system", text: event.label });
+        messages.push(toolCallMessage(event.call as unknown as ToolCall, event.label));
         break;
       case "knowledge_status":
         break;

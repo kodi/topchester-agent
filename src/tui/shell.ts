@@ -267,10 +267,18 @@ export async function persistMessagesWithWarning(
 }
 
 export function chatMessageToSessionPayload(message: ChatMessage): SessionEventPayload | undefined {
-  if (message.kind === "system" || message.kind === "user" || message.kind === "agent") {
+  if (message.kind === "system" || message.kind === "user") {
     return {
       kind: "message",
-      role: message.kind === "agent" ? "assistant" : message.kind,
+      role: message.kind,
+      text: message.text,
+    };
+  }
+
+  if (message.kind === "agent") {
+    return {
+      kind: "message",
+      role: "assistant",
       text: message.text,
       ...(message.meta === undefined ? {} : { meta: message.meta }),
     };
@@ -283,6 +291,14 @@ export function chatMessageToSessionPayload(message: ChatMessage): SessionEventP
       title: message.title,
       ...(message.body === undefined ? {} : { body: message.body }),
       actions: message.actions,
+    };
+  }
+
+  if (message.kind === "tool_call") {
+    return {
+      kind: "tool_call",
+      label: message.label,
+      call: message.call as unknown as Record<string, unknown>,
     };
   }
 

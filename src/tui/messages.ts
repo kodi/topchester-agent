@@ -1,14 +1,35 @@
 import { ui } from "../cli/ui.js";
+import { type ToolCall } from "../agent/tools.js";
 import { renderMarkdown } from "./markdown.js";
 
-export type ChatMessageKind = "system" | "user" | "agent" | "modal";
+export type ChatMessageKind = "system" | "user" | "agent" | "tool_call" | "modal";
 
-interface TextChatMessage {
-  kind: Exclude<ChatMessageKind, "modal">;
+export interface SystemChatMessage {
+  kind: "system";
+  text: string;
+  modelContext?: boolean;
+}
+
+export interface UserChatMessage {
+  kind: "user";
+  text: string;
+  modelContext?: boolean;
+}
+
+export interface AgentChatMessage {
+  kind: "agent";
   text: string;
   meta?: string;
   modelContext?: boolean;
 }
+
+export interface ToolCallChatMessage {
+  kind: "tool_call";
+  call: ToolCall;
+  label: string;
+  resultSummary?: string;
+}
+
 export interface ChatModalAction {
   label: string;
   value?: string;
@@ -22,7 +43,12 @@ export interface ChatModalMessage {
   actions: ChatModalAction[];
 }
 
-export type ChatMessage = TextChatMessage | ChatModalMessage;
+export type ChatMessage =
+  | SystemChatMessage
+  | UserChatMessage
+  | AgentChatMessage
+  | ToolCallChatMessage
+  | ChatModalMessage;
 
 export function systemMessage(text: string): ChatMessage {
   return { kind: "system", text };
@@ -34,6 +60,12 @@ export function userMessage(text: string): ChatMessage {
 
 export function agentMessage(text: string, meta?: string): ChatMessage {
   return { kind: "agent", text, meta };
+}
+
+export function toolCallMessage(call: ToolCall, label: string, resultSummary?: string): ChatMessage {
+  return resultSummary === undefined
+    ? { kind: "tool_call", call, label }
+    : { kind: "tool_call", call, label, resultSummary };
 }
 
 export function modalMessage(message: Omit<ChatModalMessage, "kind">): ChatMessage {
@@ -48,6 +80,10 @@ export interface RenderChatMessageOptions {
 export function renderChatMessage(message: ChatMessage, options: RenderChatMessageOptions = {}): string[] {
   if (message.kind === "modal") {
     return renderChatModal(message, options.selectedActionIndex);
+  }
+
+  if (message.kind === "tool_call") {
+    return renderToolCallMessage(message);
   }
 
   if (message.text.length === 0) {
@@ -100,17 +136,18 @@ function renderSystemMessage(lines: string[]): string[] {
 function formatSystemBodyLine(line: string): string {
   const expandedLine = expandTabs(line);
 
-  if (isToolCallLine(line)) {
-    return ui.muted(expandedLine);
-  }
-
   return expandedLine
     .replace(/\(changed \+\d+\/-\d+\)$/u, (summary) => ui.muted(summary))
     .replace(/\(created \+\d+\)$/u, (summary) => ui.muted(summary));
 }
 
-function isToolCallLine(line: string): boolean {
-  return /^(read_file|list_files|grep|find_file|edit_file|write_file|inspect_command): /u.test(line);
+function renderToolCallMessage(message: ToolCallChatMessage): string[] {
+  const visibleLabel =
+    message.resultSummary && !message.label.includes(message.resultSummary)
+      ? `${message.label} ${message.resultSummary}`
+      : message.label;
+
+  return [`   ${ui.muted(expandTabs(visibleLabel))}`];
 }
 
 function expandTabs(line: string): string {
@@ -132,7 +169,7 @@ function expandTabs(line: string): string {
   return expanded;
 }
 
-function getPrefix(kind: TextChatMessage["kind"]): string {
+function getPrefix(kind: UserChatMessage["kind"] | AgentChatMessage["kind"] | SystemChatMessage["kind"]): string {
   switch (kind) {
     case "agent":
       return " ";

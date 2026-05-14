@@ -91,7 +91,9 @@ The agent can use these workspace-scoped tools from the TUI:
 - `edit_file` — edit existing UTF-8 files with exact `old_text` and `new_text` replacements.
 - `inspect_command` — run a small allowlisted set of read-only discovery commands.
 
-Tool activity appears as compact rows in the thread, for example:
+Tool activity appears as compact rows in the thread. These rows come from tool events, so regular system messages are still rendered as system messages even if their text mentions a tool name.
+
+Examples:
 
 ```text
 read_file: README.md

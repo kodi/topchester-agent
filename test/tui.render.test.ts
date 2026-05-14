@@ -16,10 +16,12 @@ import {
   formatStatusLine,
   getKnowledgeStatusMessages,
   getStartupThreadMessages,
+  renderRuntimeEvent,
 } from "../src/tui/index.js";
 import { getKnowledgeStatus } from "../src/knowledge/status.js";
 import {
   TopchesterTuiShell,
+  chatMessageToSessionPayload,
   createExitConfirmationInputListener,
   formatDuration,
   persistMessagesWithWarning,
@@ -33,6 +35,7 @@ import {
   modalMessage,
   renderChatMessage,
   systemMessage,
+  toolCallMessage,
   userMessage,
 } from "../src/tui/messages.js";
 import { type Terminal } from "@earendil-works/pi-tui";
@@ -40,6 +43,7 @@ import { type AppContext } from "../src/app/context.js";
 import { getTopchesterSessionsPath } from "../src/app/paths.js";
 import { agentEvent } from "../src/agent/events.js";
 import { TopchesterAgentRuntime } from "../src/agent/runtime.js";
+import { executeRunCommand } from "../src/cli/run.js";
 import { type SessionEventPayload } from "../src/session/events.js";
 import { createSession, loadSession, rehydrateSession, type SessionHandle } from "../src/session/store.js";
 
@@ -333,22 +337,67 @@ describe("TUI rendering", () => {
     expect(output).toContain("● ready ·  repo · model [provider]");
   });
 
-  it("colors tool call lines dark gray in system messages", () => {
+  it("renders structured tool call rows dark gray", () => {
     const previousForceColor = process.env.FORCE_COLOR;
     const previousNoColor = process.env.NO_COLOR;
     delete process.env.NO_COLOR;
     process.env.FORCE_COLOR = "1";
 
     try {
-      expect(renderChatMessage(systemMessage("edit_file: test-foo.ts (changed +1/-1)"))).toContain(
-        "   \u001b[90medit_file: test-foo.ts (changed +1/-1)\u001b[0m"
-      );
-      expect(renderChatMessage(systemMessage("write_file: test/example.test.ts (created +6)"))).toContain(
-        "   \u001b[90mwrite_file: test/example.test.ts (created +6)\u001b[0m"
-      );
-      expect(renderChatMessage(systemMessage("inspect_command: pwd && rg --files docs/plans | head -20"))).toContain(
-        "   \u001b[90minspect_command: pwd && rg --files docs/plans | head -20\u001b[0m"
-      );
+      expect(
+        renderChatMessage(
+          toolCallMessage(
+            { tool: "edit_file", args: { path: "test-foo.ts", edits: [] } },
+            "edit_file: test-foo.ts (changed +1/-1)"
+          )
+        )
+      ).toContain("   \u001b[90medit_file: test-foo.ts (changed +1/-1)\u001b[0m");
+      expect(
+        renderChatMessage(
+          toolCallMessage(
+            { tool: "write_file", args: { path: "test/example.test.ts", content: "" } },
+            "write_file: test/example.test.ts",
+            "(created +6)"
+          )
+        )
+      ).toContain("   \u001b[90mwrite_file: test/example.test.ts (created +6)\u001b[0m");
+      expect(
+        renderChatMessage(
+          toolCallMessage(
+            {
+              tool: "inspect_command",
+              args: { command: "pwd && rg --files docs/plans | head -20", workdir: ".", timeout_ms: 1000 },
+            },
+            "inspect_command: pwd && rg --files docs/plans | head -20"
+          )
+        )
+      ).toContain("   \u001b[90minspect_command: pwd && rg --files docs/plans | head -20\u001b[0m");
+    } finally {
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
+  });
+
+  it("does not style tool-looking system text as a tool row", () => {
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+
+    try {
+      const output = renderChatMessage(systemMessage("read_file: README.md")).join("\n");
+
+      expect(output).toContain("System");
+      expect(output).toContain("   read_file: README.md");
+      expect(output).not.toContain("\u001b[90mread_file: README.md");
     } finally {
       if (previousForceColor === undefined) {
         delete process.env.FORCE_COLOR;
@@ -1123,6 +1172,20 @@ describe("TUI rendering", () => {
       label: "read_file: README.md",
       call: { tool: "read_file", args: { path: "README.md" } },
     });
+    expect(
+      chatMessageToSessionPayload(
+        toolCallMessage({ tool: "read_file", args: { path: "README.md" } }, "read_file: README.md")
+      )
+    ).toEqual({
+      kind: "tool_call",
+      label: "read_file: README.md",
+      call: { tool: "read_file", args: { path: "README.md" } },
+    });
+    expect(
+      renderRuntimeEvent(
+        agentEvent.toolCall({ tool: "read_file", args: { path: "README.md" } }, "read_file: README.md")
+      )
+    ).toEqual([toolCallMessage({ tool: "read_file", args: { path: "README.md" } }, "read_file: README.md")]);
     expect(runtimeEventToSessionPayload(agentEvent.knowledgeStatus(status))).toBeUndefined();
     expect(
       runtimeEventToSessionPayload(
@@ -1234,6 +1297,55 @@ describe("TUI rendering", () => {
     expect(capturedPrompts[0]).not.toContain("ready");
   });
 
+  it("filters tool rows from non-interactive resumed model context", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-run-resume-context-"));
+    const session = await createSession(workspace);
+    const capturedPrompts: string[] = [];
+    const context = {
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText(request: { prompt?: string; purpose?: string }) {
+          if (request.purpose === "agent.primary") {
+            capturedPrompts.push(request.prompt ?? "");
+          }
+
+          return {
+            text: "assistant after run resume",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    };
+
+    await session.append({ kind: "message", role: "system", text: "startup row" });
+    await session.append({ kind: "message", role: "user", text: "normal old user" });
+    await session.append({ kind: "message", role: "assistant", text: "normal old assistant" });
+    await session.append({
+      kind: "tool_call",
+      label: "read_file: README.md",
+      call: { tool: "read_file", args: { path: "README.md" } },
+    });
+
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await executeRunCommand(context, {
+        prompt: "new prompt",
+        resume: session.sessionId,
+        json: true,
+      });
+    } finally {
+      writeSpy.mockRestore();
+    }
+
+    expect(capturedPrompts).toEqual([
+      ["User: normal old user", "Assistant: normal old assistant", "User: new prompt"].join("\n\n"),
+    ]);
+    expect(capturedPrompts[0]).not.toContain("startup row");
+    expect(capturedPrompts[0]).not.toContain("read_file: README.md");
+  });
+
   it("warns once when startup persistence fails without recursively persisting the warning", async () => {
     const messages = [systemMessage("Startup one"), systemMessage("Startup two")];
     let appendCalls = 0;
@@ -1322,10 +1434,11 @@ describe("TUI rendering", () => {
     ).applyRuntimeEvents(app, [agentEvent.assistantMessage("Saved later")]);
 
     expect(appendCalls).toBe(1);
-    expect(messages.map((message) => ("text" in message ? message.text : message.title))).toEqual([
-      "Saved later",
-      "Session save failed: disk is full",
-    ]);
+    expect(
+      messages.map((message) =>
+        message.kind === "modal" ? message.title : "text" in message ? message.text : message.label
+      )
+    ).toEqual(["Saved later", "Session save failed: disk is full"]);
   });
 
   it("keeps ChatLayout and AgentRuntime free of session persistence ownership", async () => {
@@ -1359,6 +1472,9 @@ function createTestContext(workspaceRoot: string): AppContext {
       },
     } as unknown as AppContext["modelGateway"],
     logger: {
+      child() {
+        return this;
+      },
       debug() {},
       trace() {},
       info() {},

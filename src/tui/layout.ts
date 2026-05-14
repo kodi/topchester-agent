@@ -118,15 +118,18 @@ export class ChatLayout implements Component, Focusable {
 
   getConversationTurns(): ConversationTurn[] {
     return this.messages.flatMap((message): ConversationTurn[] => {
-      if (message.kind === "user" && message.modelContext !== false) {
-        return [{ role: "user", text: message.text }];
+      switch (message.kind) {
+        case "user":
+          return message.modelContext === false ? [] : [{ role: "user", text: message.text }];
+        case "agent":
+          return message.text === "ready" || message.modelContext === false
+            ? []
+            : [{ role: "assistant", text: message.text }];
+        case "system":
+        case "tool_call":
+        case "modal":
+          return [];
       }
-
-      if (message.kind === "agent" && message.text !== "ready" && message.modelContext !== false) {
-        return [{ role: "assistant", text: message.text }];
-      }
-
-      return [];
     });
   }
 
