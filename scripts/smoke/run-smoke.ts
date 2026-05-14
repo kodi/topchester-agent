@@ -1064,11 +1064,19 @@ function formatTrialLine(result: TrialResult): string {
   const duration = `${Math.max(1, Math.round(result.durationMs))}ms`;
   const summary =
     result.status === "passed" ? "passed" : result.failures[0] === undefined ? "failed" : result.failures[0];
-  const retries = result.maxRetries === undefined ? "" : ` retries ${result.retriesUsed}/${result.maxRetries}`;
-
+  const retries = result.maxRetries === undefined ? "" : `retries ${result.retriesUsed}/${result.maxRetries}`;
   const protocol = result.toolProtocol ?? "no-tools";
+  const parts = [
+    marker,
+    result.scenarioId,
+    `trial ${result.trial}`,
+    summary,
+    ...(retries ? [retries] : []),
+    `[${protocol}]`,
+    `(${duration})`,
+  ];
 
-  return gray(`${marker} ${result.scenarioId} trial ${result.trial} ${summary}${retries} [${protocol}] (${duration})`);
+  return gray(parts.join("\t"));
 }
 
 async function readProtocolMetadata(outputDir: string): Promise<ProtocolMetadata> {

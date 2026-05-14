@@ -33,9 +33,9 @@ The runner writes `report.json`, `summary.md`, per-trial `events-*.jsonl`, `stdo
 During a run, each completed trial prints one compact line:
 
 ```text
-✓ 05-edit-file trial 1 passed [text-json] (466ms)
-× 02-read-summarize trial 1 summary.txt did not contain "user account notes" [native-openai-compatible] (409ms)
-✓ 03-find-then-read trial 1 passed retries 1/2 [native-openai-compatible] (31195ms)
+✓	05-edit-file	trial 1	passed	[text-json]	(466ms)
+×	02-read-summarize	trial 1	summary.txt did not contain "user account notes"	[native-openai-compatible]	(409ms)
+✓	03-find-then-read	trial 1	passed	retries 1/2	[native-openai-compatible]	(31195ms)
 ```
 
 The final summary includes report paths, pass/fail totals, and total elapsed time.
