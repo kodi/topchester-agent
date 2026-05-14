@@ -6,16 +6,18 @@ import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
 import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js";
 import { executeSlashCommand, parseSlashCommand } from "./commands.js";
 import { type ConversationTurn, buildConversationPrompt } from "./conversation.js";
-import { agentEvent, type AgentRuntimeEvent } from "./events.js";
+import { ABORT_CHOICE_VALUE, agentEvent, choiceAction, type AgentRuntimeEvent } from "./events.js";
 import { checkAgentReady } from "./health.js";
 import { getChatSystemPrompt } from "./prompts.js";
 import { createTaskPlanController } from "./task-plan.js";
 import {
   executeToolCall,
+  isToolErrorResult,
   parseToolCallWithSource,
   toolRegistry,
   type ModelToolCall,
   type ToolCall,
+  type ToolExecutionResult,
   type ToolProtocol,
   type ToolProtocolAttempt,
   type ToolProtocolOverride,
@@ -23,7 +25,7 @@ import {
 } from "./tools.js";
 import { type ModelAgentResult } from "../model/index.js";
 
-const MAX_TOOL_CALLS_PER_TURN = 8;
+const MAX_TOOL_CALLS_PER_TURN = 75;
 
 export interface AgentRuntime {
   checkAgent(abortSignal?: AbortSignal): Promise<AgentRuntimeEvent[]>;
@@ -112,6 +114,10 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           durationMs,
           totalDurationMs,
           textLength: result.text.length,
+          usage: result.usage,
+          inputTokens: result.usage?.inputTokens,
+          outputTokens: result.usage?.outputTokens,
+          totalTokens: result.usage?.totalTokens,
           hasToolCall: Boolean(toolCall),
           toolProtocol: result.toolProtocol,
           protocolAttempts: result.protocolAttempts,
@@ -154,7 +160,15 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
       if (toolCalls === MAX_TOOL_CALLS_PER_TURN) {
         await emit(
-          agentEvent.systemMessage(`Stopped after ${MAX_TOOL_CALLS_PER_TURN} tool calls in one turn.`),
+          agentEvent.choice({
+            tone: "warning",
+            title: "Tool call limit reached",
+            body: `Stopped after ${MAX_TOOL_CALLS_PER_TURN} tool calls in one turn. Continue starts another turn; abort leaves the call stopped.`,
+            actions: [
+              choiceAction("Continue", "Continue the previous task from where you stopped."),
+              choiceAction("Abort", ABORT_CHOICE_VALUE),
+            ],
+          }),
           agentEvent.status("ready")
         );
         return events;
@@ -166,7 +180,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         taskPlan: this.taskPlan,
       });
       await emit(agentEvent.toolCall(executableToolCall, formatToolCallMessage(executableToolCall, toolResult)));
-      if (toolResult.tool === "plan_todo") {
+      if (!isToolErrorResult(toolResult) && toolResult.tool === "plan_todo") {
         await emit(agentEvent.taskPlan(toolResult.plan));
       }
       afterTool = executableToolCall.tool;
@@ -315,10 +329,20 @@ function formatStartupKnowledgeGuidance(status: KnowledgeStatus): string | undef
   return undefined;
 }
 
-function formatToolResultForPrompt(result: ToolResult): string {
+function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult>): string {
   const path = result.path ? ` ${JSON.stringify(result.path)}` : "";
   const command = result.command ? ` via ${result.command}` : "";
   const warning = result.warning ? `\nWarning: ${result.warning}` : "";
+
+  if (isToolErrorResult(result)) {
+    return [
+      `Tool result from ${result.tool}${path}${command}:`,
+      `Error: ${result.error}`,
+      "```",
+      result.content,
+      "```",
+    ].join("\n");
+  }
 
   if (result.tool === "read_file") {
     return [
@@ -463,7 +487,7 @@ function formatToolResultForPrompt(result: ToolResult): string {
   return [`Tool result from ${result.tool}${path}${command}:${warning}`, "```", result.content, "```"].join("\n");
 }
 
-function formatContinuationInstruction(protocol: ToolProtocol, result: ToolResult): string {
+function formatContinuationInstruction(protocol: ToolProtocol, result: ToolExecutionResult<ToolResult>): string {
   const toolInstruction =
     protocol === "text-xml"
       ? "If another tool is needed, reply with only one XML tool call."
@@ -486,7 +510,11 @@ function formatContinuationInstruction(protocol: ToolProtocol, result: ToolResul
     .join(" ");
 }
 
-function formatToolCallMessage(call: ToolCall, result?: ToolResult): string {
+function formatToolCallMessage(call: ToolCall, result?: ToolExecutionResult<ToolResult>): string {
+  if (result && isToolErrorResult(result)) {
+    return `${call.tool} failed: ${result.error}`;
+  }
+
   switch (call.tool) {
     case "plan_todo":
       return result?.tool === "plan_todo"
@@ -519,24 +547,27 @@ function formatToolCallMessage(call: ToolCall, result?: ToolResult): string {
   }
 }
 
-function formatGitDiffCallSummary(call: Extract<ToolCall, { tool: "git_diff" }>, result?: ToolResult): string {
-  if (result?.tool === "git_diff") {
+function formatGitDiffCallSummary(
+  call: Extract<ToolCall, { tool: "git_diff" }>,
+  result?: ToolExecutionResult<ToolResult>
+): string {
+  if (result?.tool === "git_diff" && !isToolErrorResult(result)) {
     return `${result.scope} (${result.fileCount} files${result.truncated ? ", truncated" : ""})`;
   }
 
   return call.args.scope;
 }
 
-function formatEditFileChangeSummary(result: ToolResult | undefined): string {
-  if (result?.tool !== "edit_file") {
+function formatEditFileChangeSummary(result: ToolExecutionResult<ToolResult> | undefined): string {
+  if (result?.tool !== "edit_file" || isToolErrorResult(result)) {
     return "";
   }
 
   return ` (changed ${result.editEvent.diffSummary})`;
 }
 
-function formatWriteFileChangeSummary(result: ToolResult | undefined): string {
-  if (result?.tool !== "write_file") {
+function formatWriteFileChangeSummary(result: ToolExecutionResult<ToolResult> | undefined): string {
+  if (result?.tool !== "write_file" || isToolErrorResult(result)) {
     return "";
   }
 

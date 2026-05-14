@@ -10,6 +10,7 @@ import {
   findWorkspaceFilesByName,
   getToolPromptLines,
   grepWorkspace,
+  isToolErrorResult,
   listWorkspaceFiles,
   parseToolCall,
   parseToolCallWithSource,
@@ -279,7 +280,10 @@ describe("agent tools", () => {
       throw new Error("Expected plan_todo tool call to parse.");
     }
 
-    await expect(executeToolCall(workspace, call)).rejects.toThrow(/requires runtime task-plan state/u);
+    const result = await executeToolCall(workspace, call);
+
+    expect(isToolErrorResult(result)).toBe(true);
+    expect(result.content).toContain("plan_todo requires runtime task-plan state");
   });
 
   it("gets model prompt lines from the tool registry", () => {
@@ -399,7 +403,7 @@ describe("agent tools", () => {
         cwd: ".",
         exitCode: 0,
       });
-      if (result.tool !== "inspect_command") {
+      if (result.tool !== "inspect_command" || isToolErrorResult(result)) {
         throw new Error("Expected inspect_command result.");
       }
       expect(logLines).toEqual(
@@ -614,6 +618,22 @@ describe("agent tools", () => {
     await expect(grepWorkspace(workspace, { pattern: "needle", path: ".." })).rejects.toThrow(
       "grep can only search inside the workspace"
     );
+  });
+
+  it("returns grep execution failures as tool error results", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-tools-bin-"));
+    await writeExecutable(join(bin, "rg"), "printf 'rg: bad path\\n' >&2\nexit 2");
+    const call = parseToolCall('{"tool":"grep","args":{"pattern":"needle","path":"src scripts package.json"}}');
+
+    if (!call) {
+      throw new Error("Expected grep tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call, { pathEnv: bin });
+
+    expect(isToolErrorResult(result)).toBe(true);
+    expect(result.content).toContain("rg failed: rg: bad path");
   });
 
   it("finds fuzzy file name matches relative to the workspace", async () => {

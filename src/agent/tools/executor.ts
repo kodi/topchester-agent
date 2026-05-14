@@ -1,5 +1,5 @@
 import { getToolDefinition, type ToolCall, type ToolResult } from "./registry.js";
-import { type ToolDefinition, type ToolContext } from "./types.js";
+import { type ToolDefinition, type ToolContext, type ToolExecutionResult } from "./types.js";
 import { type Logger } from "pino";
 import { type TaskPlanController } from "../task-plan.js";
 
@@ -15,8 +15,7 @@ export async function executeToolCall(
   workspaceRoot: string,
   call: ToolCall,
   options: ExecuteToolCallOptions = {}
-): Promise<ToolResult> {
-  const definition = getToolDefinition(call.tool) as RuntimeToolDefinition;
+): Promise<ToolExecutionResult<ToolResult>> {
   const startedAt = Date.now();
   const context: ToolContext = {
     workspaceRoot,
@@ -26,6 +25,7 @@ export async function executeToolCall(
   };
 
   try {
+    const definition = getToolDefinition(call.tool) as RuntimeToolDefinition;
     const parsedCall = { ...call, args: definition.argsSchema.parse(call.args) } as ToolCall;
 
     options.logger?.debug(
@@ -61,16 +61,28 @@ export async function executeToolCall(
 
     return result;
   } catch (error) {
-    options.logger?.error(
-      {
-        event: "tool_error",
-        tool: call.tool,
-        durationMs: Date.now() - startedAt,
-        err: error,
-      },
-      "tool failed"
-    );
-    throw error;
+    const message = formatErrorMessage(error);
+
+    const logPayload = {
+      event: "tool_result",
+      tool: call.tool,
+      durationMs: Date.now() - startedAt,
+      error: message,
+      err: error,
+    };
+
+    if (typeof options.logger?.warn === "function") {
+      options.logger.warn(logPayload, "tool returned error");
+    } else {
+      options.logger?.debug(logPayload, "tool returned error");
+    }
+
+    return {
+      tool: call.tool,
+      content: `Tool ${call.tool} failed: ${message}`,
+      error: message,
+      warning: message,
+    };
   }
 }
 
@@ -214,4 +226,8 @@ function countLogicalLines(content: string): number {
   const withoutTrailingLineEnding = content.replace(/\r?\n$/u, "");
 
   return withoutTrailingLineEnding.length === 0 ? 1 : withoutTrailingLineEnding.split(/\r?\n/u).length;
+}
+
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

@@ -10,6 +10,27 @@ afterEach(async () => {
 });
 
 describe("ModelGateway agent tool protocol", () => {
+  it("returns token usage from text responses", async () => {
+    const api = await startChatApi(() => ({
+      choices: [
+        {
+          index: 0,
+          finish_reason: "stop",
+          message: { role: "assistant", content: "Hello." },
+        },
+      ],
+    }));
+    const gateway = createGateway(api.baseURL, "fake");
+
+    const result = await gateway.generateText({
+      purpose: "agent.primary",
+      system: "system",
+      prompt: "hello",
+    });
+
+    expect(result.usage).toEqual({ inputTokens: 1, outputTokens: 1, totalTokens: 2 });
+  });
+
   it("sends native OpenAI-compatible tools and normalizes structured tool calls", async () => {
     const api = await startChatApi((body) => {
       expect(body.tools).toEqual([

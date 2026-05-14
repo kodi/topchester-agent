@@ -12,6 +12,16 @@ export function isEnterKey(data: string): boolean {
   return matchesKey(data, "enter") || data === "\n" || data === "\r";
 }
 
+export function isNewLineKey(data: string): boolean {
+  return (
+    matchesKey(data, "shift+enter") ||
+    matchesKey(data, "alt+enter") ||
+    matchesKey(data, "ctrl+enter") ||
+    data === "\u001b\r" ||
+    data === "\u001b[13;2~"
+  );
+}
+
 export function isTabKey(data: string): boolean {
   return matchesKey(data, "tab") || data === "\t";
 }

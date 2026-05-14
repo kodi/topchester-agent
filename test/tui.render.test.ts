@@ -30,6 +30,7 @@ import {
   runtimeEventToSessionPayload,
   slashCommandToSessionPayload,
 } from "../src/tui/shell.js";
+import { stripAnsi } from "../src/tui/text.js";
 import {
   agentMessage,
   type ChatMessage,
@@ -42,7 +43,7 @@ import {
 import { type Terminal } from "@earendil-works/pi-tui";
 import { type AppContext } from "../src/app/context.js";
 import { getTopchesterSessionsPath } from "../src/app/paths.js";
-import { agentEvent } from "../src/agent/events.js";
+import { ABORT_CHOICE_VALUE, agentEvent } from "../src/agent/events.js";
 import { TopchesterAgentRuntime } from "../src/agent/runtime.js";
 import { executeRunCommand } from "../src/cli/run.js";
 import { type SessionEventPayload } from "../src/session/events.js";
@@ -906,6 +907,87 @@ describe("TUI rendering", () => {
     expect(submitted).toBe("hello");
   });
 
+  it("supports multiline prompt drafts and submits them as one message", () => {
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    let submitted = "";
+    app.setSubmitMessage((message) => {
+      submitted = message;
+    });
+    app.setInputValue("first");
+
+    app.handleInput("\u001b[13;2~");
+    app.handleInput("second");
+    const draftOutput = stripAnsi(app.render(60).join("\n"));
+
+    expect(draftOutput).toContain("> first");
+    expect(draftOutput).toContain("  second");
+
+    app.handleInput("\n");
+
+    expect(submitted).toBe("first\nsecond");
+    const submittedOutput = stripAnsi(app.render(60).join("\n"));
+    expect(submittedOutput).toContain("▌ first");
+    expect(submittedOutput).toContain("▌ second");
+  });
+
+  it("moves the cursor between multiline prompt rows with arrow keys", () => {
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    let submitted = "";
+    app.setSubmitMessage((message) => {
+      submitted = message;
+    });
+    app.setInputValue("first\nsecond");
+
+    app.handleInput("\u001b[A");
+    app.handleInput("!");
+    app.handleInput("\n");
+
+    expect(submitted).toBe("first!\nsecond");
+  });
+
+  it("uses prompt history only after Up reaches the beginning of a multiline draft", () => {
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    app.setInputValue("remembered");
+    app.handleInput("\n");
+    app.setInputValue("first\nsecond");
+
+    app.handleInput("\u001b[A");
+    app.handleInput("\u001b[A");
+    app.handleInput("\u001b[A");
+
+    expect(stripAnsi(app.render(80).join("\n"))).toContain("> remembered");
+  });
+
+  it("caps multiline prompt rendering at five content rows", () => {
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    app.setInputValue(["one", "two", "three", "four", "five", "six"].join("\n"));
+
+    const output = stripAnsi(app.render(80).join("\n"));
+
+    expect(output).not.toContain("> one");
+    expect(output).toContain("> two");
+    expect(output).toContain("  six");
+  });
+
+  it("renders large bracketed pastes as previews and expands them on submit", () => {
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    let submitted = "";
+    app.setSubmitMessage((message) => {
+      submitted = message;
+    });
+    const pasted = Array.from({ length: 7 }, (_, index) => `line ${index + 1}`).join("\n");
+
+    app.handleInput(`\u001b[200~${pasted}\u001b[201~`);
+    const draftOutput = stripAnsi(app.render(80).join("\n"));
+
+    expect(draftOutput).toContain("[Pasted #1 7 lines 48 chars]");
+    expect(draftOutput).not.toContain("line 7");
+
+    app.handleInput("\n");
+
+    expect(submitted).toBe(pasted);
+  });
+
   it("routes slash commands to the command handler", () => {
     const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
     let submittedCommand = "";
@@ -1084,6 +1166,33 @@ describe("TUI rendering", () => {
 
     expect(output).toContain("▌ Cancel");
     expect(output).not.toContain("chat is not wired yet");
+  });
+
+  it("dismisses abort modal actions without submitting another turn", () => {
+    let submitted = false;
+    const app = new ChatLayout(
+      new FakeTerminal(),
+      [
+        modalMessage({
+          tone: "warning",
+          title: "Tool call limit reached",
+          actions: [{ label: "Continue" }, { label: "Abort", value: ABORT_CHOICE_VALUE }],
+        }),
+      ],
+      "repo",
+      "model [provider]"
+    );
+    app.setSubmitMessage(() => {
+      submitted = true;
+    });
+
+    app.handleInput("\u001b[B");
+    app.handleInput("\n");
+    const output = app.render(80).join("\n");
+
+    expect(output).toContain("▌ Abort");
+    expect(output).not.toContain("Tool call limit reached");
+    expect(submitted).toBe(false);
   });
 
   it("busy indicator rotates activity text", () => {

@@ -39,6 +39,16 @@ export interface ToolResult<Name extends string = string> {
   warning?: string;
 }
 
+export interface ToolErrorResult<Name extends string = string> extends ToolResult<Name> {
+  error: string;
+}
+
+export type ToolExecutionResult<Result extends ToolResult = ToolResult> = Result | ToolErrorResult;
+
+export function isToolErrorResult(result: ToolResult): result is ToolErrorResult {
+  return "error" in result && typeof result.error === "string";
+}
+
 export interface ToolDefinition<Name extends string, Args, Result extends ToolResult<Name> = ToolResult<Name>> {
   name: Name;
   description: string;

@@ -116,10 +116,13 @@ export {
 } from "./tools/registry.js";
 export {
   defineTool,
+  isToolErrorResult,
   type ModelToolCall,
   type ToolCallSource,
   type ToolContext,
   type ToolDefinition,
+  type ToolErrorResult,
+  type ToolExecutionResult,
   type ToolProtocol,
   type ToolProtocolAttempt,
   type ToolProtocolOverride,

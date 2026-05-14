@@ -599,6 +599,100 @@ describe("slash commands", () => {
     );
   });
 
+  it("returns tool errors to the model instead of failing the chat", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          return prompts.length === 1
+            ? {
+                text: JSON.stringify({ tool: "read_file", args: { path: "missing.txt" } }),
+                providerId: "fake",
+                modelId: "fake-agent",
+                purpose: "agent.primary" as const,
+              }
+            : {
+                text: "missing.txt does not exist.",
+                providerId: "fake",
+                modelId: "fake-agent",
+                purpose: "agent.primary" as const,
+              };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "read missing file");
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool_call",
+          label: expect.stringContaining("read_file failed:"),
+        }),
+        expect.objectContaining({ type: "message", role: "assistant", text: "missing.txt does not exist." }),
+      ])
+    );
+    expect(events.at(-1)).toEqual({ type: "status", status: "ready" });
+    expect(prompts[1]).toContain("Tool result from read_file:");
+    expect(prompts[1]).toContain("Error:");
+  });
+
+  it("asks whether to continue or abort after the tool call limit", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    let calls = 0;
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep() {
+          calls += 1;
+
+          return {
+            text: "",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+            toolCalls: [
+              {
+                id: `list-files-${calls}`,
+                tool: "list_files",
+                args: { path: ".", recursive: false, limit: 1 },
+                source: "text-json",
+              },
+            ],
+            toolProtocol: "text-json" as const,
+            protocolAttempts: [],
+            providerRejectedTools: false,
+            warnings: [],
+            openRouterRoutingApplied: false,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "keep listing");
+    const choiceEvent = events.find((event): event is Extract<AgentRuntimeEvent, { type: "choice" }> => {
+      return event.type === "choice";
+    });
+
+    expect(events.filter((event) => event.type === "tool_call")).toHaveLength(75);
+    expect(calls).toBe(76);
+    expect(choiceEvent).toEqual(
+      expect.objectContaining({
+        tone: "warning",
+        title: "Tool call limit reached",
+        actions: [
+          { label: "Continue", value: "Continue the previous task from where you stopped." },
+          { label: "Abort", value: "__topchester_abort__" },
+        ],
+      })
+    );
+    expect(events.at(-1)).toEqual({ type: "status", status: "ready" });
+  });
+
   it("keeps using text JSON for the rest of a turn after native tools are rejected", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     await writeFile(join(workspace, "data.txt"), "hello\n");

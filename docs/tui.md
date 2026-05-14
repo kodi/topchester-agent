@@ -40,6 +40,9 @@ KB status labels:
 ## Everyday Controls
 
 - Type a message and press `Enter` to send it to the agent.
+- Press `Shift+Enter` to add a new prompt line in terminals that report it distinctly.
+- The prompt shows up to five input lines; longer drafts scroll inside the prompt box.
+- Large bracketed pastes are shown as a compact `[Pasted #N ...]` preview and expanded when submitted.
 - Type `/` to see slash command suggestions.
 - Use `Up` and `Down` in slash command suggestions to choose an item.
 - Press `Tab` while a slash command suggestion is selected to complete it.

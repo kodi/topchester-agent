@@ -1,5 +1,6 @@
 import {
-  Input,
+  CURSOR_MARKER,
+  decodeKittyPrintable,
   matchesKey,
   truncateToWidth,
   wrapTextWithAnsi,
@@ -15,6 +16,7 @@ import {
   type TaskPlanChangeKind,
   type TaskPlanState,
 } from "../agent/task-plan.js";
+import { ABORT_CHOICE_VALUE } from "../agent/events.js";
 import { ui } from "../cli/ui.js";
 import { type KnowledgeStatus } from "../knowledge/status.js";
 import { renderChatMessage, userMessage, type ChatMessage } from "./messages.js";
@@ -23,6 +25,7 @@ import {
   isEndKey,
   isEnterKey,
   isHomeKey,
+  isNewLineKey,
   isPageDownKey,
   isPageUpKey,
   isTabKey,
@@ -33,13 +36,21 @@ import { PromptHistory } from "./prompt-history.js";
 import { formatKnowledgeFooterStatus, formatStatusLine } from "./status.js";
 import { padLines, padThreadLine, stripAnsi } from "./text.js";
 
+const PROMPT_VISIBLE_CONTENT_LINES = 5;
+const PASTE_PREVIEW_MIN_LINES = 6;
+const PASTE_PREVIEW_MIN_CHARS = 500;
+const BRACKETED_PASTE_START = "\u001b[200~";
+const BRACKETED_PASTE_END = "\u001b[201~";
+
 export interface ChatLayoutOptions {
   exitAgent?: () => void;
   transcriptMode?: "viewport" | "inline";
 }
 
 export class ChatLayout implements Component, Focusable {
-  private readonly input = new Input();
+  private inputFocused = false;
+  private promptValue = "";
+  private promptCursor = 0;
   private status = "ready";
   private knowledgeStatus: string | undefined;
   private ephemeralLine: string | undefined;
@@ -53,6 +64,9 @@ export class ChatLayout implements Component, Focusable {
   private activeModalActionIndex = 0;
   private activeSlashSuggestionIndex = 0;
   private threadScrollOffset = 0;
+  private pasteBuffer: string | undefined;
+  private pasteCounter = 0;
+  private readonly pastedContent = new Map<string, string>();
   private readonly promptHistory = new PromptHistory();
   private readonly exitAgent: () => void;
   private readonly transcriptMode: "viewport" | "inline";
@@ -66,14 +80,6 @@ export class ChatLayout implements Component, Focusable {
   ) {
     this.exitAgent = typeof options === "function" ? options : (options.exitAgent ?? (() => {}));
     this.transcriptMode = typeof options === "function" ? "viewport" : (options.transcriptMode ?? "viewport");
-    this.input.onSubmit = (value) => {
-      if (value.trim().length > 0) {
-        const message = value.trim();
-        this.addMessage(userMessage(message));
-        this.input.setValue("");
-        this.submitUserInput(message);
-      }
-    };
   }
 
   addMessage(message: ChatMessage): void {
@@ -146,7 +152,10 @@ export class ChatLayout implements Component, Focusable {
   }
 
   setInputValue(value: string): void {
-    this.input.setValue(value);
+    this.promptValue = value;
+    this.promptCursor = value.length;
+    this.pastedContent.clear();
+    this.pasteCounter = 0;
   }
 
   getConversationTurns(): ConversationTurn[] {
@@ -167,11 +176,11 @@ export class ChatLayout implements Component, Focusable {
   }
 
   get focused(): boolean {
-    return this.input.focused;
+    return this.inputFocused;
   }
 
   set focused(value: boolean) {
-    this.input.focused = value;
+    this.inputFocused = value;
   }
 
   handleInput(data: string): void {
@@ -188,7 +197,23 @@ export class ChatLayout implements Component, Focusable {
       return;
     }
 
+    if (this.handlePromptPasteInput(data)) {
+      return;
+    }
+
+    if (this.handlePromptNewLineInput(data)) {
+      return;
+    }
+
+    if (this.handlePromptSubmitInput(data)) {
+      return;
+    }
+
     if (this.handleThreadScrollInput(data)) {
+      return;
+    }
+
+    if (this.handlePromptVerticalCursorInput(data)) {
       return;
     }
 
@@ -196,15 +221,11 @@ export class ChatLayout implements Component, Focusable {
       return;
     }
 
-    const previousInput = this.input.getValue();
-    this.input.handleInput(data);
-    if (this.input.getValue() !== previousInput) {
-      this.promptHistory.resetBrowsing();
-    }
+    this.handlePromptEditInput(data);
   }
 
   invalidate(): void {
-    this.input.invalidate();
+    // Prompt rendering is derived from local state.
   }
 
   render(width: number): string[] {
@@ -276,9 +297,9 @@ export class ChatLayout implements Component, Focusable {
     const bottom = `└${"─".repeat(Math.max(0, width - 2))}┘`;
     const prefix = "> ";
     const innerWidth = Math.max(1, width - 4 - prefix.length);
-    const inputLine = this.promptHint
-      ? truncateToWidth(ui.label(this.promptHint), innerWidth, "…", true)
-      : truncateToWidth(renderInputWithoutPrompt(this.input, innerWidth), innerWidth, "…", true);
+    const inputLines = this.promptHint
+      ? [truncateToWidth(ui.label(this.promptHint), innerWidth, "…", true)]
+      : this.renderPromptInputLines(innerWidth);
     const statusInnerWidth = Math.max(1, width - 2);
     const status = truncateToWidth(
       ` ${formatStatusLine(this.folderName, this.modelLabel, this.status, this.knowledgeStatus, statusInnerWidth)} `,
@@ -291,10 +312,65 @@ export class ChatLayout implements Component, Focusable {
       ...this.renderSlashSuggestions(width),
       ...this.renderTaskPlan(width),
       top,
-      `│ ${prefix}${inputLine} │`,
+      ...inputLines.map((line, index) => `│ ${index === 0 ? prefix : "  "}${padPromptInputLine(line, innerWidth)} │`),
       bottom,
       status,
     ];
+  }
+
+  private renderPromptInputLines(innerWidth: number): string[] {
+    const value = this.promptValue;
+
+    if (!value.includes("\n")) {
+      return [this.renderPromptLineWithCursor(value, this.promptCursor, innerWidth)];
+    }
+
+    const rows = this.getPromptRows(innerWidth);
+    const cursorRowIndex = rows.findIndex((row) => this.promptCursor >= row.start && this.promptCursor <= row.end);
+    const latestStart = Math.max(0, rows.length - PROMPT_VISIBLE_CONTENT_LINES);
+    const visibleStart = cursorRowIndex === -1 ? latestStart : Math.min(Math.max(0, cursorRowIndex - 2), latestStart);
+    const visibleRows = rows.slice(visibleStart, visibleStart + PROMPT_VISIBLE_CONTENT_LINES);
+
+    return visibleRows.map((row) => {
+      if (this.promptCursor >= row.start && this.promptCursor <= row.end) {
+        return this.renderPromptLineWithCursor(row.text, this.promptCursor - row.start, innerWidth);
+      }
+
+      return truncateToWidth(row.text.length === 0 ? " " : row.text, innerWidth, "…", true);
+    });
+  }
+
+  private getPromptRows(width: number): Array<{ text: string; start: number; end: number }> {
+    const rows: Array<{ text: string; start: number; end: number }> = [];
+    let offset = 0;
+
+    for (const line of this.promptValue.split("\n")) {
+      if (line.length === 0) {
+        rows.push({ text: "", start: offset, end: offset });
+      } else {
+        for (let index = 0; index < line.length; index += width) {
+          const text = line.slice(index, index + width);
+          rows.push({ text, start: offset + index, end: offset + index + text.length });
+        }
+      }
+
+      offset += line.length + 1;
+    }
+
+    return rows.length > 0 ? rows : [{ text: "", start: 0, end: 0 }];
+  }
+
+  private renderPromptLineWithCursor(text: string, cursor: number, width: number): string {
+    const safeCursor = Math.max(0, Math.min(cursor, text.length));
+    const windowStart = safeCursor >= width ? safeCursor - width + 1 : 0;
+    const visibleText = text.slice(windowStart, windowStart + width);
+    const visibleCursor = safeCursor - windowStart;
+    const beforeCursor = visibleText.slice(0, visibleCursor);
+    const cursorChar = visibleText[visibleCursor] ?? " ";
+    const afterCursor = visibleText.slice(visibleCursor + cursorChar.length);
+    const marker = this.inputFocused ? CURSOR_MARKER : "";
+
+    return truncateToWidth(`${beforeCursor}${marker}\u001b[7m${cursorChar}\u001b[27m${afterCursor}`, width, "…", true);
   }
 
   private renderTaskPlan(width: number): string[] {
@@ -377,6 +453,11 @@ export class ChatLayout implements Component, Focusable {
         return true;
       }
 
+      if (action.value === ABORT_CHOICE_VALUE) {
+        this.addMessage({ kind: "user", text: action.label, modelContext: false });
+        return true;
+      }
+
       this.submitModalAction(action.value ?? action.label);
       return true;
     }
@@ -436,9 +517,10 @@ export class ChatLayout implements Component, Focusable {
     }
 
     if (isUpKey(data)) {
-      const prompt = this.promptHistory.previous(this.input.getValue());
+      const prompt = this.promptHistory.previous(this.promptValue);
       if (prompt !== undefined) {
-        this.input.setValue(prompt);
+        this.promptValue = prompt;
+        this.promptCursor = prompt.length;
       }
       return true;
     }
@@ -446,12 +528,255 @@ export class ChatLayout implements Component, Focusable {
     if (isDownKey(data)) {
       const prompt = this.promptHistory.next();
       if (prompt !== undefined) {
-        this.input.setValue(prompt);
+        this.promptValue = prompt;
+        this.promptCursor = prompt.length;
       }
       return true;
     }
 
     return false;
+  }
+
+  private handlePromptVerticalCursorInput(data: string): boolean {
+    if (this.promptHint || !this.promptValue.includes("\n")) {
+      return false;
+    }
+
+    if (isUpKey(data)) {
+      if (this.canMovePromptCursorVertically(-1)) {
+        this.movePromptCursorVertically(-1);
+        return true;
+      }
+
+      if (this.promptCursor > 0) {
+        this.promptCursor = this.getCurrentPromptLineStart();
+        return true;
+      }
+
+      return false;
+    }
+
+    if (isDownKey(data)) {
+      if (this.canMovePromptCursorVertically(1)) {
+        this.movePromptCursorVertically(1);
+        return true;
+      }
+
+      if (this.promptCursor < this.promptValue.length) {
+        this.promptCursor = this.getCurrentPromptLineEnd();
+        return true;
+      }
+
+      return false;
+    }
+
+    return false;
+  }
+
+  private canMovePromptCursorVertically(delta: -1 | 1): boolean {
+    const lines = this.promptValue.split("\n");
+    const current = this.getPromptLineCursor(lines);
+
+    if (delta === -1) {
+      return current.line > 0;
+    }
+
+    return current.line < lines.length - 1;
+  }
+
+  private handlePromptNewLineInput(data: string): boolean {
+    if (this.promptHint || !isNewLineKey(data)) {
+      return false;
+    }
+
+    this.insertPromptText("\n");
+    this.promptHistory.resetBrowsing();
+    return true;
+  }
+
+  private handlePromptSubmitInput(data: string): boolean {
+    if (this.promptHint || !isEnterKey(data)) {
+      return false;
+    }
+
+    this.submitPromptValue();
+    return true;
+  }
+
+  private handlePromptPasteInput(data: string): boolean {
+    if (this.promptHint) {
+      return false;
+    }
+
+    if (this.pasteBuffer !== undefined) {
+      this.pasteBuffer += data;
+      this.flushPromptPasteBuffer();
+      return true;
+    }
+
+    const startIndex = data.indexOf(BRACKETED_PASTE_START);
+    if (startIndex === -1) {
+      return false;
+    }
+
+    const beforePaste = data.slice(0, startIndex);
+    if (beforePaste.length > 0) {
+      this.insertPromptText(beforePaste);
+    }
+
+    this.pasteBuffer = data.slice(startIndex + BRACKETED_PASTE_START.length);
+    this.flushPromptPasteBuffer();
+    this.promptHistory.resetBrowsing();
+    return true;
+  }
+
+  private flushPromptPasteBuffer(): void {
+    if (this.pasteBuffer === undefined) {
+      return;
+    }
+
+    const endIndex = this.pasteBuffer.indexOf(BRACKETED_PASTE_END);
+    if (endIndex === -1) {
+      return;
+    }
+
+    const pasted = this.pasteBuffer.slice(0, endIndex);
+    const remaining = this.pasteBuffer.slice(endIndex + BRACKETED_PASTE_END.length);
+    this.pasteBuffer = undefined;
+    this.insertPastedText(pasted);
+
+    if (remaining.length > 0) {
+      this.handleInput(remaining);
+    }
+  }
+
+  private insertPastedText(text: string): void {
+    const normalizedText = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\t/g, "    ");
+    const trimmedText = normalizedText.trim();
+    if (trimmedText.length === 0) {
+      return;
+    }
+
+    const lineCount = trimmedText.split("\n").length;
+    if (lineCount >= PASTE_PREVIEW_MIN_LINES || trimmedText.length >= PASTE_PREVIEW_MIN_CHARS) {
+      this.pasteCounter += 1;
+      const marker = `[Pasted #${this.pasteCounter} ${lineCount} lines ${trimmedText.length} chars]`;
+      this.pastedContent.set(marker, trimmedText);
+      this.insertPromptText(marker);
+      return;
+    }
+
+    this.insertPromptText(normalizedText);
+  }
+
+  private insertPromptText(text: string): void {
+    this.promptValue = `${this.promptValue.slice(0, this.promptCursor)}${text}${this.promptValue.slice(this.promptCursor)}`;
+    this.promptCursor += text.length;
+  }
+
+  private expandPastedContent(value: string): string {
+    let expanded = value;
+    for (const [marker, content] of this.pastedContent) {
+      expanded = expanded.split(marker).join(content);
+    }
+    return expanded;
+  }
+
+  private submitPromptValue(): void {
+    if (this.promptValue.trim().length === 0) {
+      return;
+    }
+
+    const message = this.expandPastedContent(this.promptValue).trim();
+    this.addMessage(userMessage(message));
+    this.promptValue = "";
+    this.promptCursor = 0;
+    this.pastedContent.clear();
+    this.pasteCounter = 0;
+    this.submitUserInput(message);
+  }
+
+  private handlePromptEditInput(data: string): boolean {
+    if (this.promptHint) {
+      return false;
+    }
+
+    if (matchesKey(data, "left") || data === "\u001b[D") {
+      this.promptCursor = Math.max(0, this.promptCursor - 1);
+      return true;
+    }
+
+    if (matchesKey(data, "right") || data === "\u001b[C") {
+      this.promptCursor = Math.min(this.promptValue.length, this.promptCursor + 1);
+      return true;
+    }
+
+    if (isHomeKey(data)) {
+      this.promptCursor = this.getCurrentPromptLineStart();
+      return true;
+    }
+
+    if (isEndKey(data)) {
+      this.promptCursor = this.getCurrentPromptLineEnd();
+      return true;
+    }
+
+    if (matchesKey(data, "backspace") || data === "\u007f" || data === "\b") {
+      if (this.promptCursor > 0) {
+        this.promptValue = `${this.promptValue.slice(0, this.promptCursor - 1)}${this.promptValue.slice(this.promptCursor)}`;
+        this.promptCursor -= 1;
+        this.promptHistory.resetBrowsing();
+      }
+      return true;
+    }
+
+    if (matchesKey(data, "delete") || data === "\u001b[3~") {
+      if (this.promptCursor < this.promptValue.length) {
+        this.promptValue = `${this.promptValue.slice(0, this.promptCursor)}${this.promptValue.slice(this.promptCursor + 1)}`;
+        this.promptHistory.resetBrowsing();
+      }
+      return true;
+    }
+
+    const printable = decodeKittyPrintable(data) ?? (isPrintableInput(data) ? data : undefined);
+    if (printable !== undefined) {
+      this.insertPromptText(printable);
+      this.promptHistory.resetBrowsing();
+      return true;
+    }
+
+    return false;
+  }
+
+  private movePromptCursorVertically(delta: -1 | 1): void {
+    const lines = this.promptValue.split("\n");
+    const current = this.getPromptLineCursor(lines);
+    const targetLine = Math.max(0, Math.min(lines.length - 1, current.line + delta));
+    const targetColumn = Math.min(current.column, lines[targetLine]?.length ?? 0);
+    this.promptCursor = lines.slice(0, targetLine).reduce((total, line) => total + line.length + 1, 0) + targetColumn;
+  }
+
+  private getPromptLineCursor(lines = this.promptValue.split("\n")): { line: number; column: number } {
+    let offset = 0;
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      const line = lines[lineIndex] ?? "";
+      const end = offset + line.length;
+      if (this.promptCursor <= end || lineIndex === lines.length - 1) {
+        return { line: lineIndex, column: Math.max(0, this.promptCursor - offset) };
+      }
+      offset = end + 1;
+    }
+
+    return { line: 0, column: 0 };
+  }
+
+  private getCurrentPromptLineStart(): number {
+    return this.promptValue.lastIndexOf("\n", Math.max(0, this.promptCursor - 1)) + 1;
+  }
+
+  private getCurrentPromptLineEnd(): number {
+    const end = this.promptValue.indexOf("\n", this.promptCursor);
+    return end === -1 ? this.promptValue.length : end;
   }
 
   private handleSlashSuggestionInput(data: string): boolean {
@@ -477,7 +802,7 @@ export class ChatLayout implements Component, Focusable {
       return true;
     }
 
-    if (isEnterKey(data) && this.input.getValue().trim() !== suggestions[this.activeSlashSuggestionIndex]?.value) {
+    if (isEnterKey(data) && this.promptValue.trim() !== suggestions[this.activeSlashSuggestionIndex]?.value) {
       this.completeSlashSuggestion(suggestions);
       return true;
     }
@@ -486,13 +811,13 @@ export class ChatLayout implements Component, Focusable {
   }
 
   private completeSlashSuggestion(suggestions: SlashCommandSuggestion[]): void {
-    this.input.setValue(suggestions[this.activeSlashSuggestionIndex]?.value ?? this.input.getValue());
-    this.input.handleInput("\u001b[F");
+    this.promptValue = suggestions[this.activeSlashSuggestionIndex]?.value ?? this.promptValue;
+    this.promptCursor = this.promptValue.length;
     this.promptHistory.resetBrowsing();
   }
 
   private getSlashSuggestions(): SlashCommandSuggestion[] {
-    return getSlashCommandSuggestions(this.input.getValue());
+    return getSlashCommandSuggestions(this.promptValue);
   }
 
   private getActiveModal(): Extract<ChatMessage, { kind: "modal" }> | undefined {
@@ -523,6 +848,17 @@ function colorUserMessageBorder(line: string): string {
   return line.replace("▌", ui.modelInline("▌"));
 }
 
-function renderInputWithoutPrompt(input: Input, width: number): string {
-  return (input.render(width + 2)[0] ?? "").replace(/^> /, "");
+function padPromptInputLine(line: string, width: number): string {
+  return `${line}${" ".repeat(Math.max(0, width - stripAnsi(line).length))}`;
+}
+
+function isPrintableInput(data: string): boolean {
+  if (data.length === 0) {
+    return false;
+  }
+
+  return [...data].every((char) => {
+    const code = char.charCodeAt(0);
+    return code >= 32 && code !== 127 && (code < 128 || code > 159);
+  });
 }

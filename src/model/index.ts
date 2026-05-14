@@ -1,5 +1,5 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText, streamText, type LanguageModel } from "ai";
+import { generateText, streamText, type LanguageModel, type LanguageModelUsage } from "ai";
 import { toAiSdkToolSet } from "../agent/tools/ai-sdk-tools.js";
 import { parseNativeToolCall, parseToolCallWithSource } from "../agent/tools/parser.js";
 import {
@@ -55,6 +55,13 @@ export interface ModelTextResult {
   providerId: string;
   modelId: string;
   purpose: ModelPurpose;
+  usage?: ModelTokenUsage;
+}
+
+export interface ModelTokenUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
 }
 
 export interface ModelAgentRequest extends ModelRequest {
@@ -148,12 +155,14 @@ export class ModelGateway {
       prompt: request.prompt,
       abortSignal: request.abortSignal,
     });
+    const usage = normalizeUsage(result.usage);
 
     return {
       text: result.text,
       providerId: resolved.providerId,
       modelId: resolved.modelId,
       purpose: resolved.purpose,
+      ...(usage ? { usage } : {}),
     };
   }
 
@@ -249,6 +258,7 @@ export class ModelGateway {
       providerOptions,
       abortSignal: request.abortSignal,
     });
+    const usage = normalizeUsage(result.usage);
     const toolCalls = result.toolCalls.map((call, index) => {
       const parsed = parseNativeToolCall(call.toolName, call.input);
 
@@ -271,6 +281,7 @@ export class ModelGateway {
       providerId: resolved.providerId,
       modelId: resolved.modelId,
       purpose: resolved.purpose,
+      ...(usage ? { usage } : {}),
       toolCalls,
       toolProtocol: "native-openai-compatible",
       protocolAttempts: attempts,
@@ -294,6 +305,7 @@ export class ModelGateway {
       prompt: request.prompt,
       abortSignal: request.abortSignal,
     });
+    const usage = normalizeUsage(result.usage);
     const parsed = parseToolCallWithSource(result.text, allowedSources);
     const defaultProtocol: ToolProtocol =
       allowedSources.length === 1 && allowedSources[0] === "text-xml" ? "text-xml" : "text-json";
@@ -307,6 +319,7 @@ export class ModelGateway {
       providerId: resolved.providerId,
       modelId: resolved.modelId,
       purpose: resolved.purpose,
+      ...(usage ? { usage } : {}),
       toolCalls: parsed
         ? [
             {
@@ -395,6 +408,20 @@ function extractWarningMessages(warnings: unknown): string[] {
   }
 
   return warnings.map((warning) => formatErrorMessage(warning));
+}
+
+function normalizeUsage(usage: LanguageModelUsage | undefined): ModelTokenUsage | undefined {
+  if (!usage) {
+    return undefined;
+  }
+
+  const normalized: ModelTokenUsage = {
+    ...(typeof usage.inputTokens === "number" ? { inputTokens: usage.inputTokens } : {}),
+    ...(typeof usage.outputTokens === "number" ? { outputTokens: usage.outputTokens } : {}),
+    ...(typeof usage.totalTokens === "number" ? { totalTokens: usage.totalTokens } : {}),
+  };
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
 function formatErrorMessage(error: unknown): string {

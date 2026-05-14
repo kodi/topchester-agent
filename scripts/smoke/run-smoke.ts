@@ -112,6 +112,9 @@ interface TrialResult {
   textXmlToolCallCount: number;
   providerRejectedTools: boolean;
   fallbackReason?: string;
+  inputTokenCount: number;
+  outputTokenCount: number;
+  totalTokenCount: number;
   taskPlanUpdateCount: number;
   lastTaskPlanStatus?: "empty" | "completed" | "in_progress" | "pending";
   lastTaskPlanActiveItem?: string;
@@ -125,6 +128,9 @@ interface TrialAttemptSummary {
   failures: string[];
   durationMs: number;
   toolProtocol?: string;
+  inputTokenCount: number;
+  outputTokenCount: number;
+  totalTokenCount: number;
 }
 
 interface JsonLine {
@@ -150,6 +156,9 @@ interface ProtocolMetadata {
   textXmlToolCallCount: number;
   providerRejectedTools: boolean;
   fallbackReason?: string;
+  inputTokenCount: number;
+  outputTokenCount: number;
+  totalTokenCount: number;
   taskPlanUpdateCount: number;
   lastTaskPlanStatus?: "empty" | "completed" | "in_progress" | "pending";
   lastTaskPlanActiveItem?: string;
@@ -348,6 +357,8 @@ async function runTrialWithRetries(
     throw new Error(`No attempt result produced for ${scenario.id} trial ${trial}.`);
   }
 
+  const attemptTokens = sumTokenCounts(attempts);
+
   return {
     ...finalAttempt,
     status: successfulAttempt ? "passed" : "failed",
@@ -356,6 +367,7 @@ async function runTrialWithRetries(
     attemptsUsed: attempts.length,
     retriesUsed: attempts.length - 1,
     maxRetries: options.retries,
+    ...attemptTokens,
     attempts: attempts.map((attemptResult) => ({
       attempt: attemptResult.attempt,
       status: attemptResult.status,
@@ -363,6 +375,9 @@ async function runTrialWithRetries(
       outputDir: attemptResult.outputDir,
       failures: attemptResult.failures,
       durationMs: attemptResult.durationMs,
+      inputTokenCount: attemptResult.inputTokenCount,
+      outputTokenCount: attemptResult.outputTokenCount,
+      totalTokenCount: attemptResult.totalTokenCount,
       ...(attemptResult.toolProtocol ? { toolProtocol: attemptResult.toolProtocol } : {}),
     })),
   };
@@ -964,6 +979,7 @@ function formatSummary(results: TrialResult[]): string {
           ]),
       `tool_protocol: ${result.toolProtocol ?? "none"}`,
       `tool_calls: native=${result.nativeToolCallCount}, text_json=${result.textJsonToolCallCount}, text_xml=${result.textXmlToolCallCount}`,
+      `tokens: input=${result.inputTokenCount}, output=${result.outputTokenCount}, total=${result.totalTokenCount}`,
       `task_plan_updates: ${result.taskPlanUpdateCount}`,
       `last_task_plan_status: ${result.lastTaskPlanStatus ?? "none"}`,
       ...(result.lastTaskPlanActiveItem ? [`last_task_plan_active_item: ${result.lastTaskPlanActiveItem}`] : []),
@@ -981,7 +997,7 @@ function formatSummary(results: TrialResult[]): string {
 
 function formatAttemptSummaries(attempts: TrialAttemptSummary[]): string[] {
   return attempts.flatMap((attempt) => [
-    `- attempt ${attempt.attempt}: ${attempt.status}, duration_ms: ${attempt.durationMs}, artifacts: ${attempt.outputDir}`,
+    `- attempt ${attempt.attempt}: ${attempt.status}, duration_ms: ${attempt.durationMs}, tokens: input=${attempt.inputTokenCount}, output=${attempt.outputTokenCount}, total=${attempt.totalTokenCount}, artifacts: ${attempt.outputDir}`,
     ...attempt.failures.map((failure) => `  - ${failure}`),
   ]);
 }
@@ -989,8 +1005,12 @@ function formatAttemptSummaries(attempts: TrialAttemptSummary[]): string[] {
 function formatConsoleSummary(results: TrialResult[]): string {
   const passed = results.filter((result) => result.status === "passed").length;
   const failed = results.length - passed;
+  const tokens = sumTokenCounts(results);
 
-  return `passed: ${passed}, failed: ${failed}, total: ${results.length}`;
+  return [
+    `passed: ${passed}, failed: ${failed}, total: ${results.length}`,
+    `tokens: input=${tokens.inputTokenCount}, output=${tokens.outputTokenCount}, total=${tokens.totalTokenCount}`,
+  ].join("\n");
 }
 
 function formatElapsed(durationMs: number): string {
@@ -1003,6 +1023,40 @@ function formatElapsed(durationMs: number): string {
   }
 
   return `${minutes}m ${seconds}s`;
+}
+
+function sumTokenCounts(results: TrialResult[]): {
+  inputTokenCount: number;
+  outputTokenCount: number;
+  totalTokenCount: number;
+} {
+  return results.reduce(
+    (total, result) => ({
+      inputTokenCount: total.inputTokenCount + result.inputTokenCount,
+      outputTokenCount: total.outputTokenCount + result.outputTokenCount,
+      totalTokenCount: total.totalTokenCount + result.totalTokenCount,
+    }),
+    { inputTokenCount: 0, outputTokenCount: 0, totalTokenCount: 0 }
+  );
+}
+
+function sumModelResponseTokens(modelResponses: Array<Record<string, unknown>>): {
+  inputTokenCount: number;
+  outputTokenCount: number;
+  totalTokenCount: number;
+} {
+  return modelResponses.reduce(
+    (total, event) => ({
+      inputTokenCount: total.inputTokenCount + readTokenCount(event.inputTokens),
+      outputTokenCount: total.outputTokenCount + readTokenCount(event.outputTokens),
+      totalTokenCount: total.totalTokenCount + readTokenCount(event.totalTokens),
+    }),
+    { inputTokenCount: 0, outputTokenCount: 0, totalTokenCount: 0 }
+  );
+}
+
+function readTokenCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function formatTrialLine(result: TrialResult): string {
@@ -1035,6 +1089,7 @@ async function readProtocolMetadata(outputDir: string): Promise<ProtocolMetadata
     .map((event) => event.toolProtocol)
     .filter((protocol): protocol is string => typeof protocol === "string")
     .at(-1);
+  const tokens = sumModelResponseTokens(modelResponses);
   const taskPlanEvents = await readTaskPlanJsonEvents(outputDir);
   const lastTaskPlan = taskPlanEvents.at(-1);
   const lastTaskPlanActiveItem = lastTaskPlan?.items.find((item) => item.status === "in_progress")?.text;
@@ -1046,6 +1101,7 @@ async function readProtocolMetadata(outputDir: string): Promise<ProtocolMetadata
     textXmlToolCallCount: sources.filter((source) => source === "text-xml").length,
     providerRejectedTools: modelResponses.some((event) => event.providerRejectedTools === true),
     ...(fallbackReason ? { fallbackReason } : {}),
+    ...tokens,
     taskPlanUpdateCount: taskPlanEvents.length,
     ...(lastTaskPlan ? { lastTaskPlanStatus: summarizeTaskPlanStatus(lastTaskPlan.items) } : {}),
     ...(lastTaskPlanActiveItem ? { lastTaskPlanActiveItem } : {}),

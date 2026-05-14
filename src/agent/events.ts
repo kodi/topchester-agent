@@ -59,6 +59,8 @@ export interface AgentChoiceOptions {
   actions: AgentChoiceAction[];
 }
 
+export const ABORT_CHOICE_VALUE = "__topchester_abort__";
+
 export const agentEvent = {
   status(status: string): AgentStatusEvent {
     return { type: "status", status };
