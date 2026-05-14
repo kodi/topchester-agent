@@ -1,0 +1,4 @@
+interface:
+  display_name: "Planning Slices"
+  short_description: "Plan large work as reviewable slices"
+  default_prompt: "Use $planning-slices to turn this large change into an ordered, verifiable implementation plan."

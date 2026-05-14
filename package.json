@@ -25,7 +25,7 @@
     "lint": "oxlint",
     "smoke": "tsx scripts/smoke/run-smoke.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit",
     "check": "pnpm typecheck && pnpm format-check && pnpm lint && pnpm test",
     "prepublishOnly": "pnpm build"
   },
@@ -44,6 +44,7 @@
   "devDependencies": {
     "@types/node": "^24.12.3",
     "@types/picomatch": "^4.0.3",
+    "@typescript/native-preview": "7.0.0-dev.20260513.1",
     "lefthook": "^2.1.6",
     "oxfmt": "^0.48.0",
     "oxlint": "^1.63.0",
