@@ -43,7 +43,7 @@ Not included:
 - `src/knowledge/compiler/inventory.ts` lists workspace files, reads `.gitignore`, skips generated/vendor/cache folders, skips binary files, and computes `sha256:` hashes.
 - `src/knowledge/init.ts` creates `topchester-kb/l1-files/`, `l2-modules/`, `l3-features/`, `graph/`, and `reviews/`.
 - Queue items currently have `id`, `path`, `sizeBytes`, `hash`, and `status: "queued"`.
-- `ModelGateway` already supports `kb.scan`, `kb.summarize`, `kb.extract`, and `kb.embed`.
+- `ModelGateway` already supports `kb.scan` and `kb.summarize`.
 - `compileKnowledgeBase()` only receives `workspaceRoot`; it does not yet receive `modelGateway`.
 - Slash command context currently only has `workspaceRoot`, so `/kb compile` cannot call a KB model yet.
 

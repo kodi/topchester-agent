@@ -4,15 +4,7 @@ import { isAbsolute, join, resolve, win32 } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
-const modelPurposeSchema = z.enum([
-  "agent.primary",
-  "agent.fast",
-  "kb.scan",
-  "kb.summarize",
-  "kb.extract",
-  "kb.embed",
-  "fallback",
-]);
+const modelPurposeSchema = z.enum(["agent.primary", "agent.fast", "kb.scan", "kb.summarize", "fallback"]);
 
 const modelPurposes = modelPurposeSchema.options;
 const toolProtocolSchema = z.enum(["auto", "native", "text-json", "text-xml"]);

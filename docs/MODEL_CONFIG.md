@@ -94,8 +94,6 @@ type ModelPurpose =
   | "agent.fast"
   | "kb.scan"
   | "kb.summarize"
-  | "kb.extract"
-  | "kb.embed"
   | "fallback";
 
 type ModelRef = `${providerId}/${modelId}`;
@@ -303,6 +301,8 @@ models.default      -> ModelGatewayConfig.models["agent.primary"] and unspecifie
 models.fast         -> ModelGatewayConfig.models["agent.fast"]
 models.kb.summarize -> ModelGatewayConfig.models["kb.summarize"]
 models.providers    -> ModelGatewayConfig.providers
+
+Supported internal purposes are `agent.primary`, `agent.fast`, `kb.scan`, `kb.summarize`, and `fallback`.
 ```
 
 The first implementation can skip native provider support and only instantiate OpenAI-compatible providers. That is enough for OpenRouter, Ollama, LiteLLM, vLLM, LM Studio, and most proxy services.
