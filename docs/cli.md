@@ -69,6 +69,10 @@ Current behavior:
 - In an interactive terminal, the command opens the TUI. See [TUI Guide](./tui.md).
 - In non-interactive output, the command prints a static version of the layout.
 - The coding loop can use workspace-scoped file tools: `read_file`, `list_files`, `grep`, `find_file`, `edit_file`, `write_file`, and `inspect_command`.
+- The coding loop can use structured Git tools: `git_status`, `git_diff`, `git_log`, `git_add`, and `git_commit`.
+- `git_status`, `git_diff`, and `git_log` are the preferred path for Git state, diffs, and recent history. `inspect_command` can still inspect read-only Git commands, but it is an orientation fallback rather than the normal Git workflow.
+- `git_add` stages only explicit paths whose current status was acknowledged. It rejects broad pathspecs such as `.` and does not stage unrelated files by default.
+- `git_commit` commits only when staged paths exactly match `expected_staged_paths`. The model prompt still tells the agent not to stage or commit unless the user explicitly asks.
 - `write_file` creates new UTF-8 files by default. It can create parent directories when explicitly requested, marks the file dirty-known and `needs_sync`, and fails if the target file already exists unless `overwrite: true` is paired with the current `expected_hash`.
 - `edit_file` remains the targeted edit tool for existing files; `inspect_command` remains read-only orientation and is not used for file creation.
 
@@ -230,8 +234,8 @@ topchester kb sync
 
 - `TOPCHESTER_LOG_LEVEL=debug` writes structured JSON logs to `.agents/topchester/logs/topchester.log`.
 - `TOPCHESTER_LOG_FILE=<path>` overrides the log file path. Relative paths are resolved from the workspace root.
-- `debug` logs tool calls, tool result metadata, edit/write metadata, command metadata, and model response metadata.
-- `debug` does not log full old/new edit text, full `write_file` content, or full `inspect_command` output.
+- `debug` logs tool calls, tool result metadata, edit/write metadata, command metadata, Git metadata, and model response metadata.
+- `debug` does not log full old/new edit text, full `write_file` content, full Git diff content, or full `inspect_command` output.
 - `trace` also logs full model and tool response text.
 - Logging is file-only and does not write to the TUI.
 

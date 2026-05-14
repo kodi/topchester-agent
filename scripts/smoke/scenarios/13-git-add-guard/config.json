@@ -1,0 +1,31 @@
+{
+  "id": "13-git-add-guard",
+  "name": "Git add guard",
+  "description": "Stages exactly one requested Git path while leaving unrelated changes alone.",
+  "prompt": "Stage only tracked-change.txt and leave every other file alone.",
+  "gitBootstrap": {
+    "initialCommit": true,
+    "unstaged": [
+      {
+        "path": "tracked-change.txt",
+        "content": "stage this\n"
+      },
+      {
+        "path": "other-change.txt",
+        "content": "leave this unstaged\n"
+      }
+    ],
+    "untracked": [
+      {
+        "path": "untracked-note.txt",
+        "content": "leave this untracked\n"
+      }
+    ]
+  },
+  "requiredToolCalls": ["git_status", "git_add"],
+  "expectedGit": {
+    "stagedPaths": ["tracked-change.txt"],
+    "unstagedPaths": ["other-change.txt"],
+    "untrackedPaths": ["untracked-note.txt"]
+  }
+}

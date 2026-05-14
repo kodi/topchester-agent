@@ -230,6 +230,51 @@ function chooseResponse(prompt: string): string {
     });
   }
 
+  if (prompt.includes("Stage and commit only commit-me.txt") && prompt.includes("Tool result from git_commit")) {
+    return "Committed commit-me.txt and left the unrelated changes outside the commit.";
+  }
+
+  if (prompt.includes("Stage and commit only commit-me.txt") && prompt.includes("Tool result from git_add")) {
+    return toolCall("git_commit", {
+      message: "Commit selected smoke file",
+      expected_staged_paths: ["commit-me.txt"],
+    });
+  }
+
+  if (prompt.includes("Stage and commit only commit-me.txt") && prompt.includes("Tool result from git_status")) {
+    return toolCall("git_add", {
+      paths: ["commit-me.txt"],
+      expected_status: [{ path: "commit-me.txt", status: "modified" }],
+    });
+  }
+
+  if (prompt.includes("Stage and commit only commit-me.txt")) {
+    return toolCall("git_status", { path: ".", include_untracked: true });
+  }
+
+  if (prompt.includes("Stage only tracked-change.txt") && prompt.includes("Tool result from git_status")) {
+    return toolCall("git_add", {
+      paths: ["tracked-change.txt"],
+      expected_status: [{ path: "tracked-change.txt", status: "modified" }],
+    });
+  }
+
+  if (prompt.includes("Stage only tracked-change.txt")) {
+    return toolCall("git_status", { path: ".", include_untracked: true });
+  }
+
+  if (prompt.includes("current git status") && prompt.includes("Tool result from git_diff")) {
+    return "The repo has staged, unstaged, and untracked Git changes.";
+  }
+
+  if (prompt.includes("current git status") && prompt.includes("Tool result from git_status")) {
+    return toolCall("git_diff", { scope: "all", include_untracked: true });
+  }
+
+  if (prompt.includes("current git status")) {
+    return toolCall("git_status", { path: ".", include_untracked: true });
+  }
+
   if (prompt.includes("value is 2") && prompt.includes("Tool result from read_file")) {
     return toolCall("edit_file", {
       path: "src/value.ts",

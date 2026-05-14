@@ -6,6 +6,8 @@ Implement first-class agent-facing Git tools for Topchester.
 
 The target outcome is a structured, reviewable Git workflow inside the coding-agent loop: the model can inspect status, diffs, and recent history without shell-shaped parsing, then only stage or commit files through guarded mutation tools when the user explicitly asks. This plan follows the third item in the alpha tool gap analysis and keeps `inspect_command` as a read-only orientation escape hatch, not the primary Git workflow.
 
+Git is a critical workflow surface. The end goal is not only unit coverage and `pnpm check`; the checked-in fake-API smoke battery must be green locally with Git scenarios included.
+
 ## Decisions
 
 - Add dedicated read tools first: `git_status`, `git_diff`, and `git_log`.
@@ -21,6 +23,7 @@ The target outcome is a structured, reviewable Git workflow inside the coding-ag
 - Never stage unrelated or untracked files by default.
 - Do not add `git reset`, `git checkout`, `git clean`, `git push`, `git pull`, or PR creation in the first implementation.
 - Do not treat these tools as KB updates; Git tools report repository state. File-write tools remain responsible for session overlay and `needs_sync`.
+- Treat `pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --trials 1`, also available as `mise run smoke 1`, as safe to run locally and as the end-goal acceptance gate after all Git tool slices land.
 
 ## Scope
 
@@ -34,6 +37,7 @@ Included:
 - Runtime prompt formatting and compact TUI rows.
 - Debug logs with metadata but not full diff content at debug level.
 - Tests for normal repos, non-Git directories, repos without commits, staged/unstaged/untracked files, path quoting, workspace escapes, truncation, and missing Git behavior.
+- Checked-in smoke scenarios under `scripts/smoke/scenarios` for read Git tools, guarded staging, and guarded commits.
 - Docs updates after the tools ship.
 
 Not included:
@@ -400,11 +404,25 @@ Execution rules:
 9. Keep structured metadata separate from `content`.
 10. Log debug-level metadata only; full diff content remains trace-level through the existing executor behavior.
 
+Smoke harness additions:
+
+- Add a scenario-level Git bootstrap option to `scripts/smoke/run-smoke.ts` instead of committing `.git` directories into templates.
+- The bootstrap should initialize a repo, set local test identity, create an initial commit when requested, and then apply requested staged, unstaged, deleted, and untracked changes.
+- Add Git assertions that can check staged paths, unstaged paths, untracked paths, latest commit subject, latest commit touched paths, and remaining worktree state.
+- Keep smoke assertions shell-free or `execFile`-based, with `--` before pathspecs when paths are passed to Git.
+- Keep `scripts/smoke/fake-api.ts` updated so fake-model smoke runs cover the dedicated Git tools directly.
+
 ## Files to Add
 
 - `src/agent/tools/git.ts`
 - `src/agent/tools/git-runner.ts`
 - `test/git-tools.test.ts`
+- `scripts/smoke/scenarios/12-git-read-tools/config.json`
+- `scripts/smoke/scenarios/12-git-read-tools/template/README.md`
+- `scripts/smoke/scenarios/13-git-add-guard/config.json`
+- `scripts/smoke/scenarios/13-git-add-guard/template/README.md`
+- `scripts/smoke/scenarios/14-git-commit-guard/config.json`
+- `scripts/smoke/scenarios/14-git-commit-guard/template/README.md`
 
 Optional if mutation tools are implemented in separate files:
 
@@ -423,6 +441,9 @@ Optional if mutation tools are implemented in separate files:
 - `test/commands.test.ts`
 - `test/tui.render.test.ts`
 - `test/logging.test.ts`
+- `scripts/smoke/run-smoke.ts`
+- `scripts/smoke/fake-api.ts`
+- `scripts/smoke/README.md`
 - `docs/cli.md`
 - `docs/plans/kb-implementation-checklist.md`
 
@@ -439,12 +460,13 @@ Optional if mutation tools are implemented in separate files:
 - Keep diff content out of debug logs.
 - Treat Git state as current working-tree evidence, not canonical KB truth.
 - Update docs in the same implementation change that exposes model-visible Git tools.
+- Git tools are not done until the smoke suite has checked-in coverage. Add or update smoke scenarios in the same slice that exposes each Git capability.
 
 ## Slices
 
 ### Slice 1: Shared Git Runner And Parsers
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Create the reusable Git execution and parsing boundary without registering any new model-visible tools.
 
@@ -479,7 +501,7 @@ Dependencies: None.
 
 ### Slice 2: Read Tool Contracts
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Implement `git_status`, `git_diff`, and `git_log` as tool definitions while keeping them unregistered until runtime formatting is ready.
 
@@ -514,7 +536,7 @@ Dependencies: Slice 1.
 
 ### Slice 3: Registry, Prompt, Runtime, And TUI Integration
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Expose read Git tools to the model and show compact Git rows in the thread.
 
@@ -533,17 +555,22 @@ This slice should implement:
   - `git_log: 10 commits`
 - Add TUI message recognition for the new tool rows.
 - Add executor metadata summarization for Git results.
+- Add smoke scenario `12-git-read-tools`.
+- Extend the smoke harness only as needed to initialize a temporary Git repo in a scenario workspace before Topchester runs.
+- Extend `scripts/smoke/fake-api.ts` so fake smoke runs exercise `git_status` and `git_diff`, not `inspect_command`.
 
 Expected output:
 
 - The model can call read Git tools through native or text tool protocols.
 - The transcript shows compact Git rows.
 - Follow-up model prompts receive enough structured Git facts to continue safely.
+- `mise run smoke-scenario 12-git-read-tools 1` validates that the model uses dedicated Git read tools against a dirty repo.
 
 Verification:
 
 ```sh
 pnpm test test/tools.test.ts test/git-tools.test.ts test/commands.test.ts test/tui.render.test.ts
+pnpm exec tsx scripts/smoke/run-smoke.ts --dry-run
 pnpm typecheck
 ```
 
@@ -551,7 +578,7 @@ Dependencies: Slice 2.
 
 ### Slice 4: Read Tool Docs And Checklist
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Update user-facing docs after read Git tools ship.
 
@@ -579,7 +606,7 @@ Dependencies: Slice 3.
 
 ### Slice 5: Guarded `git_add`
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Add explicit-path staging after read tools have proven the current Git state contract.
 
@@ -594,16 +621,19 @@ This slice should implement:
 - Post-stage status output.
 - Prompt guidance that staging requires explicit user intent.
 - Runtime and TUI labels such as `git_add: 2 files staged`.
+- Add smoke scenario `13-git-add-guard` with at least two dirty files where the prompt asks to stage exactly one file.
 
 Expected output:
 
 - The model can stage only named files whose current status it has acknowledged.
 - Unrelated files stay untouched.
+- `mise run smoke-scenario 13-git-add-guard 1` validates that only the requested path becomes staged.
 
 Verification:
 
 ```sh
 pnpm test test/git-tools.test.ts test/tools.test.ts test/commands.test.ts
+pnpm exec tsx scripts/smoke/run-smoke.ts --dry-run
 pnpm typecheck
 ```
 
@@ -611,7 +641,7 @@ Dependencies: Slices 1-4.
 
 ### Slice 6: Guarded `git_commit`
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Add explicit commit support with staged-file verification.
 
@@ -627,16 +657,19 @@ This slice should implement:
 - Clear rejection when staged files differ from expected paths.
 - Clear handling of Git hooks, signing prompts, or commit failures.
 - Runtime and TUI labels such as `git_commit: abc1234 Add structured git status tool`.
+- Add smoke scenario `14-git-commit-guard` where the prompt stages and commits exactly one file while an unrelated dirty file remains outside the commit.
 
 Expected output:
 
 - The model can commit only an explicitly staged and acknowledged file set.
 - The tool returns the new commit SHA and remaining worktree state.
+- `mise run smoke-scenario 14-git-commit-guard 1` validates that the commit contains only the expected file and leaves unrelated worktree changes intact.
 
 Verification:
 
 ```sh
 pnpm test test/git-tools.test.ts test/tools.test.ts test/commands.test.ts test/tui.render.test.ts
+pnpm exec tsx scripts/smoke/run-smoke.ts --dry-run
 pnpm check
 ```
 
@@ -644,7 +677,7 @@ Dependencies: Slice 5.
 
 ### Slice 7: Branch And PR Follow-Up Decision
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Decide whether branch creation and PR creation belong in the same Git tool family or in a separate provider integration.
 
@@ -661,6 +694,13 @@ This slice should evaluate:
 Expected output:
 
 - A short follow-up plan or an update to this plan with the chosen direction.
+
+Decision:
+
+- Keep branch creation and PR creation out of the V0 Git tool family.
+- Treat local branch creation as a future narrow `git_checkout_new_branch` tool only after the approval/intent contract exists.
+- Treat PR creation as a provider integration, not a direct Git tool. Prefer GitHub app APIs or a provider adapter over exposing `gh` command strings to the model.
+- Require a future approval framework before any network or remote mutation tool such as push, pull, fetch, or PR creation is model-visible.
 
 Verification:
 
@@ -693,13 +733,36 @@ Final confidence pass after read tools:
 
 ```sh
 pnpm check
+pnpm exec tsx scripts/smoke/run-smoke.ts --dry-run
+pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --scenario 12-git-read-tools --trials 1
 ```
 
 Final confidence pass after mutation tools:
 
 ```sh
 pnpm check
+pnpm exec tsx scripts/smoke/run-smoke.ts --dry-run
+pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --trials 1
 ```
+
+Required checked-in smoke scenarios:
+
+- `12-git-read-tools`
+  - Workspace starts as a Git repo with one committed file, one modified tracked file, one staged file, and one untracked file.
+  - Prompt: `Show me the current git status and summarize the diff.`
+  - Required tool calls: `git_status`, `git_diff`.
+  - Forbidden tool calls: `inspect_command`.
+  - Assertions: no staged or unstaged state changes are introduced by the run.
+- `13-git-add-guard`
+  - Workspace starts as a Git repo with at least two dirty files.
+  - Prompt asks to stage exactly one named file and leave the other file alone.
+  - Required tool calls: `git_status`, `git_add`.
+  - Assertions: only the named file is staged; unrelated dirty and untracked files remain unstaged.
+- `14-git-commit-guard`
+  - Workspace starts as a Git repo with at least two dirty files.
+  - Prompt asks to stage and commit exactly one named file with a fixed message.
+  - Required tool calls: `git_status`, `git_add`, `git_commit`.
+  - Assertions: latest commit subject matches the prompt, latest commit touched paths match the expected file set, and unrelated worktree changes remain outside the commit.
 
 Manual smoke prompt after read tools:
 
@@ -728,6 +791,13 @@ Expected mutation-tool smoke behavior:
 - The model calls `git_add` with exactly that path.
 - The model calls `git_commit` only after staged paths match the expected list.
 - Unrelated modified or untracked files remain unstaged.
+
+Smoke execution policy:
+
+- Implementation slices must keep `pnpm exec tsx scripts/smoke/run-smoke.ts --dry-run` green.
+- It is safe to run the local deterministic smoke battery with `pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --trials 1`; the equivalent mise wrapper is `mise run smoke 1`.
+- The end-goal requirement for this plan is a green fake-API smoke battery with the Git scenarios included.
+- Do not require CI to run `mise run smoke` in this plan.
 
 ## Open Questions
 

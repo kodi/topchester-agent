@@ -1,0 +1,34 @@
+{
+  "id": "12-git-read-tools",
+  "name": "Git read tools",
+  "description": "Uses dedicated Git status and diff tools against a dirty repository.",
+  "prompt": "Show me the current git status and summarize the diff.",
+  "gitBootstrap": {
+    "initialCommit": true,
+    "staged": [
+      {
+        "path": "staged-change.txt",
+        "content": "staged change\n"
+      }
+    ],
+    "unstaged": [
+      {
+        "path": "tracked-change.txt",
+        "content": "unstaged change\n"
+      }
+    ],
+    "untracked": [
+      {
+        "path": "untracked-note.txt",
+        "content": "untracked note\n"
+      }
+    ]
+  },
+  "requiredToolCalls": ["git_status", "git_diff"],
+  "forbiddenToolCalls": ["inspect_command"],
+  "expectedGit": {
+    "stagedPaths": ["staged-change.txt"],
+    "unstagedPaths": ["tracked-change.txt"],
+    "untrackedPaths": ["untracked-note.txt"]
+  }
+}

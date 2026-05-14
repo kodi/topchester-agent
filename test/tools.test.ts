@@ -219,6 +219,11 @@ describe("agent tools", () => {
       'find_file: find existing files by fuzzy path or filename inside the workspace; matches may appear in the middle of a filename, and results are file paths, not file contents. To use it, reply with only JSON: {"tool":"find_file","args":{"query":"runtime"}}',
       'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_hash":"sha256:optional-current-file-hash","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
       'write_file: create a new UTF-8 file inside the workspace by default; use edit_file for targeted changes to existing files, pass create_parent_dirs:true only when creating the folder path is intended, and replace an existing whole file only with overwrite:true and expected_hash from read_file. To use it, reply with only JSON: {"tool":"write_file","args":{"path":"test/example.test.ts","content":"import { it, expect } from \\"vitest\\";\\n\\nit(\\"works\\", () => {\\n  expect(true).toBe(true);\\n});\\n","create_parent_dirs":true}}',
+      'git_status: inspect branch, head, clean state, staged, unstaged, and untracked files without parsing shell output. To use it, reply with only JSON: {"tool":"git_status","args":{"path":".","include_untracked":true}}',
+      'git_diff: inspect a bounded Git diff; use scope "all", "unstaged", or "staged", and include_untracked:true only when untracked file patches are needed. To use it, reply with only JSON: {"tool":"git_diff","args":{"scope":"all","include_untracked":true}}',
+      'git_log: inspect recent commits without parsing shell output. To use it, reply with only JSON: {"tool":"git_log","args":{"limit":10,"path":"src/agent/runtime.ts"}}',
+      'git_add: stage only explicit paths the user asked to stage; first inspect git_status, reject broad paths, and pass expected_status for each path. To use it, reply with only JSON: {"tool":"git_add","args":{"paths":["src/example.ts"],"expected_status":[{"path":"src/example.ts","status":"modified"}]}}',
+      'git_commit: commit only after the user explicitly asks and staged paths exactly match expected_staged_paths. To use it, reply with only JSON: {"tool":"git_commit","args":{"message":"Add feature","expected_staged_paths":["src/example.ts"]}}',
       'inspect_command: run a safe read-only discovery command inside the workspace for quick orientation; prefer read_file, list_files, grep, and find_file for exact file tasks, and do not use it for builds, tests, installs, network, shell scripts, or edits. To use it, reply with only JSON: {"tool":"inspect_command","args":{"command":"pwd && rg --files docs/plans | head -20","workdir":".","timeout_ms":10000}}',
     ]);
   });
@@ -256,6 +261,8 @@ describe("agent tools", () => {
     const prompt = getChatSystemPrompt();
 
     expect(prompt).toContain("Use list_files, grep, find_file, and read_file for exact file listing");
+    expect(prompt).toContain("Use git_status, git_diff, and git_log for Git state");
+    expect(prompt).toContain("Use git_add and git_commit only when the user explicitly asks");
     expect(prompt).toContain("Use inspect_command only for quick read-only repo orientation");
     expect(prompt).toContain("inspect_command is not a shell");
     expect(prompt).toContain("Unsafe commands, shell expansion, scripts, installs, builds, tests, network access");

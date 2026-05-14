@@ -1,5 +1,6 @@
 import { editFileTool } from "./edit-file.js";
 import { findFileTool } from "./find-file.js";
+import { gitAddTool, gitCommitTool, gitDiffTool, gitLogTool, gitStatusTool } from "./git.js";
 import { grepTool } from "./grep.js";
 import { inspectCommandTool } from "./inspect-command.js";
 import { listFilesTool } from "./list-files.js";
@@ -14,6 +15,11 @@ export const toolRegistry = {
   [findFileTool.name]: findFileTool,
   [editFileTool.name]: editFileTool,
   [writeFileTool.name]: writeFileTool,
+  [gitStatusTool.name]: gitStatusTool,
+  [gitDiffTool.name]: gitDiffTool,
+  [gitLogTool.name]: gitLogTool,
+  [gitAddTool.name]: gitAddTool,
+  [gitCommitTool.name]: gitCommitTool,
   [inspectCommandTool.name]: inspectCommandTool,
 } as const;
 

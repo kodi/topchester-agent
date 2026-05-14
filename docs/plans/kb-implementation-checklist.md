@@ -153,6 +153,9 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [x] Add workspace-scoped `edit_file` for exact existing-file replacements
 - [x] Add workspace-scoped `write_file` for create-by-default UTF-8 file writes
 - [x] Add workspace-scoped `inspect_command` for read-only repo orientation through a narrow allowlist
+- [x] Add workspace-scoped `git_status`, `git_diff`, and `git_log` for structured Git inspection
+- [x] Add guarded `git_add` for explicit-path staging after current status acknowledgement
+- [x] Add guarded `git_commit` for exact staged-path commits when the user explicitly asks
 - [x] Add `edit_file` path containment, existing-file checks, UTF-8 validation, optional expected-hash checks, and atomic-ish same-directory writes
 - [x] Add `write_file` path containment, existing-file rejection, optional parent-directory creation, UTF-8 validation, and atomic-ish same-directory writes
 - [x] Add per-file mutation serialization for `edit_file`
@@ -163,6 +166,8 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [x] Return overwrite before/after hashes, byte delta, and line delta
 - [x] Avoid debug-level logging of full `edit_file` old/new edit text
 - [x] Avoid debug-level logging of full `write_file` content
+- [x] Avoid debug-level logging of full `git_diff` content
+- [ ] Add approval-backed Git/network operations such as branch creation, push, pull, and PR creation
 
 ## MCP Adapter
 

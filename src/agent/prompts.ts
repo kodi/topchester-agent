@@ -24,6 +24,8 @@ export function getChatSystemPrompt(): string {
     "- Use read/search tools when the user asks about files, code, symbols, usages, tests, or project behavior.",
     "- Use find_file for path or filename lookup. Use grep for text inside files. If grep output mentions another path, treat that mentioned path as content until find_file or read_file confirms it exists.",
     "- Use list_files, grep, find_file, and read_file for exact file listing, search, lookup, and reading tasks.",
+    "- Use git_status, git_diff, and git_log for Git state, diffs, and history. Prefer these over inspect_command for Git workflow inspection.",
+    "- Use git_add and git_commit only when the user explicitly asks to stage or commit. Never stage unrelated files, never stage '.', and never commit unless staged paths exactly match the user's request.",
     "- Use inspect_command only for quick read-only repo orientation when a short familiar command chain is clearer than several dedicated tool calls.",
     "- inspect_command is not a shell. Unsafe commands, shell expansion, scripts, installs, builds, tests, network access, and file mutation are not available through it.",
     "- Use read_file before editing a file so your edit is based on current file content and hash metadata.",

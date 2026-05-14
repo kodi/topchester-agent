@@ -352,6 +352,84 @@ function formatToolResultForPrompt(result: ToolResult): string {
       .join("\n");
   }
 
+  if (result.tool === "git_status") {
+    return [
+      `Tool result from ${result.tool}${path}:`,
+      `repo_root: ${result.repoRoot ?? "(none)"}`,
+      `branch: ${result.branch ?? "(detached)"}`,
+      `head: ${result.head ?? "(none)"}`,
+      `has_head: ${result.hasHead}`,
+      `clean: ${result.clean}`,
+      `changed_file_count: ${result.files.length}`,
+      `truncated: ${result.truncated}`,
+      warning ? warning.trimStart() : "",
+      "```",
+      result.content,
+      "```",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (result.tool === "git_diff") {
+    return [
+      `Tool result from ${result.tool}${path}:`,
+      `repo_root: ${result.repoRoot ?? "(none)"}`,
+      `scope: ${result.scope}`,
+      `path: ${result.path ?? "(all)"}`,
+      `file_count: ${result.fileCount}`,
+      `truncated: ${result.truncated}`,
+      warning ? warning.trimStart() : "",
+      "```diff",
+      result.content,
+      "```",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (result.tool === "git_log") {
+    return [
+      `Tool result from ${result.tool}${path}:`,
+      `repo_root: ${result.repoRoot ?? "(none)"}`,
+      `commit_count: ${result.commits.length}`,
+      `truncated: ${result.truncated}`,
+      warning ? warning.trimStart() : "",
+      "```",
+      result.content,
+      "```",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (result.tool === "git_add") {
+    return [
+      `Tool result from ${result.tool}:`,
+      `repo_root: ${result.repoRoot ?? "(none)"}`,
+      `staged_paths: ${result.stagedPaths.join(", ")}`,
+      warning ? warning.trimStart() : "",
+      "```",
+      result.content,
+      "```",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (result.tool === "git_commit") {
+    return [
+      `Tool result from ${result.tool}:`,
+      `repo_root: ${result.repoRoot ?? "(none)"}`,
+      `commit: ${result.commit.shortSha} ${result.commit.subject}`,
+      `staged_paths: ${result.stagedPaths.join(", ")}`,
+      `remaining_changed_file_count: ${result.remainingFiles.length}`,
+      "```",
+      result.content,
+      "```",
+    ].join("\n");
+  }
+
   return [`Tool result from ${result.tool}${path}${command}:${warning}`, "```", result.content, "```"].join("\n");
 }
 
@@ -380,9 +458,27 @@ function formatToolCallMessage(call: ToolCall, result?: ToolResult): string {
       return `edit_file: ${call.args.path}${formatEditFileChangeSummary(result)}`;
     case "write_file":
       return `write_file: ${call.args.path}${formatWriteFileChangeSummary(result)}`;
+    case "git_status":
+      return `git_status: ${result?.tool === "git_status" ? `${result.files.length} changed` : call.args.path}`;
+    case "git_diff":
+      return `git_diff: ${formatGitDiffCallSummary(call, result)}`;
+    case "git_log":
+      return `git_log: ${result?.tool === "git_log" ? `${result.commits.length} commits` : `${call.args.limit} commits`}`;
+    case "git_add":
+      return `git_add: ${result?.tool === "git_add" ? `${result.stagedPaths.length} files staged` : `${call.args.paths.length} files`}`;
+    case "git_commit":
+      return `git_commit: ${result?.tool === "git_commit" ? `${result.commit.shortSha} ${result.commit.subject}` : call.args.message}`;
     case "inspect_command":
       return `inspect_command: ${call.args.command}`;
   }
+}
+
+function formatGitDiffCallSummary(call: Extract<ToolCall, { tool: "git_diff" }>, result?: ToolResult): string {
+  if (result?.tool === "git_diff") {
+    return `${result.scope} (${result.fileCount} files${result.truncated ? ", truncated" : ""})`;
+  }
+
+  return call.args.scope;
 }
 
 function formatEditFileChangeSummary(result: ToolResult | undefined): string {

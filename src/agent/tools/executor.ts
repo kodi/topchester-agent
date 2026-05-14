@@ -104,6 +104,55 @@ function summarizeToolResult(result: ToolResult): Record<string, unknown> {
     };
   }
 
+  if (result.tool === "git_status") {
+    return {
+      repoRoot: result.repoRoot,
+      branch: result.branch,
+      head: result.head,
+      hasHead: result.hasHead,
+      clean: result.clean,
+      fileCount: result.files.length,
+      truncated: result.truncated,
+    };
+  }
+
+  if (result.tool === "git_diff") {
+    return {
+      repoRoot: result.repoRoot,
+      scope: result.scope,
+      path: result.path,
+      fileCount: result.fileCount,
+      truncated: result.truncated,
+    };
+  }
+
+  if (result.tool === "git_log") {
+    return {
+      repoRoot: result.repoRoot,
+      commitCount: result.commits.length,
+      truncated: result.truncated,
+    };
+  }
+
+  if (result.tool === "git_add") {
+    return {
+      repoRoot: result.repoRoot,
+      stagedPathCount: result.stagedPaths.length,
+      postStatusFileCount: result.files.length,
+    };
+  }
+
+  if (result.tool === "git_commit") {
+    return {
+      repoRoot: result.repoRoot,
+      commit: result.commit.shortSha,
+      stagedPathCount: result.stagedPaths.length,
+      remainingFileCount: result.remainingFiles.length,
+      statLength: result.stat.length,
+      nameStatusLength: result.nameStatus.length,
+    };
+  }
+
   if (result.tool === "write_file") {
     return {
       hash: result.hash,

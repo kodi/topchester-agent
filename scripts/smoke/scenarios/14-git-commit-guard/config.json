@@ -1,0 +1,33 @@
+{
+  "id": "14-git-commit-guard",
+  "name": "Git commit guard",
+  "description": "Stages and commits exactly one requested Git path while preserving unrelated worktree changes.",
+  "prompt": "Stage and commit only commit-me.txt with message \"Commit selected smoke file\". Leave every other file out of the commit.",
+  "gitBootstrap": {
+    "initialCommit": true,
+    "unstaged": [
+      {
+        "path": "commit-me.txt",
+        "content": "commit this\n"
+      },
+      {
+        "path": "other-change.txt",
+        "content": "leave this unstaged\n"
+      }
+    ],
+    "untracked": [
+      {
+        "path": "untracked-note.txt",
+        "content": "leave this untracked\n"
+      }
+    ]
+  },
+  "requiredToolCalls": ["git_status", "git_add", "git_commit"],
+  "expectedGit": {
+    "stagedPaths": [],
+    "unstagedPaths": ["other-change.txt"],
+    "untrackedPaths": ["untracked-note.txt"],
+    "latestCommitSubject": "Commit selected smoke file",
+    "latestCommitPaths": ["commit-me.txt"]
+  }
+}

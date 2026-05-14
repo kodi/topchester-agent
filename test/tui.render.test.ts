@@ -372,6 +372,14 @@ describe("TUI rendering", () => {
           )
         )
       ).toContain("   \u001b[90minspect_command: pwd && rg --files docs/plans | head -20\u001b[0m");
+      expect(
+        renderChatMessage(
+          toolCallMessage(
+            { tool: "git_diff", args: { scope: "all", include_untracked: true, context_lines: 3, max_bytes: 40000 } },
+            "git_diff: all (2 files, truncated)"
+          )
+        )
+      ).toContain("   \u001b[90mgit_diff: all (2 files, truncated)\u001b[0m");
     } finally {
       if (previousForceColor === undefined) {
         delete process.env.FORCE_COLOR;

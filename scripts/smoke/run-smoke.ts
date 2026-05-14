@@ -25,6 +25,11 @@ const bootstrapFileSchema = z.object({
   content: z.string(),
 });
 
+const gitChangeSchema = z.object({
+  path: z.string(),
+  content: z.string(),
+});
+
 const scenarioSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -32,6 +37,15 @@ const scenarioSchema = z.object({
   prompt: z.union([z.string(), z.array(z.string()).min(1)]),
   template: z.string().optional().default("template"),
   bootstrapFiles: z.array(bootstrapFileSchema).optional().default([]),
+  gitBootstrap: z
+    .object({
+      initialCommit: z.boolean().optional().default(true),
+      staged: z.array(gitChangeSchema).optional().default([]),
+      unstaged: z.array(gitChangeSchema).optional().default([]),
+      untracked: z.array(gitChangeSchema).optional().default([]),
+      deleted: z.array(z.string()).optional().default([]),
+    })
+    .optional(),
   timeoutMs: z.number().int().positive().optional().default(120_000),
   requiredToolCalls: z.array(z.string()).optional().default([]),
   forbiddenToolCalls: z.array(z.string()).optional().default([]),
@@ -42,6 +56,15 @@ const scenarioSchema = z.object({
   expectedKb: z
     .object({
       statusAfter: z.string().optional(),
+    })
+    .optional(),
+  expectedGit: z
+    .object({
+      stagedPaths: z.array(z.string()).optional(),
+      unstagedPaths: z.array(z.string()).optional(),
+      untrackedPaths: z.array(z.string()).optional(),
+      latestCommitSubject: z.string().optional(),
+      latestCommitPaths: z.array(z.string()).optional(),
     })
     .optional(),
 });
@@ -197,6 +220,7 @@ async function runTrial(
   await mkdir(outputDir, { recursive: true });
   await copyTemplate(templatePath, workspace);
   await applyBootstrapFiles(workspace, scenario.bootstrapFiles);
+  await bootstrapGit(workspace, scenario.gitBootstrap);
 
   const configPath = fakeApiBaseURL
     ? await writeFakeApiConfig(outputDir, fakeApiBaseURL, options.model, options.toolProtocol)
@@ -369,6 +393,8 @@ async function assertScenario(
       failures.push("expected KB state needs_sync after file change");
     }
   }
+
+  await expectGitState(workspace, scenario.expectedGit, failures);
 }
 
 async function collectGlobalLogs(
@@ -484,6 +510,44 @@ async function applyBootstrapFiles(
   }
 }
 
+async function bootstrapGit(workspace: string, bootstrap: Scenario["gitBootstrap"]): Promise<void> {
+  if (!bootstrap) {
+    return;
+  }
+
+  await git(workspace, ["init"]);
+  await git(workspace, ["config", "user.name", "Topchester Smoke"]);
+  await git(workspace, ["config", "user.email", "topchester-smoke@example.test"]);
+
+  if (bootstrap.initialCommit) {
+    await git(workspace, ["add", "-A", "--"]);
+    await git(workspace, ["commit", "--allow-empty", "-m", "Initial smoke commit"]);
+  }
+
+  for (const file of bootstrap.staged) {
+    await writeWorkspaceFile(workspace, file.path, file.content);
+    await git(workspace, ["add", "--", file.path]);
+  }
+
+  for (const file of bootstrap.unstaged) {
+    await writeWorkspaceFile(workspace, file.path, file.content);
+  }
+
+  for (const file of bootstrap.untracked) {
+    await writeWorkspaceFile(workspace, file.path, file.content);
+  }
+
+  for (const path of bootstrap.deleted) {
+    await rm(join(workspace, path), { force: true });
+  }
+}
+
+async function writeWorkspaceFile(workspace: string, path: string, content: string): Promise<void> {
+  const target = join(workspace, path);
+  await mkdir(dirname(target), { recursive: true });
+  await writeFile(target, content);
+}
+
 async function writeFakeApiConfig(
   outputDir: string,
   baseURL: string,
@@ -521,6 +585,98 @@ async function readJsonLines<T>(path: string): Promise<T[]> {
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line) as T);
+}
+
+async function expectGitState(
+  workspace: string,
+  expectation: Scenario["expectedGit"],
+  failures: string[]
+): Promise<void> {
+  if (!expectation) {
+    return;
+  }
+
+  const status = parseGitPorcelain((await git(workspace, ["status", "--porcelain=v1", "-z", "--"])).stdout);
+
+  if (expectation.stagedPaths) {
+    expectSamePaths(status.stagedPaths, expectation.stagedPaths, "staged Git paths", failures);
+  }
+
+  if (expectation.unstagedPaths) {
+    expectSamePaths(status.unstagedPaths, expectation.unstagedPaths, "unstaged Git paths", failures);
+  }
+
+  if (expectation.untrackedPaths) {
+    expectSamePaths(status.untrackedPaths, expectation.untrackedPaths, "untracked Git paths", failures);
+  }
+
+  if (expectation.latestCommitSubject) {
+    const subject = (await git(workspace, ["log", "-n", "1", "--pretty=format:%s"])).stdout.trim();
+
+    if (subject !== expectation.latestCommitSubject) {
+      failures.push(
+        `latest commit subject was ${JSON.stringify(subject)}, expected ${JSON.stringify(expectation.latestCommitSubject)}`
+      );
+    }
+  }
+
+  if (expectation.latestCommitPaths) {
+    const paths = (await git(workspace, ["show", "--name-only", "--pretty=format:", "HEAD"])).stdout
+      .split("\n")
+      .filter(Boolean);
+    expectSamePaths(paths, expectation.latestCommitPaths, "latest commit paths", failures);
+  }
+}
+
+function parseGitPorcelain(output: string): {
+  stagedPaths: string[];
+  unstagedPaths: string[];
+  untrackedPaths: string[];
+} {
+  const stagedPaths: string[] = [];
+  const unstagedPaths: string[] = [];
+  const untrackedPaths: string[] = [];
+
+  for (const entry of output.split("\0").filter(Boolean)) {
+    const indexStatus = entry[0] ?? " ";
+    const worktreeStatus = entry[1] ?? " ";
+    const path = entry.slice(3);
+
+    if (indexStatus === "?" && worktreeStatus === "?") {
+      untrackedPaths.push(path);
+      continue;
+    }
+
+    if (indexStatus !== " ") {
+      stagedPaths.push(path);
+    }
+
+    if (worktreeStatus !== " ") {
+      unstagedPaths.push(path);
+    }
+  }
+
+  return {
+    stagedPaths: stagedPaths.sort(),
+    unstagedPaths: unstagedPaths.sort(),
+    untrackedPaths: untrackedPaths.sort(),
+  };
+}
+
+function expectSamePaths(actual: string[], expected: string[], label: string, failures: string[]): void {
+  const actualSorted = [...actual].sort();
+  const expectedSorted = [...expected].sort();
+
+  if (
+    actualSorted.length !== expectedSorted.length ||
+    actualSorted.some((path, index) => path !== expectedSorted[index])
+  ) {
+    failures.push(`${label} were ${JSON.stringify(actualSorted)}, expected ${JSON.stringify(expectedSorted)}`);
+  }
+}
+
+function git(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync("git", args, { cwd });
 }
 
 function parseArgs(args: string[]): CliOptions {

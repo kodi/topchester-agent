@@ -2,6 +2,8 @@
 
 Smoke tests run curated prompts against clean `/tmp` workspaces and assert global logs plus final workspace state.
 
+Git scenarios initialize temporary repositories during setup instead of storing `.git` directories in fixtures. They configure a local test identity, create an initial commit when requested, and assert staged paths, unstaged paths, untracked paths, and latest-commit metadata after the run.
+
 Run the deterministic fake API battery:
 
 ```sh

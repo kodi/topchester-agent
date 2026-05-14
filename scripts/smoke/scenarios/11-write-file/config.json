@@ -3,7 +3,7 @@
   "name": "Write file",
   "description": "Checks write_file can create a new file under a new parent directory.",
   "timeoutMs": 10000,
-  "prompt": "Create test/generated-smoke.test.ts with a simple Vitest test that includes the marker WRITE_FILE_SMOKE.",
+  "prompt": "Create test/generated-smoke.test.ts with a simple Vitest test named WRITE_FILE_SMOKE that includes the exact assertion expect(true).toBe(true).",
   "requiredToolCalls": ["write_file"],
   "forbiddenToolCalls": ["edit_file", "inspect_command"],
   "expectedFiles": ["test/generated-smoke.test.ts"],
