@@ -413,6 +413,66 @@ describe("slash commands", () => {
     expect(prompts[1]).not.toContain("Edited example.txt");
   });
 
+  it("logs each prompt sent to the model at debug level", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    await writeFile(join(workspace, "notes.txt"), "hello\n");
+    const debugEntries: Array<{ payload: Record<string, unknown>; message: string }> = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      logger: {
+        debug(payload: Record<string, unknown>, message: string) {
+          debugEntries.push({ payload, message });
+        },
+        trace() {},
+        error() {},
+      } as unknown as AppContext["logger"],
+      modelGateway: {
+        async generateText() {
+          return debugEntries.filter((entry) => entry.payload.event === "model_prompt").length === 1
+            ? {
+                text: JSON.stringify({ tool: "read_file", args: { path: "notes.txt" } }),
+                providerId: "fake",
+                modelId: "fake-agent",
+                purpose: "agent.primary" as const,
+              }
+            : {
+                text: "Read notes.txt.",
+                providerId: "fake",
+                modelId: "fake-agent",
+                purpose: "agent.primary" as const,
+              };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    await runtime.submitMessage([], "read notes");
+
+    const promptEntries = debugEntries.filter((entry) => entry.payload.event === "model_prompt");
+    expect(promptEntries).toHaveLength(2);
+    expect(promptEntries[0]?.message).toBe("model prompt");
+    expect(promptEntries[0]?.payload).toEqual(
+      expect.objectContaining({
+        purpose: "agent.primary",
+        afterTool: undefined,
+        prompt: expect.stringContaining("read notes"),
+        promptLength: expect.any(Number),
+        system: expect.any(String),
+        systemLength: expect.any(Number),
+      })
+    );
+    expect(promptEntries[1]?.message).toBe("model prompt after tool");
+    expect(promptEntries[1]?.payload).toEqual(
+      expect.objectContaining({
+        purpose: "agent.primary",
+        afterTool: "read_file",
+        prompt: expect.stringContaining('Tool result from read_file "notes.txt":'),
+        promptLength: expect.any(Number),
+        system: expect.any(String),
+        systemLength: expect.any(Number),
+      })
+    );
+  });
+
   it("injects an L1 context pack into runtime model prompts when KB is ready", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     await mkdir(join(workspace, "topchester-kb", "l1-files", "src", "tui"), { recursive: true });

@@ -95,6 +95,13 @@ export interface L1ContextPackResult {
   relevantFiles: L1ContextPackFile[];
 }
 
+export interface LoadedL1KnowledgeIndex {
+  workspaceRoot: string;
+  kbPath: string;
+  index: L1InMemoryIndex;
+  invalidEntryCount: number;
+}
+
 export class L1InMemoryIndex {
   private readonly entriesById = new Map<string, L1FileEntry>();
   private readonly postingsByToken = new Map<string, L1SearchPosting[]>();
@@ -219,6 +226,23 @@ export function buildL1InMemoryIndex(entries: L1FileEntry[]): L1InMemoryIndex {
   return new L1InMemoryIndex(entries);
 }
 
+export async function loadL1KnowledgeIndex(workspaceRoot: string): Promise<LoadedL1KnowledgeIndex> {
+  const status = getKnowledgeStatus(workspaceRoot);
+
+  if (!status.kbExists || !status.kbIsDirectory) {
+    throw new Error("Run `topchester kb init` and `topchester kb compile` before loading the L1 knowledge index.");
+  }
+
+  const loadResult = await loadL1FileEntries(status.kbPath);
+
+  return {
+    workspaceRoot,
+    kbPath: status.kbPath,
+    index: buildL1InMemoryIndex(loadResult.entries),
+    invalidEntryCount: loadResult.invalidEntryCount,
+  };
+}
+
 export async function searchL1Knowledge(
   workspaceRoot: string,
   query: string,
@@ -243,27 +267,19 @@ export async function searchL1Knowledge(
   };
 }
 
-export async function createL1ContextPack(
-  workspaceRoot: string,
+export function createL1ContextPackFromIndex(
+  source: LoadedL1KnowledgeIndex,
   query: string,
   options: L1ContextPackOptions = {}
-): Promise<L1ContextPackResult> {
+): L1ContextPackResult {
   const limit = options.limit ?? 8;
   const minScore = options.minScore ?? 12;
-  const status = getKnowledgeStatus(workspaceRoot);
-
-  if (!status.kbExists || !status.kbIsDirectory) {
-    throw new Error("Run `topchester kb init` and `topchester kb compile` before creating a context pack.");
-  }
-
-  const loadResult = await loadL1FileEntries(status.kbPath);
-  const index = buildL1InMemoryIndex(loadResult.entries);
-  const matches = index.search(query, { limit: Math.max(limit * 3, limit) });
+  const matches = source.index.search(query, { limit: Math.max(limit * 3, limit) });
   const relevantFiles = matches
     .filter((match) => match.score >= minScore)
     .slice(0, limit)
     .map((match): L1ContextPackFile | undefined => {
-      const entry = index.getEntry(match.id);
+      const entry = source.index.getEntry(match.id);
 
       if (!entry) {
         return undefined;
@@ -284,11 +300,11 @@ export async function createL1ContextPack(
   const warnings = relevantFiles.length === 0 ? ["No L1 entries met the context pack score threshold."] : [];
 
   return {
-    workspaceRoot,
-    kbPath: status.kbPath,
+    workspaceRoot: source.workspaceRoot,
+    kbPath: source.kbPath,
     query,
-    entryCount: index.size,
-    invalidEntryCount: loadResult.invalidEntryCount,
+    entryCount: source.index.size,
+    invalidEntryCount: source.invalidEntryCount,
     selection: { limit, minScore },
     drift: {
       status: "unchecked",
@@ -298,6 +314,38 @@ export async function createL1ContextPack(
     warnings,
     relevantFiles,
   };
+}
+
+export async function createL1ContextPack(
+  workspaceRoot: string,
+  query: string,
+  options: L1ContextPackOptions = {}
+): Promise<L1ContextPackResult> {
+  const limit = options.limit ?? 8;
+  const minScore = options.minScore ?? 12;
+  const status = getKnowledgeStatus(workspaceRoot);
+
+  if (!status.kbExists || !status.kbIsDirectory) {
+    throw new Error("Run `topchester kb init` and `topchester kb compile` before creating a context pack.");
+  }
+
+  const loadResult = await loadL1FileEntries(status.kbPath);
+  const index = buildL1InMemoryIndex(loadResult.entries);
+
+  return createL1ContextPackFromIndex(
+    {
+      workspaceRoot,
+      kbPath: status.kbPath,
+      index,
+      invalidEntryCount: loadResult.invalidEntryCount,
+    },
+    query,
+    {
+      limit,
+      minScore,
+      includeFullL1: options.includeFullL1,
+    }
+  );
 }
 
 export function formatL1KnowledgeSearchResult(result: L1KnowledgeSearchResult): string[] {
@@ -352,6 +400,8 @@ export function formatL1ContextPackForPrompt(result: L1ContextPackResult): strin
   return [
     "Topchester KB context pack:",
     "Use this as orientation only. For task-critical facts, read current source files before editing or making exact claims.",
+    "## -- kb summary start",
+    "```json",
     JSON.stringify(
       stripEmptyContainers({
         query: result.query,
@@ -381,10 +431,10 @@ export function formatL1ContextPackForPrompt(result: L1ContextPackResult): strin
             confidence: file.l1.confidence,
           },
         })),
-      }),
-      null,
-      2
+      })
     ),
+    "```",
+    "## -- kb summary end",
   ].join("\n");
 }
 

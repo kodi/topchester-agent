@@ -2,7 +2,13 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildL1InMemoryIndex, createL1ContextPack, searchL1Knowledge } from "../src/knowledge/search.js";
+import {
+  buildL1InMemoryIndex,
+  createL1ContextPack,
+  createL1ContextPackFromIndex,
+  loadL1KnowledgeIndex,
+  searchL1Knowledge,
+} from "../src/knowledge/search.js";
 import { getL1FileEntryPath } from "../src/knowledge/compiler/path-encoding.js";
 import { initializeKnowledgeBase } from "../src/knowledge/init.js";
 import { type L1FileEntry } from "../src/knowledge/compiler/l1-entry.js";
@@ -112,6 +118,26 @@ describe("L1 in-memory knowledge search", () => {
     });
 
     expect(result.relevantFiles[0]?.fullL1).toEqual(entry);
+  });
+
+  it("creates the same context pack from a preloaded L1 index", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-search-"));
+    await initializeKnowledgeBase(workspace);
+    const entry = createEntry("src/tui/status.ts", {
+      summary: "Renders the TUI status bar.",
+      responsibilities: ["Show status bar details."],
+      symbols: ["renderStatusBar"],
+      exports: ["renderStatusBar"],
+    });
+    const entryPath = getL1FileEntryPath(join(workspace, "topchester-kb"), entry.path);
+    await mkdir(dirname(entryPath), { recursive: true });
+    await writeFile(entryPath, `${JSON.stringify(entry, null, 2)}\n`);
+
+    const source = await loadL1KnowledgeIndex(workspace);
+    const fromIndex = createL1ContextPackFromIndex(source, "status bar", { limit: 3, minScore: 10 });
+    const fresh = await createL1ContextPack(workspace, "status bar", { limit: 3, minScore: 10 });
+
+    expect(fromIndex).toEqual(fresh);
   });
 
   it("clips generic symbol summaries from compact context packs", async () => {

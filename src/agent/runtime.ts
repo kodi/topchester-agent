@@ -96,9 +96,23 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
     for (let toolCalls = 0; toolCalls <= MAX_TOOL_CALLS_PER_TURN; toolCalls += 1) {
       const startedAt = Date.now();
+      const system = getChatSystemPrompt();
+      this.context.logger.debug(
+        {
+          event: "model_prompt",
+          purpose: "agent.primary",
+          afterTool,
+          toolProtocol: toolProtocolOverride,
+          promptLength: nextPrompt.length,
+          systemLength: system.length,
+          prompt: nextPrompt,
+          system,
+        },
+        afterTool ? "model prompt after tool" : "model prompt"
+      );
       const result = await generateAgentStep(this.context, {
         purpose: "agent.primary",
-        system: getChatSystemPrompt(),
+        system,
         prompt: nextPrompt,
         abortSignal,
         toolProtocol: toolProtocolOverride,
