@@ -27,6 +27,7 @@ interface CliOptions {
   minScore?: number;
   fullL1?: boolean;
   json?: boolean;
+  omitContextPack?: boolean;
 }
 
 interface BenchmarkStats {
@@ -67,7 +68,7 @@ interface BenchmarkSummary {
     relevantFileCount: number;
   };
   stats: BenchmarkStats;
-  contextPack: unknown;
+  contextPack?: unknown;
   lastSummary: string;
 }
 
@@ -81,7 +82,8 @@ const program = new Command()
   .option("--limit <count>", "maximum number of relevant files, matching `topchester kb context`", parsePositiveInteger)
   .option("--min-score <score>", "minimum match score, matching `topchester kb context`", parseNonNegativeNumber)
   .option("--full-l1", "include full raw L1 entries in the JSON context pack")
-  .option("--json", "write benchmark summary as JSON");
+  .option("--json", "write benchmark summary as JSON")
+  .option("--omit-context-pack", "omit the final contextPack from JSON output");
 
 program.parse(scriptArgv);
 
@@ -171,7 +173,7 @@ async function runBenchmark(options: CliOptions): Promise<void> {
       relevantFileCount: lastContextPack.relevantFiles.length,
     },
     stats,
-    contextPack: stripEmptyContainers(lastContextPack),
+    contextPack: options.omitContextPack ? undefined : stripEmptyContainers(lastContextPack),
     lastSummary: lastContextPack.summary,
   };
 

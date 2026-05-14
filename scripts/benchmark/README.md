@@ -25,18 +25,25 @@ JSON output:
 pnpm benchmark:l1-search -- --workspace-dir . --mode fresh --query "does status bar auto refresh as we work?" --trials 20 --json
 ```
 
+Compact JSON output without the full context pack:
+
+```sh
+pnpm benchmark:l1-search -- --workspace-dir . --mode fresh --query "does status bar auto refresh as we work?" --trials 20 --json --omit-context-pack
+```
+
 ### Parameters
 
-| Parameter         | Required | Values              | Description                                                                                   |
-| ----------------- | -------- | ------------------- | --------------------------------------------------------------------------------------------- |
-| `--workspace-dir` | yes      | path                | Project directory that contains `topchester-kb`. Relative paths resolve from the current cwd. |
-| `--mode`          | yes      | `shared`, `fresh`   | `shared` loads one L1 in-memory index before measuring. `fresh` reloads and indexes each run. |
-| `--query`         | yes      | string              | Search query used to build the L1 context pack.                                               |
-| `--trials`        | yes      | positive integer    | Number of measured benchmark runs.                                                            |
-| `--limit`         | no       | positive integer    | Maximum relevant files in the context pack. Defaults to the normal KB context default.        |
-| `--min-score`     | no       | non-negative number | Minimum L1 match score. Defaults to the normal KB context default.                            |
-| `--full-l1`       | no       | flag                | Include full raw L1 entries in the measured JSON context pack.                                |
-| `--json`          | no       | flag                | Print a machine-readable benchmark summary and the last context pack.                         |
+| Parameter             | Required | Values              | Description                                                                                    |
+| --------------------- | -------- | ------------------- | ---------------------------------------------------------------------------------------------- |
+| `--workspace-dir`     | yes      | path                | Project directory that contains `topchester-kb`. Relative paths resolve from the current cwd.  |
+| `--mode`              | yes      | `shared`, `fresh`   | `shared` loads one L1 in-memory index before measuring. `fresh` reloads and indexes each run.  |
+| `--query`             | yes      | string              | Search query used to build the L1 context pack.                                                |
+| `--trials`            | yes      | positive integer    | Number of measured benchmark runs.                                                             |
+| `--limit`             | no       | positive integer    | Maximum relevant files in the context pack. Defaults to the normal KB context default.         |
+| `--min-score`         | no       | non-negative number | Minimum L1 match score. Defaults to the normal KB context default.                             |
+| `--full-l1`           | no       | flag                | Include full raw L1 entries in the measured JSON context pack.                                 |
+| `--json`              | no       | flag                | Print a machine-readable benchmark summary and the last context pack.                          |
+| `--omit-context-pack` | no       | flag                | With `--json`, omit the full `contextPack` payload and keep only benchmark stats plus summary. |
 
 ### Modes
 
@@ -62,4 +69,6 @@ Human output includes:
 - the final context-pack summary
 
 `--json` includes the same benchmark stats plus the final context pack after
-empty containers are stripped, matching the CLI JSON shape.
+empty containers are stripped, matching the CLI JSON shape. Add
+`--omit-context-pack` when you want compact JSON that keeps the benchmark stats
+and final summary without embedding the full `contextPack` object.
