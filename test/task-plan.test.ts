@@ -7,6 +7,7 @@ import {
   formatTaskPlanForPrompt,
   formatTaskPlanNotice,
   formatTaskPlanForTui,
+  isTaskPlanCompleted,
   planTodoArgsSchema,
   summarizeTaskPlan,
 } from "../src/agent/task-plan.js";
@@ -93,11 +94,44 @@ describe("task plan", () => {
     expect(formatTaskPlanForPrompt(state)).toContain("pending: 1");
     expect(formatTaskPlanForPrompt(state)).toContain("current: Render the visible task plan in the TUI");
     expect(formatTaskPlanForTui(state, 32)).toEqual([
-      "plan",
       "  [x] Inspect runtime event flow",
       "  [>] Render the visible task...",
       "  [ ] Run verification",
     ]);
+  });
+
+  it("colors task-plan TUI markers when color is enabled", () => {
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+
+    try {
+      const state = applyTaskPlanUpdate(createEmptyTaskPlanState(), {
+        items: [
+          { text: "Done", status: "completed" },
+          { text: "Active", status: "in_progress" },
+          { text: "Later", status: "pending" },
+        ],
+      });
+
+      expect(formatTaskPlanForTui(state, 40)).toEqual([
+        "  \u001b[32m[x]\u001b[0m \u001b[90mDone\u001b[0m",
+        "  \u001b[32m[>]\u001b[0m \u001b[32mActive\u001b[0m",
+        "  \u001b[90m[ ]\u001b[0m Later",
+      ]);
+    } finally {
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
   });
 
   it("keeps controller state scoped and replace-only", () => {
@@ -142,5 +176,7 @@ describe("task plan", () => {
     expect(formatTaskPlanNotice("updated", completed)).toBe("todo plan completed");
     expect(detectTaskPlanChange(active, empty)).toBe("cleared");
     expect(formatTaskPlanNotice("cleared", empty)).toBe("todo plan cleared");
+    expect(isTaskPlanCompleted(active)).toBe(false);
+    expect(isTaskPlanCompleted(completed)).toBe(true);
   });
 });

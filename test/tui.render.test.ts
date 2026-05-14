@@ -343,7 +343,7 @@ describe("TUI rendering", () => {
 
     app.setTaskPlan({ items: [], updatedAt: "2026-05-14T00:00:00.000Z" });
 
-    expect(app.render(60).join("\n")).not.toContain("plan\n");
+    expect(app.render(60).join("\n")).not.toContain("[>]");
   });
 
   it("renders the current task plan above the prompt", () => {
@@ -361,7 +361,7 @@ describe("TUI rendering", () => {
     });
     const output = app.render(80).join("\n");
 
-    expect(output).toContain("plan\n  [x] Inspect runtime flow\n  [>] Render visible plan\n  [ ] Run checks\n┌");
+    expect(output).toContain("  [x] Inspect runtime flow\n  [>] Render visible plan\n  [ ] Run checks\n┌");
   });
 
   it("truncates long plan items and caps visible plan rows", () => {
@@ -410,7 +410,7 @@ describe("TUI rendering", () => {
       items: [{ text: "Inspect restored state", status: "in_progress" }],
     });
 
-    expect(output).toContain("plan\n  [>] Inspect restored state\n\n┌");
+    expect(output).toContain("  [>] Inspect restored state\n\n┌");
     expect(output.match(/Inspect restored state/gu)).toHaveLength(1);
   });
 
@@ -1525,6 +1525,66 @@ describe("TUI rendering", () => {
     expect(applyFinished).toBe(true);
   });
 
+  it("applies chat runtime events while the runtime turn is still running", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-live-events-"));
+    const context = createTestContext(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    let releaseRuntime: (() => void) | undefined;
+    let firstEventApplied: (() => void) | undefined;
+    const firstEventPromise = new Promise<void>((resolve) => {
+      firstEventApplied = resolve;
+    });
+    const shell = new TopchesterTuiShell(context, {
+      async checkAgent() {
+        return [];
+      },
+      async checkKnowledgeBase() {
+        return [];
+      },
+      async submitSlashCommand() {
+        return [];
+      },
+      async submitMessage(_conversation, _message, _abortSignal, onEvent) {
+        await onEvent?.(
+          agentEvent.toolCall({ tool: "read_file", args: { path: "README.md" } }, "read_file: README.md")
+        );
+        firstEventApplied?.();
+        await new Promise<void>((resolve) => {
+          releaseRuntime = resolve;
+        });
+        await onEvent?.(agentEvent.assistantMessage("Done."));
+
+        return [];
+      },
+    });
+    let renderCount = 0;
+    const submitting = (
+      shell as unknown as {
+        submitChatMessage(app: ChatLayout, tui: { requestRender(): void }, message: string): Promise<void>;
+      }
+    ).submitChatMessage(
+      app,
+      {
+        requestRender() {
+          renderCount += 1;
+        },
+      },
+      "live event test"
+    );
+
+    await firstEventPromise;
+    const midTurnOutput = app.render(60).join("\n");
+
+    expect(midTurnOutput).toContain("read_file: README.md");
+    expect(midTurnOutput).not.toContain("Done.");
+    expect(renderCount).toBeGreaterThan(0);
+
+    releaseRuntime?.();
+    await submitting;
+
+    expect(app.render(60).join("\n")).toContain("Done.");
+  });
+
   it("applies task-plan runtime events as pinned UI state", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-task-plan-"));
     const context = createTestContext(workspace);
@@ -1551,7 +1611,7 @@ describe("TUI rendering", () => {
     const output = app.render(60).join("\n");
 
     expect(output).toContain("todo plan created: Inspect");
-    expect(output).toContain("plan\n  [>] Inspect\n┌");
+    expect(output).toContain("  [>] Inspect\n┌");
     expect(app.getConversationTurns()).toEqual([]);
     expect(appended).toEqual([
       {
@@ -1593,6 +1653,69 @@ describe("TUI rendering", () => {
     expect(output).toContain("todo plan cleared");
     expect(output).not.toContain("  [>] Inspect");
     expect(app.getConversationTurns()).toEqual([]);
+  });
+
+  it("clears an existing task plan when the next message starts and persists the clear", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-plan-clear-"));
+    const context = createTestContext(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    const appended: SessionEventPayload[] = [];
+    const shell = new TopchesterTuiShell(
+      context,
+      {
+        async checkAgent() {
+          return [];
+        },
+        async checkKnowledgeBase() {
+          return [];
+        },
+        async submitSlashCommand() {
+          return [];
+        },
+        async submitMessage(_conversation, _message, _abortSignal, onEvent) {
+          await onEvent?.(agentEvent.assistantMessage("Ready."));
+
+          return [];
+        },
+      },
+      {
+        session: {
+          async append(payload: SessionEventPayload) {
+            appended.push(payload);
+            return payload;
+          },
+        } as unknown as SessionHandle,
+      }
+    );
+
+    app.setTaskPlan({
+      updatedAt: "2026-05-14T00:00:00.000Z",
+      items: [
+        { text: "Read package.json", status: "completed" },
+        { text: "Write notes", status: "in_progress" },
+      ],
+    });
+    expect(app.render(60).join("\n")).toContain("  [x] Read package.json");
+
+    await (
+      shell as unknown as {
+        submitChatMessage(app: ChatLayout, tui: { requestRender(): void }, message: string): Promise<void>;
+      }
+    ).submitChatMessage(
+      app,
+      {
+        requestRender() {},
+      },
+      "next task"
+    );
+
+    expect(app.render(60).join("\n")).not.toContain("Read package.json");
+    expect(app.render(60).join("\n")).not.toContain("Write notes");
+    expect(appended).toEqual([
+      expect.objectContaining({ kind: "task_plan", items: [] }),
+      { kind: "message", role: "user", text: "next task" },
+      { kind: "message", role: "assistant", text: "Ready." },
+    ]);
   });
 
   it("adds runtime append failure warnings before runtime event processing returns without recursive persistence", async () => {

@@ -95,7 +95,7 @@ The agent can use these workspace-scoped tools from the TUI:
 
 Tool activity appears as compact rows in the thread. These rows come from tool events, so regular system messages are still rendered as system messages even if their text mentions a tool name.
 
-When the agent uses `plan_todo`, the current plan is pinned above the prompt instead of repeated as chat prose. It also prints a short transient notice such as `todo plan created`, `todo plan updated`, `todo plan completed`, or `todo plan cleared`. The pinned plan uses `completed`, `in_progress`, and `pending` markers, hides when empty, caps long plans, and is restored from the latest session event on resume.
+When the agent uses `plan_todo`, the current plan is pinned above the prompt instead of repeated as chat prose. It also prints a short transient notice such as `todo plan created`, `todo plan updated`, `todo plan completed`, or `todo plan cleared`. The pinned plan renders only the task items with status-colored `completed`, `in_progress`, and `pending` markers. It hides when empty, caps long plans, is restored from the latest session event on resume, and clears automatically when a new user message starts.
 
 Examples:
 

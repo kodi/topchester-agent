@@ -157,16 +157,16 @@ export class TopchesterTuiShell implements TuiShell {
     tui.requestRender();
 
     try {
+      await this.clearTaskPlanForNewTurn(app);
       await this.persistPayloadWithWarning(app, {
         kind: "message",
         role: "user",
         text: message,
       });
-      await this.applyRuntimeEvents(
-        app,
-        await this.runtime.submitMessage(app.getConversationTurns(), message, abortController.signal),
-        tui
-      );
+      await this.runtime.submitMessage(app.getConversationTurns(), message, abortController.signal, async (event) => {
+        await this.applyRuntimeEvents(app, [event], tui);
+        tui.requestRender();
+      });
     } catch (error) {
       if (cancelled) {
         app.addMessage(systemMessage("Response stopped."));
@@ -199,6 +199,7 @@ export class TopchesterTuiShell implements TuiShell {
     tui.requestRender();
 
     try {
+      await this.clearTaskPlanForNewTurn(app);
       await this.persistPayloadWithWarning(app, slashCommandToSessionPayload(command));
       await this.applyRuntimeEvents(
         app,
@@ -265,6 +266,20 @@ export class TopchesterTuiShell implements TuiShell {
       renderRequester.requestRender();
     }, 2500);
     this.taskPlanNoticeTimer.unref?.();
+  }
+
+  private async clearTaskPlanForNewTurn(app: ChatLayout): Promise<void> {
+    const clearedPlan = app.clearTaskPlan();
+
+    if (!clearedPlan) {
+      return;
+    }
+
+    await this.persistPayloadWithWarning(app, {
+      kind: "task_plan",
+      items: clearedPlan.items,
+      updatedAt: clearedPlan.updatedAt,
+    });
   }
 
   private async persistPayloadWithWarning(app: ChatLayout, payload: SessionEventPayload | undefined): Promise<void> {

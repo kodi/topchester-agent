@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ui } from "../cli/ui.js";
 
 export const planTodoStatusSchema = z.enum(["pending", "in_progress", "completed"]);
 
@@ -133,6 +134,10 @@ export function summarizeTaskPlan(state: TaskPlanState): TaskPlanSummary {
   };
 }
 
+export function isTaskPlanCompleted(state: TaskPlanState | undefined): boolean {
+  return Boolean(state && state.items.length > 0 && state.items.every((item) => item.status === "completed"));
+}
+
 export function formatTaskPlanForPrompt(state: TaskPlanState): string {
   const summary = summarizeTaskPlan(state);
 
@@ -197,27 +202,24 @@ export function formatTaskPlanForTui(state: TaskPlanState, width: number, visibl
   const safeWidth = Math.max(12, width);
   const itemWidth = Math.max(1, safeWidth - 6);
   const visibleItems = state.items.slice(0, visibleLimit);
-  const lines = [
-    "plan",
-    ...visibleItems.map((item) => `  ${formatTaskPlanMarker(item.status)} ${truncateText(item.text, itemWidth)}`),
-  ];
+  const lines = visibleItems.map((item) => formatTaskPlanTuiLine(item, truncateText(item.text, itemWidth)));
   const remaining = state.items.length - visibleItems.length;
 
   if (remaining > 0) {
-    lines.push(`  +${remaining} more`);
+    lines.push(ui.muted(`  +${remaining} more`));
   }
 
-  return lines.map((line) => truncateText(line, safeWidth));
+  return lines;
 }
 
-function formatTaskPlanMarker(status: PlanTodoStatus): string {
-  switch (status) {
+function formatTaskPlanTuiLine(item: TaskPlanItem, text: string): string {
+  switch (item.status) {
     case "completed":
-      return "[x]";
+      return `  ${ui.ok("[x]")} ${ui.muted(text)}`;
     case "in_progress":
-      return "[>]";
+      return `  ${ui.ok("[>]")} ${ui.ok(text)}`;
     case "pending":
-      return "[ ]";
+      return `  ${ui.muted("[ ]")} ${text}`;
   }
 }
 

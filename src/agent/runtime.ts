@@ -31,10 +31,13 @@ export interface AgentRuntime {
   submitMessage(
     conversation: ConversationTurn[],
     message: string,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    onEvent?: AgentRuntimeEventSink
   ): Promise<AgentRuntimeEvent[]>;
   submitSlashCommand(command: string, onProgress?: KnowledgeProgressReporter): Promise<AgentRuntimeEvent[]>;
 }
+
+export type AgentRuntimeEventSink = (event: AgentRuntimeEvent) => void | Promise<void>;
 
 export class TopchesterAgentRuntime implements AgentRuntime {
   private readonly taskPlan = createTaskPlanController();
@@ -65,10 +68,22 @@ export class TopchesterAgentRuntime implements AgentRuntime {
   async submitMessage(
     conversation: ConversationTurn[],
     message: string,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    onEvent?: AgentRuntimeEventSink
   ): Promise<AgentRuntimeEvent[]> {
     const prompt = buildConversationPrompt(conversation, message);
     const events: AgentRuntimeEvent[] = [];
+    const emit = async (...nextEvents: AgentRuntimeEvent[]) => {
+      events.push(...nextEvents);
+
+      if (!onEvent) {
+        return;
+      }
+
+      for (const event of nextEvents) {
+        await onEvent(event);
+      }
+    };
     let nextPrompt = prompt;
     let totalDurationMs = 0;
     let lastModelId = "model";
@@ -127,7 +142,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       }
 
       if (!toolCall) {
-        events.push(
+        await emit(
           agentEvent.assistantMessage(
             result.text.trim() || "I got an empty response from the model.",
             formatAgentMessageMeta(result.modelId, totalDurationMs)
@@ -138,7 +153,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       }
 
       if (toolCalls === MAX_TOOL_CALLS_PER_TURN) {
-        events.push(
+        await emit(
           agentEvent.systemMessage(`Stopped after ${MAX_TOOL_CALLS_PER_TURN} tool calls in one turn.`),
           agentEvent.status("ready")
         );
@@ -150,22 +165,23 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         logger: this.context.logger,
         taskPlan: this.taskPlan,
       });
-      events.push(agentEvent.toolCall(executableToolCall, formatToolCallMessage(executableToolCall, toolResult)));
+      await emit(agentEvent.toolCall(executableToolCall, formatToolCallMessage(executableToolCall, toolResult)));
       if (toolResult.tool === "plan_todo") {
-        events.push(agentEvent.taskPlan(toolResult.plan));
+        await emit(agentEvent.taskPlan(toolResult.plan));
       }
       afterTool = executableToolCall.tool;
       nextPrompt = `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(result.toolProtocol)}`;
     }
 
-    return [
-      ...events,
+    await emit(
       agentEvent.assistantMessage(
         "I stopped because the tool loop ended unexpectedly.",
         formatAgentMessageMeta(lastModelId, totalDurationMs)
       ),
-      agentEvent.status("ready"),
-    ];
+      agentEvent.status("ready")
+    );
+
+    return events;
   }
 
   async submitSlashCommand(command: string, onProgress?: KnowledgeProgressReporter): Promise<AgentRuntimeEvent[]> {

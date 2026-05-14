@@ -104,6 +104,19 @@ export class ChatLayout implements Component, Focusable {
     this.taskPlanNoticeLine = line;
   }
 
+  clearTaskPlan(now: Date = new Date()): TaskPlanState | undefined {
+    if (!this.taskPlan) {
+      return undefined;
+    }
+
+    const cleared = { items: [], updatedAt: now.toISOString() };
+
+    this.taskPlan = undefined;
+    this.taskPlanNoticeLine = undefined;
+
+    return cleared;
+  }
+
   isReady(): boolean {
     return this.status === "ready";
   }
