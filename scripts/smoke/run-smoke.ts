@@ -359,10 +359,14 @@ async function assertScenario(
   }
 
   if (scenario.expectedKb?.statusAfter === "needs_sync") {
-    const sawDirtyEdit = logEvents.some((event) => event.event === "file_edit" && event.kbState === "needs_sync");
+    const sawDirtyWrite = logEvents.some(
+      (event) =>
+        (event.event === "file_edit" || event.event === "file_create" || event.event === "file_overwrite") &&
+        event.kbState === "needs_sync"
+    );
 
-    if (!sawDirtyEdit) {
-      failures.push("expected KB state needs_sync after edit");
+    if (!sawDirtyWrite) {
+      failures.push("expected KB state needs_sync after file change");
     }
   }
 }

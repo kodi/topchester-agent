@@ -1,0 +1,17 @@
+{
+  "id": "11-write-file",
+  "name": "Write file",
+  "description": "Checks write_file can create a new file under a new parent directory.",
+  "timeoutMs": 10000,
+  "prompt": "Create test/generated-smoke.test.ts with a simple Vitest test that includes the marker WRITE_FILE_SMOKE.",
+  "requiredToolCalls": ["write_file"],
+  "forbiddenToolCalls": ["edit_file", "inspect_command"],
+  "expectedFiles": ["test/generated-smoke.test.ts"],
+  "expectedContent": [
+    { "file": "test/generated-smoke.test.ts", "contains": "WRITE_FILE_SMOKE" },
+    { "file": "test/generated-smoke.test.ts", "contains": "expect(true).toBe(true)" }
+  ],
+  "expectedKb": {
+    "statusAfter": "needs_sync"
+  }
+}

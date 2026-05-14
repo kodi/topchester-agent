@@ -149,6 +149,19 @@ function chooseResponse(prompt: string): string {
     return "Done.";
   }
 
+  if (prompt.includes("Tool result from write_file")) {
+    return "Created test/generated-smoke.test.ts.";
+  }
+
+  if (prompt.includes("WRITE_FILE_SMOKE")) {
+    return toolCall("write_file", {
+      path: "test/generated-smoke.test.ts",
+      content:
+        'import { expect, it } from "vitest";\n\nit("WRITE_FILE_SMOKE", () => {\n  expect(true).toBe(true);\n});\n',
+      create_parent_dirs: true,
+    });
+  }
+
   if (prompt.includes("Read data.txt") && prompt.includes("Tool result from read_file")) {
     return toolCall("edit_file", {
       path: "summary.txt",
