@@ -530,6 +530,128 @@ describe("slash commands", () => {
     expect(prompts[1]).toContain("visible plan when one is active");
   });
 
+  it("requires an open task plan to be closed before the final answer", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (prompts.length === 1) {
+            return {
+              text: JSON.stringify({
+                tool: "plan_todo",
+                args: {
+                  items: [
+                    { text: "Inspect", status: "completed" },
+                    { text: "Review diff", status: "in_progress" },
+                  ],
+                },
+              }),
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          if (prompts.length === 2) {
+            return {
+              text: "Done too early.",
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          if (prompts.length === 3) {
+            return {
+              text: JSON.stringify({
+                tool: "plan_todo",
+                args: {
+                  items: [
+                    { text: "Inspect", status: "completed" },
+                    { text: "Review diff", status: "completed" },
+                  ],
+                },
+              }),
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          return {
+            text: "Done after closing plan.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "do multi-step work");
+    const assistantMessages = events.filter((event) => event.type === "message" && event.role === "assistant");
+    const taskPlanEvents = events.filter((event) => event.type === "task_plan");
+
+    expect(assistantMessages).toEqual([expect.objectContaining({ text: "Done after closing plan." })]);
+    expect(taskPlanEvents.at(-1)?.type === "task_plan" ? taskPlanEvents.at(-1)?.plan.items : undefined).toEqual([
+      { text: "Inspect", status: "completed" },
+      { text: "Review diff", status: "completed" },
+    ]);
+    expect(prompts[2]).toContain("The visible plan still has unfinished items");
+    expect(prompts[2]).toContain("Done too early.");
+  });
+
+  it("clears an open task plan if the model ignores the close-plan reminder", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    let calls = 0;
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText() {
+          calls += 1;
+
+          if (calls === 1) {
+            return {
+              text: JSON.stringify({
+                tool: "plan_todo",
+                args: {
+                  items: [
+                    { text: "Inspect", status: "completed" },
+                    { text: "Review diff", status: "in_progress" },
+                  ],
+                },
+              }),
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          return {
+            text: "Done but still ignored plan.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "do multi-step work");
+    const taskPlanEvents = events.filter((event) => event.type === "task_plan");
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "message", role: "assistant", text: "Done but still ignored plan." }),
+      ])
+    );
+    expect(taskPlanEvents.at(-1)?.type === "task_plan" ? taskPlanEvents.at(-1)?.plan.items : undefined).toEqual([]);
+  });
+
   it("continues executing tool calls until the model gives a final answer", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     await writeFile(join(workspace, "test-foo.ts"), 'console.log("hello");\n');

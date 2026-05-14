@@ -115,6 +115,7 @@ interface TrialResult {
   inputTokenCount: number;
   outputTokenCount: number;
   totalTokenCount: number;
+  costUsd?: number;
   taskPlanUpdateCount: number;
   lastTaskPlanStatus?: "empty" | "completed" | "in_progress" | "pending";
   lastTaskPlanActiveItem?: string;
@@ -131,6 +132,7 @@ interface TrialAttemptSummary {
   inputTokenCount: number;
   outputTokenCount: number;
   totalTokenCount: number;
+  costUsd?: number;
 }
 
 interface JsonLine {
@@ -159,6 +161,7 @@ interface ProtocolMetadata {
   inputTokenCount: number;
   outputTokenCount: number;
   totalTokenCount: number;
+  costUsd?: number;
   taskPlanUpdateCount: number;
   lastTaskPlanStatus?: "empty" | "completed" | "in_progress" | "pending";
   lastTaskPlanActiveItem?: string;
@@ -378,6 +381,7 @@ async function runTrialWithRetries(
       inputTokenCount: attemptResult.inputTokenCount,
       outputTokenCount: attemptResult.outputTokenCount,
       totalTokenCount: attemptResult.totalTokenCount,
+      ...(attemptResult.costUsd === undefined ? {} : { costUsd: attemptResult.costUsd }),
       ...(attemptResult.toolProtocol ? { toolProtocol: attemptResult.toolProtocol } : {}),
     })),
   };
@@ -979,7 +983,7 @@ function formatSummary(results: TrialResult[]): string {
           ]),
       `tool_protocol: ${result.toolProtocol ?? "none"}`,
       `tool_calls: native=${result.nativeToolCallCount}, text_json=${result.textJsonToolCallCount}, text_xml=${result.textXmlToolCallCount}`,
-      `tokens: input=${result.inputTokenCount}, output=${result.outputTokenCount}, total=${result.totalTokenCount}`,
+      formatUsageCounts(result),
       `task_plan_updates: ${result.taskPlanUpdateCount}`,
       `last_task_plan_status: ${result.lastTaskPlanStatus ?? "none"}`,
       ...(result.lastTaskPlanActiveItem ? [`last_task_plan_active_item: ${result.lastTaskPlanActiveItem}`] : []),
@@ -997,7 +1001,7 @@ function formatSummary(results: TrialResult[]): string {
 
 function formatAttemptSummaries(attempts: TrialAttemptSummary[]): string[] {
   return attempts.flatMap((attempt) => [
-    `- attempt ${attempt.attempt}: ${attempt.status}, duration_ms: ${attempt.durationMs}, tokens: input=${attempt.inputTokenCount}, output=${attempt.outputTokenCount}, total=${attempt.totalTokenCount}, artifacts: ${attempt.outputDir}`,
+    `- attempt ${attempt.attempt}: ${attempt.status}, duration_ms: ${attempt.durationMs}, ${formatUsageCounts(attempt)}, artifacts: ${attempt.outputDir}`,
     ...attempt.failures.map((failure) => `  - ${failure}`),
   ]);
 }
@@ -1007,10 +1011,29 @@ function formatConsoleSummary(results: TrialResult[]): string {
   const failed = results.length - passed;
   const tokens = sumTokenCounts(results);
 
+  return [`passed: ${passed}, failed: ${failed}, total: ${results.length}`, formatUsageCounts(tokens)].join("\n");
+}
+
+function formatUsageCounts(counts: {
+  inputTokenCount: number;
+  outputTokenCount: number;
+  totalTokenCount: number;
+  costUsd?: number;
+}): string {
   return [
-    `passed: ${passed}, failed: ${failed}, total: ${results.length}`,
-    `tokens: input=${tokens.inputTokenCount}, output=${tokens.outputTokenCount}, total=${tokens.totalTokenCount}`,
-  ].join("\n");
+    `tokens: input=${formatTokenCount(counts.inputTokenCount)}`,
+    `output=${formatTokenCount(counts.outputTokenCount)}`,
+    `total=${formatTokenCount(counts.totalTokenCount)}`,
+    ...(counts.costUsd === undefined ? [] : [`cost=${formatCostUsd(counts.costUsd)}`]),
+  ].join(" ");
+}
+
+function formatTokenCount(value: number): string {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatCostUsd(value: number): string {
+  return `$${value.toFixed(6)}`;
 }
 
 function formatElapsed(durationMs: number): string {
@@ -1029,34 +1052,66 @@ function sumTokenCounts(results: TrialResult[]): {
   inputTokenCount: number;
   outputTokenCount: number;
   totalTokenCount: number;
+  costUsd?: number;
 } {
-  return results.reduce(
-    (total, result) => ({
-      inputTokenCount: total.inputTokenCount + result.inputTokenCount,
-      outputTokenCount: total.outputTokenCount + result.outputTokenCount,
-      totalTokenCount: total.totalTokenCount + result.totalTokenCount,
-    }),
+  let costUsd: number | undefined;
+  const tokens = results.reduce(
+    (total, result) => {
+      if (result.costUsd !== undefined) {
+        costUsd = (costUsd ?? 0) + result.costUsd;
+      }
+
+      return {
+        inputTokenCount: total.inputTokenCount + result.inputTokenCount,
+        outputTokenCount: total.outputTokenCount + result.outputTokenCount,
+        totalTokenCount: total.totalTokenCount + result.totalTokenCount,
+      };
+    },
     { inputTokenCount: 0, outputTokenCount: 0, totalTokenCount: 0 }
   );
+
+  return {
+    ...tokens,
+    ...(costUsd === undefined ? {} : { costUsd }),
+  };
 }
 
 function sumModelResponseTokens(modelResponses: Array<Record<string, unknown>>): {
   inputTokenCount: number;
   outputTokenCount: number;
   totalTokenCount: number;
+  costUsd?: number;
 } {
-  return modelResponses.reduce(
-    (total, event) => ({
-      inputTokenCount: total.inputTokenCount + readTokenCount(event.inputTokens),
-      outputTokenCount: total.outputTokenCount + readTokenCount(event.outputTokens),
-      totalTokenCount: total.totalTokenCount + readTokenCount(event.totalTokens),
-    }),
+  let costUsd: number | undefined;
+  const tokens = modelResponses.reduce(
+    (total, event) => {
+      const eventCostUsd = readCostUsd(event.costUsd);
+
+      if (eventCostUsd !== undefined) {
+        costUsd = (costUsd ?? 0) + eventCostUsd;
+      }
+
+      return {
+        inputTokenCount: total.inputTokenCount + readTokenCount(event.inputTokens),
+        outputTokenCount: total.outputTokenCount + readTokenCount(event.outputTokens),
+        totalTokenCount: total.totalTokenCount + readTokenCount(event.totalTokens),
+      };
+    },
     { inputTokenCount: 0, outputTokenCount: 0, totalTokenCount: 0 }
   );
+
+  return {
+    ...tokens,
+    ...(costUsd === undefined ? {} : { costUsd }),
+  };
 }
 
 function readTokenCount(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function readCostUsd(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function formatTrialLine(result: TrialResult): string {

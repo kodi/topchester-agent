@@ -62,6 +62,7 @@ export interface ModelTokenUsage {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
+  costUsd?: number;
 }
 
 export interface ModelAgentRequest extends ModelRequest {
@@ -155,7 +156,11 @@ export class ModelGateway {
       prompt: request.prompt,
       abortSignal: request.abortSignal,
     });
-    const usage = normalizeUsage(result.usage);
+    const usage = normalizeUsage(result.usage, {
+      providerId: resolved.providerId,
+      providerConfig: resolved.providerConfig,
+      responseBody: result.response.body,
+    });
 
     return {
       text: result.text,
@@ -258,7 +263,11 @@ export class ModelGateway {
       providerOptions,
       abortSignal: request.abortSignal,
     });
-    const usage = normalizeUsage(result.usage);
+    const usage = normalizeUsage(result.usage, {
+      providerId: resolved.providerId,
+      providerConfig: resolved.providerConfig,
+      responseBody: result.response.body,
+    });
     const toolCalls = result.toolCalls.map((call, index) => {
       const parsed = parseNativeToolCall(call.toolName, call.input);
 
@@ -305,7 +314,11 @@ export class ModelGateway {
       prompt: request.prompt,
       abortSignal: request.abortSignal,
     });
-    const usage = normalizeUsage(result.usage);
+    const usage = normalizeUsage(result.usage, {
+      providerId: resolved.providerId,
+      providerConfig: resolved.providerConfig,
+      responseBody: result.response.body,
+    });
     const parsed = parseToolCallWithSource(result.text, allowedSources);
     const defaultProtocol: ToolProtocol =
       allowedSources.length === 1 && allowedSources[0] === "text-xml" ? "text-xml" : "text-json";
@@ -378,6 +391,10 @@ function shouldApplyOpenRouterRoutingOptions(providerId: string, config: OpenAIC
     return false;
   }
 
+  return isOpenRouterProvider(providerId, config);
+}
+
+function isOpenRouterProvider(providerId: string, config: OpenAICompatibleProviderConfig): boolean {
   return providerId.toLowerCase().includes("openrouter") || config.baseURL.toLowerCase().includes("openrouter.ai");
 }
 
@@ -410,18 +427,47 @@ function extractWarningMessages(warnings: unknown): string[] {
   return warnings.map((warning) => formatErrorMessage(warning));
 }
 
-function normalizeUsage(usage: LanguageModelUsage | undefined): ModelTokenUsage | undefined {
+function normalizeUsage(
+  usage: LanguageModelUsage | undefined,
+  context?: {
+    providerId: string;
+    providerConfig: OpenAICompatibleProviderConfig;
+    responseBody?: unknown;
+  }
+): ModelTokenUsage | undefined {
+  const costUsd =
+    context && isOpenRouterProvider(context.providerId, context.providerConfig)
+      ? extractOpenRouterCost(context.responseBody)
+      : undefined;
+
   if (!usage) {
-    return undefined;
+    return costUsd === undefined ? undefined : { costUsd };
   }
 
   const normalized: ModelTokenUsage = {
     ...(typeof usage.inputTokens === "number" ? { inputTokens: usage.inputTokens } : {}),
     ...(typeof usage.outputTokens === "number" ? { outputTokens: usage.outputTokens } : {}),
     ...(typeof usage.totalTokens === "number" ? { totalTokens: usage.totalTokens } : {}),
+    ...(costUsd === undefined ? {} : { costUsd }),
   };
 
   return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function extractOpenRouterCost(responseBody: unknown): number | undefined {
+  if (!responseBody || typeof responseBody !== "object") {
+    return undefined;
+  }
+
+  const usage = (responseBody as { usage?: unknown }).usage;
+
+  if (!usage || typeof usage !== "object") {
+    return undefined;
+  }
+
+  const cost = (usage as { cost?: unknown }).cost;
+
+  return typeof cost === "number" && Number.isFinite(cost) ? cost : undefined;
 }
 
 function formatErrorMessage(error: unknown): string {

@@ -138,6 +138,10 @@ export function isTaskPlanCompleted(state: TaskPlanState | undefined): boolean {
   return Boolean(state && state.items.length > 0 && state.items.every((item) => item.status === "completed"));
 }
 
+export function hasOpenTaskPlan(state: TaskPlanState | undefined): boolean {
+  return Boolean(state && state.items.some((item) => item.status !== "completed"));
+}
+
 export function formatTaskPlanForPrompt(state: TaskPlanState): string {
   const summary = summarizeTaskPlan(state);
 

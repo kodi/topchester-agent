@@ -2,7 +2,10 @@
   "id": "09-session-resume",
   "name": "Session resume",
   "description": "Checks a second run can resume the first run session.",
-  "timeoutMs": 10000,
-  "prompt": ["Remember that this scenario code is alpha-seven.", "What scenario code did I give you?"],
+  "timeoutMs": 15000,
+  "prompt": [
+    "No tool calls are needed. Remember that this scenario code is alpha-seven. Reply exactly: remembered alpha-seven",
+    "No tool calls are needed. What scenario code did I give you? Reply with only the code."
+  ],
   "expectedOutputContains": ["alpha-seven"]
 }

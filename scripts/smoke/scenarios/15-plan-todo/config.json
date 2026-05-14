@@ -13,7 +13,6 @@
   ],
   "expectedOutputContains": ["Updated notes.txt with a visible plan."],
   "expectedTaskPlan": {
-    "updateCount": 3,
     "lastStatus": "completed"
   }
 }

@@ -31,6 +31,28 @@ describe("ModelGateway agent tool protocol", () => {
     expect(result.usage).toEqual({ inputTokens: 1, outputTokens: 1, totalTokens: 2 });
   });
 
+  it("returns OpenRouter cost from text responses", async () => {
+    const api = await startChatApi(() => ({
+      choices: [
+        {
+          index: 0,
+          finish_reason: "stop",
+          message: { role: "assistant", content: "Hello." },
+        },
+      ],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost: 0.00014 },
+    }));
+    const gateway = createGateway(api.baseURL, "openrouter");
+
+    const result = await gateway.generateText({
+      purpose: "agent.primary",
+      system: "system",
+      prompt: "hello",
+    });
+
+    expect(result.usage).toEqual({ inputTokens: 1, outputTokens: 1, totalTokens: 2, costUsd: 0.00014 });
+  });
+
   it("sends native OpenAI-compatible tools and normalizes structured tool calls", async () => {
     const api = await startChatApi((body) => {
       expect(body.tools).toEqual([

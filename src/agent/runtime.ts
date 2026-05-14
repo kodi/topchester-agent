@@ -9,7 +9,7 @@ import { type ConversationTurn, buildConversationPrompt } from "./conversation.j
 import { ABORT_CHOICE_VALUE, agentEvent, choiceAction, type AgentRuntimeEvent } from "./events.js";
 import { checkAgentReady } from "./health.js";
 import { getChatSystemPrompt } from "./prompts.js";
-import { createTaskPlanController } from "./task-plan.js";
+import { createTaskPlanController, hasOpenTaskPlan } from "./task-plan.js";
 import {
   executeToolCall,
   isToolErrorResult,
@@ -91,6 +91,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     let lastModelId = "model";
     let afterTool: ToolCall["tool"] | undefined;
     let toolProtocolOverride = readToolProtocolEnvOverride();
+    let requestedPlanClosure = false;
 
     for (let toolCalls = 0; toolCalls <= MAX_TOOL_CALLS_PER_TURN; toolCalls += 1) {
       const startedAt = Date.now();
@@ -118,6 +119,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           inputTokens: result.usage?.inputTokens,
           outputTokens: result.usage?.outputTokens,
           totalTokens: result.usage?.totalTokens,
+          costUsd: result.usage?.costUsd,
           hasToolCall: Boolean(toolCall),
           toolProtocol: result.toolProtocol,
           protocolAttempts: result.protocolAttempts,
@@ -148,6 +150,18 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       }
 
       if (!toolCall) {
+        const plan = this.taskPlan.get();
+
+        if (hasOpenTaskPlan(plan)) {
+          if (!requestedPlanClosure) {
+            requestedPlanClosure = true;
+            nextPrompt = `${nextPrompt}\n\n${formatOpenPlanClosureInstruction(result.text, result.toolProtocol)}`;
+            continue;
+          }
+
+          await emit(agentEvent.taskPlan(this.taskPlan.update({ items: [] })));
+        }
+
         await emit(
           agentEvent.assistantMessage(
             result.text.trim() || "I got an empty response from the model.",
@@ -503,11 +517,33 @@ function formatContinuationInstruction(protocol: ToolProtocol, result: ToolExecu
     "Continue the user's request using the tool result above and the visible plan when one is active.",
     resultInstruction,
     "Update plan_todo after major progress changes.",
+    "Before a final answer, close the visible plan by calling plan_todo with all finished items marked completed, or with [] if abandoning the plan.",
     toolInstruction,
     "Otherwise answer the user. Do not guess.",
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+function formatOpenPlanClosureInstruction(draftAnswer: string, protocol: ToolProtocol): string {
+  const toolInstruction =
+    protocol === "text-xml"
+      ? "Reply now with only one XML plan_todo tool call."
+      : protocol === "text-json"
+        ? "Reply now with only the plan_todo JSON object."
+        : "Use the available tool calling path now to call plan_todo.";
+  const trimmedDraft = draftAnswer.trim();
+
+  return [
+    "The visible plan still has unfinished items, so do not provide the final answer yet.",
+    "First close the plan with plan_todo: mark completed work as completed, keep one item in_progress only if work truly remains, or use [] if abandoning the plan.",
+    toolInstruction,
+    trimmedDraft
+      ? `After the plan_todo result, use this draft final answer if it is still accurate:\n${trimmedDraft}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function formatToolCallMessage(call: ToolCall, result?: ToolExecutionResult<ToolResult>): string {
