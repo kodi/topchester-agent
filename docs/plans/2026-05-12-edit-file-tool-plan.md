@@ -176,7 +176,7 @@ Suggested tool call shape:
   "tool": "edit_file",
   "args": {
     "path": "src/example.ts",
-    "expected_hash": "sha256:optional-current-file-hash",
+    "expected_current_hash": "sha256:current-file-hash-from-read_file",
     "edits": [
       {
         "old_text": "const enabled = false;\n",
@@ -187,7 +187,7 @@ Suggested tool call shape:
 }
 ```
 
-`expected_hash` should be optional at first, but `read_file` should return or expose the current hash so future model calls can pass it. When provided and the file changed since reading, `edit_file` should fail before writing.
+`expected_current_hash` should be optional at first, but `read_file` should return or expose the current hash so future model calls can pass it. It is the pre-edit/current file hash, not a predicted post-edit hash. When provided and the file changed since reading, `edit_file` should fail before writing.
 
 Execution flow:
 
@@ -274,7 +274,7 @@ This slice should implement:
 - UTF-8 text read/write with clear errors for directories, missing files, and invalid paths.
 - Same-directory temporary write plus rename.
 - Per-file mutation queue to serialize writes to the same resolved path.
-- Optional `expected_hash` check.
+- Optional `expected_current_hash` check.
 - Tool result fields for path, diff, before/after hashes, bytes changed, and first changed line.
 
 Expected output:
@@ -407,13 +407,13 @@ Manual checks after implementation:
 
 - Ask Topchester to edit a small existing file and confirm the file changes.
 - Ask it to edit a duplicated snippet and confirm the tool fails with a useful message.
-- Ask it to edit a file after manually changing it from another shell and confirm `expected_hash` catches the stale read when provided.
+- Ask it to edit a file after manually changing it from another shell and confirm `expected_current_hash` catches the stale read when provided.
 - Confirm the TUI shows a compact edit tool row and the final answer does not dump the whole file.
 - Confirm the KB/session state records the edited path as needing sync or stale.
 
 ## Open Questions
 
-- Should `expected_hash` become required after `read_file` returns hashes, or stay optional for model ergonomics?
+- Should `expected_current_hash` become required after `read_file` returns hashes, or stay optional for model ergonomics?
 - Should `read_file` return line numbers, hashes, or both, and how should that be formatted so models do not copy line labels into `old_text`?
 - Should `edit_file` have a `dry_run` mode for future approval UI, or should preview be a separate TUI/runtime concern?
 - Where exactly should the first session overlay live while `.agents/topchester/sessions/` is still minimal?
@@ -423,7 +423,7 @@ Manual checks after implementation:
 
 - 2026-05-12: Plan created after reading `AGENTS.md`, `AGENTS.override.md`, the architecture/knowledge/session/CLI docs, current Topchester tool code, and local Pi/OpenCode/Codex/Cline/Kilo Code edit implementations.
 - 2026-05-12: Slice 1 added a pure edit engine in `src/agent/tools/edit-file.ts`; verification passed with `pnpm test test/tools.test.ts` and `pnpm typecheck`.
-- 2026-05-12: Slice 2 wired `edit_file` as a workspace-scoped tool with same-directory temp writes, per-file mutation serialization, expected-hash checks, diff/hash metadata, and registry execution. Verification passed with `pnpm test test/tools.test.ts`, `pnpm typecheck`, and `pnpm format-check`.
+- 2026-05-12: Slice 2 wired `edit_file` as a workspace-scoped tool with same-directory temp writes, per-file mutation serialization, expected-current-hash checks, diff/hash metadata, and registry execution. Verification passed with `pnpm test test/tools.test.ts`, `pnpm typecheck`, and `pnpm format-check`.
 - 2026-05-12: Slice 3 added edit-specific prompt guidance, `read_file` hash metadata, compact edit result formatting for the final model prompt, and runtime coverage for edit tool-call labels/results. Verification passed with `pnpm test test/tools.test.ts test/tui.render.test.ts test/commands.test.ts`, `pnpm typecheck`, and `pnpm format-check`.
 - 2026-05-12: Slice 4 added an in-memory session overlay for edit events and dirty-known KB state, marks edited files `needs_sync` with stale L1/suspect derived markers, and sanitizes edit debug logs so old/new text is not logged at debug level. Verification passed with `pnpm test test/tools.test.ts test/logging.test.ts`, `pnpm test test/commands.test.ts`, `pnpm typecheck`, and `pnpm format-check`.
 - 2026-05-12: Slice 5 updated `docs/cli.md`, `docs/plans/kb-implementation-checklist.md`, and this plan; also corrected the CLI integration footer expectation to the current label-less model footer. Verification passed with `pnpm check` and `mise local-ci`.

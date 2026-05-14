@@ -1,9 +1,9 @@
 {
   "id": "15-plan-todo",
   "name": "Visible plan todo",
-  "description": "Checks a multi-step fake API run updates and completes the visible task plan.",
+  "description": "Checks a multi-step run updates notes.txt while maintaining and completing the visible task plan.",
   "timeoutMs": 10000,
-  "prompt": "PLAN_TODO_SMOKE update notes.txt so the plan status is visible.",
+  "prompt": "PLAN_TODO_SMOKE use plan_todo for this multi-step smoke test. Read notes.txt, then edit notes.txt so its line is exactly `plan status: visible`. After the edit, mark the visible plan completed and answer with exactly: Updated notes.txt with a visible plan.",
   "requiredToolCalls": ["plan_todo", "read_file", "edit_file"],
   "expectedContent": [
     {

@@ -87,13 +87,13 @@ describe("agent tools", () => {
   it("parses edit_file tool calls from JSON", () => {
     expect(
       parseToolCall(
-        '{"tool":"edit_file","args":{"path":"src/example.ts","expected_hash":"sha256:abc","edits":[{"old_text":"off","new_text":"on"}]}}'
+        '{"tool":"edit_file","args":{"path":"src/example.ts","expected_current_hash":"sha256:abc","edits":[{"old_text":"off","new_text":"on"}]}}'
       )
     ).toEqual({
       tool: "edit_file",
       args: {
         path: "src/example.ts",
-        expected_hash: "sha256:abc",
+        expected_current_hash: "sha256:abc",
         edits: [{ old_text: "off", new_text: "on" }],
       },
     });
@@ -289,8 +289,8 @@ describe("agent tools", () => {
       'list_files: list files and directories inside the workspace; top-level by default, recursive only when requested, with "/" after directory names. To use it, reply with only JSON: {"tool":"list_files","args":{"path":"src","recursive":false,"limit":500}}',
       'grep: search text inside file contents in the workspace; output lines are the files containing the matched text, and paths mentioned inside those lines are not confirmed files unless checked with find_file or read_file. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
       'find_file: find existing files by fuzzy path or filename inside the workspace; matches may appear in the middle of a filename, and results are file paths, not file contents. To use it, reply with only JSON: {"tool":"find_file","args":{"query":"runtime"}}',
-      'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_hash":"sha256:optional-current-file-hash","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
-      'write_file: create a new UTF-8 file inside the workspace by default; use edit_file for targeted changes to existing files, pass create_parent_dirs:true only when creating the folder path is intended, and replace an existing whole file only with overwrite:true and expected_hash from read_file. To use it, reply with only JSON: {"tool":"write_file","args":{"path":"test/example.test.ts","content":"import { it, expect } from \\"vitest\\";\\n\\nit(\\"works\\", () => {\\n  expect(true).toBe(true);\\n});\\n","create_parent_dirs":true}}',
+      'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. expected_current_hash is optional and must be the current/pre-edit hash returned by the latest read_file for that file; never invent it or use a predicted after-edit hash. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_current_hash":"sha256:current-file-hash-from-read_file","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
+      'write_file: create a new UTF-8 file inside the workspace by default; use edit_file for targeted changes to existing files; pass create_parent_dirs:true only when creating the folder path is intended. Replace an existing whole file only with overwrite:true and expected_current_hash set to the current/pre-write hash returned by the latest read_file for that file; never invent it or use a predicted after-write hash. To create a file, reply with only JSON: {"tool":"write_file","args":{"path":"test/example.test.ts","content":"import { it, expect } from \\"vitest\\";\\n\\nit(\\"works\\", () => {\\n  expect(true).toBe(true);\\n});\\n","create_parent_dirs":true}}',
       'git_status: inspect branch, head, clean state, staged, unstaged, and untracked files without parsing shell output. To use it, reply with only JSON: {"tool":"git_status","args":{"path":".","include_untracked":true}}',
       'git_diff: inspect a bounded Git diff; use scope "all", "unstaged", or "staged", and include_untracked:true only when untracked file patches are needed. To use it, reply with only JSON: {"tool":"git_diff","args":{"scope":"all","include_untracked":true}}',
       'git_log: inspect recent commits without parsing shell output. To use it, reply with only JSON: {"tool":"git_log","args":{"limit":10,"path":"src/agent/runtime.ts"}}',
@@ -320,6 +320,7 @@ describe("agent tools", () => {
     expect(prompt).toContain("When using a tool, output exactly one tool JSON object and no prose");
     expect(prompt).toContain("After the tool result, either output the next single tool JSON object");
     expect(prompt).toContain("Use read_file before editing a file");
+    expect(prompt).toContain("use the current pre-edit/pre-write hash from the latest read_file result");
     expect(prompt).toContain("Use edit_file for targeted edits to existing files");
     expect(prompt).toContain("Keep edit_file old_text small but unique");
     expect(prompt).toContain("Do not include line labels or grep prefixes in old_text");
@@ -332,7 +333,7 @@ describe("agent tools", () => {
     expect(prompt).toContain("It fails when the file already exists");
     expect(prompt).toContain("Pass write_file create_parent_dirs:true only when");
     expect(prompt).toContain(
-      "replace an existing whole file only with overwrite:true and expected_hash from read_file"
+      "the file already exists unless you are replacing the whole file with overwrite:true and expected_current_hash from read_file"
     );
     expect(prompt).toContain("Do not use inspect_command for file creation or file mutation");
   });
@@ -798,7 +799,7 @@ describe("agent tools", () => {
     expect(await readFile(join(workspace, "example.txt"), "utf8")).toBe("old\n");
   });
 
-  it("replaces existing write_file targets only with overwrite and expected_hash", async () => {
+  it("replaces existing write_file targets only with overwrite and expected_current_hash", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
     clearSessionOverlay(workspace);
     const file = join(workspace, "example.txt");
@@ -809,7 +810,7 @@ describe("agent tools", () => {
       path: "example.txt",
       content: "new\n",
       overwrite: true,
-      expected_hash: beforeHash,
+      expected_current_hash: beforeHash,
     });
 
     expect(await readFile(file, "utf8")).toBe("new\n");
@@ -842,23 +843,23 @@ describe("agent tools", () => {
     ]);
   });
 
-  it("rejects write_file overwrite without expected_hash or an existing file", async () => {
+  it("rejects write_file overwrite without expected_current_hash or an existing file", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
 
     await expect(
       writeWorkspaceFile(workspace, { path: "example.txt", content: "new\n", overwrite: true })
-    ).rejects.toThrow("write_file overwrite requires expected_hash for example.txt");
+    ).rejects.toThrow("write_file overwrite requires expected_current_hash for example.txt");
     await expect(
       writeWorkspaceFile(workspace, {
         path: "example.txt",
         content: "new\n",
         overwrite: true,
-        expected_hash: hashContent("old\n"),
+        expected_current_hash: hashContent("old\n"),
       })
     ).rejects.toThrow("write_file overwrite requires an existing file: example.txt");
   });
 
-  it("rejects write_file overwrite when expected_hash does not match", async () => {
+  it("rejects write_file overwrite when expected_current_hash does not match", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
     const file = join(workspace, "example.txt");
     await writeFile(file, "old\n");
@@ -868,9 +869,9 @@ describe("agent tools", () => {
         path: "example.txt",
         content: "new\n",
         overwrite: true,
-        expected_hash: `sha256:${"0".repeat(64)}`,
+        expected_current_hash: `sha256:${"0".repeat(64)}`,
       })
-    ).rejects.toThrow("write_file expected_hash did not match example.txt");
+    ).rejects.toThrow("write_file expected_current_hash did not match example.txt");
     expect(await readFile(file, "utf8")).toBe("old\n");
   });
 
@@ -995,7 +996,7 @@ describe("agent tools", () => {
     ).rejects.toThrow("edit_file can only edit UTF-8 text files");
   });
 
-  it("checks expected_hash before writing", async () => {
+  it("checks expected_current_hash before writing", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
     const file = join(workspace, "example.txt");
     await writeFile(file, "old\n");
@@ -1003,10 +1004,10 @@ describe("agent tools", () => {
     await expect(
       editWorkspaceFile(workspace, {
         path: "example.txt",
-        expected_hash: `sha256:${"0".repeat(64)}`,
+        expected_current_hash: `sha256:${"0".repeat(64)}`,
         edits: [{ old_text: "old\n", new_text: "new\n" }],
       })
-    ).rejects.toThrow("edit_file expected_hash did not match example.txt");
+    ).rejects.toThrow("edit_file expected_current_hash did not match example.txt");
     expect(await readFile(file, "utf8")).toBe("old\n");
   });
 
@@ -1019,7 +1020,7 @@ describe("agent tools", () => {
 
     const result = await editWorkspaceFile(workspace, {
       path: "example.txt",
-      expected_hash: beforeHash,
+      expected_current_hash: beforeHash,
       edits: [{ old_text: "old\n", new_text: "new\n" }],
     });
 
@@ -1108,7 +1109,7 @@ describe("edit_file pure edit engine", () => {
     expect(() =>
       editFileArgsSchema.parse({
         path: "src/example.ts",
-        expected_hash: "sha256:optional",
+        expected_current_hash: "sha256:optional",
         edits: [{ old_text: "const enabled = false;\n", new_text: "const enabled = true;\n" }],
       })
     ).not.toThrow();
@@ -1202,7 +1203,7 @@ describe("write_file arguments", () => {
         content: "export const value = 1;\n",
         create_parent_dirs: true,
         overwrite: true,
-        expected_hash: "sha256:optional",
+        expected_current_hash: "sha256:optional",
       })
     ).not.toThrow();
     expect(() => writeFileArgsSchema.parse({ path: "src/example.ts", content: 123 })).toThrow();

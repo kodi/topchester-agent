@@ -204,7 +204,7 @@ Avoid a larger persisted-overlay migration in the first implementation. This is 
 
 - Keep `write_file` implemented in TypeScript application code, not through shell commands.
 - Keep writes workspace-scoped and KB/session-overlay aware.
-- Keep `write_file` create-only by default; overwrite requires `overwrite: true`, `expected_hash`, tests, and prompt guidance.
+- Keep `write_file` create-only by default; overwrite requires `overwrite: true`, `expected_current_hash`, tests, and prompt guidance.
 - Do not log full file content at debug level.
 - Do not use `write_file` as a replacement for targeted edits.
 - Keep user-facing errors plain and concrete.
@@ -384,11 +384,11 @@ interface WriteFileToolArgs {
   content: string;
   create_parent_dirs?: boolean;
   overwrite?: boolean;
-  expected_hash?: string;
+  expected_current_hash?: string;
 }
 ```
 
-- Require `overwrite: true` and `expected_hash` for existing-file replacement.
+- Require `overwrite: true` and `expected_current_hash` from the latest `read_file` result for existing-file replacement. The hash is checked before writing to catch stale reads; it is not a predicted hash of the replacement content.
 - Fail if the target is missing when overwrite is true, unless a separate create-or-replace mode is intentionally added later.
 - Return before and after hashes, byte delta, and line delta for overwrite results.
 - Keep prompt guidance clear: prefer `edit_file` for targeted existing-file edits.

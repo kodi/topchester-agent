@@ -92,7 +92,7 @@ function summarizeToolArgs(call: ToolCall): unknown {
       lineCount: countLogicalLines(call.args.content),
       createParentDirs: Boolean(call.args.create_parent_dirs),
       overwrite: Boolean(call.args.overwrite),
-      expectedHashProvided: Boolean(call.args.expected_hash),
+      expectedCurrentHashProvided: Boolean(call.args.expected_current_hash),
     };
   }
 
@@ -105,7 +105,7 @@ function summarizeToolArgs(call: ToolCall): unknown {
     editCount: call.args.edits.length,
     oldTextLengths: call.args.edits.map((edit) => edit.old_text.length),
     newTextLengths: call.args.edits.map((edit) => edit.new_text.length),
-    expectedHashProvided: Boolean(call.args.expected_hash),
+    expectedCurrentHashProvided: Boolean(call.args.expected_current_hash),
   };
 }
 

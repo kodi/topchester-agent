@@ -81,6 +81,7 @@ type Scenario = z.infer<typeof scenarioSchema>;
 interface CliOptions {
   scenarios: string[];
   trials: number;
+  retries?: number;
   model?: string;
   configPath?: string;
   timeoutMs?: number;
@@ -95,11 +96,16 @@ interface CliOptions {
 interface TrialResult {
   scenarioId: string;
   trial: number;
+  attempt: number;
   status: "passed" | "failed";
   workspace: string;
   outputDir: string;
   failures: string[];
   durationMs: number;
+  attemptsUsed: number;
+  retriesUsed: number;
+  maxRetries?: number;
+  attempts?: TrialAttemptSummary[];
   toolProtocol?: string;
   nativeToolCallCount: number;
   textJsonToolCallCount: number;
@@ -109,6 +115,16 @@ interface TrialResult {
   taskPlanUpdateCount: number;
   lastTaskPlanStatus?: "empty" | "completed" | "in_progress" | "pending";
   lastTaskPlanActiveItem?: string;
+}
+
+interface TrialAttemptSummary {
+  attempt: number;
+  status: "passed" | "failed";
+  workspace: string;
+  outputDir: string;
+  failures: string[];
+  durationMs: number;
+  toolProtocol?: string;
 }
 
 interface JsonLine {
@@ -168,13 +184,16 @@ try {
   }
 
   const results: TrialResult[] = [];
-  const jobs = scenarios.flatMap((scenario) =>
-    Array.from({ length: options.trials }, (_, index) => ({ scenario, trial: index + 1 }))
-  );
+  const jobs =
+    options.retries === undefined
+      ? scenarios.flatMap((scenario) =>
+          Array.from({ length: options.trials }, (_, index) => ({ scenario, trial: index + 1 }))
+        )
+      : scenarios.map((scenario) => ({ scenario, trial: 1 }));
 
   results.push(
     ...(await runWithConcurrency(jobs, Math.max(1, options.parallel), (job) =>
-      runTrial(job.scenario, job.trial, options, fakeApi?.baseURL).then((result) => {
+      runTrialWithRetries(job.scenario, job.trial, options, fakeApi?.baseURL).then((result) => {
         console.log(formatTrialLine(result));
         return result;
       })
@@ -219,13 +238,17 @@ try {
 async function runTrial(
   scenario: Scenario,
   trial: number,
+  attempt: number,
   options: CliOptions,
   fakeApiBaseURL: string | undefined
 ): Promise<TrialResult> {
   const startedAt = Date.now();
-  const trialId = `${scenario.id}/trial-${trial}`;
-  const outputDir = join(artifactRoot, scenario.id, `trial-${trial}`);
-  const workspace = await mkdtemp(join(tmpdir(), `topchester-smoke-${scenario.id}-${trial}-`));
+  const trialId = `${scenario.id}/trial-${trial}${options.retries === undefined ? "" : `/attempt-${attempt}`}`;
+  const outputDir =
+    options.retries === undefined
+      ? join(artifactRoot, scenario.id, `trial-${trial}`)
+      : join(artifactRoot, scenario.id, `trial-${trial}`, `attempt-${attempt}`);
+  const workspace = await mkdtemp(join(tmpdir(), `topchester-smoke-${scenario.id}-${trial}-${attempt}-`));
   const templatePath = join(scenariosRoot, scenario.id, scenario.template);
   const failures: string[] = [];
   let sessionId: string | undefined;
@@ -283,12 +306,65 @@ async function runTrial(
   return {
     scenarioId: scenario.id,
     trial,
+    attempt,
     status: failures.length === 0 ? "passed" : "failed",
     workspace,
     outputDir,
     failures,
     durationMs: Date.now() - startedAt,
+    attemptsUsed: 1,
+    retriesUsed: 0,
     ...protocolMetadata,
+  };
+}
+
+async function runTrialWithRetries(
+  scenario: Scenario,
+  trial: number,
+  options: CliOptions,
+  fakeApiBaseURL: string | undefined
+): Promise<TrialResult> {
+  if (options.retries === undefined) {
+    return runTrial(scenario, trial, 1, options, fakeApiBaseURL);
+  }
+
+  const maxAttempts = options.retries + 1;
+  const attempts: TrialResult[] = [];
+  const startedAt = Date.now();
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const result = await runTrial(scenario, trial, attempt, options, fakeApiBaseURL);
+    attempts.push(result);
+
+    if (result.status === "passed") {
+      break;
+    }
+  }
+
+  const successfulAttempt = attempts.find((result) => result.status === "passed");
+  const finalAttempt = successfulAttempt ?? attempts.at(-1);
+
+  if (!finalAttempt) {
+    throw new Error(`No attempt result produced for ${scenario.id} trial ${trial}.`);
+  }
+
+  return {
+    ...finalAttempt,
+    status: successfulAttempt ? "passed" : "failed",
+    failures: successfulAttempt ? [] : finalAttempt.failures,
+    durationMs: Date.now() - startedAt,
+    attemptsUsed: attempts.length,
+    retriesUsed: attempts.length - 1,
+    maxRetries: options.retries,
+    attempts: attempts.map((attemptResult) => ({
+      attempt: attemptResult.attempt,
+      status: attemptResult.status,
+      workspace: attemptResult.workspace,
+      outputDir: attemptResult.outputDir,
+      failures: attemptResult.failures,
+      durationMs: attemptResult.durationMs,
+      ...(attemptResult.toolProtocol ? { toolProtocol: attemptResult.toolProtocol } : {}),
+    })),
   };
 }
 
@@ -768,6 +844,8 @@ function parseArgs(args: string[]): CliOptions {
     dryRun: false,
     parallel: 1,
   };
+  let trialsSpecified = false;
+  let retriesSpecified = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
@@ -775,7 +853,11 @@ function parseArgs(args: string[]): CliOptions {
     if (arg === "--scenario") {
       options.scenarios.push(...parseScenarioFilter(readArgValue(args, ++index, arg)));
     } else if (arg === "--trials") {
+      trialsSpecified = true;
       options.trials = parsePositiveInteger(readArgValue(args, ++index, arg), arg);
+    } else if (arg === "--retries") {
+      retriesSpecified = true;
+      options.retries = parsePositiveInteger(readArgValue(args, ++index, arg), arg);
     } else if (arg === "--model") {
       options.model = readArgValue(args, ++index, arg);
     } else if (arg === "--config") {
@@ -797,6 +879,10 @@ function parseArgs(args: string[]): CliOptions {
     } else {
       throw new Error(`Unknown option: ${arg}`);
     }
+  }
+
+  if (trialsSpecified && retriesSpecified) {
+    throw new Error("--retries cannot be combined with --trials.");
   }
 
   return options;
@@ -869,6 +955,13 @@ function formatSummary(results: TrialResult[]): string {
       "",
       `status: ${result.status}`,
       `duration_ms: ${result.durationMs}`,
+      ...(result.maxRetries === undefined
+        ? []
+        : [
+            `attempts_used: ${result.attemptsUsed}`,
+            `retries_used: ${result.retriesUsed}`,
+            `max_retries: ${result.maxRetries}`,
+          ]),
       `tool_protocol: ${result.toolProtocol ?? "none"}`,
       `tool_calls: native=${result.nativeToolCallCount}, text_json=${result.textJsonToolCallCount}, text_xml=${result.textXmlToolCallCount}`,
       `task_plan_updates: ${result.taskPlanUpdateCount}`,
@@ -880,9 +973,17 @@ function formatSummary(results: TrialResult[]): string {
       `artifacts: ${result.outputDir}`,
       "",
       ...(result.failures.length === 0 ? ["No failures."] : result.failures.map((failure) => `- ${failure}`)),
+      ...(result.attempts ? ["", "Attempts:", "", ...formatAttemptSummaries(result.attempts)] : []),
       "",
     ]),
   ].join("\n");
+}
+
+function formatAttemptSummaries(attempts: TrialAttemptSummary[]): string[] {
+  return attempts.flatMap((attempt) => [
+    `- attempt ${attempt.attempt}: ${attempt.status}, duration_ms: ${attempt.durationMs}, artifacts: ${attempt.outputDir}`,
+    ...attempt.failures.map((failure) => `  - ${failure}`),
+  ]);
 }
 
 function formatConsoleSummary(results: TrialResult[]): string {
@@ -909,10 +1010,11 @@ function formatTrialLine(result: TrialResult): string {
   const duration = `${Math.max(1, Math.round(result.durationMs))}ms`;
   const summary =
     result.status === "passed" ? "passed" : result.failures[0] === undefined ? "failed" : result.failures[0];
+  const retries = result.maxRetries === undefined ? "" : ` retries ${result.retriesUsed}/${result.maxRetries}`;
 
   const protocol = result.toolProtocol ?? "no-tools";
 
-  return gray(`${marker} ${result.scenarioId} trial ${result.trial} ${summary} [${protocol}] (${duration})`);
+  return gray(`${marker} ${result.scenarioId} trial ${result.trial} ${summary}${retries} [${protocol}] (${duration})`);
 }
 
 async function readProtocolMetadata(outputDir: string): Promise<ProtocolMetadata> {

@@ -13,11 +13,19 @@ import { enqueueFileMutation } from "./file-mutation-queue.js";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
 
 export const writeFileArgsSchema = z.object({
-  path: z.string(),
-  content: z.string(),
-  create_parent_dirs: z.boolean().optional(),
-  overwrite: z.boolean().optional(),
-  expected_hash: z.string().optional(),
+  path: z.string().describe("Workspace-relative path to write."),
+  content: z.string().describe("Complete UTF-8 file content to write."),
+  create_parent_dirs: z
+    .boolean()
+    .optional()
+    .describe("Create missing parent directories only when that is explicitly intended."),
+  overwrite: z.boolean().optional().describe("Set true only for intentional whole-file replacement."),
+  expected_current_hash: z
+    .string()
+    .optional()
+    .describe(
+      "Required with overwrite:true. Use the current file hash returned by the latest read_file result for this file. This is checked before writing and is not the hash after the write."
+    ),
 });
 
 export type WriteFileToolArgs = z.infer<typeof writeFileArgsSchema>;
@@ -41,9 +49,10 @@ export interface WriteWorkspaceFileOptions {
 
 export const writeFileTool = defineTool({
   name: "write_file",
-  description: "Create a new UTF-8 file inside the workspace, or explicitly replace one with an expected hash.",
+  description:
+    "Create a new UTF-8 file inside the workspace, or explicitly replace one. For overwrite:true, expected_current_hash must be the current/pre-write hash from read_file, never a predicted post-write hash.",
   prompt:
-    'write_file: create a new UTF-8 file inside the workspace by default; use edit_file for targeted changes to existing files, pass create_parent_dirs:true only when creating the folder path is intended, and replace an existing whole file only with overwrite:true and expected_hash from read_file. To use it, reply with only JSON: {"tool":"write_file","args":{"path":"test/example.test.ts","content":"import { it, expect } from \\"vitest\\";\\n\\nit(\\"works\\", () => {\\n  expect(true).toBe(true);\\n});\\n","create_parent_dirs":true}}',
+    'write_file: create a new UTF-8 file inside the workspace by default; use edit_file for targeted changes to existing files; pass create_parent_dirs:true only when creating the folder path is intended. Replace an existing whole file only with overwrite:true and expected_current_hash set to the current/pre-write hash returned by the latest read_file for that file; never invent it or use a predicted after-write hash. To create a file, reply with only JSON: {"tool":"write_file","args":{"path":"test/example.test.ts","content":"import { it, expect } from \\"vitest\\";\\n\\nit(\\"works\\", () => {\\n  expect(true).toBe(true);\\n});\\n","create_parent_dirs":true}}',
   argsSchema: writeFileArgsSchema,
   execute: (context, args) => writeWorkspaceFile(context.workspaceRoot, args, { logger: context.logger }),
 });
@@ -135,8 +144,8 @@ async function overwriteExistingFile(
   existingTarget: Awaited<ReturnType<typeof statTarget>>,
   options: WriteWorkspaceFileOptions
 ): Promise<WriteFileToolResult> {
-  if (!args.expected_hash) {
-    throw new Error(`write_file overwrite requires expected_hash for ${scopedPath.relativePath}.`);
+  if (!args.expected_current_hash) {
+    throw new Error(`write_file overwrite requires expected_current_hash for ${scopedPath.relativePath}.`);
   }
 
   if (!existingTarget) {
@@ -150,8 +159,8 @@ async function overwriteExistingFile(
   const beforeBytes = await readFile(scopedPath.path);
   const beforeHash = hashBytes(beforeBytes);
 
-  if (args.expected_hash !== beforeHash) {
-    throw new Error(`write_file expected_hash did not match ${scopedPath.relativePath}.`);
+  if (args.expected_current_hash !== beforeHash) {
+    throw new Error(`write_file expected_current_hash did not match ${scopedPath.relativePath}.`);
   }
 
   const beforeContent = decodeUtf8(scopedPath.relativePath, beforeBytes);

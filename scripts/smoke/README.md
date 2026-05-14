@@ -35,6 +35,7 @@ During a run, each completed trial prints one compact line:
 ```text
 ✓ 05-edit-file trial 1 passed [text-json] (466ms)
 × 02-read-summarize trial 1 summary.txt did not contain "user account notes" [native-openai-compatible] (409ms)
+✓ 03-find-then-read trial 1 passed retries 1/2 [native-openai-compatible] (31195ms)
 ```
 
 The final summary includes report paths, pass/fail totals, and total elapsed time.
@@ -57,6 +58,7 @@ Useful options:
 - `--timeout <ms>` overrides each scenario prompt timeout.
 - `--scenario <id>` runs one scenario; repeat it or pass comma-separated ids/prefixes to run a slice.
 - `--trials <n>` repeats each selected scenario.
+- `--retries <n>` retries a failed scenario up to `n` times, marks it passed if any attempt passes, and cannot be combined with `--trials`.
 - `--parallel <n>` limits concurrent trials.
 - `--output <path>` chooses the report path.
 - `--tool-protocol <auto|native|text-json|text-xml>` forces a protocol for debugging.

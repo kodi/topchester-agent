@@ -8,14 +8,19 @@ import { enqueueFileMutation } from "./file-mutation-queue.js";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
 
 export const editFileEditSchema = z.object({
-  old_text: z.string(),
-  new_text: z.string(),
+  old_text: z.string().describe("Exact current file text to replace; include whitespace exactly."),
+  new_text: z.string().describe("Replacement text for old_text."),
 });
 
 export const editFileArgsSchema = z.object({
-  path: z.string(),
-  expected_hash: z.string().optional(),
-  edits: z.array(editFileEditSchema).min(1),
+  path: z.string().describe("Workspace-relative path to the existing UTF-8 file to edit."),
+  expected_current_hash: z
+    .string()
+    .optional()
+    .describe(
+      "Optional current file hash returned by the latest read_file result for this file. This is checked before editing to catch stale reads; it is not the hash after the edit."
+    ),
+  edits: z.array(editFileEditSchema).min(1).describe("Exact text replacements to apply to the original file."),
 });
 
 export type EditFileEdit = z.infer<typeof editFileEditSchema>;
@@ -40,9 +45,10 @@ export interface ApplyEditResult {
 
 export const editFileTool = defineTool({
   name: "edit_file",
-  description: "Edit an existing UTF-8 file inside the workspace with exact text replacements.",
+  description:
+    "Edit an existing UTF-8 file inside the workspace with exact text replacements. Use expected_current_hash only as the current/pre-edit hash from read_file, never as a predicted post-edit hash.",
   prompt:
-    'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_hash":"sha256:optional-current-file-hash","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
+    'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. expected_current_hash is optional and must be the current/pre-edit hash returned by the latest read_file for that file; never invent it or use a predicted after-edit hash. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_current_hash":"sha256:current-file-hash-from-read_file","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
   argsSchema: editFileArgsSchema,
   execute: (context, args) => editWorkspaceFile(context.workspaceRoot, args, { logger: context.logger }),
 });
@@ -73,8 +79,8 @@ export async function editWorkspaceFile(
     const beforeBytes = await readFile(scopedPath.path);
     const beforeHash = hashBytes(beforeBytes);
 
-    if (args.expected_hash && args.expected_hash !== beforeHash) {
-      throw new Error(`edit_file expected_hash did not match ${scopedPath.relativePath}.`);
+    if (args.expected_current_hash && args.expected_current_hash !== beforeHash) {
+      throw new Error(`edit_file expected_current_hash did not match ${scopedPath.relativePath}.`);
     }
 
     const beforeContent = decodeUtf8(scopedPath.relativePath, beforeBytes);

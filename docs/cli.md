@@ -74,7 +74,7 @@ Current behavior:
 - `git_status`, `git_diff`, and `git_log` are the preferred path for Git state, diffs, and recent history. `inspect_command` can still inspect read-only Git commands, but it is an orientation fallback rather than the normal Git workflow.
 - `git_add` stages only explicit paths whose current status was acknowledged. It rejects broad pathspecs such as `.` and does not stage unrelated files by default.
 - `git_commit` commits only when staged paths exactly match `expected_staged_paths`. The model prompt still tells the agent not to stage or commit unless the user explicitly asks.
-- `write_file` creates new UTF-8 files by default. It can create parent directories when explicitly requested, marks the file dirty-known and `needs_sync`, and fails if the target file already exists unless `overwrite: true` is paired with the current `expected_hash`.
+- `write_file` creates new UTF-8 files by default. It can create parent directories when explicitly requested, marks the file dirty-known and `needs_sync`, and fails if the target file already exists unless `overwrite: true` is paired with `expected_current_hash` from the latest `read_file` result for that file. The hash is a pre-write stale-read guard, not a predicted after-write hash.
 - `edit_file` remains the targeted edit tool for existing files; `inspect_command` remains read-only orientation and is not used for file creation.
 
 ## `topchester run`
