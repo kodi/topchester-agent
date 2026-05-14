@@ -16,8 +16,8 @@ type L1SearchField =
 
 interface L1SearchPosting {
   entryId: string;
-  field: L1SearchField;
   weight: number;
+  reason: string;
 }
 
 export interface L1SearchOptions {
@@ -105,12 +105,15 @@ export interface LoadedL1KnowledgeIndex {
 export class L1InMemoryIndex {
   private readonly entriesById = new Map<string, L1FileEntry>();
   private readonly postingsByToken = new Map<string, L1SearchPosting[]>();
+  private readonly prefixTokensByPrefix = new Map<string, string[]>();
 
   constructor(entries: L1FileEntry[]) {
     for (const entry of entries) {
       this.entriesById.set(entry.id, entry);
       this.indexEntry(entry);
     }
+
+    this.indexPrefixTokens();
   }
 
   get size(): number {
@@ -187,7 +190,7 @@ export class L1InMemoryIndex {
 
     for (const token of tokens) {
       const postings = this.postingsByToken.get(token) ?? [];
-      postings.push({ entryId: entry.id, field, weight });
+      postings.push({ entryId: entry.id, weight, reason: `${formatField(field)} matched ${token}` });
       this.postingsByToken.set(token, postings);
     }
   }
@@ -201,8 +204,7 @@ export class L1InMemoryIndex {
     for (const posting of this.postingsByToken.get(token) ?? []) {
       scoresByEntryId.set(posting.entryId, (scoresByEntryId.get(posting.entryId) ?? 0) + posting.weight * multiplier);
       const reasons = reasonsByEntryId.get(posting.entryId) ?? new Map<string, number>();
-      const reason = `${formatField(posting.field)} matched ${token}`;
-      reasons.set(reason, Math.max(reasons.get(reason) ?? 0, posting.weight * multiplier));
+      reasons.set(posting.reason, Math.max(reasons.get(posting.reason) ?? 0, posting.weight * multiplier));
       reasonsByEntryId.set(posting.entryId, reasons);
     }
   }
@@ -212,12 +214,37 @@ export class L1InMemoryIndex {
     scoresByEntryId: Map<string, number>,
     reasonsByEntryId: Map<string, Map<string, number>>
   ): void {
-    for (const indexedToken of this.postingsByToken.keys()) {
-      if (indexedToken === token || (!indexedToken.startsWith(token) && !token.startsWith(indexedToken))) {
+    const matchedTokens = new Set<string>();
+
+    for (const indexedToken of this.prefixTokensByPrefix.get(token) ?? []) {
+      matchedTokens.add(indexedToken);
+    }
+
+    for (let prefixLength = 1; prefixLength < token.length; prefixLength += 1) {
+      const prefix = token.slice(0, prefixLength);
+
+      if (this.postingsByToken.has(prefix)) {
+        matchedTokens.add(prefix);
+      }
+    }
+
+    for (const indexedToken of matchedTokens) {
+      if (indexedToken === token) {
         continue;
       }
 
       this.addMatches(indexedToken, 0.6, scoresByEntryId, reasonsByEntryId);
+    }
+  }
+
+  private indexPrefixTokens(): void {
+    for (const indexedToken of this.postingsByToken.keys()) {
+      for (let prefixLength = 4; prefixLength < indexedToken.length; prefixLength += 1) {
+        const prefix = indexedToken.slice(0, prefixLength);
+        const tokens = this.prefixTokensByPrefix.get(prefix) ?? [];
+        tokens.push(indexedToken);
+        this.prefixTokensByPrefix.set(prefix, tokens);
+      }
     }
   }
 }
@@ -446,18 +473,19 @@ async function loadL1FileEntries(kbPath: string): Promise<{ entries: L1FileEntry
 
     throw error;
   });
-  const entries: L1FileEntry[] = [];
-  let invalidEntryCount = 0;
-
-  for (const entryPath of entryPaths) {
-    try {
-      entries.push(parseL1FileEntry(JSON.parse(await readFile(entryPath, "utf8"))));
-    } catch {
-      invalidEntryCount += 1;
-    }
-  }
+  const parsedEntries = await Promise.all(entryPaths.map(loadL1FileEntry));
+  const entries = parsedEntries.filter((entry): entry is L1FileEntry => Boolean(entry));
+  const invalidEntryCount = parsedEntries.length - entries.length;
 
   return { entries, invalidEntryCount };
+}
+
+async function loadL1FileEntry(entryPath: string): Promise<L1FileEntry | undefined> {
+  try {
+    return parseL1FileEntry(JSON.parse(await readFile(entryPath, "utf8")));
+  } catch {
+    return undefined;
+  }
 }
 
 function summarizeContextPack(query: string, files: L1ContextPackFile[]): string {
