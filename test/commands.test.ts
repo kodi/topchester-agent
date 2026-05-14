@@ -413,6 +413,67 @@ describe("slash commands", () => {
     expect(prompts[1]).not.toContain("Edited example.txt");
   });
 
+  it("injects an L1 context pack into runtime model prompts when KB is ready", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    await mkdir(join(workspace, "topchester-kb", "l1-files", "src", "tui"), { recursive: true });
+    await writeFile(join(workspace, "topchester-kb", "manifest.json"), '{"l1":{"currentEntries":1}}\n');
+    await writeFile(
+      join(workspace, "topchester-kb", "l1-files", "src", "tui", "status.ts.json"),
+      `${JSON.stringify(
+        {
+          $schema: "../schema/file-entry.v1.json",
+          id: "file:src/tui/status.ts",
+          layer: "L1",
+          type: "file",
+          path: "src/tui/status.ts",
+          language: "typescript",
+          content_hash: `sha256:${"f".repeat(64)}`,
+          size_bytes: 222,
+          last_scanned_at: "2026-05-14T00:00:00Z",
+          scan_status: "current",
+          summary: "Renders the TUI status bar.",
+          responsibilities: ["Show status bar details."],
+          symbols: [],
+          imports: [],
+          exports: [],
+          module_ids: [],
+          feature_ids: [],
+          test_ids: [],
+          evidence: [{ kind: "path", value: "src/tui/status.ts" }],
+          confidence: "medium",
+        },
+        null,
+        2
+      )}\n`
+    );
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText(request: { prompt: string }) {
+          prompts.push(request.prompt);
+          return {
+            text: "Use src/tui/status.ts.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "status bar");
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "message", role: "assistant", text: "Use src/tui/status.ts." }),
+      ])
+    );
+    expect(prompts[0]).toContain("Topchester KB context pack:");
+    expect(prompts[0]).toContain("src/tui/status.ts");
+    expect(prompts[0]).toContain("Conversation:\nUser: status bar");
+  });
+
   it("formats write_file tool calls and results for the final model prompt", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     const prompts: string[] = [];

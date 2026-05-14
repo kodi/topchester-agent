@@ -392,6 +392,227 @@ describe("CLI integration", () => {
     expect(stdout).toContain("----\ntotal non-clean files: 0");
   });
 
+  it("searches compiled L1 knowledge entries from the CLI", async () => {
+    const fixture = await makeFixture();
+    const entryPath = join(fixture.workspace, "topchester-kb", "l1-files", "src", "posts", "post-service.ts.json");
+    await mkdir(join(fixture.workspace, "topchester-kb", "l1-files", "src", "posts"), { recursive: true });
+    await writeFile(
+      entryPath,
+      `${JSON.stringify(
+        {
+          $schema: "../schema/file-entry.v1.json",
+          id: "file:src/posts/post-service.ts",
+          layer: "L1",
+          type: "file",
+          path: "src/posts/post-service.ts",
+          language: "typescript",
+          content_hash: `sha256:${"b".repeat(64)}`,
+          size_bytes: 321,
+          last_scanned_at: "2026-05-14T00:00:00Z",
+          scan_status: "current",
+          summary: "Updates CMS posts and post authors.",
+          responsibilities: ["Update the author assigned to a post."],
+          symbols: [
+            {
+              id: "symbol:src/posts/post-service.ts#updatePostAuthor",
+              kind: "function",
+              name: "updatePostAuthor",
+              exported: true,
+              summary: "Updates the author for a CMS post.",
+            },
+          ],
+          imports: [],
+          exports: ["updatePostAuthor"],
+          module_ids: [],
+          feature_ids: [],
+          test_ids: [],
+          evidence: [{ kind: "path", value: "src/posts/post-service.ts" }],
+          confidence: "medium",
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    const { stdout } = await runCli(
+      ["--workspace", fixture.workspace, "kb", "search", "post", "author", "update"],
+      fixture.root
+    );
+
+    expect(stdout).toContain("KB search");
+    expect(stdout).toContain("entries indexed: 1");
+    expect(stdout).toContain("matches: 1");
+    expect(stdout).toContain("src/posts/post-service.ts");
+    expect(stdout).toContain("symbol matched update");
+    expect(stdout).toContain(`sha256:${"b".repeat(64)}`);
+  });
+
+  it("supports top-level search as a shortcut for KB search", async () => {
+    const fixture = await makeFixture();
+    const entryPath = join(fixture.workspace, "topchester-kb", "l1-files", "src", "tui", "status.ts.json");
+    await mkdir(join(fixture.workspace, "topchester-kb", "l1-files", "src", "tui"), { recursive: true });
+    await writeFile(
+      entryPath,
+      `${JSON.stringify(
+        {
+          $schema: "../schema/file-entry.v1.json",
+          id: "file:src/tui/status.ts",
+          layer: "L1",
+          type: "file",
+          path: "src/tui/status.ts",
+          language: "typescript",
+          content_hash: `sha256:${"c".repeat(64)}`,
+          size_bytes: 222,
+          last_scanned_at: "2026-05-14T00:00:00Z",
+          scan_status: "current",
+          summary: "Renders the TUI status bar.",
+          responsibilities: ["Show status bar details."],
+          symbols: [],
+          imports: [],
+          exports: [],
+          module_ids: [],
+          feature_ids: [],
+          test_ids: [],
+          evidence: [{ kind: "path", value: "src/tui/status.ts" }],
+          confidence: "medium",
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    const { stdout } = await runCli(["--workspace", fixture.workspace, "search", "status", "bar"], fixture.root);
+
+    expect(stdout).toContain("KB search");
+    expect(stdout).toContain("query: status bar");
+    expect(stdout).toContain("src/tui/status.ts");
+  });
+
+  it("prints full JSON for search commands when requested", async () => {
+    const fixture = await makeFixture();
+    const entryPath = join(fixture.workspace, "topchester-kb", "l1-files", "src", "tui", "status.ts.json");
+    await mkdir(join(fixture.workspace, "topchester-kb", "l1-files", "src", "tui"), { recursive: true });
+    await writeFile(
+      entryPath,
+      `${JSON.stringify(
+        {
+          $schema: "../schema/file-entry.v1.json",
+          id: "file:src/tui/status.ts",
+          layer: "L1",
+          type: "file",
+          path: "src/tui/status.ts",
+          language: "typescript",
+          content_hash: `sha256:${"d".repeat(64)}`,
+          size_bytes: 222,
+          last_scanned_at: "2026-05-14T00:00:00Z",
+          scan_status: "current",
+          summary: "Renders the TUI status bar.",
+          responsibilities: ["Show status bar details."],
+          symbols: [],
+          imports: [],
+          exports: [],
+          module_ids: [],
+          feature_ids: [],
+          test_ids: [],
+          evidence: [{ kind: "path", value: "src/tui/status.ts" }],
+          confidence: "medium",
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    const { stdout } = await runCli(
+      ["--workspace", fixture.workspace, "search", "--json", "status", "bar"],
+      fixture.root
+    );
+    const parsed = JSON.parse(stdout) as {
+      query: string;
+      entryCount: number;
+      matches: Array<{ path: string; contentHash: string; reasons: string[] }>;
+    };
+
+    expect(parsed.query).toBe("status bar");
+    expect(parsed.entryCount).toBe(1);
+    expect(parsed.matches[0]?.path).toBe("src/tui/status.ts");
+    expect(parsed.matches[0]?.contentHash).toBe(`sha256:${"d".repeat(64)}`);
+    expect(parsed.matches[0]?.reasons).toContain("path matched status");
+  });
+
+  it("creates JSON context packs from compiled L1 entries", async () => {
+    const fixture = await makeFixture();
+    const entryPath = join(fixture.workspace, "topchester-kb", "l1-files", "src", "tui", "status.ts.json");
+    await mkdir(join(fixture.workspace, "topchester-kb", "l1-files", "src", "tui"), { recursive: true });
+    await writeFile(
+      entryPath,
+      `${JSON.stringify(
+        {
+          $schema: "../schema/file-entry.v1.json",
+          id: "file:src/tui/status.ts",
+          layer: "L1",
+          type: "file",
+          path: "src/tui/status.ts",
+          language: "typescript",
+          content_hash: `sha256:${"e".repeat(64)}`,
+          size_bytes: 222,
+          last_scanned_at: "2026-05-14T00:00:00Z",
+          scan_status: "current",
+          summary: "Renders the TUI status bar.",
+          responsibilities: ["Show status bar details."],
+          symbols: [
+            {
+              id: "symbol:src/tui/status.ts#renderStatusBar",
+              kind: "function",
+              name: "renderStatusBar",
+              exported: true,
+              summary: "Renders the terminal status bar.",
+            },
+          ],
+          imports: [],
+          exports: ["renderStatusBar"],
+          module_ids: [],
+          feature_ids: [],
+          test_ids: [],
+          evidence: [{ kind: "path", value: "src/tui/status.ts" }],
+          confidence: "medium",
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    const { stdout } = await runCli(
+      ["--workspace", fixture.workspace, "kb", "context", "--json", "status", "bar"],
+      fixture.root
+    );
+    const parsed = JSON.parse(stdout) as {
+      query: string;
+      drift: { status: string };
+      relevantFiles: Array<{
+        path: string;
+        l1: { summary: string; symbols: Array<{ name: string }>; omitted: { symbols: number } };
+        fullL1?: unknown;
+      }>;
+    };
+
+    expect(parsed.query).toBe("status bar");
+    expect(parsed.drift.status).toBe("unchecked");
+    expect(parsed.relevantFiles[0]?.path).toBe("src/tui/status.ts");
+    expect(parsed.relevantFiles[0]?.l1.symbols[0]?.name).toBe("renderStatusBar");
+    expect(parsed.relevantFiles[0]?.l1.omitted.symbols).toBe(0);
+    expect(parsed.relevantFiles[0]?.fullL1).toBeUndefined();
+
+    const fullResult = await runCli(
+      ["--workspace", fixture.workspace, "kb", "context", "--json", "--full-l1", "status", "bar"],
+      fixture.root
+    );
+    const fullParsed = JSON.parse(fullResult.stdout) as {
+      relevantFiles: Array<{ fullL1?: { evidence: Array<{ value: string }> } }>;
+    };
+
+    expect(fullParsed.relevantFiles[0]?.fullL1?.evidence[0]?.value).toBe("src/tui/status.ts");
+  });
+
   it("resets project knowledge folders", async () => {
     const fixture = await makeFixture();
     const kbPath = join(fixture.workspace, "topchester-kb");

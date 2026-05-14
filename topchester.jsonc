@@ -1,6 +1,6 @@
 {
   "$schema": "https://topchester.com/schemas/config.v1.json",
   "ignore": {
-    "paths": ["docs/**/*.md", "pnpm-lock.yaml"],
+    "paths": ["docs/**/*.md", "pnpm-lock.yaml", ".agents/**/*.md"],
   },
 }

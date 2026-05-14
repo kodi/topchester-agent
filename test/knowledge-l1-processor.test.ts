@@ -270,6 +270,10 @@ describe("single-file L1 processing", () => {
     expect(result.item.status).toBe("completed");
     expect(model.calls).toHaveLength(1);
     expect(model.calls[0]?.prompt).toContain("src/greet.ts");
+    expect(model.calls[0]?.system).toContain("Prefer concrete facts visible in the file");
+    expect(model.calls[0]?.prompt).toContain("Extraction rules:");
+    expect(model.calls[0]?.prompt).toContain("kind: interface | type | class | function");
+    expect(model.calls[0]?.prompt).toContain("Deduplicate all arrays.");
     expect(result.entryPath).toBe(getL1FileEntryPath(kbPath, "src/greet.ts"));
     const entry = l1FileEntrySchema.parse(JSON.parse(await readFile(result.entryPath!, "utf8")));
     expect(entry.scan_status).toBe("current");
@@ -320,13 +324,27 @@ describe("single-file L1 processing", () => {
         makeValidL1Entry({
           id: "file:wrong.js",
           path: "wrong.js",
-          symbols: [{ name: "clsx", description: "extra field" }, "toVal", { id: "symbol:src/index.js#derived" }],
-          imports: ["node:fs", "file:src/lite.js", ""],
-          exports: [{ name: "default" }, "clsx"],
-          module_ids: ["runtime", "module:runtime"],
-          feature_ids: ["classes", "feature:class-names"],
-          test_ids: ["handles strings", "file:test/index.js"],
-          evidence: ["src/index.js", { kind: "path", value: "src/index.js" }, { kind: "", value: "ignored" }],
+          responsibilities: [
+            "Describe the file for the project knowledge base.",
+            "Describe the file for the project knowledge base.",
+          ],
+          symbols: [
+            { name: "clsx", description: "extra field" },
+            "toVal",
+            "toVal",
+            { id: "symbol:src/index.js#derived" },
+          ],
+          imports: ["node:fs", "file:src/lite.js", "file:src/lite.js", ""],
+          exports: [{ name: "default" }, "clsx", "clsx"],
+          module_ids: ["runtime", "module:runtime", "module:runtime"],
+          feature_ids: ["classes", "feature:class-names", "feature:class-names"],
+          test_ids: ["handles strings", "file:test/index.js", "file:test/index.js"],
+          evidence: [
+            "src/index.js",
+            { kind: "path", value: "src/index.js" },
+            { kind: "path", value: "src/index.js" },
+            { kind: "", value: "ignored" },
+          ],
         })
       )
     );
@@ -346,30 +364,58 @@ describe("single-file L1 processing", () => {
         id: "symbol:src/index.js#clsx",
         kind: "symbol",
         name: "clsx",
-        exported: false,
-        summary: "Symbol named clsx.",
+        exported: true,
       },
       {
         id: "symbol:src/index.js#toVal",
         kind: "symbol",
         name: "toVal",
         exported: false,
-        summary: "Symbol named toVal.",
       },
       {
         id: "symbol:src/index.js#derived",
         kind: "symbol",
         name: "derived",
         exported: false,
-        summary: "Symbol named derived.",
       },
     ]);
+    expect(entry.responsibilities).toEqual(["Describe the file for the project knowledge base."]);
     expect(entry.imports).toEqual(["file:src/lite.js"]);
     expect(entry.exports).toEqual(["clsx"]);
     expect(entry.module_ids).toEqual(["module:runtime"]);
     expect(entry.feature_ids).toEqual(["feature:class-names"]);
     expect(entry.test_ids).toEqual(["file:test/index.js"]);
     expect(entry.evidence).toEqual([{ kind: "path", value: "src/index.js" }]);
+  });
+
+  it("marks symbols exported when their name appears in exports", async () => {
+    const content = "export interface SlashCommandContext {}\n";
+    const workspaceRoot = await makeWorkspace({ "src/commands.ts": content });
+    const kbPath = join(workspaceRoot, "topchester-kb");
+    const model = makeFakeModel(
+      JSON.stringify(
+        makeValidL1Entry({
+          path: "src/commands.ts",
+          symbols: [{ name: "SlashCommandContext", exported: false }, "parseSlashCommand"],
+          exports: ["SlashCommandContext", "parseSlashCommand"],
+        })
+      )
+    );
+
+    const result = await processL1QueueItem({
+      workspaceRoot,
+      kbPath,
+      item: makeQueueItem("src/commands.ts", content),
+      model,
+      now: fixedNow,
+    });
+
+    expect(result.item.status).toBe("completed");
+    const entry = l1FileEntrySchema.parse(JSON.parse(await readFile(result.entryPath!, "utf8")));
+    expect(entry.symbols.map((symbol) => [symbol.name, symbol.exported])).toEqual([
+      ["SlashCommandContext", true],
+      ["parseSlashCommand", true],
+    ]);
   });
 
   it("fails safely for invalid, empty, and semantically incomplete model output", async () => {
@@ -549,6 +595,58 @@ describe("durable L1 queue processing", () => {
     expect(persistedQueue.queuedFiles.map((item) => item.status)).toEqual(["completed", "failed", "completed"]);
     expect(manifest.compiler).toEqual(knowledgeCompilerIdentity);
     expect(manifest.l1).toEqual(result.summary);
+  });
+
+  it("post-processes L1 file roles and test links after queue processing", async () => {
+    const sourceContent = "export function getUser() { return 'user'; }\n";
+    const testContent = "import { getUser } from '../src/user';\n";
+    const workspaceRoot = await makeWorkspace({
+      "src/user.ts": sourceContent,
+      "tests/user.test.ts": testContent,
+    });
+    const kbPath = join(workspaceRoot, "topchester-kb");
+    const cachePath = join(workspaceRoot, ".agents/topchester-kb-cache");
+    const queuePath = join(cachePath, "l1-queue.json");
+    const manifestPath = join(kbPath, "manifest.json");
+    await mkdir(cachePath, { recursive: true });
+    await writeQueue(queuePath, [
+      makeQueueItem("src/user.ts", sourceContent),
+      makeQueueItem("tests/user.test.ts", testContent),
+    ]);
+    const model = makeSequenceModel([
+      JSON.stringify(makeValidL1Entry({ id: "file:src/user.ts", path: "src/user.ts" })),
+      JSON.stringify(
+        makeValidL1Entry({
+          id: "file:tests/user.test.ts",
+          path: "tests/user.test.ts",
+          imports: ["file:src/user.ts"],
+        })
+      ),
+    ]);
+
+    await processL1Queue({
+      workspaceRoot,
+      kbPath,
+      queuePath,
+      manifestPath,
+      gitignoreFiles: [],
+      configIgnorePathCount: 0,
+      model,
+      now: fixedNow,
+    });
+
+    const sourceEntry = l1FileEntrySchema.parse(
+      JSON.parse(await readFile(getL1FileEntryPath(kbPath, "src/user.ts"), "utf8"))
+    );
+    const testEntry = l1FileEntrySchema.parse(
+      JSON.parse(await readFile(getL1FileEntryPath(kbPath, "tests/user.test.ts"), "utf8"))
+    );
+
+    expect(sourceEntry.file_role).toBe("source");
+    expect(testEntry.file_role).toBe("test");
+    expect(testEntry.declared_test_targets).toEqual(["file:src/user.ts"]);
+    expect(testEntry.likely_test_targets).toEqual(["file:src/user.ts"]);
+    expect(sourceEntry.tested_by).toEqual(["file:tests/user.test.ts"]);
   });
 
   it("skips valid current entries, regenerates stale entries, and resumes in-progress items", async () => {

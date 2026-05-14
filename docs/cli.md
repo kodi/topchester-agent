@@ -11,10 +11,13 @@ topchester
 topchester --resume latest
 topchester run "Edit greeting.txt and change Hello to Goodbye."
 topchester run /kb status
+topchester search "status bar"
 
 topchester kb init
 topchester kb compile
 topchester kb status
+topchester kb search "post author update error"
+topchester kb context "status bar" --json
 topchester kb sync
 topchester kb reset
 ```
@@ -36,10 +39,13 @@ These options can be used with the top-level command and subcommands:
 | ----------------------- | -------------------------------------------------------- |
 | `topchester`            | Start the interactive coding agent.                      |
 | `topchester run`        | Run one prompt or slash command without opening the TUI. |
+| `topchester search`     | Search compiled L1 file knowledge.                       |
 | `topchester dev`        | Print local development startup details.                 |
 | `topchester kb init`    | Create the project knowledge folders.                    |
 | `topchester kb compile` | Build current L1 file knowledge for all in-scope files.  |
+| `topchester kb context` | Create an L1 context pack for a query.                   |
 | `topchester kb dry-run` | Preview which files would be compiled.                   |
+| `topchester kb search`  | Search compiled L1 file knowledge.                       |
 | `topchester kb sync`    | Rebuild L1 entries only for non-clean files.             |
 | `topchester kb reset`   | Delete the local knowledge base and cache.               |
 | `topchester kb status`  | Show files that are not current in the knowledge base.   |
@@ -107,6 +113,17 @@ Current behavior:
 - Routes slash-command prompts such as `/kb status` through the same command dispatcher used by the TUI.
 - Does not open the interactive TUI.
 - Exits non-zero on runtime failure or timeout.
+
+## `topchester search`
+
+Alias for [`topchester kb search`](#topchester-kb-search).
+
+Example:
+
+```sh
+topchester search "status bar"
+topchester search --json "status bar"
+```
 
 ## `topchester dev`
 
@@ -193,6 +210,55 @@ Current behavior:
 - Prints workspace, queue, manifest, count, and final state details.
 - Exits successfully only when every queued non-clean file has a current L1 entry.
 - Prints partial state and exits with a non-success automation code when any queued file fails, changes during processing, or is missing.
+
+## `topchester kb search`
+
+Searches compiled L1 file knowledge for the current workspace.
+
+Examples:
+
+```sh
+topchester kb search "post author update error"
+topchester kb search --limit 5 updatePostAuthor
+topchester kb search --json "status bar"
+topchester kb query "CMS post service"
+```
+
+Current behavior:
+
+- Requires `topchester kb init` and compiled L1 entries from `topchester kb compile` or `topchester kb sync`.
+- Loads canonical L1 JSON entries from `topchester-kb/l1-files/`.
+- Builds a small in-memory lexical index for the command run.
+- Uses weighted matching across file paths, symbols, exports, responsibilities, summaries, imports, relationships, evidence, and known test IDs.
+- Splits camelCase, snake_case, paths, and log-like text into query terms.
+- Prints ranked matches with score, path, scan status, content hash, match reasons, and summary.
+- Supports `--json` for the full structured result object.
+- Skips invalid L1 entries and reports how many were skipped.
+- Does not call any model provider.
+
+## `topchester kb context`
+
+Creates an L1 context pack for a query.
+
+Examples:
+
+```sh
+topchester kb context "status bar"
+topchester kb context --json "status bar"
+topchester kb context --json --full-l1 "status bar"
+topchester kb context --limit 5 --min-score 20 "post author update"
+```
+
+Current behavior:
+
+- Requires `topchester kb init` and compiled L1 entries from `topchester kb compile` or `topchester kb sync`.
+- Uses the same in-memory lexical index as `topchester kb search`.
+- Selects strong matches by score, using a default limit of 8 files and default minimum score of 12.
+- Includes compact L1 knowledge for selected files by default: summary, capped responsibilities, capped symbols, capped imports/exports, relationships, tests, confidence, and omitted counts.
+- Supports `--full-l1` when the raw full L1 entries are needed for debugging or local inspection.
+- Marks drift as `unchecked`; exact hash drift checking remains a separate step.
+- Supports `--json` for the structured context pack.
+- Does not call any model provider.
 
 ## `topchester kb reset`
 

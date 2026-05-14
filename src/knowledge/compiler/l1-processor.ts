@@ -6,6 +6,7 @@ import { type ModelTextResult } from "../../model/index.js";
 import { formatCountProgress, type KnowledgeProgressReporter } from "../progress.js";
 import { l1FileEntrySchemaPath, parseL1FileEntry, type L1FileEntry } from "./l1-entry.js";
 import { createL1QueueFile, l1QueueFileSchema, type L1QueueFailure, type L1QueueItem } from "./l1.js";
+import { inferL1FileRole, postProcessL1Entries } from "./l1-postprocess.js";
 import { knowledgeCompilerIdentity } from "./manifest.js";
 import { getL1FileEntryPath, normalizeL1FilePath } from "./path-encoding.js";
 
@@ -92,6 +93,9 @@ export async function processL1Queue(options: ProcessL1QueueOptions): Promise<Pr
       message: formatL1ProgressMessage("Processing L1 files", index + 1, queuedFiles.length, item.path),
     });
   }
+
+  options.onProgress?.({ message: "Linking L1 file relationships..." });
+  await postProcessL1Entries(options.kbPath);
 
   const summary = await summarizeL1Queue(options.kbPath, queuedFiles);
   await writeManifest(options, summary, now().toISOString());
@@ -182,7 +186,11 @@ export async function processL1QueueItem(options: ProcessL1QueueItemOptions): Pr
 
 export function buildL1FileEntrySystemPrompt(): string {
   return [
-    "You summarize one repository file for Topchester's L1 knowledge base.",
+    "You create concise, structured repository knowledge for one file.",
+    "Prefer concrete facts visible in the file over generic descriptions.",
+    "Do not invent modules, features, tests, routes, or dependencies.",
+    "If uncertain, leave arrays empty and use lower confidence.",
+    'Avoid filler such as "This file contains code" or "Symbol named X".',
     "Return exactly one JSON object and no markdown.",
     "Do not include secrets, credentials, or raw provider payloads.",
   ].join("\n");
@@ -192,6 +200,35 @@ export function buildL1FileEntryPrompt(input: { path: string; content: string })
   return [
     "Create an L1 file entry for this workspace-relative path.",
     "The compiler will overwrite id, path, content_hash, size_bytes, last_scanned_at, and scan_status.",
+    "",
+    "Extraction rules:",
+    "- summary: one specific sentence about the file's role in this project.",
+    "- responsibilities: 2-6 concrete responsibilities, no duplicates, no generic boilerplate.",
+    "- symbols: important declared or exported interfaces, types, classes, functions, constants, schemas, commands, routes, React components, tests, or config objects.",
+    "  For each symbol, set:",
+    "  - kind: interface | type | class | function | const | component | schema | command | route | test | config | symbol",
+    "  - name: exact identifier or stable label",
+    "  - exported: true only when exported from this file",
+    "  - summary: include only if it adds useful meaning beyond the name",
+    "- imports: only workspace-local file dependencies as file:<path>; omit packages and built-ins.",
+    "- exports: exact exported names from this file as strings.",
+    "- test_ids: only file:<path> when this file is clearly a test or clearly references a test target.",
+    "- file_role: source | test | config | doc | script | unknown.",
+    "- declared_test_targets: for test files, file:<path> entries that this test directly imports or names.",
+    "- likely_test_targets: for test files, file:<path> entries likely covered by path/name convention.",
+    "- tested_by: leave empty; the compiler fills reverse test links after all files are processed.",
+    "- module_ids and feature_ids: leave empty unless there is strong evidence.",
+    '- evidence: include at least { "kind": "path", "value": "<path>" } and any high-signal local evidence.',
+    "- confidence: high for simple files with clear structure, medium for normal files, low for vague/generated/config-heavy files.",
+    "",
+    "Quality rules:",
+    "- Return valid JSON only.",
+    "- Keep arrays concise.",
+    "- Deduplicate all arrays.",
+    "- Prefer exact names from source.",
+    "- Do not copy large code snippets.",
+    "- Do not include secrets or raw credentials.",
+    "",
     "Use this JSON shape:",
     JSON.stringify(
       {
@@ -205,6 +242,7 @@ export function buildL1FileEntryPrompt(input: { path: string; content: string })
         size_bytes: 0,
         last_scanned_at: "2026-05-11T00:00:00Z",
         scan_status: "current",
+        file_role: "source",
         summary: "One clear sentence.",
         responsibilities: ["What this file owns or does."],
         symbols: [],
@@ -213,6 +251,9 @@ export function buildL1FileEntryPrompt(input: { path: string; content: string })
         module_ids: [],
         feature_ids: [],
         test_ids: [],
+        declared_test_targets: [],
+        likely_test_targets: [],
+        tested_by: [],
         evidence: [{ kind: "path", value: "<path>" }],
         confidence: "medium",
       },
@@ -267,15 +308,20 @@ function normalizeL1FileEntry(
 
 function normalizeModelOwnedL1Fields(value: object, path: string): Record<string, unknown> {
   const record = value as Record<string, unknown>;
+  const exports = normalizeStringArray(record.exports);
   return {
     ...record,
+    file_role: inferL1FileRole(path),
     responsibilities: normalizeStringArray(record.responsibilities),
-    symbols: normalizeSymbols(record.symbols, path),
+    symbols: normalizeSymbols(record.symbols, path, exports),
     imports: normalizePrefixedIds(record.imports, "file:"),
-    exports: normalizeStringArray(record.exports),
+    exports,
     module_ids: normalizePrefixedIds(record.module_ids, "module:"),
     feature_ids: normalizePrefixedIds(record.feature_ids, "feature:"),
     test_ids: normalizePrefixedIds(record.test_ids, "file:"),
+    declared_test_targets: normalizePrefixedIds(record.declared_test_targets, "file:"),
+    likely_test_targets: normalizePrefixedIds(record.likely_test_targets, "file:"),
+    tested_by: normalizePrefixedIds(record.tested_by, "file:"),
     evidence: normalizeEvidence(record.evidence),
   };
 }
@@ -284,7 +330,7 @@ function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return dedupeStrings(value.filter((item): item is string => typeof item === "string").map((item) => item.trim()));
 }
 
 function normalizePrefixedIds(value: unknown, prefix: string): string[] {
@@ -295,66 +341,107 @@ function normalizeEvidence(value: unknown): Array<{ kind: string; value: string 
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.flatMap((item) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      return [];
-    }
-    const record = item as Record<string, unknown>;
-    if (typeof record.kind !== "string" || record.kind.trim().length === 0) {
-      return [];
-    }
-    if (typeof record.value !== "string" || record.value.trim().length === 0) {
-      return [];
-    }
-    return [{ kind: record.kind, value: record.value }];
-  });
+  return dedupeRecords(
+    value.flatMap((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return [];
+      }
+      const record = item as Record<string, unknown>;
+      const kind = typeof record.kind === "string" ? record.kind.trim() : "";
+      const recordValue = typeof record.value === "string" ? record.value.trim() : "";
+      if (kind.length === 0) {
+        return [];
+      }
+      if (recordValue.length === 0) {
+        return [];
+      }
+      return [{ kind, value: recordValue }];
+    }),
+    (item) => `${item.kind}\0${item.value}`
+  );
 }
 
-function normalizeSymbols(value: unknown, path: string | undefined): Array<Record<string, unknown>> {
+function normalizeSymbols(value: unknown, path: string | undefined, exports: string[]): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.flatMap((item) => {
-    if (typeof item === "string") {
-      const name = item.trim();
+  const exportedNames = new Set(exports);
+  return dedupeRecords(
+    value.flatMap((item) => {
+      if (typeof item === "string") {
+        const name = item.trim();
+        if (!name || !path) {
+          return [];
+        }
+        return [
+          {
+            id: `symbol:${path}#${name}`,
+            kind: "symbol",
+            name,
+            exported: exportedNames.has(name),
+          },
+        ];
+      }
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return [];
+      }
+      const record = item as Record<string, unknown>;
+      const rawId = typeof record.id === "string" && record.id.startsWith("symbol:") ? record.id : undefined;
+      const name =
+        typeof record.name === "string" && record.name.trim().length > 0
+          ? record.name
+          : rawId?.slice(rawId.lastIndexOf("#") + 1);
       if (!name || !path) {
         return [];
       }
+      const summary =
+        typeof record.summary === "string" && record.summary.trim().length > 0 ? record.summary.trim() : "";
       return [
-        {
-          id: `symbol:${path}#${name}`,
-          kind: "symbol",
+        removeUndefinedValues({
+          id: rawId ?? `symbol:${path}#${name}`,
+          kind: typeof record.kind === "string" && record.kind.trim().length > 0 ? record.kind.trim() : "symbol",
           name,
-          exported: false,
-          summary: `Symbol named ${name}.`,
-        },
+          exported: exportedNames.has(name) || (typeof record.exported === "boolean" ? record.exported : false),
+          summary: summary && !isGenericSymbolSummary(summary, name) ? summary : undefined,
+        }),
       ];
+    }),
+    (item) => String(item.id)
+  );
+}
+
+function dedupeStrings(values: string[]): string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
+}
+
+function dedupeRecords<T>(values: T[], keyFor: (value: T) => string): T[] {
+  const seen = new Set<string>();
+  const deduped: T[] = [];
+
+  for (const value of values) {
+    const key = keyFor(value);
+    if (seen.has(key)) {
+      continue;
     }
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      return [];
-    }
-    const record = item as Record<string, unknown>;
-    const rawId = typeof record.id === "string" && record.id.startsWith("symbol:") ? record.id : undefined;
-    const name =
-      typeof record.name === "string" && record.name.trim().length > 0
-        ? record.name
-        : rawId?.slice(rawId.lastIndexOf("#") + 1);
-    if (!name || !path) {
-      return [];
-    }
-    return [
-      {
-        id: rawId ?? `symbol:${path}#${name}`,
-        kind: typeof record.kind === "string" && record.kind.trim().length > 0 ? record.kind : "symbol",
-        name,
-        exported: typeof record.exported === "boolean" ? record.exported : false,
-        summary:
-          typeof record.summary === "string" && record.summary.trim().length > 0
-            ? record.summary
-            : `Symbol named ${name}.`,
-      },
-    ];
-  });
+
+    seen.add(key);
+    deduped.push(value);
+  }
+
+  return deduped;
+}
+
+function removeUndefinedValues(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
+}
+
+function isGenericSymbolSummary(summary: string, name: string): boolean {
+  const normalizedSummary = summary.trim().replace(/\s+/g, " ");
+  return (
+    normalizedSummary === `Symbol named ${name}.` ||
+    normalizedSummary === `Symbol named ${name}` ||
+    normalizedSummary === name
+  );
 }
 
 function extractTopLevelJsonObjects(text: string): string[] {

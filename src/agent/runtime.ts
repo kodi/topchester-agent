@@ -3,6 +3,7 @@ import { ui } from "../cli/ui.js";
 import { dryRunKnowledgeCompile, filterNonCleanKnowledgeCompileResult } from "../knowledge/compiler/index.js";
 import { type L1FileScanStatus } from "../knowledge/compiler/l1-entry.js";
 import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
+import { createL1ContextPack, formatL1ContextPackForPrompt } from "../knowledge/search.js";
 import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js";
 import { executeSlashCommand, parseSlashCommand } from "./commands.js";
 import { type ConversationTurn, buildConversationPrompt } from "./conversation.js";
@@ -73,7 +74,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     abortSignal?: AbortSignal,
     onEvent?: AgentRuntimeEventSink
   ): Promise<AgentRuntimeEvent[]> {
-    const prompt = buildConversationPrompt(conversation, message);
+    const prompt = await this.buildPromptWithKnowledgeContext(buildConversationPrompt(conversation, message), message);
     const events: AgentRuntimeEvent[] = [];
     const emit = async (...nextEvents: AgentRuntimeEvent[]) => {
       events.push(...nextEvents);
@@ -246,6 +247,53 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     );
 
     return { ...status, nonCleanFileCount: result.files.length };
+  }
+
+  private async buildPromptWithKnowledgeContext(prompt: string, message: string): Promise<string> {
+    const status = getKnowledgeStatus(this.context.workspaceRoot);
+
+    if (!status.kbExists || !status.kbIsDirectory || status.kbContentState !== "ready") {
+      return prompt;
+    }
+
+    try {
+      const contextPack = await createL1ContextPack(this.context.workspaceRoot, message, { limit: 8, minScore: 12 });
+
+      this.context.logger.debug(
+        {
+          event: "kb_context_pack",
+          query: message,
+          entryCount: contextPack.entryCount,
+          relevantFileCount: contextPack.relevantFiles.length,
+          paths: contextPack.relevantFiles.map((file) => file.path),
+          warnings: contextPack.warnings,
+        },
+        "kb context pack"
+      );
+      this.context.logger.trace(
+        {
+          event: "kb_context_pack_payload",
+          contextPack,
+        },
+        "kb context pack payload"
+      );
+
+      if (contextPack.relevantFiles.length === 0) {
+        return prompt;
+      }
+
+      return `${formatL1ContextPackForPrompt(contextPack)}\n\nConversation:\n${prompt}`;
+    } catch (error) {
+      this.context.logger.debug(
+        {
+          event: "kb_context_pack_failed",
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "kb context pack failed"
+      );
+
+      return prompt;
+    }
   }
 }
 

@@ -18,6 +18,12 @@ import {
 } from "./knowledge/compiler/index.js";
 import { formatKnowledgeInitResult, initializeKnowledgeBase } from "./knowledge/init.js";
 import { formatKnowledgeResetResult, resetKnowledgeBase } from "./knowledge/reset.js";
+import {
+  createL1ContextPack,
+  formatL1ContextPackResult,
+  formatL1KnowledgeSearchResult,
+  searchL1Knowledge,
+} from "./knowledge/search.js";
 import { loadSession, loadSessionForAppend, rehydrateSession } from "./session/store.js";
 import { TopchesterTuiShell } from "./tui/index.js";
 import { getTopchesterVersion } from "./version.js";
@@ -100,6 +106,16 @@ program
     }
   );
 
+program
+  .command("search")
+  .description("search compiled L1 knowledge entries")
+  .argument("<query...>", "search query")
+  .option("--limit <count>", "maximum number of matches", parsePositiveInteger)
+  .option("--json", "write full JSON search result to stdout")
+  .action(async (queryParts: string[], options: KbSearchCommandOptions) => {
+    await executeKbSearchCommand(queryParts, options);
+  });
+
 const kbCommand = program.command("kb").description("knowledge base commands");
 
 kbCommand
@@ -164,6 +180,29 @@ kbCommand
     if (isPartialKnowledgeCompileResult(result)) {
       process.exitCode = 2;
     }
+  });
+
+kbCommand
+  .command("search")
+  .alias("query")
+  .description("search compiled L1 knowledge entries")
+  .argument("<query...>", "search query")
+  .option("--limit <count>", "maximum number of matches", parsePositiveInteger)
+  .option("--json", "write full JSON search result to stdout")
+  .action(async (queryParts: string[], options: KbSearchCommandOptions) => {
+    await executeKbSearchCommand(queryParts, options);
+  });
+
+kbCommand
+  .command("context")
+  .description("create an L1 context pack for a query")
+  .argument("<query...>", "context query")
+  .option("--limit <count>", "maximum number of relevant files", parsePositiveInteger)
+  .option("--min-score <score>", "minimum match score", parseNonNegativeNumber)
+  .option("--json", "write JSON context pack to stdout")
+  .option("--full-l1", "include full raw L1 entries in JSON output")
+  .action(async (queryParts: string[], options: KbContextCommandOptions) => {
+    await executeKbContextCommand(queryParts, options);
   });
 
 kbCommand
@@ -246,6 +285,57 @@ function createContextFromOptions() {
   });
 }
 
+interface KbSearchCommandOptions {
+  limit?: number;
+  json?: boolean;
+}
+
+interface KbContextCommandOptions {
+  limit?: number;
+  minScore?: number;
+  json?: boolean;
+  fullL1?: boolean;
+}
+
+async function executeKbSearchCommand(queryParts: string[], options: KbSearchCommandOptions) {
+  const context = createContextFromOptions();
+  const query = queryParts.join(" ");
+  const result = options.json
+    ? await searchL1Knowledge(context.workspaceRoot, query, { limit: options.limit })
+    : await ui.spinner("Searching L1 knowledge entries...", () =>
+        searchL1Knowledge(context.workspaceRoot, query, { limit: options.limit })
+      );
+
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log(formatL1KnowledgeSearchResult(result).join("\n"));
+}
+
+async function executeKbContextCommand(queryParts: string[], options: KbContextCommandOptions) {
+  const context = createContextFromOptions();
+  const query = queryParts.join(" ");
+  const contextPackOptions = {
+    limit: options.limit,
+    minScore: options.minScore,
+    includeFullL1: options.fullL1,
+  };
+  const result = options.json
+    ? await createL1ContextPack(context.workspaceRoot, query, contextPackOptions)
+    : await ui.spinner("Creating L1 context pack...", () =>
+        createL1ContextPack(context.workspaceRoot, query, contextPackOptions)
+      );
+
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log(formatL1ContextPackResult(result).join("\n"));
+}
+
 function formatStartupError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (
@@ -268,6 +358,16 @@ function parsePositiveInteger(value: string): number {
 
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new Error("Expected a positive integer.");
+  }
+
+  return parsed;
+}
+
+function parseNonNegativeNumber(value: string): number {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error("Expected a non-negative number.");
   }
 
   return parsed;
