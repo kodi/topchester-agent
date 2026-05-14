@@ -470,6 +470,31 @@ function compactSymbol(
       };
 }
 
+export function stripEmptyContainers(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    const stripped = value.map(stripEmptyContainers).filter((item) => item !== undefined);
+    return stripped.length > 0 ? stripped : undefined;
+  }
+
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value)
+      .map(([key, item]) => [key, stripEmptyContainers(item)] as const)
+      .filter(([, item]) => item !== undefined);
+
+    return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  }
+
+  return value;
+}
+
+function stripUndefinedProperties<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
+}
+
+function nonEmptyArray<T>(items: T[]): T[] | undefined {
+  return items.length > 0 ? items : undefined;
+}
+
 function isGenericSymbolSummary(summary: string, name: string): boolean {
   const normalizedSummary = summary.trim().replace(/\s+/g, " ");
   return (

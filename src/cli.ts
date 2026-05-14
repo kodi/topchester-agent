@@ -23,6 +23,7 @@ import {
   formatL1ContextPackResult,
   formatL1KnowledgeSearchResult,
   searchL1Knowledge,
+  stripEmptyContainers,
 } from "./knowledge/search.js";
 import { loadSession, loadSessionForAppend, rehydrateSession } from "./session/store.js";
 import { TopchesterTuiShell } from "./tui/index.js";
@@ -307,7 +308,7 @@ async function executeKbSearchCommand(queryParts: string[], options: KbSearchCom
       );
 
   if (options.json) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(stripEmptyContainers(result), null, 2));
     return;
   }
 
@@ -329,7 +330,7 @@ async function executeKbContextCommand(queryParts: string[], options: KbContextC
       );
 
   if (options.json) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(stripEmptyContainers(result), null, 2));
     return;
   }
 

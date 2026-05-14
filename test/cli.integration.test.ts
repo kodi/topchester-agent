@@ -590,7 +590,7 @@ describe("CLI integration", () => {
       drift: { status: string };
       relevantFiles: Array<{
         path: string;
-        l1: { summary: string; symbols: Array<{ name: string }>; omitted: { symbols: number } };
+        l1: { summary: string; symbols: Array<{ name: string }>; omitted?: unknown; imports?: unknown[] };
         fullL1?: unknown;
       }>;
     };
@@ -599,7 +599,8 @@ describe("CLI integration", () => {
     expect(parsed.drift.status).toBe("unchecked");
     expect(parsed.relevantFiles[0]?.path).toBe("src/tui/status.ts");
     expect(parsed.relevantFiles[0]?.l1.symbols[0]?.name).toBe("renderStatusBar");
-    expect(parsed.relevantFiles[0]?.l1.omitted.symbols).toBe(0);
+    expect(parsed.relevantFiles[0]?.l1.omitted).toBeUndefined();
+    expect(parsed.relevantFiles[0]?.l1.imports).toBeUndefined();
     expect(parsed.relevantFiles[0]?.fullL1).toBeUndefined();
 
     const fullResult = await runCli(

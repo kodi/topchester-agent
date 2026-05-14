@@ -87,8 +87,8 @@ describe("L1 in-memory knowledge search", () => {
       summary: "Renders the TUI status bar.",
       responsibilities: ["Show status bar details."],
       symbols: [{ kind: "function", name: "renderStatusBar", exported: true }],
-      omitted: { responsibilities: 0, symbols: 0 },
     });
+    expect(result.relevantFiles[0]?.l1).not.toHaveProperty("omitted");
     expect(result.relevantFiles[0]?.fullL1).toBeUndefined();
   });
 
@@ -130,7 +130,7 @@ describe("L1 in-memory knowledge search", () => {
 
     const result = await createL1ContextPack(workspace, "progress status", { limit: 3, minScore: 10 });
 
-    expect(result.relevantFiles[0]?.l1.symbols[0]).toEqual({
+    expect(result.relevantFiles[0]?.l1.symbols?.[0]).toEqual({
       name: "KnowledgeProgressEvent",
       exported: true,
     });

@@ -89,12 +89,7 @@ models:
 Internally this normalizes to explicit task-purpose assignments and provider connection details.
 
 ```ts
-type ModelPurpose =
-  | "agent.primary"
-  | "agent.fast"
-  | "kb.scan"
-  | "kb.summarize"
-  | "fallback";
+type ModelPurpose = "agent.primary" | "agent.fast" | "kb.scan" | "kb.summarize" | "fallback";
 
 type ModelRef = `${providerId}/${modelId}`;
 
