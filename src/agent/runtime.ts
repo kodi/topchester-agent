@@ -45,8 +45,21 @@ export type AgentRuntimeEventSink = (event: AgentRuntimeEvent) => void | Promise
 export class TopchesterAgentRuntime implements AgentRuntime {
   private readonly taskPlan = createTaskPlanController();
 
+  /**
+   * Holds the shared application context for one runtime instance.
+   * The runtime does not own those dependencies; it coordinates the
+   * workspace, model gateway, logger, config, and task-plan state that
+   * are passed in by the CLI or TUI layer.
+   */
   constructor(private readonly context: AppContext) {}
 
+  /**
+   * Performs the lightweight startup model check used by the interactive
+   * agent before accepting work. The check is intentionally non-blocking
+   * from the user's point of view: timeout and failure both produce a
+   * visible status message, but the runtime still moves to ready so the
+   * user can continue.
+   */
   async checkAgent(abortSignal?: AbortSignal): Promise<AgentRuntimeEvent[]> {
     const result = await checkAgentReady(this.context.modelGateway, abortSignal);
 
@@ -64,10 +77,28 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     return [agentEvent.systemMessage("Agent did not say it was ready."), agentEvent.status("ready")];
   }
 
+  /**
+   * Builds the initial knowledge-base status events shown by the TUI.
+   * This wraps the raw filesystem status with the same non-clean file count
+   * used by `/kb status`, so startup messaging reflects whether project
+   * knowledge is ready, missing, stale, or waiting for a sync.
+   */
   async checkKnowledgeBase(): Promise<AgentRuntimeEvent[]> {
     return getKnowledgeStatusEvents(await this.getKnowledgeStatusWithNonCleanFileCount());
   }
 
+  /**
+   * Runs one user chat turn through the agent loop. It builds the model
+   * prompt with relevant KB context, calls the model, executes any requested
+   * tools, feeds tool results back into the next prompt, and repeats until
+   * the model returns a normal assistant message or the loop hits its safety
+   * limit.
+   *
+   * Events are accumulated for the caller and optionally streamed through
+   * `onEvent` as soon as tool calls, task-plan updates, choices, or final
+   * messages are available. The method also enforces visible task-plan
+   * closure before a final answer when the model leaves an open plan.
+   */
   async submitMessage(
     conversation: ConversationTurn[],
     message: string,
@@ -230,6 +261,12 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     return events;
   }
 
+  /**
+   * Executes a slash command through the shared command dispatcher and maps
+   * the command output into runtime events. Commands that can change KB
+   * readiness also refresh the displayed knowledge status so the TUI footer
+   * and chat status stay aligned with the command result.
+   */
   async submitSlashCommand(command: string, onProgress?: KnowledgeProgressReporter): Promise<AgentRuntimeEvent[]> {
     const result = await executeSlashCommand(command, {
       workspaceRoot: this.context.workspaceRoot,
@@ -249,6 +286,12 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     return events;
   }
 
+  /**
+   * Reads the project KB status and augments it with a count of files that
+   * would be touched by a dry-run compile. The dry run is only performed for
+   * a ready KB directory, because missing or incomplete KB states already
+   * have enough information for the startup and status messages.
+   */
   private async getKnowledgeStatusWithNonCleanFileCount(): Promise<KnowledgeStatus> {
     const status = getKnowledgeStatus(this.context.workspaceRoot);
 
@@ -263,6 +306,12 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     return { ...status, nonCleanFileCount: result.files.length };
   }
 
+  /**
+   * Adds relevant L1 knowledge context to the conversation prompt when the
+   * compiled KB is present and ready. Search failures are logged and then
+   * ignored on purpose: stale or broken KB search should not prevent the
+   * user's chat turn from reaching the model.
+   */
   private async buildPromptWithKnowledgeContext(prompt: string, message: string): Promise<string> {
     const status = getKnowledgeStatus(this.context.workspaceRoot);
 
@@ -311,6 +360,13 @@ export class TopchesterAgentRuntime implements AgentRuntime {
   }
 }
 
+/**
+ * Calls the configured model gateway for a single agent step and normalizes
+ * the result into the newer `ModelAgentResult` shape. Gateways that implement
+ * native agent stepping receive the tool registry directly; older text-only
+ * gateways fall back to parsing a JSON or XML tool call out of the model text
+ * so the rest of the runtime can use the same tool loop.
+ */
 async function generateAgentStep(
   context: AppContext,
   request: {
@@ -353,6 +409,12 @@ async function generateAgentStep(
   };
 }
 
+/**
+ * Reads the optional environment override for the tool-calling protocol.
+ * Invalid values are ignored instead of failing startup, which keeps local
+ * experimentation contained to supported protocol names while preserving the
+ * normal automatic negotiation path by default.
+ */
 function readToolProtocolEnvOverride(): ToolProtocolOverride | undefined {
   const value = process.env.TOPCHESTER_TOOL_PROTOCOL;
 
@@ -363,6 +425,12 @@ function readToolProtocolEnvOverride(): ToolProtocolOverride | undefined {
   return undefined;
 }
 
+/**
+ * Applies TUI styling to per-file KB sync states. The raw scanner statuses
+ * are preserved as text, but success, warning, and error categories get
+ * different colors so slash-command output is readable without changing the
+ * underlying command semantics.
+ */
 function formatTuiSyncStatus(status: L1FileScanStatus): string {
   if (status === "current") {
     return ui.ok(status);
@@ -375,16 +443,33 @@ function formatTuiSyncStatus(status: L1FileScanStatus): string {
   return ui.warn(status);
 }
 
+/**
+ * Decides whether a slash command should trigger a fresh KB status event.
+ * Only KB subcommands that can initialize, rebuild, sync, reset, or inspect
+ * the compiled knowledge state need the refresh; other commands can return
+ * their output without doing extra filesystem work.
+ */
 function shouldRefreshKnowledgeStatus(command: string): boolean {
   const parsed = parseSlashCommand(command);
 
   return parsed?.name === "kb" && ["init", "reset", "compile", "sync", "status"].includes(parsed.args[0] ?? "");
 }
 
+/**
+ * Converts a computed KB status into the startup event shape consumed by the
+ * TUI. The event carries both the structured status and a short next-step
+ * message, letting renderers show precise state while keeping user-facing
+ * guidance in one place.
+ */
 export function getKnowledgeStatusEvents(status: KnowledgeStatus): AgentRuntimeEvent[] {
   return [agentEvent.knowledgeStatus(status, formatStartupKnowledgeGuidance(status))];
 }
 
+/**
+ * Produces the short guidance line shown with startup KB status. The message
+ * is deliberately action-oriented: it points to the next command that would
+ * fix the current state and returns nothing when the KB is ready and clean.
+ */
 function formatStartupKnowledgeGuidance(status: KnowledgeStatus): string | undefined {
   if (!status.kbExists) {
     return "Next: run /kb init, then /kb compile to create project knowledge.";
@@ -405,6 +490,13 @@ function formatStartupKnowledgeGuidance(status: KnowledgeStatus): string | undef
   return undefined;
 }
 
+/**
+ * Serializes a tool execution result into the text that is fed back to the
+ * model after a tool call. Each tool gets the metadata the model needs for
+ * the next step, such as file hashes, diffs, command exit status, truncation
+ * state, or KB dirty-state signals, while errors are presented in a uniform
+ * error block.
+ */
 function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult>): string {
   const path = result.path ? ` ${JSON.stringify(result.path)}` : "";
   const command = result.command ? ` via ${result.command}` : "";
@@ -563,6 +655,12 @@ function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult>): str
   return [`Tool result from ${result.tool}${path}${command}:${warning}`, "```", result.content, "```"].join("\n");
 }
 
+/**
+ * Builds the follow-up instruction appended after each tool result. It keeps
+ * the model on the active task, reminds it to maintain the visible plan, and
+ * restates the current tool-call protocol so the next model step remains
+ * parseable by the runtime.
+ */
 function formatContinuationInstruction(protocol: ToolProtocol, result: ToolExecutionResult<ToolResult>): string {
   const toolInstruction =
     protocol === "text-xml"
@@ -587,6 +685,12 @@ function formatContinuationInstruction(protocol: ToolProtocol, result: ToolExecu
     .join(" ");
 }
 
+/**
+ * Creates the corrective prompt used when the model tries to answer while a
+ * visible task plan is still open. The draft final answer is preserved so the
+ * model can reuse it after closing the plan, but the immediate instruction is
+ * to call `plan_todo` first.
+ */
 function formatOpenPlanClosureInstruction(draftAnswer: string, protocol: ToolProtocol): string {
   const toolInstruction =
     protocol === "text-xml"
@@ -608,6 +712,12 @@ function formatOpenPlanClosureInstruction(draftAnswer: string, protocol: ToolPro
     .join("\n");
 }
 
+/**
+ * Formats a compact, user-visible summary for a tool call event. When a
+ * result is available the summary includes useful completion details, such as
+ * changed-line counts, staged paths, commit subjects, or command failures,
+ * instead of echoing the full tool payload.
+ */
 function formatToolCallMessage(call: ToolCall, result?: ToolExecutionResult<ToolResult>): string {
   if (result && isToolErrorResult(result)) {
     return `${call.tool} failed: ${result.error}`;
@@ -645,6 +755,11 @@ function formatToolCallMessage(call: ToolCall, result?: ToolExecutionResult<Tool
   }
 }
 
+/**
+ * Summarizes a `git_diff` call for the TUI event list. Successful results
+ * report the resolved scope, file count, and truncation marker; pending or
+ * failed calls fall back to the requested scope from the tool arguments.
+ */
 function formatGitDiffCallSummary(
   call: Extract<ToolCall, { tool: "git_diff" }>,
   result?: ToolExecutionResult<ToolResult>
@@ -656,6 +771,12 @@ function formatGitDiffCallSummary(
   return call.args.scope;
 }
 
+/**
+ * Returns the parenthesized change summary for a successful `edit_file`
+ * result. Non-edit results and failed edits intentionally return an empty
+ * suffix so the main tool-call formatter can keep one path for success,
+ * failure, and pre-result display.
+ */
 function formatEditFileChangeSummary(result: ToolExecutionResult<ToolResult> | undefined): string {
   if (result?.tool !== "edit_file" || isToolErrorResult(result)) {
     return "";
@@ -664,6 +785,11 @@ function formatEditFileChangeSummary(result: ToolExecutionResult<ToolResult> | u
   return ` (changed ${result.editEvent.diffSummary})`;
 }
 
+/**
+ * Returns the parenthesized write summary for a successful `write_file`
+ * result. The helper mirrors the edit summary helper, keeping write-specific
+ * result details out of the larger switch that formats all tool-call messages.
+ */
 function formatWriteFileChangeSummary(result: ToolExecutionResult<ToolResult> | undefined): string {
   if (result?.tool !== "write_file" || isToolErrorResult(result)) {
     return "";
@@ -672,10 +798,21 @@ function formatWriteFileChangeSummary(result: ToolExecutionResult<ToolResult> | 
   return ` (${result.writeEvent.writeSummary})`;
 }
 
+/**
+ * Formats the assistant-message metadata shown next to the final response.
+ * The model identifier and cumulative turn duration are kept together here
+ * so callers do not need to know how agent-loop timing should be presented.
+ */
 function formatAgentMessageMeta(model: string, durationMs: number): string {
   return `${model} · ${formatDuration(durationMs)}`;
 }
 
+/**
+ * Converts elapsed milliseconds into the short human-readable duration used
+ * in assistant metadata. Very short turns keep one decimal place, normal
+ * sub-minute turns round to seconds, and longer turns switch to minutes plus
+ * remaining seconds.
+ */
 function formatDuration(durationMs: number): string {
   const totalSeconds = Math.max(0, durationMs / 1000);
 
@@ -697,6 +834,12 @@ function formatDuration(durationMs: number): string {
   return `${minutes} min ${seconds} sec`;
 }
 
+/**
+ * Formats a number with a fixed number of fraction digits using the English
+ * locale expected by the TUI metadata strings. Keeping this tiny wrapper
+ * avoids repeating the minimum and maximum fraction-digit options at every
+ * call site.
+ */
 function formatNumber(value: number, fractionDigits: number): string {
   return value.toLocaleString("en", {
     minimumFractionDigits: fractionDigits,

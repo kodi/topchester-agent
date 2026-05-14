@@ -96,7 +96,7 @@ describe("Topchester config loading", () => {
     expect(config.models?.assignments?.["agent.primary"]?.name).toBe("jsonc/model");
   });
 
-  it("expands a simple OpenRouter default model into every internal purpose", async () => {
+  it("expands a simple OpenRouter default model into every supported internal purpose", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
@@ -113,8 +113,6 @@ describe("Topchester config loading", () => {
       "agent.fast": { name: "google/gemini-3.1-flash-lite", provider: "openrouter" },
       "kb.scan": { name: "google/gemini-3.1-flash-lite", provider: "openrouter" },
       "kb.summarize": { name: "google/gemini-3.1-flash-lite", provider: "openrouter" },
-      "kb.extract": { name: "google/gemini-3.1-flash-lite", provider: "openrouter" },
-      "kb.embed": { name: "google/gemini-3.1-flash-lite", provider: "openrouter" },
       "fallback": { name: "google/gemini-3.1-flash-lite", provider: "openrouter" },
     });
     expect(config.models?.providers?.default).toBe("openrouter");
