@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve, win32 } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -116,10 +116,21 @@ export interface ConfigLoadOptions {
   configPath?: string;
 }
 
+export function getGlobalTopchesterConfigDir(): string {
+  return join(homedir(), ".config", "topchester");
+}
+
+export function ensureGlobalTopchesterConfigDir(): string {
+  const dir = getGlobalTopchesterConfigDir();
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 export function loadTopchesterConfig(options: ConfigLoadOptions): TopchesterConfig {
+  const globalConfigDir = getGlobalTopchesterConfigDir();
   const paths = [
-    join(homedir(), ".config/topchester/config.yaml"),
-    join(homedir(), ".config/topchester/config.jsonc"),
+    join(globalConfigDir, "config.yaml"),
+    join(globalConfigDir, "config.jsonc"),
     join(options.workspaceRoot, "topchester.yaml"),
     join(options.workspaceRoot, "topchester.jsonc"),
     join(options.workspaceRoot, ".topchester/config.local.yaml"),

@@ -1,5 +1,5 @@
 import { ModelGateway, type ModelGatewayConfig } from "../model/index.js";
-import { loadTopchesterConfig, type TopchesterConfig } from "../config/index.js";
+import { ensureGlobalTopchesterConfigDir, loadTopchesterConfig, type TopchesterConfig } from "../config/index.js";
 import { createTopchesterLogger } from "../logging/index.js";
 import { type Logger } from "pino";
 
@@ -19,6 +19,7 @@ export interface CreateAppContextOptions {
 }
 
 export function createAppContext(options: CreateAppContextOptions): AppContext {
+  ensureGlobalTopchesterConfigDir();
   const config = loadTopchesterConfig(options);
   const modelGateway = new ModelGateway(normalizeModelGatewayConfig(config));
   const loggerInfo = createTopchesterLogger(options.workspaceRoot);

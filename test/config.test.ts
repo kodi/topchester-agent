@@ -1,10 +1,11 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { createAppContext } from "../src/app/context.js";
 import { loadTopchesterConfig } from "../src/config/index.js";
 
-const envKeys = ["HOME", "TOPCHESTER_CONFIG"] as const;
+const envKeys = ["HOME", "TOPCHESTER_CONFIG", "TOPCHESTER_LOG_LEVEL"] as const;
 const originalEnv = new Map(envKeys.map((key) => [key, process.env[key]]));
 
 afterEach(() => {
@@ -19,6 +20,22 @@ afterEach(() => {
 });
 
 describe("Topchester config loading", () => {
+  it("creates the global config directory when app context starts", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const home = join(root, "home");
+    const workspace = join(root, "workspace");
+    process.env.HOME = home;
+    process.env.TOPCHESTER_LOG_LEVEL = "silent";
+    delete process.env.TOPCHESTER_CONFIG;
+    await mkdir(workspace, { recursive: true });
+
+    await expect(stat(join(home, ".config", "topchester"))).rejects.toMatchObject({ code: "ENOENT" });
+
+    createAppContext({ workspaceRoot: workspace });
+
+    expect((await stat(join(home, ".config", "topchester"))).isDirectory()).toBe(true);
+  });
+
   it("loads JSONC config files in documented precedence and concatenates ignore paths", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const home = join(root, "home");

@@ -33,6 +33,8 @@ These options can be used with the top-level command and subcommands:
 - `-V, --version` — print the CLI package version.
 - `-h, --help` — print help.
 
+On startup, Topchester creates the user config folder `~/.config/topchester/` if it is missing.
+
 ## Command Overview
 
 | Command                 | Purpose                                                  |
