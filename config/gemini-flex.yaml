@@ -1,0 +1,9 @@
+models:
+  default: openrouter/google/gemini-3.1-flash-lite
+  providers:
+    openrouter:
+      type: openai-compatible
+      baseURL: https://openrouter.ai/api/v1
+      apiKeyEnv: OPENROUTER_API_KEY
+      supportsStructuredOutputs: true
+      service_tier: flex

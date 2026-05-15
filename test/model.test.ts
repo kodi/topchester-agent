@@ -53,6 +53,43 @@ describe("ModelGateway agent tool protocol", () => {
     expect(result.usage).toEqual({ inputTokens: 1, outputTokens: 1, totalTokens: 2, costUsd: 0.00014 });
   });
 
+  it("sends configured service tier on text responses", async () => {
+    const api = await startChatApi((body) => {
+      expect(body.service_tier).toBe("flex");
+
+      return {
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            message: { role: "assistant", content: "Hello." },
+          },
+        ],
+      };
+    });
+    const gateway = new ModelGateway({
+      defaultPurpose: "agent.primary",
+      defaultProvider: "openrouter",
+      models: {
+        "agent.primary": { name: "test-model" },
+      },
+      providers: {
+        openrouter: {
+          type: "openai-compatible",
+          baseURL: api.baseURL,
+          apiKey: "test",
+          service_tier: "flex",
+        },
+      },
+    });
+
+    await gateway.generateText({
+      purpose: "agent.primary",
+      system: "system",
+      prompt: "hello",
+    });
+  });
+
   it("sends native OpenAI-compatible tools and normalizes structured tool calls", async () => {
     const api = await startChatApi((body) => {
       expect(body.tools).toEqual([
@@ -156,6 +193,7 @@ describe("ModelGateway agent tool protocol", () => {
     const api = await startChatApi((body) => {
       expect(body.provider).toEqual({ require_parameters: true });
       expect(body.parallel_tool_calls).toBe(false);
+      expect(body.service_tier).toBe("flex");
 
       return {
         choices: [
@@ -178,6 +216,7 @@ describe("ModelGateway agent tool protocol", () => {
           type: "openai-compatible",
           baseURL: api.baseURL,
           apiKey: "test",
+          service_tier: "flex",
         },
       },
     });

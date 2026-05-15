@@ -1,0 +1,17 @@
+{
+  "id": "16-task-subagent",
+  "name": "Task subagent",
+  "description": "Checks the task tool creates a child session, forwards child events, persists subagent metadata, and returns the child result to the parent.",
+  "timeoutMs": 15000,
+  "prompt": "TASK_SUBAGENT_SMOKE use the task tool for this smoke test. Delegate exactly one read-only child task. The child prompt must include TASK_SUBAGENT_CHILD and must ask the child to read docs/task-subagent-note.txt and report the exact marker line. After the task finishes, answer with exactly: Subagent found marker aqua.",
+  "requiredToolCalls": ["task"],
+  "forbiddenToolCalls": ["edit_file", "write_file", "inspect_command"],
+  "expectedOutputContains": ["Subagent found marker aqua."],
+  "expectedSubagent": {
+    "completed": true,
+    "agentProfileId": "explore",
+    "requiredChildToolCalls": ["read_file"],
+    "expectedResultContains": ["subagent marker: aqua"],
+    "expectedChildMessagesContain": ["subagent marker: aqua"]
+  }
+}

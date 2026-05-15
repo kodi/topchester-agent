@@ -19,6 +19,7 @@ export interface OpenAICompatibleProviderConfig {
   apiKeyEnv?: string;
   headers?: Record<string, string>;
   supportsStructuredOutputs?: boolean;
+  service_tier?: "flex" | "priority";
   toolProtocol?: ToolProtocolOverride;
   openRouterToolRouting?: "auto" | "force" | "off";
 }
@@ -155,6 +156,7 @@ export class ModelGateway {
       model: resolved.model,
       system: request.system,
       prompt: request.prompt,
+      providerOptions: buildProviderOptions(resolved.providerId, resolved.providerConfig),
       abortSignal: request.abortSignal,
     });
     const usage = normalizeUsage(result.usage, {
@@ -259,6 +261,7 @@ export class ModelGateway {
       model: resolved.model,
       system: request.system,
       prompt: request.prompt,
+      providerOptions: buildProviderOptions(resolved.providerId, resolved.providerConfig),
       abortSignal: request.abortSignal,
     });
 
@@ -334,6 +337,7 @@ export class ModelGateway {
           model: resolved.model,
           system: request.system,
           prompt: request.prompt,
+          providerOptions: buildProviderOptions(resolved.providerId, resolved.providerConfig),
           abortSignal: request.abortSignal,
         });
     const usage = normalizeUsage(result.usage, {
@@ -430,6 +434,7 @@ export class ModelGateway {
       model: resolved.model,
       system: request.system,
       prompt: request.prompt,
+      providerOptions: buildProviderOptions(resolved.providerId, resolved.providerConfig),
       abortSignal: request.abortSignal,
       includeRawChunks: true,
     });
@@ -594,8 +599,21 @@ function resolveApiKey(config: OpenAICompatibleProviderConfig): string | undefin
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type ProviderOptions = Record<string, { [key: string]: JsonValue }>;
 
+function buildProviderOptions(providerId: string, config: OpenAICompatibleProviderConfig): ProviderOptions {
+  const options: { [key: string]: JsonValue } = {};
+
+  if (config.service_tier !== undefined) {
+    options.service_tier = config.service_tier;
+  }
+
+  return {
+    [providerId]: options,
+  };
+}
+
 function buildNativeProviderOptions(providerId: string, config: OpenAICompatibleProviderConfig): ProviderOptions {
   const options: { [key: string]: JsonValue } = {
+    ...buildProviderOptions(providerId, config)[providerId],
     parallel_tool_calls: false,
   };
 

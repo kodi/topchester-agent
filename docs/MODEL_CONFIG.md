@@ -133,6 +133,8 @@ For agent turns, Topchester tries native OpenAI-compatible tool calls first. If 
 
 OpenRouter requests that try native tools include internal routing hints so OpenRouter should pick an upstream that can accept tool parameters. This is automatic for providers named like `openrouter` or using an OpenRouter base URL.
 
+Topchester also adds default `HTTP-Referer` and `X-Title` attribution headers for OpenRouter providers unless the config sets those header names explicitly.
+
 Advanced debugging overrides are available but should stay out of normal examples:
 
 ```jsonc
@@ -143,6 +145,7 @@ Advanced debugging overrides are available but should stay out of normal example
         "type": "openai-compatible",
         "baseURL": "https://openrouter.ai/api/v1",
         "apiKeyEnv": "OPENROUTER_API_KEY",
+        "service_tier": "flex",
         "toolProtocol": "text-json",
         "openRouterToolRouting": "off",
       },
@@ -150,6 +153,8 @@ Advanced debugging overrides are available but should stay out of normal example
   },
 }
 ```
+
+`service_tier` is passed through to compatible OpenRouter requests. Supported request values are `flex` and `priority`.
 
 `toolProtocol` values:
 
