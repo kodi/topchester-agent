@@ -207,6 +207,19 @@ function chooseResponse(prompt: string): string {
     return toolCall("read_file", { path: "docs/task-subagent-note.txt" });
   }
 
+  if (prompt.includes("RUN_VALIDATOR_SMOKE") && prompt.includes("Tool result from run_validator")) {
+    return "Validator smoke passed: RUN_VALIDATOR_SMOKE passed";
+  }
+
+  if (prompt.includes("RUN_VALIDATOR_SMOKE")) {
+    return toolCall("run_validator", {
+      command: "pnpm test",
+      validator: "test",
+      workdir: ".",
+      timeout_ms: 15000,
+    });
+  }
+
   if (prompt.includes("Tool result from edit_file")) {
     return "Done.";
   }

@@ -1,0 +1,8 @@
+{
+  "name": "topchester-run-validator-smoke",
+  "private": true,
+  "scripts": {
+    "test": "node scripts/validator-smoke.mjs"
+  },
+  "packageManager": "pnpm@11.0.8"
+}

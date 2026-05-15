@@ -735,7 +735,19 @@ Dependencies:
 
 ### Slice 5: Fake-API Smoke Scenario
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
+
+Completed in Slice 5:
+
+- Added `scripts/smoke/scenarios/17-run-validator/` with a deterministic package test script.
+- Updated `scripts/smoke/fake-api.ts` so the fake model calls `run_validator` and answers from the validator output.
+- Added scenario assertions for required `run_validator`, forbidden mutation/orientation tools, and final output containing the validator evidence.
+
+Verification:
+
+```sh
+pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --trials 1 --scenario 17-run-validator
+```
 
 Goal: Add a smoke scenario proving `run_validator` works through `topchester run`.
 
