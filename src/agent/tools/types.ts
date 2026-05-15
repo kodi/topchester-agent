@@ -1,12 +1,15 @@
 import { type z } from "zod";
 import { type Logger } from "pino";
 import { type TaskPlanController } from "../task-plan.js";
+import { type AgentProfile, type ToolPermissionView } from "../profiles.js";
 
 export interface ToolContext {
   workspaceRoot: string;
   pathEnv?: string;
   logger?: Logger;
   taskPlan?: TaskPlanController;
+  profile?: AgentProfile;
+  permissions?: ToolPermissionView;
 }
 
 export interface ToolCall<Name extends string = string, Args = unknown> {

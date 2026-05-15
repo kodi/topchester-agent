@@ -262,6 +262,21 @@ Do not add a big global event bus in V0. A global bus can make small apps feel c
 
 If plugins, background jobs, or multiple clients need fan-out later, add a scoped event hub around the runtime/session boundary. Keep events named, versioned, and tied to the session log shape.
 
+## Agent Profiles And Tool Permissions
+
+Runtime turns execute under an agent profile. The primary profile uses the normal
+model slot and can see the full registered tool set. Subagent profiles can add
+prompt instructions, choose a model slot, and narrow the tool set.
+
+Tool permissions are enforced twice:
+
+- prompt/model schema filtering hides denied tools from the model-facing tool list;
+- execution-time checks reject denied tools even if a model emits one anyway.
+
+Permission composition is monotonic for subagents: a child profile can reduce
+the parent permission view, but parent-denied tools remain denied and cannot be
+reintroduced by the child profile.
+
 ## Future GUI / IDE Path
 
 The TUI should be only one client of the same KB-aware runtime.

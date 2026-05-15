@@ -288,7 +288,7 @@ Verified:
 
 ## Slice 4: Add Agent Profiles And Tool Permission Filtering
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal:
 
@@ -318,6 +318,22 @@ Verification:
 - Unit tests prove child profiles inherit parent denies.
 - Existing tool tests pass under the primary profile.
 - `pnpm check`.
+
+Completed:
+
+- Added primary and initial subagent profiles with prompt additions, model slots, and tool permission defaults.
+- Added `ToolPermissionView` construction with parent-deny inheritance.
+- Filtered profile-visible tool prompts and native model tool schemas.
+- Enforced tool permissions inside `executeToolCall(...)` so denied tools fail even if emitted by a model.
+- Passed the primary profile permission view through normal runtime turns.
+- Documented profile and permission composition in `docs/ARCHITECTURE.md`.
+
+Verified:
+
+- `pnpm test -- test/tools.test.ts test/commands.test.ts`
+- `pnpm typecheck`
+- `pnpm check`
+- `mise run local-ci`
 
 ## Slice 5: Add `task`/`subagent` Tool Backed By `SubagentManager`
 

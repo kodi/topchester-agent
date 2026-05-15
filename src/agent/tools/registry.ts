@@ -38,6 +38,12 @@ export function getToolDefinition<Name extends ToolName>(name: Name): (typeof to
   return toolRegistry[name];
 }
 
-export function getToolPromptLines(): string[] {
-  return Object.values(toolRegistry).map((tool) => tool.prompt);
+export function getToolPromptLines(filter?: (toolName: ToolName) => boolean): string[] {
+  return getToolDefinitionsForPermissions(filter).map((tool) => tool.prompt);
+}
+
+export function getToolDefinitionsForPermissions(filter?: (toolName: ToolName) => boolean): RegisteredTool[] {
+  return Object.entries(toolRegistry)
+    .filter(([name]) => filter?.(name as ToolName) ?? true)
+    .map(([, tool]) => tool);
 }

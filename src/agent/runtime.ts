@@ -9,6 +9,7 @@ import { executeSlashCommand, parseSlashCommand } from "./commands.js";
 import { type ConversationTurn, buildConversationPrompt } from "./conversation.js";
 import { ABORT_CHOICE_VALUE, agentEvent, choiceAction, type AgentRuntimeEvent } from "./events.js";
 import { checkAgentReady } from "./health.js";
+import { createToolPermissionView, getProfileToolDefinitions, PRIMARY_AGENT_PROFILE } from "./profiles.js";
 import { getChatSystemPrompt } from "./prompts.js";
 import { createTaskPlanController, hasOpenTaskPlan, type TaskPlanState } from "./task-plan.js";
 import { type ModelAgentResult, type ModelReasoningSink } from "../model/index.js";
@@ -16,7 +17,6 @@ import {
   executeToolCall,
   isToolErrorResult,
   parseToolCallWithSource,
-  toolRegistry,
   type ModelToolCall,
   type ToolCall,
   type ToolExecutionResult,
@@ -131,6 +131,9 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     let nextPrompt = prompt;
     let totalDurationMs = 0;
     const tokenUsageTotals: TurnTokenUsageTotals = {};
+    const profile = PRIMARY_AGENT_PROFILE;
+    const permissions = createToolPermissionView(profile);
+    const tools = getProfileToolDefinitions(permissions);
     let lastModelId = "model";
     let afterTool: ToolCall["tool"] | undefined;
     let toolProtocolOverride = readToolProtocolEnvOverride();
@@ -138,7 +141,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
     for (let toolCalls = 0; toolCalls <= MAX_TOOL_CALLS_PER_TURN; toolCalls += 1) {
       const startedAt = Date.now();
-      const system = getChatSystemPrompt();
+      const system = getChatSystemPrompt({ profile, permissions });
       this.context.logger.debug(
         {
           event: "model_prompt",
@@ -159,6 +162,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         abortSignal,
         toolProtocol: toolProtocolOverride,
         onReasoning: options.onReasoning,
+        tools,
       });
       const durationMs = Date.now() - startedAt;
       const toolCall = result.toolCalls[0];
@@ -263,6 +267,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       const toolResult = await executeToolCall(this.context.workspaceRoot, executableToolCall, {
         logger: this.context.logger,
         taskPlan: this.taskPlan,
+        profile,
+        permissions,
       });
       yield agentEvent.toolCall(executableToolCall, formatToolCallMessage(executableToolCall, toolResult));
       if (!isToolErrorResult(toolResult) && toolResult.tool === "plan_todo") {
@@ -430,12 +436,12 @@ async function generateAgentStep(
     abortSignal?: AbortSignal;
     toolProtocol?: ToolProtocolOverride;
     onReasoning?: ModelReasoningSink;
+    tools: ReturnType<typeof getProfileToolDefinitions>;
   }
 ): Promise<ModelAgentResult> {
   if ("generateAgentStep" in context.modelGateway && typeof context.modelGateway.generateAgentStep === "function") {
     return context.modelGateway.generateAgentStep({
       ...request,
-      tools: Object.values(toolRegistry),
     });
   }
 
