@@ -16,6 +16,10 @@ permissions:
   contents: write
   id-token: write
 
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
 jobs:
   publish:
     name: Bump version and publish
@@ -25,7 +29,14 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
         with:
+          ref: main
           fetch-depth: 0
+
+      - name: Refresh main
+        run: |
+          git fetch origin main --tags
+          git checkout -B main origin/main
+          git pull --ff-only origin main
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -69,4 +80,4 @@ jobs:
         run: npm publish --access public --provenance
 
       - name: Push version bump and tag
-        run: git push --follow-tags
+        run: git push origin main --follow-tags
