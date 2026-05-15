@@ -432,6 +432,14 @@ describe("agent tools", () => {
     expect(prompt).toContain("Do not use inspect_command for file creation or file mutation");
   });
 
+  it("tells the model to verify edits with run_validator", () => {
+    const prompt = getChatSystemPrompt();
+
+    expect(prompt).toContain("After code edits, use run_validator when there is a relevant test");
+    expect(prompt).toContain("Failed run_validator exits are evidence");
+    expect(prompt).toContain("Do not use inspect_command for tests, builds, lint, typecheck");
+  });
+
   it("tells the model inspect_command is only for read-only orientation", () => {
     const prompt = getChatSystemPrompt();
 

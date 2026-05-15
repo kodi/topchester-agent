@@ -692,7 +692,19 @@ Dependencies:
 
 ### Slice 4: Prompt And Docs For Verification
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
+
+Completed in Slice 4:
+
+- Updated system prompt guidance so validation after edits points to `run_validator`, failed validator exits are treated as evidence, and `inspect_command` stays orientation-only.
+- Updated `docs/cli.md`, `docs/tui.md`, and `docs/plans/kb-implementation-checklist.md` with the new validator tool behavior, compact row shape, and logging note.
+- Added prompt tests for the validator guidance.
+
+Verification:
+
+```sh
+pnpm test test/tools.test.ts test/commands.test.ts
+```
 
 Goal: Teach the model and users that validation is now first-class.
 

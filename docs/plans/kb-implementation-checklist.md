@@ -180,6 +180,7 @@ Status legend:
 - [x] Add workspace-scoped `edit_file` for exact existing-file replacements
 - [x] Add workspace-scoped `write_file` for create-by-default UTF-8 file writes
 - [x] Add workspace-scoped `inspect_command` for read-only repo orientation through a narrow allowlist
+- [x] Add workspace-scoped `run_validator` for strict tests, lint, typecheck, build, check, format-check, and smoke verification
 - [x] Add workspace-scoped `git_status`, `git_diff`, and `git_log` for structured Git inspection
 - [x] Add guarded `git_add` for explicit-path staging after current status acknowledgement
 - [x] Add guarded `git_commit` for exact staged-path commits when the user explicitly asks
@@ -195,6 +196,7 @@ Status legend:
 - [x] Avoid debug-level logging of full `edit_file` old/new edit text
 - [x] Avoid debug-level logging of full `write_file` content
 - [x] Avoid debug-level logging of full `git_diff` content
+- [x] Avoid debug-level logging of full validator output
 - [ ] Add approval-backed Git/network operations such as branch creation, push, pull, and PR creation
 
 ## MCP Adapter
