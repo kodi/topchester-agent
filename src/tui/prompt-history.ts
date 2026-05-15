@@ -55,4 +55,9 @@ export class PromptHistory {
     this.historyIndex = -1;
     this.draft = "";
   }
+
+  clear(): void {
+    this.prompts = [];
+    this.resetBrowsing();
+  }
 }

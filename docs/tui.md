@@ -48,6 +48,7 @@ KB status labels:
 - Type `/` to see slash command suggestions.
 - Use `Up` and `Down` in slash command suggestions to choose an item.
 - Press `Tab` while a slash command suggestion is selected to complete it.
+- Type `/new` to clear the terminal and start a fresh session in the same workspace.
 - Use `Up` and `Down` in the normal prompt to browse submitted prompt history.
 - Use your terminal scrollback to review chat history with the mouse wheel, touchpad, scrollbar, or terminal shortcuts such as `Shift+PageUp`.
 - Press `Ctrl-C` once to show `press Ctrl-C again to exit.`.
@@ -61,6 +62,7 @@ Slash commands run inside the TUI before a message is sent to the model.
 
 Most used commands:
 
+- `/new` — clear the terminal and start a fresh project-local session.
 - `/kb status` — show files that are not current in the knowledge base.
 - `/kb sync` — process non-clean project files into L1 entries.
 - `/kb compile` — process all in-scope project files into L1 entries.
@@ -72,6 +74,8 @@ Example:
 ```text
 /kb status
 ```
+
+`/new` keeps you in the same workspace but replaces the current thread with a normal startup screen, creates a new session folder, clears prompt history, and reruns startup checks.
 
 The TUI refreshes the KB status line after `/kb init`, `/kb reset`, `/kb compile`, `/kb sync`, and `/kb status`.
 

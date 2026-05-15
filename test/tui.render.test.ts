@@ -1044,6 +1044,43 @@ describe("TUI rendering", () => {
     expect(submittedMessage).toBe("");
   });
 
+  it("resets local TUI state for a fresh session", () => {
+    const terminal = new FakeTerminal();
+    const app = new ChatLayout(terminal, [systemMessage("Old thread")], "repo", "model [provider]");
+
+    app.setInputValue("remembered");
+    app.handleInput("\n");
+    app.setInputValue("draft");
+    app.setTaskPlan({
+      updatedAt: "2026-05-15T00:00:00.000Z",
+      items: [{ text: "Old plan", status: "in_progress" }],
+    });
+    app.setKnowledgeStatus({
+      workspaceRoot: "/repo",
+      kbPath: "/repo/topchester-kb",
+      cachePath: "/repo/.agents/topchester-kb-cache",
+      kbExists: true,
+      kbIsDirectory: true,
+      cacheExists: false,
+      cacheIsDirectory: false,
+      kbContentState: "ready",
+      kbPathSource: "default",
+      cachePathSource: "default",
+    });
+
+    app.resetForNewSession([systemMessage("Fresh startup")]);
+    app.handleInput("\u001b[A");
+    const output = stripAnsi(app.render(80).join("\n"));
+
+    expect(output).toContain("Fresh startup");
+    expect(output).not.toContain("Old thread");
+    expect(output).not.toContain("Old plan");
+    expect(output).not.toContain("remembered");
+    expect(output).not.toContain("draft");
+    expect(output).not.toContain("kb: ready");
+    expect(terminal.clearCount).toBe(1);
+  });
+
   it("shows slash command suggestions while typing a command prefix", () => {
     const terminal = new FakeTerminal();
     terminal.rows = 14;
@@ -1425,6 +1462,131 @@ describe("TUI rendering", () => {
       { kind: "message", role: "system", text: "Startup one" },
       { kind: "message", role: "system", text: "Startup two" },
     ]);
+  });
+
+  it("starts a new session and clears the terminal for /new", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tui-new-session-"));
+    const context = createTestContext(workspace);
+    const oldSession = await createSession(workspace);
+    const terminal = new FakeTerminal();
+    const app = new ChatLayout(
+      terminal,
+      [systemMessage("Old thread"), userMessage("/new")],
+      "repo",
+      "model [provider]"
+    );
+    let renderRequests = 0;
+    const shell = new TopchesterTuiShell(
+      context,
+      {
+        async checkAgent() {
+          return [agentEvent.systemMessage("Agent: ready")];
+        },
+        async checkKnowledgeBase() {
+          return [agentEvent.status("ready")];
+        },
+        async submitSlashCommand() {
+          return [agentEvent.systemMessage("should not run")];
+        },
+        async *submitMessageStream() {
+          yield agentEvent.assistantMessage("unused");
+        },
+        async submitMessage() {
+          return [];
+        },
+      },
+      { session: oldSession }
+    );
+
+    await (
+      shell as unknown as {
+        submitSlashCommand(app: ChatLayout, tui: { requestRender(): void }, command: string): Promise<void>;
+      }
+    ).submitSlashCommand(
+      app,
+      {
+        requestRender() {
+          renderRequests += 1;
+        },
+      },
+      "/new"
+    );
+
+    const sessionDirs = await readSessionDirs(workspace);
+    const newSessionId = sessionDirs.find((sessionId) => sessionId !== oldSession.sessionId);
+
+    expect(sessionDirs).toHaveLength(2);
+    expect(newSessionId).toBeDefined();
+    const newLines = await readSessionLines(workspace, newSessionId!);
+    const output = stripAnsi(app.render(80).join("\n"));
+
+    expect(terminal.clearCount).toBe(1);
+    expect(renderRequests).toBeGreaterThan(0);
+    expect(output).toContain("Agent: ready");
+    expect(output).not.toContain("Old thread");
+    expect(output).not.toContain("▌ /new");
+    expect(newLines.some((line) => line.text === "/new")).toBe(false);
+    expect(newLines.some((line) => line.text === "Agent: ready")).toBe(true);
+  });
+
+  it("prints the new session id in the exit banner after /new", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tui-new-exit-banner-"));
+    const context = createTestContext(workspace);
+    const oldSession = await createSession(workspace);
+    const terminal = new FakeTerminal();
+    const app = new ChatLayout(
+      terminal,
+      [systemMessage("Old thread"), userMessage("/new")],
+      "repo",
+      "model [provider]"
+    );
+    const shell = new TopchesterTuiShell(
+      context,
+      {
+        async checkAgent() {
+          return [];
+        },
+        async checkKnowledgeBase() {
+          return [];
+        },
+        async submitSlashCommand() {
+          return [];
+        },
+        async *submitMessageStream() {
+          yield agentEvent.assistantMessage("unused");
+        },
+        async submitMessage() {
+          return [];
+        },
+      },
+      { session: oldSession }
+    );
+
+    await (
+      shell as unknown as {
+        submitSlashCommand(app: ChatLayout, tui: { requestRender(): void }, command: string): Promise<void>;
+      }
+    ).submitSlashCommand(app, { requestRender() {} }, "/new");
+
+    const sessionDirs = await readSessionDirs(workspace);
+    const newSessionId = sessionDirs.find((sessionId) => sessionId !== oldSession.sessionId);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      (
+        shell as unknown as {
+          printExitBannerForCurrentSession(fallbackSession: SessionHandle): void;
+        }
+      ).printExitBannerForCurrentSession(oldSession);
+
+      const output = log.mock.calls.map((call) => call.join(" ")).join("\n");
+
+      expect(newSessionId).toBeDefined();
+      expect(output).toContain(`topchester --resume ${newSessionId!}`);
+      expect(output).not.toContain(`topchester --resume ${oldSession.sessionId}`);
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it("converts runtime events to structured persisted payloads", () => {

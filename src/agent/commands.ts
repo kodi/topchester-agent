@@ -64,6 +64,10 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
     value: "/kb reset",
     description: "delete the local knowledge base and cache",
   },
+  {
+    value: "/new",
+    description: "start a fresh session",
+  },
 ];
 
 export const slashCommands: SlashCommand[] = [
@@ -71,6 +75,11 @@ export const slashCommands: SlashCommand[] = [
     name: "kb",
     description: "knowledge base commands",
     execute: executeKbCommand,
+  },
+  {
+    name: "new",
+    description: "start a fresh interactive TUI session",
+    execute: executeNewCommand,
   },
 ];
 
@@ -104,7 +113,7 @@ export async function executeSlashCommand(input: string, context: SlashCommandCo
   const command = slashCommands.find((candidate) => candidate.name === parsed.name);
 
   if (!command) {
-    return { messages: [`Unknown command: /${parsed.name}`, "Try /kb status."] };
+    return { messages: [`Unknown command: /${parsed.name}`, "Try /kb status or /new."] };
   }
 
   return command.execute(parsed.args, context);
@@ -169,6 +178,12 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
   }
 
   return { messages: ["Usage: /kb init, /kb compile, /kb sync, /kb reset, or /kb status"] };
+}
+
+function executeNewCommand(): SlashCommandResult {
+  return {
+    messages: ["/new starts a fresh session in the interactive TUI."],
+  };
 }
 
 export function formatKnowledgeStatus(status: KnowledgeStatus): string[] {

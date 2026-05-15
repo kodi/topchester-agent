@@ -35,6 +35,7 @@ export interface TuiShellOptions {
 export class TopchesterTuiShell implements TuiShell {
   private readonly runtime: AgentRuntime;
   private session: SessionHandle | undefined;
+  private sessionStartedAt = Date.now();
   private taskPlanNoticeTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
@@ -47,7 +48,7 @@ export class TopchesterTuiShell implements TuiShell {
   }
 
   async render(): Promise<void> {
-    const startedAt = Date.now();
+    this.sessionStartedAt = Date.now();
     const session = this.options.session ?? (await createSession(this.context.workspaceRoot));
     this.session = session;
     const isResumed = this.options.session !== undefined;
@@ -74,7 +75,7 @@ export class TopchesterTuiShell implements TuiShell {
 
       didExit = true;
       tui.stop();
-      printExitBanner(session.sessionId, Date.now() - startedAt);
+      this.printExitBannerForCurrentSession(session);
     };
     const app = new ChatLayout(terminal, messages, folderName, modelLabel, {
       transcriptMode: "inline",
@@ -291,6 +292,11 @@ export class TopchesterTuiShell implements TuiShell {
   }
 
   private async submitSlashCommand(app: ChatLayout, tui: TUI, command: string): Promise<void> {
+    if (isNewSessionCommand(command)) {
+      await this.startNewSession(app, tui);
+      return;
+    }
+
     const busy = new BusyIndicator(app, tui, {
       status: "running command",
       promptHint: "working...",
@@ -322,6 +328,23 @@ export class TopchesterTuiShell implements TuiShell {
       busy.stop();
       tui.requestRender();
     }
+  }
+
+  private async startNewSession(app: ChatLayout, tui: TUI): Promise<void> {
+    if (this.taskPlanNoticeTimer) {
+      clearTimeout(this.taskPlanNoticeTimer);
+      this.taskPlanNoticeTimer = undefined;
+    }
+
+    const session = await createSession(this.context.workspaceRoot);
+    const messages = getStartupThreadMessages(this.context);
+    this.session = session;
+    this.sessionStartedAt = Date.now();
+
+    await persistMessagesWithWarning(session, messages, messages);
+    app.resetForNewSession(messages);
+    tui.requestRender();
+    await this.checkAgent(app, tui);
   }
 
   private async applyRuntimeEvents(
@@ -394,6 +417,12 @@ export class TopchesterTuiShell implements TuiShell {
     } catch (error) {
       app.addMessage(systemMessage(`Session save failed: ${formatPlainError(error)}`));
     }
+  }
+
+  private printExitBannerForCurrentSession(fallbackSession: SessionHandle): void {
+    const session = this.session ?? fallbackSession;
+
+    printExitBanner(session.sessionId, Date.now() - this.sessionStartedAt);
   }
 }
 
@@ -564,6 +593,10 @@ function getSlashCommandActivities(command: string): string[] {
   }
 
   return ["Running command...", "Preparing project knowledge folders...", "Writing project knowledge folders..."];
+}
+
+function isNewSessionCommand(command: string): boolean {
+  return command.trim() === "/new";
 }
 
 export interface ExitConfirmationOptions {

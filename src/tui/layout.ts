@@ -163,6 +163,29 @@ export class ChatLayout implements Component, Focusable {
     this.pasteCounter = 0;
   }
 
+  resetForNewSession(messages: ChatMessage[]): void {
+    this.messages.splice(0, this.messages.length, ...messages);
+    this.promptValue = "";
+    this.promptCursor = 0;
+    this.status = "ready";
+    this.knowledgeStatus = undefined;
+    this.ephemeralLine = undefined;
+    this.taskPlanNoticeLine = undefined;
+    this.noticeLine = undefined;
+    this.promptHint = undefined;
+    this.taskPlan = undefined;
+    this.cancelPending = undefined;
+    this.modalActionHandler = undefined;
+    this.activeModalActionIndex = 0;
+    this.activeSlashSuggestionIndex = 0;
+    this.threadScrollOffset = 0;
+    this.pasteBuffer = undefined;
+    this.pasteCounter = 0;
+    this.pastedContent.clear();
+    this.promptHistory.clear();
+    this.terminal.clearScreen();
+  }
+
   getConversationTurns(): ConversationTurn[] {
     return this.messages.flatMap((message): ConversationTurn[] => {
       switch (message.kind) {

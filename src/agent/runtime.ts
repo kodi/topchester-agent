@@ -208,7 +208,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         tools,
       });
       const durationMs = Date.now() - startedAt;
-      const toolCall = result.toolCalls[0];
+      const modelToolCalls = getExecutableModelToolCalls(result);
+      const toolCall = modelToolCalls[0];
       totalDurationMs += durationMs;
       lastModelId = result.modelId;
       addTokenUsageTotals(tokenUsageTotals, result.usage);
@@ -291,8 +292,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         return;
       }
 
-      if (result.toolCalls.length > 1 && result.toolCalls.every((call) => call.tool === "task")) {
-        const taskCalls = result.toolCalls.map((call) => call as ToolCall);
+      if (modelToolCalls.length > 1 && modelToolCalls.every((call) => call.tool === "task")) {
+        const taskCalls = modelToolCalls.map((call) => call as ToolCall);
         const taskResults: ToolExecutionResult<ToolResult>[] = [];
 
         for (let index = 0; index < taskCalls.length; index += DEFAULT_TASK_CONCURRENCY) {
@@ -308,7 +309,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 permissions,
                 subagents,
                 abortSignal,
-                toolCallId: result.toolCalls[index + batchIndex]?.id,
+                toolCallId: modelToolCalls[index + batchIndex]?.id,
                 eventSink: (event) => taskEventQueue.push(event),
               })
             )
@@ -338,8 +339,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         continue;
       }
 
-      if (result.toolCalls.length > 1 && result.toolCalls.every((call) => isParallelSafeToolName(call.tool))) {
-        const parallelCalls = result.toolCalls.map((call) => call as ToolCall);
+      if (modelToolCalls.length > 1 && modelToolCalls.every((call) => isParallelSafeToolName(call.tool))) {
+        const parallelCalls = modelToolCalls.map((call) => call as ToolCall);
         const parallelResults = await Promise.all(
           parallelCalls.map((call, index) =>
             executeToolCall(this.context.workspaceRoot, call, {
@@ -350,7 +351,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
               permissions,
               subagents,
               abortSignal,
-              toolCallId: result.toolCalls[index]?.id,
+              toolCallId: modelToolCalls[index]?.id,
             })
           )
         );
@@ -722,6 +723,33 @@ async function generateAgentStep(
     warnings: [],
     openRouterRoutingApplied: false,
   };
+}
+
+function getExecutableModelToolCalls(result: ModelAgentResult): ModelToolCall[] {
+  if (result.toolCalls.length > 0) {
+    return result.toolCalls;
+  }
+
+  const allowedSources =
+    result.toolProtocol === "text-xml"
+      ? (["text-xml"] as const)
+      : result.toolProtocol === "text-json"
+        ? (["text-json"] as const)
+        : (["text-json", "text-xml"] as const);
+  const parsed = parseToolCallWithSource(result.text, allowedSources);
+
+  if (!parsed) {
+    return [];
+  }
+
+  return [
+    {
+      id: `${parsed.source}-runtime-recovered-0`,
+      tool: parsed.call.tool,
+      args: parsed.call.args,
+      source: parsed.source,
+    } as ModelToolCall,
+  ];
 }
 
 function getSuppressiblePlanTodoAnswer(

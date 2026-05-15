@@ -23,7 +23,7 @@ describe("slash commands", () => {
 
   it("reports unknown commands", async () => {
     await expect(executeSlashCommand("/nope", { workspaceRoot: "/repo" })).resolves.toEqual({
-      messages: ["Unknown command: /nope", "Try /kb status."],
+      messages: ["Unknown command: /nope", "Try /kb status or /new."],
     });
   });
 
@@ -48,6 +48,10 @@ describe("slash commands", () => {
       {
         value: "/kb reset",
         description: "delete the local knowledge base and cache",
+      },
+      {
+        value: "/new",
+        description: "start a fresh session",
       },
     ]);
     expect(getSlashCommandSuggestions("/k")).toEqual([
@@ -84,6 +88,12 @@ describe("slash commands", () => {
         description: "delete the local knowledge base and cache",
       },
     ]);
+    expect(getSlashCommandSuggestions("/n")).toEqual([
+      {
+        value: "/new",
+        description: "start a fresh session",
+      },
+    ]);
     expect(getSlashCommandSuggestions("/kb s")).toEqual([
       {
         value: "/kb status",
@@ -96,6 +106,12 @@ describe("slash commands", () => {
     ]);
     expect(getSlashCommandSuggestions("/nope")).toEqual([]);
     expect(getSlashCommandSuggestions("hello")).toEqual([]);
+  });
+
+  it("reports that /new is an interactive TUI command outside the TUI", async () => {
+    await expect(executeSlashCommand("/new", { workspaceRoot: "/repo" })).resolves.toEqual({
+      messages: ["/new starts a fresh session in the interactive TUI."],
+    });
   });
 
   it("reports /kb usage for unknown KB subcommands", async () => {
@@ -1304,6 +1320,77 @@ describe("slash commands", () => {
       ])
     );
     expect(taskPlanEvents.at(-1)?.type === "task_plan" ? taskPlanEvents.at(-1)?.plan.items : undefined).toEqual([]);
+  });
+
+  it("recovers a text tool call when the gateway omits normalized tool calls", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    await writeFile(join(workspace, "notes.txt"), "hello\n");
+    const textResult = (text: string) => ({
+      text,
+      providerId: "fake",
+      modelId: "fake-agent",
+      purpose: "agent.primary" as const,
+      toolCalls: [],
+      toolProtocol: "text-json" as const,
+      protocolAttempts: [{ protocol: "text-json" as const, status: "used" as const }],
+      providerRejectedTools: false,
+      warnings: [],
+      openRouterRoutingApplied: false,
+    });
+    let calls = 0;
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep() {
+          calls += 1;
+
+          if (calls === 1) {
+            return textResult(
+              JSON.stringify({
+                tool: "plan_todo",
+                args: {
+                  items: [
+                    { text: "Plan", status: "completed" },
+                    { text: "Read notes", status: "in_progress" },
+                  ],
+                },
+              })
+            );
+          }
+
+          if (calls === 2) {
+            return textResult(JSON.stringify({ tool: "read_file", args: { path: "notes.txt" } }));
+          }
+
+          if (calls === 3) {
+            return textResult(
+              JSON.stringify({
+                tool: "plan_todo",
+                args: {
+                  items: [
+                    { text: "Plan", status: "completed" },
+                    { text: "Read notes", status: "completed" },
+                  ],
+                },
+              })
+            );
+          }
+
+          return textResult("Read notes.txt.");
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "read notes with a plan");
+
+    expect(
+      events
+        .filter((event) => event.type === "tool_call")
+        .map((event) => (event.type === "tool_call" ? event.label : ""))
+    ).toEqual(["plan_todo: 2 items, 1 active", "read_file: notes.txt", "plan_todo: 2 items, 0 active"]);
+    expect(events).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "message", role: "assistant", text: "Read notes.txt." })])
+    );
   });
 
   it("continues executing tool calls until the model gives a final answer", async () => {

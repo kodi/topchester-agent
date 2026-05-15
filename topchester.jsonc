@@ -5,7 +5,7 @@
   },
   "tools": {
     "commands": {
-      "allowExact": ["node --version"],
+      "allowExact": ["node --version", "mise run local-ci", "oxfmt topchester.jsonc", "mise local-ci", "pnpm format"],
     },
   },
 }

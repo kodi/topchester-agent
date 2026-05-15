@@ -263,6 +263,7 @@ export class ModelGateway {
       prompt: request.prompt,
       providerOptions: buildProviderOptions(resolved.providerId, resolved.providerConfig),
       abortSignal: request.abortSignal,
+      onError: noopStreamErrorHandler,
     });
 
     yield* result.textStream;
@@ -392,6 +393,7 @@ export class ModelGateway {
       providerOptions,
       abortSignal: request.abortSignal,
       includeRawChunks: true,
+      onError: noopStreamErrorHandler,
     });
     guardStreamTextResultRejections(result);
     let rawUsageBody: unknown;
@@ -437,6 +439,7 @@ export class ModelGateway {
       providerOptions: buildProviderOptions(resolved.providerId, resolved.providerConfig),
       abortSignal: request.abortSignal,
       includeRawChunks: true,
+      onError: noopStreamErrorHandler,
     });
     guardStreamTextResultRejections(result);
     let rawUsageBody: unknown;
@@ -471,6 +474,8 @@ export class ModelGateway {
     };
   }
 }
+
+function noopStreamErrorHandler(): void {}
 
 function guardStreamTextResultRejections(result: {
   text?: PromiseLike<unknown>;
