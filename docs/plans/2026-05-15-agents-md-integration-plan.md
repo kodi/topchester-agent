@@ -356,7 +356,7 @@ Dependencies:
 
 ### Slice 2: Base Runtime Prompt Injection
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Include workspace-root instruction context in normal agent turns.
 
@@ -378,6 +378,7 @@ Verification:
 
 - `pnpm test test/agent-runtime.test.ts`
 - `pnpm test test/logging.test.ts`
+- 2026-05-16: Passed `pnpm test test/agent-runtime.test.ts`, `pnpm test test/logging.test.ts`, `pnpm exec tsgo --noEmit`, and `pnpm format`.
 
 Dependencies:
 
@@ -594,4 +595,4 @@ Docs and smoke:
 
 ## Next Slice
 
-Start with Slice 2. Wire the resolver into base runtime prompts and startup/logging behavior without changing path-scoped tool behavior yet.
+Start with Slice 3. Add path-scoped instruction discovery to file tools with duplicate suppression and edit/write retry guards.

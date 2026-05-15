@@ -87,6 +87,14 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
     });
 
     await applyRuntimeEvents({
+      events: (await runtime.checkProjectInstructions?.()) ?? [],
+      session,
+      jsonEvents,
+      runId,
+      plain: !options.json,
+    });
+
+    await applyRuntimeEvents({
       events: await runtime.checkKnowledgeBase(),
       session,
       jsonEvents,

@@ -8,6 +8,7 @@ import { type ConversationTurn, buildConversationPrompt } from "../conversation.
 import { ABORT_CHOICE_VALUE, agentEvent, choiceAction, type AgentRuntimeEvent } from "../events.js";
 import { checkAgentReady } from "../health.js";
 import { formatHookContextsForPrompt, runTopchesterHooks, type HookRunPayload, type HookRunResult } from "../hooks.js";
+import { resolveProjectInstructions, type ProjectInstructionContext } from "../instructions.js";
 import {
   createToolPermissionView,
   getProfileToolDefinitions,
@@ -61,6 +62,7 @@ const DEFAULT_TASK_CONCURRENCY = 3;
 export interface AgentRuntime {
   checkAgent(abortSignal?: AbortSignal): Promise<AgentRuntimeEvent[]>;
   checkKnowledgeBase(): Promise<AgentRuntimeEvent[]>;
+  checkProjectInstructions?(): Promise<AgentRuntimeEvent[]>;
   runSessionStartHooks?(
     session?: SessionHandle,
     options?: { isResumed?: boolean; abortSignal?: AbortSignal }
@@ -156,6 +158,16 @@ export class TopchesterAgentRuntime implements AgentRuntime {
    */
   async checkKnowledgeBase(): Promise<AgentRuntimeEvent[]> {
     return getKnowledgeStatusEvents(await this.getKnowledgeStatusWithNonCleanFileCount());
+  }
+
+  async checkProjectInstructions(): Promise<AgentRuntimeEvent[]> {
+    const instructions = await this.resolveBaseProjectInstructions();
+
+    if (instructions.sources.length === 0) {
+      return [];
+    }
+
+    return [agentEvent.systemMessage(`Project instructions: ${instructions.sourceKeys.join(", ")}`)];
   }
 
   async runSessionStartHooks(
@@ -277,7 +289,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
     for (let toolCalls = 0; toolCalls <= MAX_TOOL_CALLS_PER_TURN; toolCalls += 1) {
       const startedAt = Date.now();
-      const system = getChatSystemPrompt({ profile, permissions });
+      const projectInstructions = await this.resolveBaseProjectInstructions();
+      const system = this.buildSystemPromptWithProjectInstructions({ profile, permissions }, projectInstructions);
       this.context.logger.debug(
         {
           event: "model_prompt",
@@ -286,6 +299,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           toolProtocol: toolProtocolOverride,
           promptLength: nextPrompt.length,
           systemLength: system.length,
+          projectInstructionSources: summarizeProjectInstructionSources(projectInstructions),
+          projectInstructionsTruncated: projectInstructions.truncated,
           prompt: nextPrompt,
           system,
         },
@@ -865,6 +880,19 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     return hookContext ? `${prompt}\n\n${hookContext}` : prompt;
   }
 
+  private async resolveBaseProjectInstructions(): Promise<ProjectInstructionContext> {
+    return resolveProjectInstructions(this.context.workspaceRoot, { logger: this.context.logger });
+  }
+
+  private buildSystemPromptWithProjectInstructions(
+    options: Parameters<typeof getChatSystemPrompt>[0],
+    instructions: ProjectInstructionContext
+  ): string {
+    const system = getChatSystemPrompt(options);
+
+    return instructions.formatted ? `${system}\n\n${instructions.formatted}` : system;
+  }
+
   private async resolveRunCommandApproval(
     call: ToolCall,
     toolCallId: string | undefined,
@@ -1075,4 +1103,18 @@ function isL1ContextDisabledByEnv(): boolean {
   const value = process.env.TOPCHESTER_DISABLE_L1_CONTEXT?.trim().toLowerCase();
 
   return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+
+function summarizeProjectInstructionSources(instructions: ProjectInstructionContext): Array<{
+  path: string;
+  scopePath: string;
+  bytes: number;
+  truncated: boolean;
+}> {
+  return instructions.sources.map((source) => ({
+    path: source.relativePath,
+    scopePath: source.scopePath,
+    bytes: source.bytes,
+    truncated: source.truncated,
+  }));
 }

@@ -2,6 +2,8 @@ import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { type AppContext } from "../src/app/context.js";
+import { TopchesterAgentRuntime } from "../src/agent/runtime/index.js";
 import { executeToolCall, parseToolCall } from "../src/agent/tools.js";
 import { createTopchesterLogger } from "../src/logging/index.js";
 
@@ -262,6 +264,66 @@ describe("logging", () => {
         ])
       );
       expect(logText).not.toContain("SECRET_COMMAND_OUTPUT");
+    });
+  });
+
+  it("logs project instruction source metadata for model prompts", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-logging-"));
+    await writeFile(join(workspace, "AGENTS.md"), "Use careful wording.\n");
+
+    await withEnv({ TOPCHESTER_LOG_LEVEL: "debug", TOPCHESTER_LOG_FILE: "" }, async () => {
+      const loggerInfo = createTopchesterLogger(workspace);
+      const runtime = new TopchesterAgentRuntime({
+        workspaceRoot: workspace,
+        config: {},
+        devFlags: new Set(),
+        logger: loggerInfo.logger,
+        modelGateway: {
+          async generateText() {
+            return {
+              text: "Done.",
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          },
+        } as unknown as AppContext["modelGateway"],
+      });
+
+      await runtime.submitMessage([], "hello");
+
+      const logFilePath = loggerInfo.logFilePath;
+
+      if (!logFilePath) {
+        throw new Error("Expected logger to create a log file path.");
+      }
+
+      const logLines = (await readFile(logFilePath, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      const sourceMetadata = {
+        path: "AGENTS.md",
+        scopePath: ".",
+        bytes: Buffer.byteLength("Use careful wording.\n"),
+        truncated: false,
+      };
+
+      expect(logLines).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "project_instructions_resolved",
+            sourceCount: 1,
+            sources: [sourceMetadata],
+            truncated: false,
+          }),
+          expect.objectContaining({
+            event: "model_prompt",
+            projectInstructionSources: [sourceMetadata],
+            projectInstructionsTruncated: false,
+          }),
+        ])
+      );
     });
   });
 });

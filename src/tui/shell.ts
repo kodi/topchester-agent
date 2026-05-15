@@ -104,6 +104,7 @@ export class TopchesterTuiShell implements TuiShell {
       messages,
       (await this.runtime.runSessionStartHooks?.(session, { isResumed })) ?? []
     );
+    await this.appendStartupRuntimeEvents(session, messages, (await this.runtime.checkProjectInstructions?.()) ?? []);
     const folderName = getFolderName(this.context.workspaceRoot);
     const modelLabel = getModelLabel(this.context);
 
@@ -670,6 +671,7 @@ export class TopchesterTuiShell implements TuiShell {
       messages,
       (await this.runtime.runSessionStartHooks?.(session, { isResumed: false })) ?? []
     );
+    await this.appendStartupRuntimeEvents(session, messages, (await this.runtime.checkProjectInstructions?.()) ?? []);
     app.resetForNewSession(messages);
     tui.requestRender();
     await this.checkAgent(app, tui);
