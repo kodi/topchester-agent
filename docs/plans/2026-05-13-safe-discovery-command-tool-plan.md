@@ -80,10 +80,10 @@ Local checkouts were inspected as requested by `AGENTS.override.md`.
 
 Relevant files:
 
-- `/Users/kodi/data/github/codex/codex-rs/core/src/tools/handlers/shell_spec.rs`
-- `/Users/kodi/data/github/codex/codex-rs/core/src/tools/handlers/shell/shell_command.rs`
-- `/Users/kodi/data/github/codex/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs`
-- `/Users/kodi/data/github/codex/codex-rs/shell-command/src/command_safety/is_safe_command.rs`
+- `~/data/github/codex/codex-rs/core/src/tools/handlers/shell_spec.rs`
+- `~/data/github/codex/codex-rs/core/src/tools/handlers/shell/shell_command.rs`
+- `~/data/github/codex/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs`
+- `~/data/github/codex/codex-rs/shell-command/src/command_safety/is_safe_command.rs`
 
 Codex has the strongest pattern for this feature. It classifies known-safe commands, allows common read commands, and rejects dangerous flags such as `find -delete`, `find -exec`, and risky `rg` options. It can parse simple `bash -lc` command chains only when every command stays in a conservative safe subset.
 
@@ -93,10 +93,10 @@ Topchester should copy the idea of a hard known-safe classifier, but avoid launc
 
 Relevant files:
 
-- `/Users/kodi/data/github/opencode/packages/opencode/src/tool/shell.ts`
-- `/Users/kodi/data/github/opencode/packages/opencode/src/shell/shell.ts`
-- `/Users/kodi/data/github/opencode/packages/opencode/src/config/permission.ts`
-- `/Users/kodi/data/github/opencode/packages/opencode/src/permission/evaluate.ts`
+- `~/data/github/opencode/packages/opencode/src/tool/shell.ts`
+- `~/data/github/opencode/packages/opencode/src/shell/shell.ts`
+- `~/data/github/opencode/packages/opencode/src/config/permission.ts`
+- `~/data/github/opencode/packages/opencode/src/permission/evaluate.ts`
 
 OpenCode exposes a broad shell tool and uses tree-sitter parsing plus permission prompts. It is useful for permission UX and path scanning, but its own security notes say it is not sandboxed.
 
@@ -106,9 +106,9 @@ Topchester should not copy a broad shell as the default. Permission prompts are 
 
 Relevant files:
 
-- `/Users/kodi/data/github/cline/src/core/prompts/system-prompt/tools/execute_command.ts`
-- `/Users/kodi/data/github/cline/src/core/permissions/CommandPermissionController.ts`
-- `/Users/kodi/data/github/cline/src/integrations/terminal/CommandExecutor.ts`
+- `~/data/github/cline/src/core/prompts/system-prompt/tools/execute_command.ts`
+- `~/data/github/cline/src/core/permissions/CommandPermissionController.ts`
+- `~/data/github/cline/src/integrations/terminal/CommandExecutor.ts`
 
 Cline supports command allow/deny config and validates chained command segments. It also handles timeouts, cancellation, and large output.
 
@@ -118,8 +118,8 @@ Topchester should copy segment-by-segment validation and output handling, but sh
 
 Relevant files:
 
-- `/Users/kodi/data/github/kilocode/packages/opencode/src/tool/bash.ts`
-- `/Users/kodi/data/github/kilocode/packages/opencode/src/permission/index.ts`
+- `~/data/github/kilocode/packages/opencode/src/tool/bash.ts`
+- `~/data/github/kilocode/packages/opencode/src/permission/index.ts`
 
 Kilo is OpenCode-derived and adds useful access metadata and stronger protected-path behavior. It still exposes broad bash behind permissions.
 
@@ -129,11 +129,11 @@ Topchester should copy the idea of returning access/decision metadata, not the b
 
 Relevant files:
 
-- `/Users/kodi/data/github/pi/packages/coding-agent/src/core/tools/bash.ts`
-- `/Users/kodi/data/github/pi/packages/coding-agent/src/core/bash-executor.ts`
-- `/Users/kodi/data/github/pi/packages/coding-agent/src/core/tools/ls.ts`
-- `/Users/kodi/data/github/pi/packages/coding-agent/src/core/tools/grep.ts`
-- `/Users/kodi/data/github/pi/packages/coding-agent/examples/extensions/sandbox/index.ts`
+- `~/data/github/pi/packages/coding-agent/src/core/tools/bash.ts`
+- `~/data/github/pi/packages/coding-agent/src/core/bash-executor.ts`
+- `~/data/github/pi/packages/coding-agent/src/core/tools/ls.ts`
+- `~/data/github/pi/packages/coding-agent/src/core/tools/grep.ts`
+- `~/data/github/pi/packages/coding-agent/examples/extensions/sandbox/index.ts`
 
 Pi has a small bash executor, separate read-only tools, a read-only tool mode, and an optional sandbox extension example.
 

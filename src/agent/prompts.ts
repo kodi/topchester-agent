@@ -71,9 +71,12 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
       : []),
     ...(canUseTool("inspect_command")
       ? [
-          "- Use inspect_command only for quick read-only repo orientation when a short familiar command chain is clearer than several dedicated tool calls.",
+          "- Use inspect_command only for quick read-only repo orientation when the user did not ask to run a specific command and a short familiar command chain is clearer than several dedicated tool calls.",
           "- inspect_command is not a shell. Unsafe commands, shell expansion, scripts, installs, builds, tests, network access, and file mutation are not available through it.",
-        ]
+          canUseTool("run_command")
+            ? "- Do not use inspect_command when the user asks to run a specific command such as node --version, which node, or pnpm --version; use run_command or run_validator instead."
+            : "",
+        ].filter(Boolean)
       : []),
     ...(canUseTool("run_validator")
       ? [
@@ -87,6 +90,9 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
       : []),
     ...(canUseTool("run_command")
       ? [
+          "- When the user explicitly asks to run a command or asks for command output, use run_command unless a more specific tool is clearly the right fit.",
+          "- run_command is the general policy-gated command runner. Do not avoid it because a command might be disallowed; call run_command and let command policy return the allowed, rejected, or approval result.",
+          "- Prefer dedicated tools for file reads, file writes, edits, Git inspection, and searches.",
           "- Use run_command only for commands allowed by project command policy. Prefer dedicated read, edit, Git, and validator tools when they fit.",
           "- Do not use run_command for installs, deploys, network commands, destructive commands, interactive commands, file reads, file writes, Git inspection, or validation when run_validator can do it.",
         ]

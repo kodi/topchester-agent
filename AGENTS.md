@@ -17,3 +17,5 @@ Core invariant: Agent and KB are one system. Do not design or implement a normal
 CLI modifications should update `docs/cli.md` in the same change so command behavior stays tracked. TUI behavior changes should update `docs/tui.md`.
 
 Use PLAIN FOLK SPEAK in user-facing text, even for highly technical product concepts; for example, write something an average developer understands instead of phrasing like `missing canonical KB`.
+
+Never expose a user's full home directory path in user-facing docs, examples, comments, or responses. Use `~` for home-relative paths.

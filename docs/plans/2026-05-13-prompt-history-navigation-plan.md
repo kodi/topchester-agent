@@ -53,10 +53,10 @@ Existing tests in `test/tui.render.test.ts` already cover prompt rendering, user
 
 Local checkout findings:
 
-- OpenCode documents `history_previous: up` and `history_next: down` in `/Users/kodi/data/github/opencode/packages/web/src/content/docs/keybinds.mdx`.
-- OpenCode's app prompt history helper in `/Users/kodi/data/github/opencode/packages/app/src/components/prompt-input/history.ts` stores a bounded history, deduplicates consecutive entries, saves the current draft before history navigation, and restores that draft when moving back down.
+- OpenCode documents `history_previous: up` and `history_next: down` in `~/data/github/opencode/packages/web/src/content/docs/keybinds.mdx`.
+- OpenCode's app prompt history helper in `~/data/github/opencode/packages/app/src/components/prompt-input/history.ts` stores a bounded history, deduplicates consecutive entries, saves the current draft before history navigation, and restores that draft when moving back down.
 - OpenCode only allows history navigation at prompt boundaries through `canNavigateHistoryAtCursor(...)`, avoiding accidental history replacement while editing in the middle of text.
-- Pi's TUI editor has explicit history support in `/Users/kodi/data/github/pi/packages/tui/src/components/editor.ts`: it adds submitted text to history, navigates with arrow keys, and caps history at 100.
+- Pi's TUI editor has explicit history support in `~/data/github/pi/packages/tui/src/components/editor.ts`: it adds submitted text to history, navigates with arrow keys, and caps history at 100.
 - Pi's interactive help says cursor keys move the cursor or browse history, with `Up` browsing history when empty.
 
 Topchester's prompt is currently single-line and rendered through a narrower `Input` component, so V1 can use the simpler rule: in normal prompt mode, `Up`/`Down` navigate prompt history; chat scrolling stays on page keys and wheel.

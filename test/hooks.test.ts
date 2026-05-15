@@ -165,6 +165,91 @@ describe("agent hooks", () => {
       text: "Handled the blocked command.",
     });
   });
+
+  it("runs PermissionRequest hooks before interactive command approval", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-approval-"));
+    const script = join(workspace, "required.cjs");
+    const capture = join(workspace, "required-capture.json");
+    const prompts: string[] = [];
+    const approvalRequests: Array<{ command: string; workdir: string; reason: string }> = [];
+
+    await writeFile(
+      script,
+      [
+        "const fs = require('node:fs');",
+        "let input = '';",
+        "process.stdin.setEncoding('utf8');",
+        "process.stdin.on('data', (chunk) => { input += chunk; });",
+        "process.stdin.on('end', () => {",
+        "  fs.writeFileSync(process.argv[2], JSON.stringify({",
+        "    payload: JSON.parse(input),",
+        "    env: { TOPCHESTER_HOOK_EVENT: process.env.TOPCHESTER_HOOK_EVENT }",
+        "  }));",
+        "});",
+      ].join("\n")
+    );
+
+    const runtime = new TopchesterAgentRuntime({
+      ...createHookTestContext(workspace, {
+        hooks: {
+          PermissionRequest: [{ command: `node ${shellQuote(script)} ${shellQuote(capture)}` }],
+        },
+      }),
+      modelGateway: {
+        async generateAgentStep(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (request.prompt.includes("cancelled by user")) {
+            return fakeAgentStep("The command was not approved.");
+          }
+
+          return fakeAgentStep("", [
+            {
+              id: "run-command-approval-1",
+              source: "native" as const,
+              tool: "run_command",
+              args: { command: "node scripts/local-task.js", workdir: "." },
+            },
+          ]);
+        },
+      } as AppContext["modelGateway"],
+    });
+
+    const events = await collectRuntimeEvents(
+      runtime.submitMessageStream([], "run local task", undefined, {
+        async requestRunCommandApproval(request) {
+          approvalRequests.push(request);
+          return "cancel";
+        },
+      })
+    );
+
+    expect(approvalRequests).toHaveLength(1);
+    expect(approvalRequests[0]).toMatchObject({
+      command: "node scripts/local-task.js",
+      workdir: ".",
+    });
+    expect(prompts.some((prompt) => prompt.includes("cancelled by user"))).toBe(true);
+    expect(events.at(-2)).toMatchObject({
+      type: "message",
+      role: "assistant",
+      text: "The command was not approved.",
+    });
+
+    const captureJson = JSON.parse(await readFile(capture, "utf8")) as {
+      payload: Record<string, unknown>;
+      env: Record<string, unknown>;
+    };
+    expect(captureJson.payload).toMatchObject({
+      hook_event_name: "PermissionRequest",
+      event: "PermissionRequest",
+      notification_type: "permission_prompt",
+      source: "topchester",
+      command: "node scripts/local-task.js",
+      tool: { name: "run_command", callId: "run-command-approval-1" },
+    });
+    expect(captureJson.env).toEqual({ TOPCHESTER_HOOK_EVENT: "PermissionRequest" });
+  });
 });
 
 function createHookTestContext(workspaceRoot: string, config: TopchesterConfig): AppContext {

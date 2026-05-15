@@ -134,7 +134,7 @@ Options:
 Current behavior:
 
 - Creates a project-local session under `.agents/topchester/sessions/`.
-- Runs configured `SessionStart`, `UserPromptSubmit`, tool, and `Stop` hooks during the run.
+- Runs configured `SessionStart`, `UserPromptSubmit`/`TaskAcknowledge`, tool, `PermissionRequest`/`UserActionRequired`, and `Stop` hooks during the run.
 - Emits startup KB status before the prompt runs.
 - Persists user messages and runtime events to the session log.
 - Persists `plan_todo` task-plan events to the session log. Resume restores the latest visible plan without adding task-plan rows to future model context.

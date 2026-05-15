@@ -138,6 +138,7 @@ export const hookEventNames = [
   "UserPromptSubmit",
   "PreToolUse",
   "PostToolUse",
+  "PermissionRequest",
   "PreCompact",
   "Stop",
 ] as const;
@@ -146,6 +147,8 @@ export type HookEventName = (typeof hookEventNames)[number];
 
 const hookEventAliasMap = {
   TaskStart: "SessionStart",
+  TaskAcknowledge: "UserPromptSubmit",
+  UserActionRequired: "PermissionRequest",
   TaskComplete: "Stop",
 } as const satisfies Record<string, HookEventName>;
 
@@ -170,6 +173,7 @@ const canonicalHooksConfigSchema = z
     UserPromptSubmit: z.array(hookHandlerSchema).optional(),
     PreToolUse: z.array(hookHandlerSchema).optional(),
     PostToolUse: z.array(hookHandlerSchema).optional(),
+    PermissionRequest: z.array(hookHandlerSchema).optional(),
     PreCompact: z.array(hookHandlerSchema).optional(),
     Stop: z.array(hookHandlerSchema).optional(),
   })
@@ -178,6 +182,8 @@ const canonicalHooksConfigSchema = z
 const rawHooksConfigSchema = canonicalHooksConfigSchema
   .extend({
     TaskStart: z.array(hookHandlerSchema).optional(),
+    TaskAcknowledge: z.array(hookHandlerSchema).optional(),
+    UserActionRequired: z.array(hookHandlerSchema).optional(),
     TaskComplete: z.array(hookHandlerSchema).optional(),
   })
   .strict();

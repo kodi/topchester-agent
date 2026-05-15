@@ -118,7 +118,7 @@ The agent can use these workspace-scoped tools from the TUI:
 
 Tool activity appears as compact rows in the thread. These rows come from tool events, so regular system messages are still rendered as system messages even if their text mentions a tool name.
 
-Configured lifecycle hooks run during the same agent loop. Hook feedback appears as normal system messages. A `PreToolUse` hook can block a tool before it runs; the blocked result is shown as the tool row and sent back to the model so it can continue safely. External integrations such as peon-ping can play sounds by running through normal command hooks.
+Configured lifecycle hooks run during the same agent loop. Hook feedback appears as normal system messages. A `PreToolUse` hook can block a tool before it runs; the blocked result is shown as the tool row and sent back to the model so it can continue safely. `UserActionRequired` hooks run before interactive approval prompts. External integrations such as peon-ping can play sounds by running through normal command hooks.
 
 When the agent uses `plan_todo`, the current plan is pinned above the prompt instead of repeated as chat prose. It also prints a short transient notice such as `todo plan created`, `todo plan updated`, `todo plan completed`, or `todo plan cleared`. The pinned plan renders only the task items with status-colored `completed`, `in_progress`, and `pending` markers. It hides when empty, caps long plans, is restored from the latest session event on resume, and clears automatically when a new user message starts.
 

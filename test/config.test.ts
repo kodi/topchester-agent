@@ -159,6 +159,8 @@ describe("Topchester config loading", () => {
       JSON.stringify({
         hooks: {
           SessionStart: [{ command: ".topchester/hooks/project-start.sh" }],
+          TaskAcknowledge: [{ command: "peon >/dev/null" }],
+          UserActionRequired: [{ command: "peon-required >/dev/null" }],
         },
       })
     );
@@ -185,6 +187,8 @@ describe("Topchester config loading", () => {
       { command: ".topchester/hooks/project-start.sh" },
       { command: "topchester-user-start" },
     ]);
+    expect(config.hooks?.UserPromptSubmit).toEqual([{ command: "peon >/dev/null" }]);
+    expect(config.hooks?.PermissionRequest).toEqual([{ command: "peon-required >/dev/null" }]);
     expect(config.hooks?.Stop).toEqual([{ command: "peon >/dev/null" }]);
   });
 

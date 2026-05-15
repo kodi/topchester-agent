@@ -77,9 +77,9 @@ These were checked in the local checkouts named by `AGENTS.override.md`.
 
 Source checked:
 
-- `/Users/kodi/data/github/pi/packages/coding-agent/src/core/tools/edit.ts`
-- `/Users/kodi/data/github/pi/packages/coding-agent/src/core/tools/edit-diff.ts`
-- `/Users/kodi/data/github/pi/packages/coding-agent/src/core/tools/write.ts`
+- `~/data/github/pi/packages/coding-agent/src/core/tools/edit.ts`
+- `~/data/github/pi/packages/coding-agent/src/core/tools/edit-diff.ts`
+- `~/data/github/pi/packages/coding-agent/src/core/tools/write.ts`
 
 Relevant pattern:
 
@@ -98,10 +98,10 @@ Topchester should borrow this core shape.
 
 Source checked:
 
-- `/Users/kodi/data/github/opencode/packages/opencode/src/tool/edit.ts`
-- `/Users/kodi/data/github/opencode/packages/opencode/src/tool/write.ts`
-- `/Users/kodi/data/github/opencode/packages/opencode/src/tool/apply_patch.ts`
-- `/Users/kodi/data/github/opencode/packages/opencode/src/tool/registry.ts`
+- `~/data/github/opencode/packages/opencode/src/tool/edit.ts`
+- `~/data/github/opencode/packages/opencode/src/tool/write.ts`
+- `~/data/github/opencode/packages/opencode/src/tool/apply_patch.ts`
+- `~/data/github/opencode/packages/opencode/src/tool/registry.ts`
 
 Relevant pattern:
 
@@ -118,8 +118,8 @@ Topchester should borrow diff metadata and file-change events, but defer model-s
 
 Source checked:
 
-- `/Users/kodi/data/github/codex/codex-rs/apply-patch/apply_patch_tool_instructions.md`
-- `/Users/kodi/data/github/codex/codex-rs/apply-patch/src/lib.rs`
+- `~/data/github/codex/codex-rs/apply-patch/apply_patch_tool_instructions.md`
+- `~/data/github/codex/codex-rs/apply-patch/src/lib.rs`
 
 Relevant pattern:
 
@@ -133,11 +133,11 @@ Topchester should not start with this full grammar, but should keep the test dis
 
 Source checked:
 
-- `/Users/kodi/data/github/cline/src/core/prompts/system-prompt/tools/replace_in_file.ts`
-- `/Users/kodi/data/github/cline/src/core/prompts/system-prompt/tools/write_to_file.ts`
-- `/Users/kodi/data/github/cline/src/core/task/tools/handlers/WriteToFileToolHandler.ts`
-- `/Users/kodi/data/github/cline/src/integrations/editor/DiffViewProvider.ts`
-- `/Users/kodi/data/github/cline/cli/src/utils/DiffComputer.ts`
+- `~/data/github/cline/src/core/prompts/system-prompt/tools/replace_in_file.ts`
+- `~/data/github/cline/src/core/prompts/system-prompt/tools/write_to_file.ts`
+- `~/data/github/cline/src/core/task/tools/handlers/WriteToFileToolHandler.ts`
+- `~/data/github/cline/src/integrations/editor/DiffViewProvider.ts`
+- `~/data/github/cline/cli/src/utils/DiffComputer.ts`
 
 Relevant pattern:
 
@@ -152,10 +152,10 @@ Topchester should borrow small-block guidance and final-state feedback, but defe
 
 Source checked:
 
-- `/Users/kodi/data/github/kilocode/packages/kilo-docs/pages/automate/tools/apply-diff.md`
-- `/Users/kodi/data/github/kilocode/packages/kilo-docs/pages/code-with-ai/features/fast-edits.md`
-- `/Users/kodi/data/github/kilocode/packages/opencode/src/tool/edit.ts`
-- `/Users/kodi/data/github/kilocode/packages/opencode/src/tool/apply_patch.ts`
+- `~/data/github/kilocode/packages/kilo-docs/pages/automate/tools/apply-diff.md`
+- `~/data/github/kilocode/packages/kilo-docs/pages/code-with-ai/features/fast-edits.md`
+- `~/data/github/kilocode/packages/opencode/src/tool/edit.ts`
+- `~/data/github/kilocode/packages/opencode/src/tool/apply_patch.ts`
 
 Relevant pattern:
 

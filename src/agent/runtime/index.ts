@@ -654,7 +654,16 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       if (preHook.blocked) {
         toolResult = createToolErrorResult(executableToolCall.tool, preHook.blocked.message);
       } else {
-        const approval = await this.resolveRunCommandApproval(executableToolCall, options);
+        const approval = await this.resolveRunCommandApproval(
+          executableToolCall,
+          toolCall.id,
+          options,
+          session,
+          abortSignal
+        );
+        for (const event of approval.events) {
+          yield event;
+        }
 
         if (approval.cancelled) {
           toolResult = createToolErrorResult(executableToolCall.tool, approval.reason);
@@ -858,18 +867,24 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
   private async resolveRunCommandApproval(
     call: ToolCall,
-    options: AgentRuntimeSubmitMessageOptions
-  ): Promise<{ cancelled: false; approvedCommands: string[] } | { cancelled: true; reason: string }> {
+    toolCallId: string | undefined,
+    options: AgentRuntimeSubmitMessageOptions,
+    session: SessionHandle | undefined,
+    abortSignal: AbortSignal | undefined
+  ): Promise<
+    | { cancelled: false; approvedCommands: string[]; events: AgentRuntimeEvent[] }
+    | { cancelled: true; reason: string; events: AgentRuntimeEvent[] }
+  > {
     const approvedCommands = [...this.approvedRunCommands];
 
     if (call.tool !== "run_command") {
-      return { cancelled: false, approvedCommands };
+      return { cancelled: false, approvedCommands, events: [] };
     }
 
     const parsed = runCommandArgsSchema.safeParse(call.args);
 
     if (!parsed.success) {
-      return { cancelled: false, approvedCommands };
+      return { cancelled: false, approvedCommands, events: [] };
     }
 
     const decision = await validateRunCommandPolicy(parsed.data, {
@@ -879,14 +894,37 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     });
 
     if (decision.allowed) {
-      return { cancelled: false, approvedCommands };
+      return { cancelled: false, approvedCommands, events: [] };
     }
 
     if (!isRunCommandApprovalEligible(decision.reason) || !options.requestRunCommandApproval) {
-      return { cancelled: false, approvedCommands };
+      return { cancelled: false, approvedCommands, events: [] };
     }
 
     const command = decision.commands[0] ?? parsed.data.command.trim();
+    const actionRequiredHook = await this.runHookEvent(
+      "PermissionRequest",
+      this.createToolHookPayload("PermissionRequest", call, toolCallId, session, {
+        notification_type: "permission_prompt",
+        permission_mode: "",
+        command,
+        workdir: parsed.data.workdir,
+        reason: decision.reason,
+      }),
+      { toolName: call.tool, abortSignal }
+    );
+    const events = this.hookResultToEvents(actionRequiredHook);
+
+    if (actionRequiredHook.blocked || actionRequiredHook.stopped) {
+      const interruption = actionRequiredHook.blocked ?? actionRequiredHook.stopped!;
+
+      return {
+        cancelled: true,
+        reason: interruption.message,
+        events,
+      };
+    }
+
     const approval = await options.requestRunCommandApproval({
       command,
       workdir: parsed.data.workdir,
@@ -897,15 +935,16 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       return {
         cancelled: true,
         reason: `run_command cancelled by user for '${command}'.`,
+        events,
       };
     }
 
     if (approval === "allow_session" || approval === "allow_repo") {
       this.approvedRunCommands.add(command);
-      return { cancelled: false, approvedCommands: [...this.approvedRunCommands] };
+      return { cancelled: false, approvedCommands: [...this.approvedRunCommands], events };
     }
 
-    return { cancelled: false, approvedCommands: [...approvedCommands, command] };
+    return { cancelled: false, approvedCommands: [...approvedCommands, command], events };
   }
 
   /**

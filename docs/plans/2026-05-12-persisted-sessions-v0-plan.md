@@ -87,7 +87,7 @@ UUIDv7 is time-ordered, widely recognizable, and avoids inventing a custom ID fo
 {
   "version": 1,
   "sessionId": "0198f13c-8f3a-7c6a-9b2d-3a8f3e0c2d11",
-  "workspaceRoot": "/Users/kodi/data/personal/topchester-agent",
+  "workspaceRoot": "~/data/personal/topchester-agent",
   "createdAt": "2026-05-12T18:04:55.000Z",
   "updatedAt": "2026-05-12T18:12:10.000Z",
   "lastEventId": 24,

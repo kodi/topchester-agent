@@ -35,9 +35,9 @@ export interface RunCommandToolResult extends ToolResult<"run_command"> {
 
 export const runCommandTool = defineTool({
   name: "run_command",
-  description: "Run a strictly policy-approved project command inside the workspace.",
+  description: "Run a policy-gated command inside the workspace.",
   prompt:
-    'run_command: run a project command only when strict policy allows it; prefer run_validator for tests, lint, typecheck, build, check, format-check, and smoke. To use it, reply with only JSON: {"tool":"run_command","args":{"command":"node scripts/check-fixtures.mjs","workdir":".","timeout_ms":30000}}',
+    'run_command: run a user-requested command when no more specific tool fits; it is the general policy-gated command runner, and runtime policy decides whether the command is allowed, rejected, or needs approval. Prefer run_validator for tests, lint, typecheck, build, check, format-check, and smoke. To use it, reply with only JSON: {"tool":"run_command","args":{"command":"node --version","workdir":".","timeout_ms":30000}}',
   argsSchema: runCommandArgsSchema,
   requiresExclusiveWorkspace: true,
   execute: async (context, args) =>

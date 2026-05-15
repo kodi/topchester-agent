@@ -57,9 +57,9 @@ Local competitor checkouts were inspected as requested by `AGENTS.md`.
 
 Relevant files:
 
-- `/Users/kodi/data/github/cline/evals/smoke-tests/run-smoke-tests.ts`
-- `/Users/kodi/data/github/cline/evals/smoke-tests/scenarios/*/config.json`
-- `/Users/kodi/data/github/cline/cli/src/index.ts`
+- `~/data/github/cline/evals/smoke-tests/run-smoke-tests.ts`
+- `~/data/github/cline/evals/smoke-tests/scenarios/*/config.json`
+- `~/data/github/cline/cli/src/index.ts`
 
 Cline has the closest pattern to this plan. Its smoke runner loads JSON scenarios, creates clean trial workspaces, copies optional templates, runs the CLI with an explicit model, checks expected files and content, repeats trials, calculates pass/flaky/fail metrics, and writes JSON plus Markdown reports.
 
@@ -77,9 +77,9 @@ Useful lesson: add a direct non-interactive task command and let the smoke runne
 
 Relevant files:
 
-- `/Users/kodi/data/github/opencode/packages/opencode/src/cli/cmd/run.ts`
-- `/Users/kodi/data/github/opencode/packages/opencode/src/cli/cmd/serve.ts`
-- `/Users/kodi/data/github/opencode/packages/llm/test/recorded-scenarios.ts`
+- `~/data/github/opencode/packages/opencode/src/cli/cmd/run.ts`
+- `~/data/github/opencode/packages/opencode/src/cli/cmd/serve.ts`
+- `~/data/github/opencode/packages/llm/test/recorded-scenarios.ts`
 
 OpenCode exposes `opencode run [message..]` for non-interactive prompt execution. It also has `opencode serve` for a headless server. The run command supports JSON event output, model selection, session continuation, attach-to-server, files, command execution, and interactive mode.
 
@@ -91,10 +91,10 @@ Useful lesson: start with `run` as the simple automation path, then add a server
 
 Relevant files:
 
-- `/Users/kodi/data/github/codex/codex-rs/exec/src/cli.rs`
-- `/Users/kodi/data/github/codex/codex-rs/app-server/src/`
-- `/Users/kodi/data/github/codex/codex-rs/core/tests/common/test_codex.rs`
-- `/Users/kodi/data/github/codex/codex-rs/core/tests/suite/tools.rs`
+- `~/data/github/codex/codex-rs/exec/src/cli.rs`
+- `~/data/github/codex/codex-rs/app-server/src/`
+- `~/data/github/codex/codex-rs/core/tests/common/test_codex.rs`
+- `~/data/github/codex/codex-rs/core/tests/suite/tools.rs`
 
 Codex exposes `codex exec [PROMPT]` for non-interactive execution and has an app-server/RPC surface for richer clients. Its tests lean heavily on mock response servers, fake SSE streams, captured request bodies, and snapshots. This makes protocol and tool availability deterministic.
 
@@ -104,7 +104,7 @@ Useful lesson: use non-interactive CLI for real smoke tests, and use mocked-mode
 
 Relevant files:
 
-- `/Users/kodi/data/github/pi/packages/agent/test/e2e.test.ts`
+- `~/data/github/pi/packages/agent/test/e2e.test.ts`
 
 Pi uses a faux provider for deterministic agent-loop tests. It covers basic prompt response, tool execution, abort, lifecycle events, multi-turn context, and thinking blocks.
 
@@ -114,9 +114,9 @@ Useful lesson: Topchester should also have fake-model tests for the runtime loop
 
 Relevant files:
 
-- `/Users/kodi/data/github/kilocode/packages/opencode/src/cli/cmd/run.ts`
-- `/Users/kodi/data/github/kilocode/packages/opencode/src/cli/cmd/serve.ts`
-- `/Users/kodi/data/github/kilocode/.github/workflows/smoke-test.yml`
+- `~/data/github/kilocode/packages/opencode/src/cli/cmd/run.ts`
+- `~/data/github/kilocode/packages/opencode/src/cli/cmd/serve.ts`
+- `~/data/github/kilocode/.github/workflows/smoke-test.yml`
 
 Kilo follows the OpenCode shape: non-interactive run command, server command, and broad CLI/TUI/tool tests.
 

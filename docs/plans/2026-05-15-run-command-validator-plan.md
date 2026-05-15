@@ -91,9 +91,9 @@ Local checkouts were inspected as required by `AGENTS.override.md`.
 
 Relevant files:
 
-- `/Users/kodi/data/github/codex/codex-rs/core/src/tools/handlers/shell_spec.rs`
-- `/Users/kodi/data/github/codex/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs`
-- `/Users/kodi/data/github/codex/codex-rs/shell-command/src/command_safety/is_safe_command.rs`
+- `~/data/github/codex/codex-rs/core/src/tools/handlers/shell_spec.rs`
+- `~/data/github/codex/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs`
+- `~/data/github/codex/codex-rs/shell-command/src/command_safety/is_safe_command.rs`
 
 Useful patterns:
 
@@ -108,9 +108,9 @@ Topchester should copy the structured metadata and explicit policy split, but sh
 
 Relevant files:
 
-- `/Users/kodi/data/github/opencode/packages/opencode/src/tool/shell.ts`
-- `/Users/kodi/data/github/opencode/packages/opencode/src/tool/shell/shell.txt`
-- `/Users/kodi/data/github/opencode/packages/opencode/src/permission/index.ts`
+- `~/data/github/opencode/packages/opencode/src/tool/shell.ts`
+- `~/data/github/opencode/packages/opencode/src/tool/shell/shell.txt`
+- `~/data/github/opencode/packages/opencode/src/permission/index.ts`
 
 Useful patterns:
 
@@ -126,9 +126,9 @@ Topchester should copy the "use specialized tools first" guidance and pending-re
 
 Relevant files:
 
-- `/Users/kodi/data/github/cline/src/core/prompts/system-prompt/tools/execute_command.ts`
-- `/Users/kodi/data/github/cline/src/core/permissions/CommandPermissionController.ts`
-- `/Users/kodi/data/github/cline/src/core/permissions/types.ts`
+- `~/data/github/cline/src/core/prompts/system-prompt/tools/execute_command.ts`
+- `~/data/github/cline/src/core/permissions/CommandPermissionController.ts`
+- `~/data/github/cline/src/core/permissions/types.ts`
 
 Useful patterns:
 
@@ -143,10 +143,10 @@ Topchester should copy segment-level validation and config-backed deny behavior,
 
 Relevant files:
 
-- `/Users/kodi/data/github/pi/packages/coding-agent/src/core/tools/bash.ts`
-- `/Users/kodi/data/github/pi/packages/coding-agent/src/core/bash-executor.ts`
-- `/Users/kodi/data/github/pi/packages/coding-agent/src/core/agent-session.ts`
-- `/Users/kodi/data/github/pi/packages/coding-agent/src/core/tools/index.ts`
+- `~/data/github/pi/packages/coding-agent/src/core/tools/bash.ts`
+- `~/data/github/pi/packages/coding-agent/src/core/bash-executor.ts`
+- `~/data/github/pi/packages/coding-agent/src/core/agent-session.ts`
+- `~/data/github/pi/packages/coding-agent/src/core/tools/index.ts`
 
 Useful patterns:
 
@@ -160,8 +160,8 @@ Topchester should copy the abort/output discipline. It should not add full-outpu
 
 Relevant files:
 
-- `/Users/kodi/data/github/kilocode/packages/opencode/src/tool/bash.ts`
-- `/Users/kodi/data/github/kilocode/packages/opencode/src/permission/index.ts`
+- `~/data/github/kilocode/packages/opencode/src/tool/bash.ts`
+- `~/data/github/kilocode/packages/opencode/src/permission/index.ts`
 
 Useful patterns:
 

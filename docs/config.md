@@ -263,9 +263,10 @@ Hooks let project or user config run small programs at agent lifecycle points. T
 Supported events:
 
 - `SessionStart` / `TaskStart` — a Topchester session starts. `TaskStart` is an alias.
-- `UserPromptSubmit` — the user submits a prompt.
+- `UserPromptSubmit` / `TaskAcknowledge` — the user prompt is accepted and the agent is about to work. `TaskAcknowledge` is an alias.
 - `PreToolUse` — before a tool runs.
 - `PostToolUse` — after a tool returns.
+- `PermissionRequest` / `UserActionRequired` — the agent needs approval or another user action. `UserActionRequired` is an alias.
 - `PreCompact` — before context compaction. The hook is supported, but V0 has no automatic compaction path yet.
 - `Stop` / `TaskComplete` — the turn finishes. `TaskComplete` is an alias.
 
@@ -307,11 +308,16 @@ Use normal command hooks to integrate [peon-ping](https://github.com/PeonPing/pe
 {
   "hooks": {
     "SessionStart": [{ "command": "peon >/dev/null" }],
+    "TaskAcknowledge": [{ "command": "peon >/dev/null" }],
+    "UserActionRequired": [{ "command": "peon >/dev/null" }],
     "Stop": [{ "command": "peon >/dev/null" }],
     "PostToolUse": [{ "matcher": "run_command", "command": "peon >/dev/null" }],
   },
 }
 ```
+
+`TaskAcknowledge` normalizes to `UserPromptSubmit`, which peon-ping maps to its `task.acknowledge` category.
+`UserActionRequired` normalizes to `PermissionRequest`, which peon-ping maps to its `input.required` category.
 
 If your shell only has an interactive alias, set the explicit script command:
 
@@ -320,7 +326,7 @@ If your shell only has an interactive alias, set the explicit script command:
   "hooks": {
     "Stop": [
       {
-        "command": "bash /Users/kodi/.claude/hooks/peon-ping/peon.sh >/dev/null",
+        "command": "bash ~/.claude/hooks/peon-ping/peon.sh >/dev/null",
       },
     ],
   },

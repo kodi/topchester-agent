@@ -308,12 +308,14 @@ When an interactive `run_command` request is rejected only because it is not con
 
 ## Hooks
 
-Lifecycle hooks live under `hooks` in the same layered config. Events are `SessionStart`/`TaskStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, and `Stop`/`TaskComplete`.
+Lifecycle hooks live under `hooks` in the same layered config. Events are `SessionStart`/`TaskStart`, `UserPromptSubmit`/`TaskAcknowledge`, `PreToolUse`, `PostToolUse`, `PermissionRequest`/`UserActionRequired`, `PreCompact`, and `Stop`/`TaskComplete`.
 
 ```jsonc
 {
   "hooks": {
     "PreToolUse": [{ "matcher": "run_command", "command": ".topchester/hooks/check-command.sh" }],
+    "TaskAcknowledge": [{ "command": "peon >/dev/null" }],
+    "UserActionRequired": [{ "command": "peon >/dev/null" }],
     "Stop": [{ "command": "peon >/dev/null" }],
   },
 }

@@ -90,9 +90,9 @@ Local checkouts were inspected as requested by `AGENTS.override.md`.
 
 Relevant files:
 
-- `/Users/kodi/data/github/codex/codex-rs/git-utils/src/info.rs`
-- `/Users/kodi/data/github/codex/codex-rs/tui/src/get_git_diff.rs`
-- `/Users/kodi/data/github/codex/codex-rs/app-server/src/request_processors/git_processor.rs`
+- `~/data/github/codex/codex-rs/git-utils/src/info.rs`
+- `~/data/github/codex/codex-rs/tui/src/get_git_diff.rs`
+- `~/data/github/codex/codex-rs/app-server/src/request_processors/git_processor.rs`
 
 Useful patterns:
 
@@ -107,8 +107,8 @@ Useful patterns:
 
 Relevant files:
 
-- `/Users/kodi/data/github/opencode/packages/opencode/src/git/index.ts`
-- `/Users/kodi/data/github/opencode/packages/opencode/src/project/vcs.ts`
+- `~/data/github/opencode/packages/opencode/src/git/index.ts`
+- `~/data/github/opencode/packages/opencode/src/project/vcs.ts`
 
 Useful patterns:
 
@@ -123,7 +123,7 @@ Useful patterns:
 
 Relevant file:
 
-- `/Users/kodi/data/github/cline/src/utils/git.ts`
+- `~/data/github/cline/src/utils/git.ts`
 
 Useful patterns:
 
@@ -135,8 +135,8 @@ Useful patterns:
 
 Relevant files:
 
-- `/Users/kodi/data/github/kilocode/packages/opencode/src/git/index.ts`
-- `/Users/kodi/data/github/kilocode/packages/opencode/src/kilocode/commit-message/git-context.ts`
+- `~/data/github/kilocode/packages/opencode/src/git/index.ts`
+- `~/data/github/kilocode/packages/opencode/src/kilocode/commit-message/git-context.ts`
 
 Useful patterns:
 
@@ -151,8 +151,8 @@ Topchester should not copy Kilo's lockfile filtering as a default Git tool behav
 
 Relevant files:
 
-- `/Users/kodi/data/github/pi/packages/coding-agent/src/core/tools/bash.ts`
-- `/Users/kodi/data/github/pi/packages/coding-agent/src/core/bash-executor.ts`
+- `~/data/github/pi/packages/coding-agent/src/core/tools/bash.ts`
+- `~/data/github/pi/packages/coding-agent/src/core/bash-executor.ts`
 
 Useful patterns:
 
