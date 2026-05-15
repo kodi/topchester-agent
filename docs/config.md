@@ -240,9 +240,23 @@ Ignore paths are workspace-relative glob patterns. Absolute paths and `..` trave
 
 ## Project Instructions
 
-Topchester loads `AGENTS.override.md` or `AGENTS.md` from the workspace as live project instructions. Nested files apply inside their folders, and deeper folders win when instructions conflict.
+Topchester loads `AGENTS.override.md` or `AGENTS.md` from the workspace as live project instructions by default. Nested files apply inside their folders, and deeper folders win when instructions conflict.
 
-V0 has no config knobs for this feature. Topchester does not load `CLAUDE.md`, `.clinerules`, `.cursor/rules`, remote URLs, or home-level instruction files by default.
+You can change the instruction filenames in project config:
+
+```jsonc
+{
+  "instructions": {
+    "enabled": true,
+    "files": ["AGENTS.override.md", "AGENTS.md"],
+    "fallbackFiles": ["CLAUDE.md"],
+    "maxBytesPerFile": 32768,
+    "maxTotalBytes": 98304,
+  },
+}
+```
+
+`files` are checked first at each directory level. `fallbackFiles` are opt-in compatibility names used after `files`. Set `enabled: false` to disable project instruction loading. Topchester does not load `CLAUDE.md`, `.clinerules`, `.cursor/rules`, remote URLs, or home-level instruction files by default.
 
 ## Command Policy
 

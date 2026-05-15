@@ -127,6 +127,35 @@ describe("project instruction resolver", () => {
     expect(context.formatted).toContain("Instruction file truncated");
   });
 
+  it("uses configured filenames and fallback filenames", async () => {
+    const workspace = await createWorkspace();
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "CLAUDE.md"), "Root fallback.\n");
+    await writeFile(join(workspace, "src", "AGENT.md"), "Nested custom.\n");
+    await writeFile(join(workspace, "src", "CLAUDE.md"), "Nested fallback.\n");
+
+    const context = await resolveProjectInstructions(workspace, {
+      targetPath: "src/file.ts",
+      files: ["AGENT.md"],
+      fallbackFiles: ["CLAUDE.md"],
+    });
+
+    expect(context.sourceKeys).toEqual(["CLAUDE.md", "src/AGENT.md"]);
+    expect(context.formatted).toContain("Root fallback.");
+    expect(context.formatted).toContain("Nested custom.");
+    expect(context.formatted).not.toContain("Nested fallback.");
+  });
+
+  it("can disable project instruction loading", async () => {
+    const workspace = await createWorkspace();
+    await writeFile(join(workspace, "AGENTS.md"), "Root rule.\n");
+
+    const context = await resolveProjectInstructions(workspace, { enabled: false });
+
+    expect(context.sourceKeys).toEqual([]);
+    expect(isProjectInstructionPath(workspace, "AGENTS.md")).toBe(true);
+  });
+
   it("returns an empty formatted block when no instruction files are present", async () => {
     const workspace = await createWorkspace();
 

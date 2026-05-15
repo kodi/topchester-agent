@@ -504,7 +504,7 @@ Dependencies:
 
 ### Slice 7: Configurable Compatibility Knobs
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Add config only if defaults prove too rigid.
 
@@ -527,6 +527,7 @@ Verification:
 
 - `pnpm test test/config.test.ts`
 - `pnpm test test/agent-instructions.test.ts`
+- 2026-05-16: Passed `pnpm test test/config.test.ts`, `pnpm test test/agent-instructions.test.ts`, `pnpm test test/agent-runtime.test.ts test/tools.test.ts`, `pnpm exec tsgo --noEmit`, `pnpm format`, and focused `pnpm exec oxlint` on touched config/resolver/runtime/tool/test files.
 
 Dependencies:
 

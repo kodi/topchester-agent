@@ -133,6 +133,35 @@ const commandPolicySchema = z
   })
   .strict();
 
+const instructionFilenameSchema = z
+  .string()
+  .min(1)
+  .superRefine((value, context) => {
+    if (value !== value.trim()) {
+      context.addIssue({
+        code: "custom",
+        message: "Instruction filename must not have leading or trailing whitespace.",
+      });
+    }
+
+    if (value.includes("/") || value.includes("\\") || value === "." || value === "..") {
+      context.addIssue({
+        code: "custom",
+        message: "Instruction filename must be a single filename, not a path.",
+      });
+    }
+  });
+
+const instructionsConfigSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    files: z.array(instructionFilenameSchema).optional(),
+    fallbackFiles: z.array(instructionFilenameSchema).optional(),
+    maxBytesPerFile: z.number().int().positive().max(1_000_000).optional(),
+    maxTotalBytes: z.number().int().positive().max(5_000_000).optional(),
+  })
+  .strict();
+
 export const hookEventNames = [
   "SessionStart",
   "UserPromptSubmit",
@@ -213,6 +242,7 @@ export const topchesterConfigSchema = z.object({
     .strict()
     .optional(),
   hooks: canonicalHooksConfigSchema.optional(),
+  instructions: instructionsConfigSchema.optional(),
 });
 
 const rawTopchesterConfigSchema = z.object({
@@ -229,6 +259,7 @@ const rawTopchesterConfigSchema = z.object({
     .strict()
     .optional(),
   hooks: rawHooksConfigSchema.optional(),
+  instructions: instructionsConfigSchema.optional(),
 });
 
 export type TopchesterConfig = z.infer<typeof topchesterConfigSchema>;

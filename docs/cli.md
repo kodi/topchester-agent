@@ -77,7 +77,7 @@ Current behavior:
 - In an interactive terminal, the command opens the TUI. See [TUI Guide](./tui.md).
 - In non-interactive output, the command prints a static version of the layout.
 - The coding loop can use workspace-scoped file and command tools: `read_file`, `list_files`, `grep`, `find_file`, `edit_file`, `write_file`, `inspect_command`, `run_validator`, and `run_command`.
-- If `AGENTS.md` or `AGENTS.override.md` exists in the workspace, Topchester loads it as live project instructions. Nested instruction files are loaded when a tool works inside their folder.
+- If `AGENTS.md` or `AGENTS.override.md` exists in the workspace, Topchester loads it as live project instructions. Nested instruction files are loaded when a tool works inside their folder. Config can opt into other filenames.
 - The coding loop can use structured Git tools: `git_status`, `git_diff`, `git_log`, `git_add`, and `git_commit`.
 - The coding loop runs configured lifecycle hooks from `hooks` config. Command hooks receive JSON on stdin and can add context, block a prompt or tool, or stop a turn. External integrations such as peon-ping are wired as normal command hooks.
 - The coding loop can use `plan_todo` to keep a visible session-only task plan during non-trivial multi-step work. Completed-only `plan_todo` text emitted with a final answer is ignored when no visible plan is open, so accidental closed-plan updates do not render as raw chat text.

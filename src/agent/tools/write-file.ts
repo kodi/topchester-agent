@@ -15,7 +15,7 @@ import {
   formatProjectInstructionRetryContent,
   formatWorkspaceRelativeToolPath,
   hasExplicitProjectInstructionMutationIntent,
-  isProtectedProjectInstructionTarget,
+  isProtectedConfiguredProjectInstructionTarget,
   resolveToolProjectInstructions,
 } from "./project-instructions.js";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
@@ -64,7 +64,7 @@ export const writeFileTool = defineTool({
   argsSchema: writeFileArgsSchema,
   execute: async (context, args) => {
     if (
-      isProtectedProjectInstructionTarget(context.workspaceRoot, args.path) &&
+      isProtectedConfiguredProjectInstructionTarget(context, args.path) &&
       !hasExplicitProjectInstructionMutationIntent(context.currentUserMessage, args.path)
     ) {
       const relativePath = formatWorkspaceRelativeToolPath(context.workspaceRoot, args.path);

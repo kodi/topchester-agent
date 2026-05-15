@@ -58,6 +58,57 @@ describe("agent runtime project instructions", () => {
     expect(systems[0]).not.toContain("# AGENTS.md instructions");
   });
 
+  it("honors runtime project instruction config", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
+    await writeFile(join(workspace, "AGENT.md"), "Use the custom file.\n");
+    const systems: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      config: { instructions: { files: ["AGENT.md"] } },
+      modelGateway: {
+        async generateText(request: { system: string }) {
+          systems.push(request.system);
+          return {
+            text: "Done.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    await runtime.submitMessage([], "hello");
+
+    expect(systems[0]).toContain("Use the custom file.");
+  });
+
+  it("can disable runtime project instructions", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
+    await writeFile(join(workspace, "AGENTS.md"), "Do not load me.\n");
+    const systems: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      config: { instructions: { enabled: false } },
+      modelGateway: {
+        async generateText(request: { system: string }) {
+          systems.push(request.system);
+          return {
+            text: "Done.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    await runtime.submitMessage([], "hello");
+
+    expect(systems[0]).not.toContain("Do not load me.");
+    expect(await runtime.checkProjectInstructions()).toEqual([]);
+  });
+
   it("reports compact startup project instruction status", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
     await writeFile(join(workspace, "AGENTS.override.md"), "Local instruction.\n");

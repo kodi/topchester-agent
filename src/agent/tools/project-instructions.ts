@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 import {
   formatProjectInstructions,
-  isProjectInstructionPath,
+  isConfiguredProjectInstructionPath,
   PROJECT_INSTRUCTION_FILENAMES,
   resolveProjectInstructions,
 } from "../instructions.js";
@@ -22,13 +22,17 @@ export async function resolveToolProjectInstructions(
     return undefined;
   }
 
-  if (options.skipWhenTargetIsInstructionFile && isProjectInstructionPath(context.workspaceRoot, options.targetPath)) {
+  if (
+    options.skipWhenTargetIsInstructionFile &&
+    isConfiguredProjectInstructionPath(context.workspaceRoot, options.targetPath, context.config?.instructions)
+  ) {
     return undefined;
   }
 
   const instructions = await resolveProjectInstructions(context.workspaceRoot, {
     targetPath: options.targetPath,
     targetIsDirectory: options.targetIsDirectory,
+    ...context.config?.instructions,
     logger: context.logger,
   });
   const newSources = instructions.sources.filter(
@@ -114,7 +118,11 @@ export function hasExplicitProjectInstructionMutationIntent(message: string | un
 }
 
 export function isProtectedProjectInstructionTarget(workspaceRoot: string, path: string): boolean {
-  return isProjectInstructionPath(workspaceRoot, path);
+  return isConfiguredProjectInstructionPath(workspaceRoot, path);
+}
+
+export function isProtectedConfiguredProjectInstructionTarget(context: ToolContext, path: string): boolean {
+  return isConfiguredProjectInstructionPath(context.workspaceRoot, path, context.config?.instructions);
 }
 
 export function formatWorkspaceRelativeToolPath(workspaceRoot: string, path: string): string {

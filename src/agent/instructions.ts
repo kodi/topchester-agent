@@ -26,6 +26,9 @@ export interface ProjectInstructionContext {
 export interface ResolveProjectInstructionsOptions {
   targetPath?: string;
   targetIsDirectory?: boolean;
+  enabled?: boolean;
+  files?: readonly string[];
+  fallbackFiles?: readonly string[];
   maxBytesPerFile?: number;
   maxTotalBytes?: number;
   logger?: Logger;
@@ -42,6 +45,17 @@ export async function resolveProjectInstructions(
   workspaceRoot: string,
   options: ResolveProjectInstructionsOptions = {}
 ): Promise<ProjectInstructionContext> {
+  const filenames = getProjectInstructionFilenames(options);
+
+  if (filenames.length === 0) {
+    return {
+      sources: [],
+      formatted: "",
+      sourceKeys: [],
+      truncated: false,
+    };
+  }
+
   const resolvedWorkspace = resolve(workspaceRoot);
   const targetDirectory = resolveInstructionTargetDirectory(resolvedWorkspace, options);
   const directories = getInstructionDirectories(resolvedWorkspace, targetDirectory);
@@ -51,7 +65,7 @@ export async function resolveProjectInstructions(
   let remainingBytes = Math.max(0, maxTotalBytes);
 
   for (const directory of directories) {
-    const candidate = await readFirstInstructionCandidate(resolvedWorkspace, directory, options.logger);
+    const candidate = await readFirstInstructionCandidate(resolvedWorkspace, directory, filenames, options.logger);
 
     if (!candidate) {
       continue;
@@ -130,6 +144,20 @@ export function formatProjectInstructions(sources: readonly ProjectInstructionSo
 }
 
 export function isProjectInstructionPath(workspaceRoot: string, path: string): boolean {
+  return isConfiguredProjectInstructionPath(workspaceRoot, path);
+}
+
+export function isConfiguredProjectInstructionPath(
+  workspaceRoot: string,
+  path: string,
+  options: Pick<ResolveProjectInstructionsOptions, "enabled" | "files" | "fallbackFiles"> = {}
+): boolean {
+  const filenames = getProjectInstructionFilenames(options);
+
+  if (filenames.length === 0) {
+    return false;
+  }
+
   const resolvedWorkspace = resolve(workspaceRoot);
   const resolvedPath = isAbsolute(path) ? resolve(path) : resolve(resolvedWorkspace, path);
   const relativePath = relative(resolvedWorkspace, resolvedPath);
@@ -138,9 +166,31 @@ export function isProjectInstructionPath(workspaceRoot: string, path: string): b
     return false;
   }
 
-  return PROJECT_INSTRUCTION_FILENAMES.includes(
-    basename(relativePath) as (typeof PROJECT_INSTRUCTION_FILENAMES)[number]
-  );
+  return filenames.includes(basename(relativePath));
+}
+
+export function getProjectInstructionFilenames(
+  options: Pick<ResolveProjectInstructionsOptions, "enabled" | "files" | "fallbackFiles"> = {}
+): string[] {
+  if (options.enabled === false) {
+    return [];
+  }
+
+  const primary = options.files ?? PROJECT_INSTRUCTION_FILENAMES;
+  const fallback = options.fallbackFiles ?? [];
+  const seen = new Set<string>();
+  const filenames: string[] = [];
+
+  for (const filename of [...primary, ...fallback]) {
+    if (seen.has(filename)) {
+      continue;
+    }
+
+    seen.add(filename);
+    filenames.push(filename);
+  }
+
+  return filenames;
 }
 
 function resolveInstructionTargetDirectory(
@@ -191,9 +241,10 @@ function getInstructionDirectories(resolvedWorkspace: string, targetDirectory: s
 async function readFirstInstructionCandidate(
   resolvedWorkspace: string,
   directory: string,
+  filenames: readonly string[],
   logger?: Logger
 ): Promise<CandidateReadResult | undefined> {
-  for (const filename of PROJECT_INSTRUCTION_FILENAMES) {
+  for (const filename of filenames) {
     const absolutePath = resolve(directory, filename);
     const relativePath = formatRelativePath(relative(resolvedWorkspace, absolutePath));
 

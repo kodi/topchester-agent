@@ -866,6 +866,48 @@ describe("Topchester config loading", () => {
     );
   });
 
+  it("loads project instruction config knobs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      join(workspace, "topchester.jsonc"),
+      [
+        "{",
+        '  "instructions": {',
+        '    "enabled": true,',
+        '    "files": ["AGENT.md"],',
+        '    "fallbackFiles": ["CLAUDE.md"],',
+        '    "maxBytesPerFile": 1024,',
+        '    "maxTotalBytes": 2048',
+        "  }",
+        "}",
+      ].join("\n")
+    );
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(config.instructions).toEqual({
+      enabled: true,
+      files: ["AGENT.md"],
+      fallbackFiles: ["CLAUDE.md"],
+      maxBytesPerFile: 1024,
+      maxTotalBytes: 2048,
+    });
+  });
+
+  it("rejects instruction filenames that are paths", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    const invalidConfig = join(workspace, "invalid-instructions.jsonc");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(invalidConfig, '{ "instructions": { "files": ["docs/AGENTS.md"] } }\n');
+
+    expect(() => loadTopchesterConfig({ workspaceRoot: workspace, configPath: invalidConfig })).toThrow(
+      `Invalid Topchester config at ${invalidConfig}: instructions.files.0: Instruction filename must be a single filename, not a path.`
+    );
+  });
+
   it("reports the config path for invalid JSONC and schema errors", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const workspace = join(root, "workspace");

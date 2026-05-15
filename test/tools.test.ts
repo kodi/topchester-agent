@@ -459,6 +459,27 @@ describe("agent tools", () => {
     await expect(readFile(join(workspace, "AGENTS.override.md"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("guards configured instruction filenames", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await writeFile(join(workspace, "CLAUDE.md"), "Keep this rule.\n");
+    const call = parseToolCall(
+      '{"tool":"edit_file","args":{"path":"CLAUDE.md","edits":[{"old_text":"Keep this rule.\\n","new_text":"Change this rule.\\n"}]}}'
+    );
+
+    if (!call) {
+      throw new Error("Expected edit_file tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call, {
+      config: { instructions: { fallbackFiles: ["CLAUDE.md"] } },
+      currentUserMessage: "Update a normal source file.",
+      projectInstructions: { shownSourceKeys: new Set(["CLAUDE.md"]) },
+    });
+
+    expect(result.content).toContain("edit_file did not change CLAUDE.md.");
+    expect(await readFile(join(workspace, "CLAUDE.md"), "utf8")).toBe("Keep this rule.\n");
+  });
+
   it("executes plan_todo through runtime-provided task-plan state", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
     const taskPlan = createTaskPlanController();

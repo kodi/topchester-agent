@@ -919,7 +919,10 @@ export class TopchesterAgentRuntime implements AgentRuntime {
   }
 
   private async resolveBaseProjectInstructions(): Promise<ProjectInstructionContext> {
-    return resolveProjectInstructions(this.context.workspaceRoot, { logger: this.context.logger });
+    return resolveProjectInstructions(this.context.workspaceRoot, {
+      ...this.context.config.instructions,
+      logger: this.context.logger,
+    });
   }
 
   private buildSystemPromptWithProjectInstructions(
