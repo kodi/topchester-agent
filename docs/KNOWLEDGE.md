@@ -566,7 +566,7 @@ Naming proposal:
 - User-facing system name: **Knowledge Compiler**
 - Short/codename: **Cartographer**
 - TypeScript package/module name: `@topchester/kb-compiler`
-- CLI namespace: `topchester kb compile`, with `topchester kb scan` reserved for the lower-level deterministic scan phase
+- CLI namespace: `topchester kb sync`, with `topchester kb scan` reserved for the lower-level deterministic scan phase
 - Runtime service name: `kb-service`
 
 The most important component is the initial scan/discovery subagent system.

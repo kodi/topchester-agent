@@ -634,15 +634,15 @@ describe("CLI integration", () => {
     await expect(stat(cachePath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("fails compile clearly before init without writing L1 artifacts", async () => {
+  it("fails full sync clearly before init without writing L1 artifacts", async () => {
     const fixture = await makeFixture();
     await mkdir(fixture.workspace, { recursive: true });
     await writeFile(join(fixture.workspace, "index.ts"), "export const value = 1;\n");
 
     await expect(
-      runCli(["--config", fixture.config, "--workspace", fixture.workspace, "kb", "compile"], fixture.root)
+      runCli(["--config", fixture.config, "--workspace", fixture.workspace, "kb", "sync", "--full"], fixture.root)
     ).rejects.toMatchObject({
-      stderr: expect.stringContaining("Run `topchester kb init` before compiling the project knowledge base."),
+      stderr: expect.stringContaining("Run `topchester kb init` before syncing the project knowledge base."),
     });
     await expect(stat(join(fixture.workspace, ".agents/topchester-kb-cache/l1-queue.json"))).rejects.toMatchObject({
       code: "ENOENT",
@@ -720,7 +720,7 @@ describe("CLI integration", () => {
     expect(stdout).toContain("\u001b[33mmissing_entry\u001b[0m\tsrc/index.ts");
   });
 
-  it("fails compile clearly when no kb.summarize model or fallback is configured", async () => {
+  it("fails full sync clearly when no kb.summarize model or fallback is configured", async () => {
     const fixture = await makeFixture();
     const badConfig = join(fixture.root, "bad-config.yaml");
     await writeFile(badConfig, ["models:", "  fast:", "    name: fake-model"].join("\n"));
@@ -729,7 +729,7 @@ describe("CLI integration", () => {
     await runCli(["--workspace", fixture.workspace, "kb", "init"], fixture.root);
 
     await expect(
-      runCli(["--config", badConfig, "--workspace", fixture.workspace, "kb", "compile"], fixture.root)
+      runCli(["--config", badConfig, "--workspace", fixture.workspace, "kb", "sync", "--full"], fixture.root)
     ).rejects.toMatchObject({
       message: expect.stringContaining('No model configured for purpose "kb.summarize".'),
     });

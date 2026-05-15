@@ -370,7 +370,7 @@ function chooseResponse(prompt: string): string {
   }
 
   if (prompt.includes("What should I do before using project knowledge here")) {
-    return "Run /kb init, then /kb compile.";
+    return "Run /kb init, then /kb sync.";
   }
 
   return "Done.";

@@ -40,7 +40,7 @@ Build the project knowledge base:
 
 ```sh
 topchester kb init
-topchester kb compile
+topchester kb sync
 ```
 
 Start the agent:
@@ -71,7 +71,7 @@ topchester run "Summarize this project."
 
 topchester kb status
 topchester kb sync
-topchester kb compile
+topchester kb sync --full
 topchester kb search "status bar"
 topchester kb reset
 ```
@@ -81,11 +81,11 @@ Useful TUI slash commands:
 ```text
 /kb status
 /kb sync
-/kb compile
+/kb sync --full
 /new
 ```
 
-`topchester kb status` is the cheap check. It shows files that are not current in the knowledge base. `topchester kb sync` updates only those non-clean files.
+`topchester kb status` is the cheap check. It shows files that are not current in the knowledge base. `topchester kb sync` builds the KB when it is empty and updates only non-clean files afterward. Use `topchester kb sync --full` to rebuild every in-scope file and remove orphaned L1 entries.
 
 ## Configuration
 
@@ -129,7 +129,7 @@ Prefer `topchester.jsonc` for new project config. YAML paths are kept for compat
 
 ## How The Knowledge Base Works
 
-`topchester kb compile` scans the workspace, respects `.gitignore`, skips generated/cache folders, and writes one L1 knowledge entry per in-scope file under `topchester-kb/l1-files/`.
+`topchester kb sync` scans the workspace, respects `.gitignore`, skips generated/cache folders, and writes L1 knowledge entries under `topchester-kb/l1-files/`.
 
 The compiler uses `models["kb.summarize"]` when it is configured. If it is not configured, it uses `models.default`.
 
@@ -137,7 +137,7 @@ Common KB states:
 
 - `kb: ready` — the KB exists and has compiled content.
 - `kb: empty` — the KB folder exists but has no compiled content yet.
-- `kb: missing` — run `topchester kb init`, then `topchester kb compile`.
+- `kb: missing` — run `topchester kb init`, then `topchester kb sync`.
 - `N dirty` — run `topchester kb sync`.
 
 ## Working From Source

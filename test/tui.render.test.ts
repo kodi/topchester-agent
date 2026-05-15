@@ -1360,7 +1360,7 @@ describe("TUI rendering", () => {
     const output = app.render(80).join("\n");
 
     expect(output).toContain("KB status:  topchester-kb [missing]");
-    expect(output).toContain("Next: run /kb init, then /kb compile to create project knowledge.");
+    expect(output).toContain("Next: run /kb init, then /kb sync to create project knowledge.");
     expect(output).not.toContain("No KB found");
     expect(output).not.toContain("Create KB now");
   });
@@ -1383,7 +1383,7 @@ describe("TUI rendering", () => {
     const output = app.render(80).join("\n");
 
     expect(output).toContain("KB status:  topchester-kb [empty]");
-    expect(output).toContain("Next: run /kb compile to build project knowledge.");
+    expect(output).toContain("Next: run /kb sync to build project knowledge.");
     expect(output).not.toContain("KB status:  topchester-kb [ok] (default)");
   });
 

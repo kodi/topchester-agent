@@ -62,7 +62,7 @@ describe("TUI prompt history", () => {
     app.handleInput("\u001b[B");
     const output = app.render(80).join("\n");
 
-    expect(output).toContain("> /kb compile");
+    expect(output).toContain("> /kb sync");
     expect(promptText(app)).toContain("> /kb");
   });
 

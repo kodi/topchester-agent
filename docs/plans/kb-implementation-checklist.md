@@ -22,11 +22,11 @@ Status legend:
 - [x] Model-backed L1 file entry generation
 - [x] Mirrored L1 entry layout under `topchester-kb/l1-files/<source/path>.json`
 - [x] Basic manifest updates with L1 counts
-- [x] CLI `topchester kb compile`
+- [x] CLI `topchester kb sync`
 - [x] CLI `topchester kb search`
 - [x] CLI `topchester kb context`
 - [x] Top-level CLI `topchester search` alias for L1 KB search
-- [x] Slash command `/kb compile`
+- [x] Slash command `/kb sync`
 - [x] CLI L1 progress with count, percentage, progress bar, and current file
 - [x] Workspace-scoped `edit_file` and create-by-default `write_file` tools mark changed files dirty-known and `needs_sync` in the runtime session overlay
 - [x] L1 in-memory search over paths, symbols, exports, responsibilities, summaries, imports, relationships, evidence, and tests

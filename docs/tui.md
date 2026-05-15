@@ -65,7 +65,7 @@ Most used commands:
 - `/new` — clear the terminal and start a fresh project-local session.
 - `/kb status` — show files that are not current in the knowledge base.
 - `/kb sync` — process non-clean project files into L1 entries.
-- `/kb compile` — process all in-scope project files into L1 entries.
+- `/kb sync --full` — process all in-scope project files into L1 entries.
 - `/kb init` — create Topchester project knowledge folders.
 - `/kb reset` — delete the local knowledge base and cache.
 
@@ -77,7 +77,7 @@ Example:
 
 `/new` keeps you in the same workspace but replaces the current thread with a normal startup screen, creates a new session folder, clears prompt history, and reruns startup checks.
 
-The TUI refreshes the KB status line after `/kb init`, `/kb reset`, `/kb compile`, `/kb sync`, and `/kb status`.
+The TUI refreshes the KB status line after `/kb init`, `/kb reset`, `/kb sync`, `/kb sync --full`, and `/kb status`.
 
 ## Startup Checks
 
@@ -88,7 +88,7 @@ Interactive startup does two checks:
 
 If the model check takes too long, startup skips the check and prints a plain message.
 
-If the KB is missing, empty, misconfigured, or not current, the startup KB status message includes a short next step. The footer stays visible so you can keep working while you decide whether to run `/kb init`, `/kb compile`, `/kb sync`, or `/kb status`.
+If the KB is missing, empty, misconfigured, or not current, the startup KB status message includes a short next step. The footer stays visible so you can keep working while you decide whether to run `/kb init`, `/kb sync`, `/kb sync --full`, or `/kb status`.
 
 ## Agent Tools
 

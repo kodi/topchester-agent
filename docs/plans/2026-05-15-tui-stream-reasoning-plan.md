@@ -43,7 +43,7 @@ Not included:
 - Persisting reasoning text for resume, audit, or debugging.
 - Adding a slash command or config-file setting for this feature.
 - Parsing plain assistant text, `<think>` tags, or markdown as reasoning.
-- Showing reasoning from startup health checks, KB compile, KB sync, or slash commands.
+- Showing reasoning from startup health checks, KB sync, or slash commands.
 - A multi-line reasoning panel. V0 should use the existing ephemeral line surface.
 
 ## Current State

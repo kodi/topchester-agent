@@ -8,7 +8,7 @@ Topchester should support normal coding sessions where the working tree changes
 while the canonical KB is temporarily behind.
 
 This is not an error state. A coding agent spends most of its useful time between
-the last clean KB compile and the next synchronized KB update.
+the last clean KB sync and the next synchronized KB update.
 
 ## Core Invariant
 

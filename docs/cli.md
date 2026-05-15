@@ -14,11 +14,11 @@ topchester run /kb status
 topchester search "status bar"
 
 topchester kb init
-topchester kb compile
+topchester kb sync
 topchester kb status
 topchester kb search "post author update error"
 topchester kb context "status bar" --json
-topchester kb sync
+topchester kb sync --full
 topchester kb reset
 ```
 
@@ -44,11 +44,10 @@ On startup, Topchester creates the user config folder `~/.config/topchester/` if
 | `topchester search`     | Search compiled L1 file knowledge.                       |
 | `topchester dev`        | Print local development startup details.                 |
 | `topchester kb init`    | Create the project knowledge folders.                    |
-| `topchester kb compile` | Build current L1 file knowledge for all in-scope files.  |
 | `topchester kb context` | Create an L1 context pack for a query.                   |
-| `topchester kb dry-run` | Preview which files would be compiled.                   |
+| `topchester kb dry-run` | Preview which files would be synced.                     |
 | `topchester kb search`  | Search compiled L1 file knowledge.                       |
-| `topchester kb sync`    | Rebuild L1 entries only for non-clean files.             |
+| `topchester kb sync`    | Build or update L1 entries for non-clean files.          |
 | `topchester kb reset`   | Delete the local knowledge base and cache.               |
 | `topchester kb status`  | Show files that are not current in the knowledge base.   |
 
@@ -151,58 +150,16 @@ Current behavior:
 - Prints the workspace path and which folders were created or already existed.
 - Prints progress while checking and creating folders.
 
-Run this before `topchester kb compile` in a new project:
+Run this before `topchester kb sync` in a new project:
 
 ```sh
 topchester kb init
-topchester kb compile
-```
-
-## `topchester kb compile`
-
-Compiles the project knowledge base.
-
-Current behavior:
-
-- Requires `topchester kb init` to have created the knowledge folder first.
-- Reads `.gitignore` files from the workspace, including nested `.gitignore` files.
-- Lists project files that are not ignored.
-- Skips heavy generated folders such as `.git/`, `node_modules/`, `dist/`, `coverage/`, `topchester-kb/`, `.agents/topchester/`, and `.agents/topchester-kb-cache/`.
-- Excludes `topchester.jsonc` from the compile inventory.
-- Applies `ignore.paths` rules from resolved Topchester config after `.gitignore`.
-- Queues listed files in `.agents/topchester-kb-cache/l1-queue.json`.
-- Processes queued files with the configured `kb.summarize` model. If `kb.summarize` is not configured, it uses the `default` model when available.
-- Writes one current L1 JSON entry per successfully processed file under `topchester-kb/l1-files/`.
-- Writes `topchester-kb/manifest.json` with compiler metadata, input counts, ignore counts, and L1 outcome counts.
-- Prints workspace, queue, manifest, count, and final state details.
-- Shows progress while reading ignore files, listing files, queueing work, processing L1 entries, and writing output.
-- Exits successfully only when every in-scope file has a current L1 entry.
-- Prints partial state and exits with a non-success automation code when any queued file fails, changes during processing, or is missing.
-- Fails early for fatal setup or model configuration errors.
-
-## `topchester kb dry-run`
-
-Lists the files that would be compiled into the knowledge base.
-
-Current behavior:
-
-- Does not require `topchester kb init`.
-- Does not create knowledge folders, cache folders, queues, manifests, or L1 entries.
-- Uses the same project file inventory rules as `topchester kb compile`.
-- Prints the workspace path, knowledge folder path, gitignore file count, config ignore rule count, and file count.
-- Prints one line per in-scope file with sync status, path, and size.
-- Reports sync status as `current`, `changed`, `missing_entry`, `missing_file`, `suspect`, or `invalid` when an existing knowledge folder can be checked.
-- Does not call any model provider.
-
-Use it before a full compile when you want to inspect scope:
-
-```sh
-topchester kb dry-run
+topchester kb sync
 ```
 
 ## `topchester kb sync`
 
-Syncs non-clean project files into the knowledge base.
+Syncs project files into the knowledge base.
 
 Current behavior:
 
@@ -211,11 +168,41 @@ Current behavior:
 - Queues only files whose sync status is not `current`.
 - Writes the sync queue to `.agents/topchester-kb-cache/l1-sync-queue.json`.
 - Processes queued files with the configured `kb.summarize` model. If `kb.summarize` is not configured, it uses the `default` model when available.
+- Writes one current L1 JSON entry per successfully processed file under `topchester-kb/l1-files/`.
 - Does not remove existing current L1 entries that are absent from the dirty-file queue.
 - Writes `topchester-kb/manifest.json` with sync metadata and L1 outcome counts.
 - Prints workspace, queue, manifest, count, and final state details.
-- Exits successfully only when every queued non-clean file has a current L1 entry.
+- Exits successfully when every queued non-clean file has a current L1 entry.
 - Prints partial state and exits with a non-success automation code when any queued file fails, changes during processing, or is missing.
+- Fails early for fatal setup or model configuration errors.
+
+Use `--full` when you need to reconcile the whole KB, such as after changing ignore rules, deleting files, or suspecting orphaned L1 entries:
+
+```sh
+topchester kb sync --full
+```
+
+With `--full`, Topchester queues every in-scope project file in `.agents/topchester-kb-cache/l1-queue.json` and removes L1 entries for files that are no longer in scope.
+
+## `topchester kb dry-run`
+
+Lists the files that would be synced into the knowledge base.
+
+Current behavior:
+
+- Does not require `topchester kb init`.
+- Does not create knowledge folders, cache folders, queues, manifests, or L1 entries.
+- Uses the same project file inventory rules as `topchester kb sync --full`.
+- Prints the workspace path, knowledge folder path, gitignore file count, config ignore rule count, and file count.
+- Prints one line per in-scope file with sync status, path, and size.
+- Reports sync status as `current`, `changed`, `missing_entry`, `missing_file`, `suspect`, or `invalid` when an existing knowledge folder can be checked.
+- Does not call any model provider.
+
+Use it before a full sync when you want to inspect scope:
+
+```sh
+topchester kb dry-run
+```
 
 ## `topchester kb search`
 
@@ -232,7 +219,7 @@ topchester kb query "CMS post service"
 
 Current behavior:
 
-- Requires `topchester kb init` and compiled L1 entries from `topchester kb compile` or `topchester kb sync`.
+- Requires `topchester kb init` and L1 entries from `topchester kb sync`.
 - Loads canonical L1 JSON entries from `topchester-kb/l1-files/`.
 - Builds a small in-memory lexical index for the command run.
 - Uses weighted matching across file paths, symbols, exports, responsibilities, summaries, imports, relationships, evidence, and known test IDs.
@@ -257,7 +244,7 @@ topchester kb context --limit 5 --min-score 20 "post author update"
 
 Current behavior:
 
-- Requires `topchester kb init` and compiled L1 entries from `topchester kb compile` or `topchester kb sync`.
+- Requires `topchester kb init` and L1 entries from `topchester kb sync`.
 - Uses the same in-memory lexical index as `topchester kb search`.
 - Selects strong matches by score, using a default limit of 8 files and default minimum score of 12.
 - Includes compact L1 knowledge for selected files by default: summary, capped responsibilities, capped symbols, capped imports/exports, relationships, tests, confidence, and omitted counts.

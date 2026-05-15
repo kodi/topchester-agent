@@ -6,11 +6,9 @@ import { createAppContext } from "./app/context.js";
 import { ui } from "./cli/ui.js";
 import { type L1FileScanStatus } from "./knowledge/compiler/l1-entry.js";
 import {
-  compileKnowledgeBase,
   dryRunKnowledgeCompile,
   filterNonCleanKnowledgeCompileResult,
   formatKnowledgeCompileDryRunResult,
-  formatKnowledgeCompileResult,
   formatKnowledgeCompileStatusResult,
   formatKnowledgeSyncResult,
   isPartialKnowledgeCompileResult,
@@ -132,31 +130,11 @@ kbCommand
   });
 
 kbCommand
-  .command("compile")
-  .description("compile the project knowledge base")
-  .action(async () => {
-    const context = createContextFromOptions();
-    const result = await ui.progress("Processing L1 file entries...", (report) =>
-      compileKnowledgeBase(context.workspaceRoot, {
-        model: context.modelGateway,
-        requireModel: true,
-        config: context.config,
-        onProgress: (event) => report(event.message),
-      })
-    );
-
-    console.log(formatKnowledgeCompileResult(result).join("\n"));
-    if (isPartialKnowledgeCompileResult(result)) {
-      process.exitCode = 2;
-    }
-  });
-
-kbCommand
   .command("dry-run")
-  .description("list project files that would be compiled into the knowledge base")
+  .description("list project files that would be synced into the knowledge base")
   .action(async () => {
     const context = createContextFromOptions();
-    const result = await ui.spinner("Listing project files for KB compile...", () =>
+    const result = await ui.spinner("Listing project files for KB sync...", () =>
       dryRunKnowledgeCompile(context.workspaceRoot, { config: context.config })
     );
 
@@ -165,19 +143,23 @@ kbCommand
 
 kbCommand
   .command("sync")
-  .description("sync non-clean project files into the knowledge base")
-  .action(async () => {
+  .description("sync project files into the knowledge base")
+  .option("--full", "sync all in-scope files and remove orphaned L1 entries")
+  .action(async (options: { full?: boolean }) => {
     const context = createContextFromOptions();
-    const result = await ui.progress("Syncing non-clean L1 file entries...", (report) =>
-      syncKnowledgeBase(context.workspaceRoot, {
-        model: context.modelGateway,
-        requireModel: true,
-        config: context.config,
-        onProgress: (event) => report(event.message),
-      })
+    const result = await ui.progress(
+      options.full ? "Syncing all L1 file entries..." : "Syncing non-clean L1 file entries...",
+      (report) =>
+        syncKnowledgeBase(context.workspaceRoot, {
+          model: context.modelGateway,
+          requireModel: true,
+          config: context.config,
+          full: options.full,
+          onProgress: (event) => report(event.message),
+        })
     );
 
-    console.log(formatKnowledgeSyncResult(result).join("\n"));
+    console.log(formatKnowledgeSyncResult(result, { title: options.full ? "KB sync --full" : "KB sync" }).join("\n"));
     if (isPartialKnowledgeCompileResult(result)) {
       process.exitCode = 2;
     }

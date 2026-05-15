@@ -471,7 +471,7 @@ What should I do before using project knowledge here?
 Expected:
 
 - Startup KB status event reports missing or empty KB.
-- Chat status message includes guidance to run `/kb init`, `/kb compile`, `/kb sync`, or `/kb status`.
+- Chat status message includes guidance to run `/kb init`, `/kb sync`, `/kb sync --full`, or `/kb status`.
 
 ## Runner Shape
 

@@ -257,7 +257,7 @@ export async function loadL1KnowledgeIndex(workspaceRoot: string): Promise<Loade
   const status = getKnowledgeStatus(workspaceRoot);
 
   if (!status.kbExists || !status.kbIsDirectory) {
-    throw new Error("Run `topchester kb init` and `topchester kb compile` before loading the L1 knowledge index.");
+    throw new Error("Run `topchester kb init` and `topchester kb sync` before loading the L1 knowledge index.");
   }
 
   const loadResult = await loadL1FileEntries(status.kbPath);
@@ -278,7 +278,7 @@ export async function searchL1Knowledge(
   const status = getKnowledgeStatus(workspaceRoot);
 
   if (!status.kbExists || !status.kbIsDirectory) {
-    throw new Error("Run `topchester kb init` and `topchester kb compile` before searching the knowledge base.");
+    throw new Error("Run `topchester kb init` and `topchester kb sync` before searching the knowledge base.");
   }
 
   const loadResult = await loadL1FileEntries(status.kbPath);
@@ -353,7 +353,7 @@ export async function createL1ContextPack(
   const status = getKnowledgeStatus(workspaceRoot);
 
   if (!status.kbExists || !status.kbIsDirectory) {
-    throw new Error("Run `topchester kb init` and `topchester kb compile` before creating a context pack.");
+    throw new Error("Run `topchester kb init` and `topchester kb sync` before creating a context pack.");
   }
 
   const loadResult = await loadL1FileEntries(status.kbPath);

@@ -67,10 +67,10 @@ From the project root:
 
 ```sh
 topchester kb init
-topchester kb compile
+topchester kb sync
 ```
 
-`kb init` creates the local Topchester folders. `kb compile` builds `topchester-kb/`, which is the project knowledge base the agent uses for normal work.
+`kb init` creates the local Topchester folders. `kb sync` builds `topchester-kb/`, which is the project knowledge base the agent uses for normal work.
 
 For a cheap preview before compiling:
 
@@ -91,7 +91,7 @@ Useful first commands inside the TUI:
 ```text
 /kb status
 /kb sync
-/kb compile
+/kb sync --full
 /new
 ```
 
@@ -126,8 +126,8 @@ topchester
 ## If Something Fails
 
 - `missing API key`: set `OPENROUTER_API_KEY` in the same shell.
-- `kb: missing`: run `topchester kb init`, then `topchester kb compile`.
-- `kb: empty`: run `topchester kb compile`.
+- `kb: missing`: run `topchester kb init`, then `topchester kb sync`.
+- `kb: empty`: run `topchester kb sync`.
 - `N dirty`: run `topchester kb sync`.
 - Command blocked by policy: approve it in the TUI for one run, or add an exact command rule under `tools.commands.allowExact` in `topchester.jsonc`.
 

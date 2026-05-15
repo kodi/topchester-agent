@@ -579,11 +579,12 @@ export function formatDuration(durationMs: number): string {
 }
 
 function getSlashCommandActivities(command: string): string[] {
-  if (command.startsWith("/kb compile") || command.startsWith("/kb sync")) {
+  if (command.startsWith("/kb sync")) {
+    const isFullSync = command.split(/\s+/).includes("--full");
     return [
       "Checking project knowledge folders...",
       "Reading .gitignore files...",
-      command.startsWith("/kb sync") ? "Checking KB file status..." : "Listing project files...",
+      isFullSync ? "Listing project files..." : "Checking KB file status...",
       "Queueing L1 work...",
     ];
   }

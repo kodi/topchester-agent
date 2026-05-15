@@ -1,8 +1,6 @@
 import {
-  compileKnowledgeBase,
   dryRunKnowledgeCompile,
   filterNonCleanKnowledgeCompileResult,
-  formatKnowledgeCompileResult,
   formatKnowledgeCompileStatusResult,
   formatKnowledgeSyncResult,
   syncKnowledgeBase,
@@ -49,12 +47,12 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
     description: "show non-clean knowledge files",
   },
   {
-    value: "/kb compile",
-    description: "process project files into L1 entries",
-  },
-  {
     value: "/kb sync",
     description: "process non-clean project files into L1 entries",
+  },
+  {
+    value: "/kb sync --full",
+    description: "process all project files into L1 entries",
   },
   {
     value: "/kb init",
@@ -148,22 +146,23 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
     return { messages: formatKnowledgeInitResult(await initializeKnowledgeBase(context.workspaceRoot)) };
   }
 
-  if (subcommand === "compile" || subcommand === "sync") {
-    if (!context.modelGateway) {
-      return { messages: ['No model configured for purpose "kb.summarize"; L1 entries were not processed.'] };
+  if (subcommand === "sync") {
+    const full = args.includes("--full");
+    const unknownArgs = args.slice(1).filter((arg) => arg !== "--full");
+    if (unknownArgs.length > 0) {
+      return { messages: ["Usage: /kb sync [--full]"] };
     }
-
     try {
-      const action = subcommand === "sync" ? syncKnowledgeBase : compileKnowledgeBase;
-      const format = subcommand === "sync" ? formatKnowledgeSyncResult : formatKnowledgeCompileResult;
       return {
-        messages: format(
-          await action(context.workspaceRoot, {
+        messages: formatKnowledgeSyncResult(
+          await syncKnowledgeBase(context.workspaceRoot, {
             model: context.modelGateway,
             requireModel: true,
             config: context.config,
+            full,
             onProgress: context.onProgress,
-          })
+          }),
+          { title: full ? "KB sync --full" : "KB sync" }
         ),
       };
     } catch (error) {
@@ -177,7 +176,7 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
     return { messages: formatKnowledgeResetResult(await resetKnowledgeBase(context.workspaceRoot)) };
   }
 
-  return { messages: ["Usage: /kb init, /kb compile, /kb sync, /kb reset, or /kb status"] };
+  return { messages: ["Usage: /kb init, /kb sync [--full], /kb reset, or /kb status"] };
 }
 
 function executeNewCommand(): SlashCommandResult {

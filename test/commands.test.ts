@@ -34,12 +34,12 @@ describe("slash commands", () => {
         description: "show non-clean knowledge files",
       },
       {
-        value: "/kb compile",
-        description: "process project files into L1 entries",
-      },
-      {
         value: "/kb sync",
         description: "process non-clean project files into L1 entries",
+      },
+      {
+        value: "/kb sync --full",
+        description: "process all project files into L1 entries",
       },
       {
         value: "/kb init",
@@ -60,12 +60,12 @@ describe("slash commands", () => {
         description: "show non-clean knowledge files",
       },
       {
-        value: "/kb compile",
-        description: "process project files into L1 entries",
-      },
-      {
         value: "/kb sync",
         description: "process non-clean project files into L1 entries",
+      },
+      {
+        value: "/kb sync --full",
+        description: "process all project files into L1 entries",
       },
       {
         value: "/kb init",
@@ -103,6 +103,10 @@ describe("slash commands", () => {
         value: "/kb sync",
         description: "process non-clean project files into L1 entries",
       },
+      {
+        value: "/kb sync --full",
+        description: "process all project files into L1 entries",
+      },
     ]);
     expect(getSlashCommandSuggestions("/nope")).toEqual([]);
     expect(getSlashCommandSuggestions("hello")).toEqual([]);
@@ -116,7 +120,7 @@ describe("slash commands", () => {
 
   it("reports /kb usage for unknown KB subcommands", async () => {
     await expect(executeSlashCommand("/kb nope", { workspaceRoot: "/repo" })).resolves.toEqual({
-      messages: ["Usage: /kb init, /kb compile, /kb sync, /kb reset, or /kb status"],
+      messages: ["Usage: /kb init, /kb sync [--full], /kb reset, or /kb status"],
     });
   });
 
@@ -155,13 +159,13 @@ describe("slash commands", () => {
     await expect(stat(cachePath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("executes /kb compile through the model-backed L1 pipeline", async () => {
+  it("executes /kb sync --full through the model-backed L1 pipeline", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     await mkdir(join(workspace, "src"), { recursive: true });
     await executeSlashCommand("/kb init", { workspaceRoot: workspace });
     await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
 
-    const result = await executeSlashCommand("/kb compile", {
+    const result = await executeSlashCommand("/kb sync --full", {
       workspaceRoot: workspace,
       modelGateway: {
         async generateText() {
@@ -187,7 +191,7 @@ describe("slash commands", () => {
       },
     });
 
-    expect(result.messages).toContain("KB compile");
+    expect(result.messages).toContain("KB sync --full");
     expect(result.messages).toContain("queued: 1");
     expect(result.messages).toContain("completed: 1");
     expect(result.messages).toContain("state: L1 entries are ready and current");
@@ -231,9 +235,18 @@ describe("slash commands", () => {
     expect(result.messages).toContain("state: L1 entries are ready and current");
   });
 
-  it("surfaces /kb compile setup and model failures as chat messages", async () => {
-    await expect(executeSlashCommand("/kb compile", { workspaceRoot: "/repo" })).resolves.toEqual({
-      messages: ['No model configured for purpose "kb.summarize"; L1 entries were not processed.'],
+  it("surfaces /kb sync setup and model failures as chat messages", async () => {
+    await expect(executeSlashCommand("/kb sync", { workspaceRoot: "/repo" })).resolves.toEqual({
+      messages: ["KB sync failed: Run `topchester kb init` before syncing the project knowledge base."],
+    });
+
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await executeSlashCommand("/kb init", { workspaceRoot: workspace });
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+
+    await expect(executeSlashCommand("/kb sync", { workspaceRoot: workspace })).resolves.toEqual({
+      messages: ['KB sync failed: No model configured for purpose "kb.summarize"; L1 entries were not processed.'],
     });
   });
 
@@ -311,10 +324,6 @@ describe("slash commands", () => {
       exists: true,
       isDirectory: true,
     });
-    await expect(getRuntimeKnowledgeFolderState(runtime, "/kb compile")).resolves.toEqual({
-      exists: true,
-      isDirectory: true,
-    });
     await expect(getRuntimeKnowledgeFolderState(runtime, "/kb sync")).resolves.toEqual({
       exists: true,
       isDirectory: true,
@@ -369,7 +378,7 @@ describe("slash commands", () => {
     });
 
     await runtime.submitSlashCommand("/kb init");
-    await runtime.submitSlashCommand("/kb compile");
+    await runtime.submitSlashCommand("/kb sync");
     await writeFile(join(workspace, "src", "index.ts"), "export const value = 2;\n");
 
     const dirtyEvents = await runtime.submitSlashCommand("/kb status");

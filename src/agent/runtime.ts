@@ -859,14 +859,14 @@ function formatTuiSyncStatus(status: L1FileScanStatus): string {
 
 /**
  * Decides whether a slash command should trigger a fresh KB status event.
- * Only KB subcommands that can initialize, rebuild, sync, reset, or inspect
+ * Only KB subcommands that can initialize, sync, reset, or inspect
  * the compiled knowledge state need the refresh; other commands can return
  * their output without doing extra filesystem work.
  */
 function shouldRefreshKnowledgeStatus(command: string): boolean {
   const parsed = parseSlashCommand(command);
 
-  return parsed?.name === "kb" && ["init", "reset", "compile", "sync", "status"].includes(parsed.args[0] ?? "");
+  return parsed?.name === "kb" && ["init", "reset", "sync", "status"].includes(parsed.args[0] ?? "");
 }
 
 /**
@@ -886,7 +886,7 @@ export function getKnowledgeStatusEvents(status: KnowledgeStatus): AgentRuntimeE
  */
 function formatStartupKnowledgeGuidance(status: KnowledgeStatus): string | undefined {
   if (!status.kbExists) {
-    return "Next: run /kb init, then /kb compile to create project knowledge.";
+    return "Next: run /kb init, then /kb sync to create project knowledge.";
   }
 
   if (!status.kbIsDirectory) {
@@ -894,7 +894,7 @@ function formatStartupKnowledgeGuidance(status: KnowledgeStatus): string | undef
   }
 
   if (status.kbContentState !== "ready") {
-    return "Next: run /kb compile to build project knowledge.";
+    return "Next: run /kb sync to build project knowledge.";
   }
 
   if ((status.nonCleanFileCount ?? 0) > 0) {

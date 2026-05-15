@@ -10,10 +10,6 @@ import { processL1Queue, type L1QueueProcessingSummary, type L1SummaryModel } fr
 import { knowledgeCompilerIdentity } from "./manifest.js";
 import { getL1FileEntryPath } from "./path-encoding.js";
 
-export interface KnowledgeCompiler {
-  compile(): Promise<KnowledgeCompileResult>;
-}
-
 export interface KnowledgeCompileResult {
   workspaceRoot: string;
   kbPath: string;
@@ -43,41 +39,66 @@ export interface KnowledgeCompileDryRunResult {
   files: KnowledgeCompileDryRunFile[];
 }
 
-export async function compileKnowledgeBase(
+export async function syncKnowledgeBase(
   workspaceRoot: string,
   options: {
     onProgress?: KnowledgeProgressReporter;
     model?: L1SummaryModel;
     requireModel?: boolean;
     config?: TopchesterConfig;
+    full?: boolean;
   } = {}
 ): Promise<KnowledgeCompileResult> {
   options.onProgress?.({ message: "Checking project knowledge folders..." });
   const status = getKnowledgeStatus(workspaceRoot);
 
   if (!status.kbExists || !status.kbIsDirectory) {
-    throw new Error("Run `topchester kb init` before compiling the project knowledge base.");
-  }
-
-  if (options.requireModel) {
-    assertKbSummarizeModelConfigured(options.model);
+    throw new Error("Run `topchester kb init` before syncing the project knowledge base.");
   }
 
   await mkdir(status.cachePath, { recursive: true });
-  options.onProgress?.({ message: "Reading .gitignore files and listing project files..." });
+  options.onProgress?.({
+    message: options.full
+      ? "Reading .gitignore files and listing project files..."
+      : "Reading .gitignore files and checking KB file status...",
+  });
   const ignorePaths = options.config?.ignore?.paths ?? [];
   const inventory = await listProjectFilesForL1(workspaceRoot, {
     excludedPaths: [status.kbPath, status.cachePath],
     ignorePaths,
   });
-  options.onProgress?.({ message: `Queued ${inventory.files.length} project files for L1...` });
-  const queuedFiles = inventory.files.map(createL1QueueItem);
-  const queuePath = join(status.cachePath, "l1-queue.json");
+
+  const dirtyFiles = options.full
+    ? inventory.files
+    : (
+        await Promise.all(
+          inventory.files.map(async (file) => ({
+            ...file,
+            syncStatus: await getL1SyncStatus(status.kbPath, status.kbExists && status.kbIsDirectory, file),
+          }))
+        )
+      ).filter((file) => file.syncStatus !== "current");
+
+  if (options.requireModel && dirtyFiles.length > 0) {
+    assertKbSummarizeModelConfigured(options.model);
+  }
+
+  options.onProgress?.({
+    message: options.full
+      ? `Queued ${dirtyFiles.length} project files for full L1 sync...`
+      : `Queued ${dirtyFiles.length} non-clean project files for L1 sync...`,
+  });
+  const queuedFiles = dirtyFiles.map((file) =>
+    createL1QueueItem({ path: file.path, sizeBytes: file.sizeBytes, hash: file.hash })
+  );
+  const queuePath = join(status.cachePath, options.full ? "l1-queue.json" : "l1-sync-queue.json");
   const manifestPath = join(status.kbPath, "manifest.json");
   const generatedAt = new Date().toISOString();
   const queue = createL1QueueFile(queuedFiles, generatedAt);
 
-  options.onProgress?.({ message: "Writing L1 queue and manifest..." });
+  options.onProgress?.({
+    message: options.full ? "Writing full L1 sync queue and manifest..." : "Writing L1 sync queue and manifest...",
+  });
   await writeFile(queuePath, `${JSON.stringify(queue, null, 2)}\n`);
   const l1 = {
     queued: queuedFiles.length,
@@ -107,19 +128,25 @@ export async function compileKnowledgeBase(
     )}\n`
   );
 
-  options.onProgress?.({ message: "Processing L1 file entries with the configured model..." });
-  const processed = options.model
-    ? await processL1Queue({
-        workspaceRoot,
-        kbPath: status.kbPath,
-        queuePath,
-        manifestPath,
-        gitignoreFiles: inventory.gitignoreFiles,
-        configIgnorePathCount: ignorePaths.length,
-        model: options.model,
-        onProgress: options.onProgress,
-      })
-    : undefined;
+  options.onProgress?.({
+    message: options.full
+      ? "Processing all L1 file entries with the configured model..."
+      : "Processing non-clean L1 file entries with the configured model...",
+  });
+  const processed =
+    options.model && queuedFiles.length > 0
+      ? await processL1Queue({
+          workspaceRoot,
+          kbPath: status.kbPath,
+          queuePath,
+          manifestPath,
+          gitignoreFiles: inventory.gitignoreFiles,
+          configIgnorePathCount: ignorePaths.length,
+          removeOrphanedEntries: options.full === true,
+          model: options.model,
+          onProgress: options.onProgress,
+        })
+      : undefined;
 
   return {
     workspaceRoot,
@@ -130,99 +157,6 @@ export async function compileKnowledgeBase(
     queuePath,
     manifestPath,
     configIgnorePathCount: ignorePaths.length,
-    l1: processed?.summary ?? l1,
-  };
-}
-
-export async function syncKnowledgeBase(
-  workspaceRoot: string,
-  options: {
-    onProgress?: KnowledgeProgressReporter;
-    model?: L1SummaryModel;
-    requireModel?: boolean;
-    config?: TopchesterConfig;
-  } = {}
-): Promise<KnowledgeCompileResult> {
-  options.onProgress?.({ message: "Checking project knowledge folders..." });
-  const status = getKnowledgeStatus(workspaceRoot);
-
-  if (!status.kbExists || !status.kbIsDirectory) {
-    throw new Error("Run `topchester kb init` before syncing the project knowledge base.");
-  }
-
-  options.onProgress?.({ message: "Reading .gitignore files and checking KB file status..." });
-  const dryRun = await dryRunKnowledgeCompile(workspaceRoot, { config: options.config });
-  const dirtyFiles = filterNonCleanKnowledgeCompileResult(dryRun).files;
-
-  if (options.requireModel && dirtyFiles.length > 0) {
-    assertKbSummarizeModelConfigured(options.model);
-  }
-
-  await mkdir(status.cachePath, { recursive: true });
-  options.onProgress?.({ message: `Queued ${dirtyFiles.length} non-clean project files for L1 sync...` });
-  const queuedFiles = dirtyFiles.map((file) =>
-    createL1QueueItem({ path: file.path, sizeBytes: file.sizeBytes, hash: file.hash })
-  );
-  const queuePath = join(status.cachePath, "l1-sync-queue.json");
-  const manifestPath = join(status.kbPath, "manifest.json");
-  const generatedAt = new Date().toISOString();
-  const queue = createL1QueueFile(queuedFiles, generatedAt);
-
-  options.onProgress?.({ message: "Writing L1 sync queue and manifest..." });
-  await writeFile(queuePath, `${JSON.stringify(queue, null, 2)}\n`);
-  const l1 = {
-    queued: queuedFiles.length,
-    completed: 0,
-    failed: 0,
-    changed: 0,
-    missing: 0,
-    currentEntries: 0,
-  };
-  await writeFile(
-    manifestPath,
-    `${JSON.stringify(
-      {
-        name: "topchester-kb",
-        version: 1,
-        compiler: knowledgeCompilerIdentity,
-        generatedAt,
-        workspaceRoot,
-        l1QueuePath: queuePath,
-        queuedFileCount: queuedFiles.length,
-        configIgnorePathCount: dryRun.configIgnorePathCount,
-        l1,
-        gitignoreFiles: dryRun.gitignoreFiles,
-      },
-      null,
-      2
-    )}\n`
-  );
-
-  options.onProgress?.({ message: "Processing non-clean L1 file entries with the configured model..." });
-  const processed =
-    options.model && queuedFiles.length > 0
-      ? await processL1Queue({
-          workspaceRoot,
-          kbPath: status.kbPath,
-          queuePath,
-          manifestPath,
-          gitignoreFiles: dryRun.gitignoreFiles,
-          configIgnorePathCount: dryRun.configIgnorePathCount,
-          removeOrphanedEntries: false,
-          model: options.model,
-          onProgress: options.onProgress,
-        })
-      : undefined;
-
-  return {
-    workspaceRoot,
-    kbPath: status.kbPath,
-    cachePath: status.cachePath,
-    gitignoreFiles: dryRun.gitignoreFiles,
-    queuedFiles: processed?.queuedFiles ?? queuedFiles,
-    queuePath,
-    manifestPath,
-    configIgnorePathCount: dryRun.configIgnorePathCount,
     l1: processed?.summary ?? l1,
   };
 }
@@ -254,10 +188,7 @@ export async function dryRunKnowledgeCompile(
   };
 }
 
-export function formatKnowledgeCompileResult(
-  result: KnowledgeCompileResult,
-  options: { title?: string } = {}
-): string[] {
+export function formatKnowledgeSyncResult(result: KnowledgeCompileResult, options: { title?: string } = {}): string[] {
   const l1 = result.l1 ?? {
     queued: result.queuedFiles.length,
     completed: 0,
@@ -272,11 +203,11 @@ export function formatKnowledgeCompileResult(
     l1.completed === totalQueued && !hasPartialOutcomes
       ? "L1 entries are ready and current"
       : hasPartialOutcomes
-        ? "partial L1 compile; some files need attention"
+        ? "partial L1 sync; some files need attention"
         : "L1 file queue is ready";
 
   return [
-    options.title ?? "KB compile",
+    options.title ?? "KB sync",
     `workspace: ${result.workspaceRoot}`,
     `gitignore files read: ${result.gitignoreFiles.length}`,
     `config ignore rules: ${result.configIgnorePathCount}`,
@@ -290,10 +221,6 @@ export function formatKnowledgeCompileResult(
     `current L1 entries: ${l1.currentEntries}`,
     `state: ${state}`,
   ];
-}
-
-export function formatKnowledgeSyncResult(result: KnowledgeCompileResult): string[] {
-  return formatKnowledgeCompileResult(result, { title: "KB sync" });
 }
 
 export function formatKnowledgeCompileDryRunResult(

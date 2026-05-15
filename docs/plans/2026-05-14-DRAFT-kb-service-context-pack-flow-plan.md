@@ -16,7 +16,7 @@ This is a working note for iteration, not an implementation-complete plan.
 The project already has:
 
 - L1 file entries generated under `topchester-kb/l1-files/`.
-- `topchester kb compile`, `topchester kb sync`, and `topchester kb status`.
+- `topchester kb sync`, `topchester kb sync --full`, and `topchester kb status`.
 - A session overlay that marks agent-edited files dirty-known and `needs_sync`.
 - Only a placeholder `src/knowledge/service/index.ts` for the runtime KB service.
 

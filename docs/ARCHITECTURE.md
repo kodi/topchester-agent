@@ -76,13 +76,14 @@ The default `topchester` command should be the interactive TUI coding agent.
 Additional CLI commands should exist for explicit KB workflows:
 
 ```text
-topchester kb compile     # full Knowledge Compiler pipeline
+topchester kb sync --full # full Knowledge Compiler pipeline
+topchester kb sync        # incremental Knowledge Compiler pipeline
 topchester kb scan        # deterministic inventory scan only
 topchester kb status      # drift and freshness status
 topchester kb explain     # explain what the KB knows about the project
 ```
 
-The interactive TUI may expose the same KB compile flow as a wizard, especially on first project open.
+The interactive TUI may expose the same KB sync flow as a wizard, especially on first project open.
 
 ## First-Run Project Flow
 
@@ -175,7 +176,7 @@ Implication for Topchester:
 Topchester should be organized around these responsibilities:
 
 1. CLI entrypoint
-   - Owns `topchester`, `topchester kb compile`, `topchester kb scan`, and related commands.
+   - Owns `topchester`, `topchester kb sync`, `topchester kb scan`, and related commands.
    - Handles install-time/runtime checks, config discovery, workspace root resolution, and command dispatch.
 
 2. TUI shell
@@ -192,7 +193,7 @@ Topchester should be organized around these responsibilities:
 4. Knowledge Compiler
    - Compiles a repository into the canonical KB.
    - Includes inventory scanning, structural TypeScript/JavaScript intelligence, L1 file entries, L2 module discovery, L3 feature discovery, graph building, validation, and drift reporting.
-   - Exposes explicit compile/scan/status operations to the CLI and TUI.
+   - Exposes explicit sync/scan/status operations to the CLI and TUI.
 
 5. KB service
    - Serves the compiled KB to the agent runtime.
@@ -372,7 +373,7 @@ Resolved for V0:
 - Canonical KB path: `topchester-kb/` by default, overrideable with `TOPCHESTER_KB_DIR`.
 - Generated cache path: `.agents/topchester-kb-cache/`.
 - KB API: local HTTP JSON-RPC core with MCP adapter on top.
-- Knowledge Compiler CLI: `topchester kb compile` and `topchester kb scan`.
+- Knowledge Compiler CLI: `topchester kb sync`, `topchester kb sync --full`, and `topchester kb scan`.
 - Drift posture: warning-first / non-strict mode initially.
 
 ## Open Questions
@@ -389,6 +390,6 @@ Resolved for V0:
 1. Create a minimal TypeScript/Node CLI skeleton with a `topchester` bin.
 2. Add workspace detection and a first-run project classification warning.
 3. Add a minimal TUI shell using `@earendil-works/pi-tui`.
-4. Add placeholder `topchester kb compile`, `topchester kb scan`, and `topchester kb status` commands.
+4. Add placeholder `topchester kb sync`, `topchester kb scan`, and `topchester kb status` commands.
 5. Spike Pi SDK embedding versus Topchester-owned runtime, with the key test being whether KB-first context retrieval and KB write-back can be enforced.
 6. Keep `docs/KNOWLEDGE.md` as the canonical KB architecture reference while runtime scaffolding starts.
