@@ -593,7 +593,19 @@ Dependencies:
 
 ### Slice 2: Command Policy And Validator Classification
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
+
+Completed in Slice 2:
+
+- Added `src/agent/tools/command-policy.ts` with single-command parsing, workspace-scoped cwd resolution, package metadata lookup, package-manager detection, validator classification, and normalized spawn plans.
+- Added policy tests in `test/run-command-tool.test.ts` for supported package managers, direct validators, nearest `package.json`, validator hint conflicts, and risky command rejection.
+- Kept this as a non-registered policy layer with no model-visible behavior change.
+
+Verification:
+
+```sh
+pnpm test test/run-command-tool.test.ts
+```
 
 Goal: Add strict command parsing and classification without registering a new model tool yet.
 
