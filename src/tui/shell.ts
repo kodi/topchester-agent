@@ -1,9 +1,15 @@
 import { isKeyRelease, isKeyRepeat, matchesKey, ProcessTerminal, TUI } from "@earendil-works/pi-tui";
 import { type AgentRuntimeEvent } from "../agent/events.js";
 import { formatTaskPlanNotice, type TaskPlanState } from "../agent/task-plan.js";
-import { TopchesterAgentRuntime, type AgentRuntime } from "../agent/runtime.js";
+import {
+  TopchesterAgentRuntime,
+  type AgentRuntime,
+  type RunCommandApprovalDecision,
+  type RunCommandApprovalRequest,
+} from "../agent/runtime.js";
 import { type AppContext } from "../app/context.js";
 import { ui } from "../cli/ui.js";
+import { addProjectCommandAllowExactRule } from "../config/index.js";
 import { type ModelReasoningEvent, type ModelReasoningSink } from "../model/index.js";
 import { type SessionEventPayload } from "../session/events.js";
 import { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
@@ -184,6 +190,8 @@ export class TopchesterTuiShell implements TuiShell {
         {
           onReasoning: reasoningDisplay?.sink,
           session: this.session,
+          requestRunCommandApproval: (request) =>
+            this.requestRunCommandApproval(app, tui, busy, request, abortController.signal),
         }
       )) {
         if (event.type === "message" && event.role === "assistant") {
@@ -209,6 +217,76 @@ export class TopchesterTuiShell implements TuiShell {
       app.setCancelPending(undefined);
       busy.stop();
       tui.requestRender();
+    }
+  }
+
+  private requestRunCommandApproval(
+    app: ChatLayout,
+    tui: TUI,
+    busy: BusyIndicator,
+    request: RunCommandApprovalRequest,
+    abortSignal: AbortSignal
+  ): Promise<RunCommandApprovalDecision> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const settle = (decision: RunCommandApprovalDecision) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        abortSignal.removeEventListener("abort", abort);
+        app.setModalActionHandler(undefined);
+        app.dismissActiveModal();
+        busy.clearActivity();
+        resolve(decision);
+      };
+      const abort = () => settle("cancel");
+
+      abortSignal.addEventListener("abort", abort, { once: true });
+      app.setModalActionHandler((action) => {
+        switch (action.value) {
+          case "run_once":
+          case "allow_session":
+            settle(action.value);
+            return;
+          case "allow_repo":
+            void this.persistRunCommandApproval(request.command)
+              .then(() => settle("allow_repo"))
+              .catch((error: unknown) => {
+                app.addMessage(systemMessage(`Could not save command approval: ${formatPlainError(error)}`));
+                settle("cancel");
+              });
+            return;
+          default:
+            settle("cancel");
+        }
+      });
+      app.addMessage({
+        kind: "modal",
+        tone: "warning",
+        title: "Run command?",
+        body: `${request.command}\n\n${request.reason}`,
+        actions: [
+          { label: "Run once", value: "run_once" },
+          { label: "Always allow exact command this session", value: "allow_session" },
+          { label: "Always allow exact command for this repo", value: "allow_repo" },
+          { label: "Cancel", value: "cancel" },
+        ],
+      });
+      busy.setActivity("Waiting for command approval...");
+      tui.requestRender();
+    });
+  }
+
+  private async persistRunCommandApproval(command: string): Promise<void> {
+    await addProjectCommandAllowExactRule(this.context.workspaceRoot, command);
+    this.context.config.tools ??= {};
+    const commands = (this.context.config.tools.commands ??= { allow: [], allowExact: [], deny: [] });
+    commands.allowExact ??= [];
+
+    if (!commands.allowExact.includes(command)) {
+      commands.allowExact.push(command);
     }
   }
 

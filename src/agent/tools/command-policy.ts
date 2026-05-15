@@ -15,6 +15,7 @@ export interface CommandPolicyArgs {
 export interface CommandPolicyContext {
   workspaceRoot: string;
   commands?: CommandPolicyConfig;
+  approvedCommands?: readonly string[];
 }
 
 export interface CommandSpawnPlan {
@@ -27,6 +28,7 @@ export interface CommandSpawnPlan {
 
 export interface CommandPolicyConfig {
   allow?: readonly string[];
+  allowExact?: readonly string[];
   deny?: readonly string[];
 }
 
@@ -68,9 +70,25 @@ export type ConfiguredCommandPolicyDecision =
     }
   | CommandPolicyRejectedDecision;
 
+export type ApprovedCommandPolicyDecision =
+  | {
+      allowed: true;
+      reason: string;
+      plan: CommandSpawnPlan;
+      policy: {
+        allowed: true;
+        reason: string;
+        kind: "approved_command";
+        commands: string[];
+        matchedRule: string;
+      };
+    }
+  | CommandPolicyRejectedDecision;
+
 export type RunCommandPolicyDecision =
   | Exclude<ValidatorCommandPolicyDecision, CommandPolicyRejectedDecision>
   | Exclude<ConfiguredCommandPolicyDecision, CommandPolicyRejectedDecision>
+  | Exclude<ApprovedCommandPolicyDecision, CommandPolicyRejectedDecision>
   | CommandPolicyRejectedDecision;
 
 export type CommandPolicyDecision = ValidatorCommandPolicyDecision | ConfiguredCommandPolicyDecision;
@@ -234,6 +252,44 @@ export async function validateRunCommandPolicy(
     };
   }
 
+  const allowedExactRule = findExactCommandRule(prepared.plan.displayCommand, context.commands?.allowExact ?? []);
+
+  if (allowedExactRule) {
+    const policyReason = `configured exact command allowed by '${allowedExactRule}'`;
+
+    return {
+      allowed: true,
+      reason: policyReason,
+      plan: prepared.plan,
+      policy: {
+        allowed: true,
+        reason: policyReason,
+        kind: "configured_command",
+        commands: [prepared.plan.displayCommand],
+        matchedRule: allowedExactRule,
+      },
+    };
+  }
+
+  const approvedRule = findExactCommandRule(prepared.plan.displayCommand, context.approvedCommands ?? []);
+
+  if (approvedRule) {
+    const policyReason = `approved exact command '${approvedRule}'`;
+
+    return {
+      allowed: true,
+      reason: policyReason,
+      plan: prepared.plan,
+      policy: {
+        allowed: true,
+        reason: policyReason,
+        kind: "approved_command",
+        commands: [prepared.plan.displayCommand],
+        matchedRule: approvedRule,
+      },
+    };
+  }
+
   const allowedRule = findMatchingCommandRule(prepared.plan.displayCommand, context.commands?.allow ?? []);
 
   if (!allowedRule) {
@@ -258,6 +314,10 @@ export async function validateRunCommandPolicy(
       matchedRule: allowedRule,
     },
   };
+}
+
+function findExactCommandRule(command: string, rules: readonly string[]): string | undefined {
+  return rules.find((rule) => rule.trim() === command);
 }
 
 async function prepareCommandPolicy(

@@ -19,7 +19,7 @@ import {
 import { ABORT_CHOICE_VALUE } from "../agent/events.js";
 import { ui } from "../cli/ui.js";
 import { type KnowledgeStatus } from "../knowledge/status.js";
-import { renderChatMessage, userMessage, type ChatMessage } from "./messages.js";
+import { renderChatMessage, userMessage, type ChatMessage, type ChatModalAction } from "./messages.js";
 import {
   isDownKey,
   isEndKey,
@@ -61,6 +61,7 @@ export class ChatLayout implements Component, Focusable {
   private cancelPending: (() => void) | undefined;
   private submitMessage: ((message: string) => void) | undefined;
   private submitCommand: ((command: string) => void) | undefined;
+  private modalActionHandler: ((action: ChatModalAction) => void) | undefined;
   private activeModalActionIndex = 0;
   private activeSlashSuggestionIndex = 0;
   private threadScrollOffset = 0;
@@ -151,6 +152,10 @@ export class ChatLayout implements Component, Focusable {
     this.submitCommand = submit;
   }
 
+  setModalActionHandler(handler: ((action: ChatModalAction) => void) | undefined): void {
+    this.modalActionHandler = handler;
+  }
+
   setInputValue(value: string): void {
     this.promptValue = value;
     this.promptCursor = value.length;
@@ -186,12 +191,12 @@ export class ChatLayout implements Component, Focusable {
   }
 
   handleInput(data: string): void {
-    if (this.cancelPending && matchesKey(data, "escape")) {
-      this.cancelPending();
+    if (this.handleModalInput(data)) {
       return;
     }
 
-    if (this.handleModalInput(data)) {
+    if (this.cancelPending && matchesKey(data, "escape")) {
+      this.cancelPending();
       return;
     }
 
@@ -450,6 +455,11 @@ export class ChatLayout implements Component, Focusable {
 
     if (matchesKey(data, "enter") || data === "\n" || data === "\r") {
       const action = activeModal.actions[this.activeModalActionIndex];
+      if (this.modalActionHandler) {
+        this.resolveActiveModalAction(action);
+        return true;
+      }
+
       if (action.label === "Exit") {
         this.exitAgent();
         return true;
@@ -465,6 +475,11 @@ export class ChatLayout implements Component, Focusable {
     }
 
     if (matchesKey(data, "escape")) {
+      if (this.modalActionHandler) {
+        this.resolveActiveModalAction({ label: "Cancel", value: "cancel" });
+        return true;
+      }
+
       this.addMessage(userMessage("Cancel"));
       return true;
     }
@@ -833,6 +848,24 @@ export class ChatLayout implements Component, Focusable {
   private submitModalAction(message: string): void {
     this.addMessage(userMessage(message));
     this.submitUserInput(message);
+  }
+
+  private resolveActiveModalAction(action: ChatModalAction): void {
+    const handler = this.modalActionHandler;
+
+    this.modalActionHandler = undefined;
+    this.dismissActiveModal();
+    handler?.(action);
+  }
+
+  dismissActiveModal(): void {
+    const index = this.getActiveModalIndex();
+
+    if (index >= 0) {
+      this.messages.splice(index, 1);
+    }
+
+    this.activeModalActionIndex = 0;
   }
 
   private submitUserInput(message: string): void {

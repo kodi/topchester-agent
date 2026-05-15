@@ -23,7 +23,7 @@ export interface RunCommandToolResult extends ToolResult<"run_command"> {
   policy: {
     allowed: true;
     reason: string;
-    kind: "validator" | "configured_command";
+    kind: "validator" | "configured_command" | "approved_command";
     commands: string[];
     validator?: "test" | "lint" | "typecheck" | "format_check" | "build" | "check" | "smoke";
     packageManager?: "pnpm" | "npm" | "yarn" | "bun";
@@ -45,6 +45,7 @@ export const runCommandTool = defineTool({
       context.workspaceRoot,
       args,
       context.config?.tools?.commands,
+      context.runCommandApprovals?.allowExactCommands,
       context.pathEnv,
       context.abortSignal
     ),
@@ -53,11 +54,12 @@ export const runCommandTool = defineTool({
 export async function runWorkspaceCommand(
   workspaceRoot: string,
   args: RunCommandArgs,
-  commands: { allow?: readonly string[]; deny?: readonly string[] } | undefined,
+  commands: { allow?: readonly string[]; allowExact?: readonly string[]; deny?: readonly string[] } | undefined,
+  approvedCommands?: readonly string[],
   pathEnv?: string,
   abortSignal?: AbortSignal
 ): Promise<RunCommandToolResult> {
-  const decision = await validateRunCommandPolicy(args, { workspaceRoot, commands });
+  const decision = await validateRunCommandPolicy(args, { workspaceRoot, commands, approvedCommands });
 
   if (!decision.allowed) {
     throw new Error(decision.reason);

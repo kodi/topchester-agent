@@ -8,6 +8,7 @@ import { type TopchesterConfig } from "../../config/index.js";
 export interface ToolContext {
   workspaceRoot: string;
   pathEnv?: string;
+  runCommandApprovals?: RunCommandApprovalContext;
   logger?: Logger;
   config?: TopchesterConfig;
   taskPlan?: TaskPlanController;
@@ -17,6 +18,10 @@ export interface ToolContext {
   eventSink?: (event: import("../events.js").AgentRuntimeEvent) => void | Promise<void>;
   abortSignal?: AbortSignal;
   toolCallId?: string;
+}
+
+export interface RunCommandApprovalContext {
+  allowExactCommands?: readonly string[];
 }
 
 export interface ToolCall<Name extends string = string, Args = unknown> {

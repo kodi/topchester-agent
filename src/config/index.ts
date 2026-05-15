@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve, win32 } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -123,6 +124,7 @@ const commandPatternSchema = z
 const commandPolicySchema = z
   .object({
     allow: z.array(commandPatternSchema).optional().default([]),
+    allowExact: z.array(commandPatternSchema).optional().default([]),
     deny: z.array(commandPatternSchema).optional().default([]),
   })
   .strict();
@@ -171,6 +173,12 @@ export interface ConfigLoadOptions {
   configPath?: string;
 }
 
+export interface ProjectCommandAllowRuleResult {
+  path: string;
+  added: boolean;
+  allowExact: string[];
+}
+
 export function getGlobalTopchesterConfigDir(): string {
   return join(homedir(), ".config", "topchester");
 }
@@ -208,6 +216,78 @@ export function loadTopchesterConfig(options: ConfigLoadOptions): TopchesterConf
   }
 
   return topchesterConfigSchema.parse(merged);
+}
+
+export async function addProjectCommandAllowExactRule(
+  workspaceRoot: string,
+  command: string
+): Promise<ProjectCommandAllowRuleResult> {
+  const configPath = join(workspaceRoot, "topchester.jsonc");
+  const config = readProjectConfigObject(configPath);
+  const tools = ensurePlainObjectProperty(config, "tools");
+  const commands = ensurePlainObjectProperty(tools, "commands");
+  const allowExact = ensureStringArrayProperty(commands, "allowExact");
+  const normalizedCommand = command.trim();
+  const added = !allowExact.includes(normalizedCommand);
+
+  if (added) {
+    allowExact.push(normalizedCommand);
+  }
+
+  parseConfigFile(configPath, config);
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  return {
+    path: configPath,
+    added,
+    allowExact,
+  };
+}
+
+function readProjectConfigObject(configPath: string): Record<string, unknown> {
+  if (!existsSync(configPath)) {
+    return { $schema: "https://topchester.com/schemas/config.v1.json" };
+  }
+
+  const parsed = readConfigFile(configPath);
+
+  if (!isPlainObject(parsed)) {
+    throw new Error(`Invalid Topchester config at ${configPath}: <root>: Expected an object.`);
+  }
+
+  return parsed;
+}
+
+function ensurePlainObjectProperty(parent: Record<string, unknown>, key: string): Record<string, unknown> {
+  const value = parent[key];
+
+  if (value === undefined) {
+    const created: Record<string, unknown> = {};
+    parent[key] = created;
+    return created;
+  }
+
+  if (!isPlainObject(value)) {
+    throw new Error(`Invalid Topchester config property '${key}': expected an object.`);
+  }
+
+  return value;
+}
+
+function ensureStringArrayProperty(parent: Record<string, unknown>, key: string): string[] {
+  const value = parent[key];
+
+  if (value === undefined) {
+    const created: string[] = [];
+    parent[key] = created;
+    return created;
+  }
+
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
+    throw new Error(`Invalid Topchester config property '${key}': expected a string array.`);
+  }
+
+  return value;
 }
 
 function readConfigFile(path: string): unknown {
@@ -395,7 +475,10 @@ function deepMerge<T>(base: T, override: T, path: string[] = []): T {
   if (Array.isArray(base) && Array.isArray(override)) {
     const joinedPath = path.join(".");
     return (
-      joinedPath === "ignore.paths" || joinedPath === "tools.commands.allow" || joinedPath === "tools.commands.deny"
+      joinedPath === "ignore.paths" ||
+      joinedPath === "tools.commands.allow" ||
+      joinedPath === "tools.commands.allowExact" ||
+      joinedPath === "tools.commands.deny"
         ? [...base, ...override]
         : override
     ) as T;

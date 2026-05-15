@@ -1417,6 +1417,132 @@ describe("slash commands", () => {
     expect(prompts[1]).toContain("Error:");
   });
 
+  it("asks for run_command approval and resumes the blocked tool call when allowed once", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    const prompts: string[] = [];
+    const approvalRequests: Array<{ command: string; reason: string }> = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (prompts.length === 1) {
+            return {
+              text: "",
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+              toolCalls: [
+                { id: "run-command-0", tool: "run_command", args: { command: "node --version" }, source: "text-json" },
+              ],
+              toolProtocol: "text-json" as const,
+              protocolAttempts: [],
+              providerRejectedTools: false,
+              warnings: [],
+              openRouterRoutingApplied: false,
+            };
+          }
+
+          return {
+            text: "Node version reported.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+            toolCalls: [],
+            toolProtocol: "text-json" as const,
+            protocolAttempts: [],
+            providerRejectedTools: false,
+            warnings: [],
+            openRouterRoutingApplied: false,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "check node version", undefined, undefined, {
+      requestRunCommandApproval: async (request) => {
+        approvalRequests.push({ command: request.command, reason: request.reason });
+
+        return "run_once";
+      },
+    });
+
+    expect(approvalRequests).toEqual([
+      {
+        command: "node --version",
+        reason: "command policy rejected 'node --version' because it is not a validator or configured command.",
+      },
+    ]);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "tool_call", label: expect.stringContaining("run_command: node --version") }),
+        expect.objectContaining({ type: "message", role: "assistant", text: "Node version reported." }),
+      ])
+    );
+    expect(prompts[1]).toContain("Tool result from run_command via node --version:");
+    expect(prompts[1]).toContain("stdout:");
+  });
+
+  it("returns run_command cancellation to the model when approval is denied", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (prompts.length === 1) {
+            return {
+              text: "",
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+              toolCalls: [
+                { id: "run-command-0", tool: "run_command", args: { command: "node --version" }, source: "text-json" },
+              ],
+              toolProtocol: "text-json" as const,
+              protocolAttempts: [],
+              providerRejectedTools: false,
+              warnings: [],
+              openRouterRoutingApplied: false,
+            };
+          }
+
+          return {
+            text: "Skipped.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+            toolCalls: [],
+            toolProtocol: "text-json" as const,
+            protocolAttempts: [],
+            providerRejectedTools: false,
+            warnings: [],
+            openRouterRoutingApplied: false,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "check node version", undefined, undefined, {
+      requestRunCommandApproval: async () => "cancel",
+    });
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool_call",
+          label: "run_command failed: run_command cancelled by user for 'node --version'.",
+        }),
+        expect.objectContaining({ type: "message", role: "assistant", text: "Skipped." }),
+      ])
+    );
+    expect(prompts[1]).toContain("Error:");
+    expect(prompts[1]).toContain("run_command cancelled by user for 'node --version'.");
+  });
+
   it("asks whether to continue or abort after the tool call limit", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     let calls = 0;

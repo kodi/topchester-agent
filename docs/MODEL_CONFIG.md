@@ -283,6 +283,7 @@ Config ignores are applied after built-in safety exclusions and `.gitignore`. Ne
   "tools": {
     "commands": {
       "allow": ["node scripts/check-fixtures.mjs", "pnpm exec tsx scripts/dev/inspect-config.ts"],
+      "allowExact": ["node --version"],
       "deny": ["pnpm publish", "npm publish"],
     },
   },
@@ -291,7 +292,9 @@ Config ignores are applied after built-in safety exclusions and `.gitignore`. Ne
 
 Rules match normalized command display strings by exact command or prefix plus a following space. Deny rules win over allow rules. Command rules must be simple command prefixes, not shell syntax, paths, or glob patterns.
 
-`tools.commands.allow` and `tools.commands.deny` arrays concatenate across config layers in the same load order as `ignore.paths`.
+`tools.commands.allowExact` matches only the complete normalized command. `tools.commands.allow`, `tools.commands.allowExact`, and `tools.commands.deny` arrays concatenate across config layers in the same load order as `ignore.paths`.
+
+When an interactive `run_command` request is rejected only because it is not configured, the TUI can approve the exact command once, allow it for the current session, or permanently add it to this repo's `topchester.jsonc` under `tools.commands.allowExact`.
 
 ## Security Rules
 

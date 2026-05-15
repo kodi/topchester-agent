@@ -27,6 +27,7 @@ import {
   isParallelSafeToolName,
   isToolErrorResult,
   parseToolCallWithSource,
+  runCommandArgsSchema,
   type ModelToolCall,
   type ToolCall,
   type ToolExecutionResult,
@@ -35,6 +36,7 @@ import {
   type ToolProtocolOverride,
   type ToolResult,
 } from "./tools.js";
+import { validateRunCommandPolicy } from "./tools/command-policy.js";
 
 const MAX_TOOL_CALLS_PER_TURN = 75;
 const DEFAULT_TASK_CONCURRENCY = 3;
@@ -68,7 +70,16 @@ export type AgentRuntimeEventSink = (event: AgentRuntimeEvent) => void | Promise
 export interface AgentRuntimeSubmitMessageOptions {
   onReasoning?: ModelReasoningSink;
   session?: SessionHandle;
+  requestRunCommandApproval?: (request: RunCommandApprovalRequest) => Promise<RunCommandApprovalDecision>;
 }
+
+export interface RunCommandApprovalRequest {
+  command: string;
+  workdir: string;
+  reason: string;
+}
+
+export type RunCommandApprovalDecision = "run_once" | "allow_session" | "allow_repo" | "cancel";
 
 export interface TopchesterAgentRuntimeOptions {
   disableL1Context?: boolean;
@@ -79,6 +90,7 @@ export interface TopchesterAgentRuntimeOptions {
 
 export class TopchesterAgentRuntime implements AgentRuntime {
   private readonly taskPlan = createTaskPlanController();
+  private readonly approvedRunCommands = new Set<string>();
 
   /**
    * Holds the shared application context for one runtime instance.
@@ -377,26 +389,35 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         return;
       }
 
-      const toolEventQueue = createRuntimeEventQueue();
-      const toolResultPromise = executeToolCall(this.context.workspaceRoot, executableToolCall, {
-        logger: this.context.logger,
-        config: this.context.config,
-        taskPlan: this.taskPlan,
-        profile,
-        permissions,
-        subagents,
-        abortSignal,
-        toolCallId: toolCall.id,
-        eventSink: (event) => toolEventQueue.push(event),
-      }).finally(() => {
-        toolEventQueue.close();
-      });
+      const approval = await this.resolveRunCommandApproval(executableToolCall, options);
+      let toolResult: ToolExecutionResult<ToolResult>;
 
-      for await (const event of toolEventQueue) {
-        yield event;
+      if (approval.cancelled) {
+        toolResult = createToolErrorResult(executableToolCall.tool, approval.reason);
+      } else {
+        const toolEventQueue = createRuntimeEventQueue();
+        const toolResultPromise = executeToolCall(this.context.workspaceRoot, executableToolCall, {
+          logger: this.context.logger,
+          config: this.context.config,
+          runCommandApprovals: { allowExactCommands: approval.approvedCommands },
+          taskPlan: this.taskPlan,
+          profile,
+          permissions,
+          subagents,
+          abortSignal,
+          toolCallId: toolCall.id,
+          eventSink: (event) => toolEventQueue.push(event),
+        }).finally(() => {
+          toolEventQueue.close();
+        });
+
+        for await (const event of toolEventQueue) {
+          yield event;
+        }
+
+        toolResult = await toolResultPromise;
       }
 
-      const toolResult = await toolResultPromise;
       yield agentEvent.toolCall(executableToolCall, formatToolCallMessage(executableToolCall, toolResult));
       if (!isToolErrorResult(toolResult) && toolResult.tool === "plan_todo") {
         yield agentEvent.taskPlan(toolResult.plan);
@@ -435,6 +456,58 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     }
 
     return events;
+  }
+
+  private async resolveRunCommandApproval(
+    call: ToolCall,
+    options: AgentRuntimeSubmitMessageOptions
+  ): Promise<{ cancelled: false; approvedCommands: string[] } | { cancelled: true; reason: string }> {
+    const approvedCommands = [...this.approvedRunCommands];
+
+    if (call.tool !== "run_command") {
+      return { cancelled: false, approvedCommands };
+    }
+
+    const parsed = runCommandArgsSchema.safeParse(call.args);
+
+    if (!parsed.success) {
+      return { cancelled: false, approvedCommands };
+    }
+
+    const decision = await validateRunCommandPolicy(parsed.data, {
+      workspaceRoot: this.context.workspaceRoot,
+      commands: this.context.config.tools?.commands,
+      approvedCommands,
+    });
+
+    if (decision.allowed) {
+      return { cancelled: false, approvedCommands };
+    }
+
+    if (!isRunCommandApprovalEligible(decision.reason) || !options.requestRunCommandApproval) {
+      return { cancelled: false, approvedCommands };
+    }
+
+    const command = decision.commands[0] ?? parsed.data.command.trim();
+    const approval = await options.requestRunCommandApproval({
+      command,
+      workdir: parsed.data.workdir,
+      reason: decision.reason,
+    });
+
+    if (approval === "cancel") {
+      return {
+        cancelled: true,
+        reason: `run_command cancelled by user for '${command}'.`,
+      };
+    }
+
+    if (approval === "allow_session" || approval === "allow_repo") {
+      this.approvedRunCommands.add(command);
+      return { cancelled: false, approvedCommands: [...this.approvedRunCommands] };
+    }
+
+    return { cancelled: false, approvedCommands: [...approvedCommands, command] };
   }
 
   /**
@@ -585,6 +658,19 @@ function createRuntimeEventQueue(): RuntimeEventQueue {
         });
       }
     },
+  };
+}
+
+function isRunCommandApprovalEligible(reason: string): boolean {
+  return reason.endsWith("because it is not a validator or configured command.");
+}
+
+function createToolErrorResult(tool: ToolCall["tool"], message: string): ToolExecutionResult<ToolResult> {
+  return {
+    tool,
+    content: `Tool ${tool} failed: ${message}`,
+    error: message,
+    warning: message,
   };
 }
 

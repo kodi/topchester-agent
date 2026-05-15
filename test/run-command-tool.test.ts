@@ -234,6 +234,7 @@ describe("command policy", () => {
           workspaceRoot: workspace,
           commands: {
             allow: ["node scripts/check-fixtures.mjs"],
+            allowExact: [],
             deny: [],
           },
         }
@@ -288,6 +289,92 @@ describe("command policy", () => {
     });
   });
 
+  it("allows approved run_command exact commands without turning them into prefixes", async () => {
+    const workspace = await createWorkspace({ scripts: {} });
+
+    await expect(
+      validateRunCommandPolicy(
+        { command: "node --version" },
+        {
+          workspaceRoot: workspace,
+          approvedCommands: ["node --version"],
+        }
+      )
+    ).resolves.toMatchObject({
+      allowed: true,
+      policy: {
+        kind: "approved_command",
+        matchedRule: "node --version",
+      },
+    });
+
+    await expect(
+      validateRunCommandPolicy(
+        { command: "node --version --extra" },
+        {
+          workspaceRoot: workspace,
+          approvedCommands: ["node --version"],
+        }
+      )
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason: "command policy rejected 'node --version --extra' because it is not a validator or configured command.",
+    });
+  });
+
+  it("allows configured exact run_command rules without turning them into prefixes", async () => {
+    const workspace = await createWorkspace({ scripts: {} });
+
+    await expect(
+      validateRunCommandPolicy(
+        { command: "node --version" },
+        {
+          workspaceRoot: workspace,
+          commands: { allowExact: ["node --version"] },
+        }
+      )
+    ).resolves.toMatchObject({
+      allowed: true,
+      policy: {
+        kind: "configured_command",
+        matchedRule: "node --version",
+      },
+    });
+
+    await expect(
+      validateRunCommandPolicy(
+        { command: "node --version --extra" },
+        {
+          workspaceRoot: workspace,
+          commands: { allowExact: ["node --version"] },
+        }
+      )
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason: "command policy rejected 'node --version --extra' because it is not a validator or configured command.",
+    });
+  });
+
+  it("lets deny rules win over configured exact run_command rules", async () => {
+    const workspace = await createWorkspace({ scripts: {} });
+
+    await expect(
+      validateRunCommandPolicy(
+        { command: "node --version" },
+        {
+          workspaceRoot: workspace,
+          commands: {
+            allowExact: ["node --version"],
+            deny: ["node --version"],
+          },
+        }
+      )
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason: "command policy rejected 'node --version' because it matches deny rule 'node --version'.",
+    });
+  });
+
   it("executes configured run_command commands", async () => {
     const workspace = await createWorkspace({ scripts: {} });
     const bin = await mkdtemp(join(tmpdir(), "topchester-run-command-bin-"));
@@ -309,6 +396,7 @@ describe("command policy", () => {
         tools: {
           commands: {
             allow: ["node scripts/check-fixtures.mjs"],
+            allowExact: [],
             deny: [],
           },
         },
@@ -327,6 +415,35 @@ describe("command policy", () => {
         matchedRule: "node scripts/check-fixtures.mjs",
       },
       workspaceMayHaveChanged: true,
+    });
+  });
+
+  it("executes approved run_command exact commands", async () => {
+    const workspace = await createWorkspace({ scripts: {} });
+    const bin = await mkdtemp(join(tmpdir(), "topchester-run-command-bin-"));
+    await writeExecutable(join(bin, "node"), "printf 'approved command ran\\n'");
+    const call = parseToolCall('{"tool":"run_command","args":{"command":"node --version","timeout_ms":10000}}');
+
+    if (!call) {
+      throw new Error("Expected run_command tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call, {
+      pathEnv: bin,
+      runCommandApprovals: {
+        allowExactCommands: ["node --version"],
+      },
+    });
+
+    expect(isToolErrorResult(result)).toBe(false);
+    expect(result).toMatchObject({
+      tool: "run_command",
+      command: "node --version",
+      stdout: "approved command ran\n",
+      policy: {
+        kind: "approved_command",
+        matchedRule: "node --version",
+      },
     });
   });
 

@@ -229,6 +229,7 @@ describe("logging", () => {
           tools: {
             commands: {
               allow: ["node scripts/check-fixtures.mjs"],
+              allowExact: [],
               deny: [],
             },
           },

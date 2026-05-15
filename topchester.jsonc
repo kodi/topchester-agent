@@ -3,4 +3,9 @@
   "ignore": {
     "paths": ["docs/**/*.md", "pnpm-lock.yaml", ".agents/**/*.md"],
   },
+  "tools": {
+    "commands": {
+      "allowExact": ["node --version"],
+    },
+  },
 }

@@ -9,6 +9,7 @@ import { type TopchesterConfig } from "../../config/index.js";
 
 export interface ExecuteToolCallOptions {
   pathEnv?: string;
+  runCommandApprovals?: ToolContext["runCommandApprovals"];
   logger?: Logger;
   config?: TopchesterConfig;
   taskPlan?: TaskPlanController;
@@ -31,6 +32,7 @@ export async function executeToolCall(
   const context: ToolContext = {
     workspaceRoot,
     pathEnv: options.pathEnv,
+    runCommandApprovals: options.runCommandApprovals,
     logger: options.logger,
     config: options.config,
     taskPlan: options.taskPlan,

@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createAppContext } from "../src/app/context.js";
-import { loadTopchesterConfig } from "../src/config/index.js";
+import { addProjectCommandAllowExactRule, loadTopchesterConfig } from "../src/config/index.js";
 
 const envKeys = ["HOME", "TOPCHESTER_CONFIG", "TOPCHESTER_LOG_LEVEL"] as const;
 const originalEnv = new Map(envKeys.map((key) => [key, process.env[key]]));
@@ -53,7 +53,7 @@ describe("Topchester config loading", () => {
         "{",
         '  "models": { "default": "openrouter/openai/gpt-4.1-mini" },',
         '  "ignore": { "paths": ["user/**"] },',
-        '  "tools": { "commands": { "allow": ["node scripts/user-check.mjs"], "deny": ["pnpm publish"] } }',
+        '  "tools": { "commands": { "allow": ["node scripts/user-check.mjs"], "allowExact": ["node --user"], "deny": ["pnpm publish"] } }',
         "}",
       ].join("\n")
     );
@@ -63,7 +63,7 @@ describe("Topchester config loading", () => {
         "{",
         '  "models": { "default": "openrouter/qwen/qwen3-coder:free" },',
         '  "ignore": { "paths": ["project/**"] },',
-        '  "tools": { "commands": { "allow": ["node scripts/project-check.mjs"], "deny": ["npm publish"] } }',
+        '  "tools": { "commands": { "allow": ["node scripts/project-check.mjs"], "allowExact": ["node --project"], "deny": ["npm publish"] } }',
         "}",
       ].join("\n")
     );
@@ -107,7 +107,52 @@ describe("Topchester config loading", () => {
       "node scripts/local-check.mjs",
       "node scripts/cli-check.mjs",
     ]);
+    expect(config.tools?.commands?.allowExact).toEqual(["node --user", "node --project"]);
     expect(config.tools?.commands?.deny).toEqual(["pnpm publish", "npm publish", "yarn publish"]);
+  });
+
+  it("adds repo-scoped command approvals to topchester.jsonc", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    const configPath = join(workspace, "topchester.jsonc");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        ignore: { paths: ["generated/**"] },
+        tools: { commands: { allow: ["node scripts/check-fixtures.mjs"], deny: ["pnpm publish"] } },
+      })
+    );
+
+    await expect(addProjectCommandAllowExactRule(workspace, "node --version")).resolves.toMatchObject({
+      path: configPath,
+      added: true,
+      allowExact: ["node --version"],
+    });
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+    const written = await readFile(configPath, "utf8");
+
+    expect(config.tools?.commands?.allow).toEqual(["node scripts/check-fixtures.mjs"]);
+    expect(config.tools?.commands?.allowExact).toEqual(["node --version"]);
+    expect(config.tools?.commands?.deny).toEqual(["pnpm publish"]);
+    expect(written).toContain('"node --version"');
+  });
+
+  it("creates topchester.jsonc for repo-scoped command approvals when none exists", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+
+    await expect(addProjectCommandAllowExactRule(workspace, "node --version")).resolves.toMatchObject({
+      path: join(workspace, "topchester.jsonc"),
+      added: true,
+      allowExact: ["node --version"],
+    });
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(config.tools?.commands?.allowExact).toEqual(["node --version"]);
   });
 
   it("rejects command policy rules that look like shell syntax or globs", async () => {
