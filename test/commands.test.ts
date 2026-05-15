@@ -12,6 +12,7 @@ import {
 } from "../src/agent/commands.js";
 import { TopchesterAgentRuntime } from "../src/agent/runtime/index.js";
 import { createSession, listChildSessions, loadSession } from "../src/session/store.js";
+import { createSkillsService } from "../src/skills/index.js";
 
 describe("slash commands", () => {
   it("parses slash commands and arguments", () => {
@@ -60,6 +61,26 @@ describe("slash commands", () => {
       {
         value: "/kb reset",
         description: "delete the local knowledge base and cache",
+      },
+      {
+        value: "/skills",
+        description: "open skills",
+      },
+      {
+        value: "/skills list",
+        description: "list available skills",
+      },
+      {
+        value: "/skills inspect",
+        description: "show one skill without activating it",
+      },
+      {
+        value: "/skills reload",
+        description: "reload skill discovery",
+      },
+      {
+        value: "/skill",
+        description: "activate a skill",
       },
       {
         value: "/new",
@@ -122,6 +143,28 @@ describe("slash commands", () => {
         description: "start a fresh session",
       },
     ]);
+    expect(getSlashCommandSuggestions("/skill")).toEqual([
+      {
+        value: "/skills",
+        description: "open skills",
+      },
+      {
+        value: "/skills list",
+        description: "list available skills",
+      },
+      {
+        value: "/skills inspect",
+        description: "show one skill without activating it",
+      },
+      {
+        value: "/skills reload",
+        description: "reload skill discovery",
+      },
+      {
+        value: "/skill",
+        description: "activate a skill",
+      },
+    ]);
     expect(getSlashCommandSuggestions("/kb s")).toEqual([
       {
         value: "/kb status",
@@ -152,6 +195,56 @@ describe("slash commands", () => {
     });
     await expect(executeSlashCommand("/connect", { workspaceRoot: "/repo" })).resolves.toEqual({
       messages: ["/connect is available in the interactive TUI."],
+    });
+  });
+
+  it("lists, inspects, reloads, and activates skills", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-skills-"));
+    await mkdir(join(workspace, ".agents", "skills", "review"), { recursive: true });
+    await writeFile(
+      join(workspace, ".agents", "skills", "review", "SKILL.md"),
+      ["---", "name: review", "description: Review changes.", "---", "", "# Review", ""].join("\n")
+    );
+    const skillsService = createSkillsService({
+      workspaceRoot: workspace,
+      homeDir: join(workspace, "home"),
+      packageRoot: workspace,
+    });
+
+    await expect(executeSlashCommand("/skills", { workspaceRoot: workspace, skillsService })).resolves.toEqual({
+      messages: ["Skills overlay is available in the interactive TUI.", "Run /skills list to print skills."],
+    });
+    await expect(executeSlashCommand("/skills list", { workspaceRoot: workspace, skillsService })).resolves.toEqual({
+      messages: ["review                   workspace-neutral", "  Review changes."],
+    });
+    await expect(
+      executeSlashCommand("/skills inspect review", { workspaceRoot: workspace, skillsService })
+    ).resolves.toMatchObject({
+      messages: [expect.stringContaining("# Review")],
+    });
+    await expect(executeSlashCommand("/skills reload", { workspaceRoot: workspace, skillsService })).resolves.toEqual({
+      messages: ["Skills reloaded.\nactive: 1\nshadowed: 0"],
+    });
+
+    const activation = await executeSlashCommand("/skill review check this", {
+      workspaceRoot: workspace,
+      skillsService,
+    });
+    expect(activation.messages[0]).toBe("Skill activated: review");
+    expect(activation.messages[1]).toContain("[Skill: review]");
+    expect(activation.messages[1]).toContain("User instruction:\ncheck this");
+    expect(activation.skillActivation).toMatchObject({
+      skill: { name: "review" },
+      instruction: "check this",
+    });
+
+    await expect(
+      executeSlashCommand("/review check shortcut", { workspaceRoot: workspace, skillsService })
+    ).resolves.toMatchObject({
+      skillActivation: {
+        skill: { name: "review" },
+        instruction: "check shortcut",
+      },
     });
   });
 

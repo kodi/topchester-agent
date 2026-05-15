@@ -12,6 +12,12 @@ import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
 import { formatKnowledgeResetResult, resetKnowledgeBase } from "../knowledge/reset.js";
 import { type KnowledgeStatus } from "../knowledge/status.js";
 import { type L1FileScanStatus } from "../knowledge/compiler/l1-entry.js";
+import {
+  createSkillsService,
+  formatSkillActivationPrompt,
+  type SkillActivation,
+  type SkillsService,
+} from "../skills/index.js";
 
 export interface SlashCommandContext {
   workspaceRoot: string;
@@ -19,10 +25,12 @@ export interface SlashCommandContext {
   modelGateway?: L1SummaryModel;
   onProgress?: KnowledgeProgressReporter;
   formatSyncStatus?: (status: L1FileScanStatus) => string;
+  skillsService?: SkillsService;
 }
 
 export interface SlashCommandResult {
   messages: string[];
+  skillActivation?: SkillActivation;
 }
 
 export interface SlashCommand {
@@ -75,6 +83,26 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
     description: "delete the local knowledge base and cache",
   },
   {
+    value: "/skills",
+    description: "open skills",
+  },
+  {
+    value: "/skills list",
+    description: "list available skills",
+  },
+  {
+    value: "/skills inspect",
+    description: "show one skill without activating it",
+  },
+  {
+    value: "/skills reload",
+    description: "reload skill discovery",
+  },
+  {
+    value: "/skill",
+    description: "activate a skill",
+  },
+  {
     value: "/new",
     description: "start a fresh session",
   },
@@ -110,6 +138,16 @@ export const slashCommands: SlashCommand[] = [
     name: "providers",
     description: "connect a model provider",
     execute: executeInteractiveOnlyCommand("/providers"),
+  },
+  {
+    name: "skills",
+    description: "skills commands",
+    execute: executeSkillsCommand,
+  },
+  {
+    name: "skill",
+    description: "activate a skill",
+    execute: executeSkillCommand,
   },
   {
     name: "new",
@@ -148,10 +186,128 @@ export async function executeSlashCommand(input: string, context: SlashCommandCo
   const command = slashCommands.find((candidate) => candidate.name === parsed.name);
 
   if (!command) {
+    const shortcutResult = await executeSkillShortcutCommand(parsed.name, parsed.args, context);
+    if (shortcutResult) {
+      return shortcutResult;
+    }
+
     return { messages: [`Unknown command: /${parsed.name}`, "Try /kb status or /new."] };
   }
 
   return command.execute(parsed.args, context);
+}
+
+async function executeSkillsCommand(args: string[], context: SlashCommandContext): Promise<SlashCommandResult> {
+  const service = getSkillsService(context);
+  const subcommand = args[0];
+
+  if (!subcommand) {
+    return { messages: ["Skills overlay is available in the interactive TUI.", "Run /skills list to print skills."] };
+  }
+
+  if (subcommand === "list") {
+    return { messages: formatSkillsListCommand(await service.listSkills()) };
+  }
+
+  if (subcommand === "inspect") {
+    const name = args[1];
+    if (!name) {
+      return { messages: ["Usage: /skills inspect <name>"] };
+    }
+
+    try {
+      const skill = await service.viewSkill(name);
+
+      return {
+        messages: [`${skill.name}\nsource: ${formatSkillSource(skill)}\npath: ${skill.skillFile}\n\n${skill.content}`],
+      };
+    } catch (error) {
+      return { messages: [`Skill inspect failed: ${error instanceof Error ? error.message : "Unknown error."}`] };
+    }
+  }
+
+  if (subcommand === "reload") {
+    service.reload();
+    const skills = await service.listSkills();
+
+    return { messages: [`Skills reloaded.\nactive: ${skills.active.length}\nshadowed: ${skills.shadowed.length}`] };
+  }
+
+  return { messages: ["Usage: /skills, /skills list, /skills inspect <name>, or /skills reload"] };
+}
+
+async function executeSkillCommand(args: string[], context: SlashCommandContext): Promise<SlashCommandResult> {
+  const name = args[0];
+
+  if (!name) {
+    return { messages: ["Usage: /skill <name> [instruction]"] };
+  }
+
+  try {
+    return await activateSkill(name, args.slice(1).join(" "), context);
+  } catch (error) {
+    return { messages: [`Skill activation failed: ${error instanceof Error ? error.message : "Unknown error."}`] };
+  }
+}
+
+async function executeSkillShortcutCommand(
+  name: string,
+  args: string[],
+  context: SlashCommandContext
+): Promise<SlashCommandResult | undefined> {
+  try {
+    return await activateSkill(name, args.join(" "), context);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Unknown skill:")) {
+      return undefined;
+    }
+
+    return { messages: [`Skill activation failed: ${error instanceof Error ? error.message : "Unknown error."}`] };
+  }
+}
+
+async function activateSkill(
+  name: string,
+  instruction: string,
+  context: SlashCommandContext
+): Promise<SlashCommandResult> {
+  const skill = await getSkillsService(context).viewSkill(name);
+  const activation = { skill, instruction: instruction.trim() || "Use this skill for the next user request." };
+
+  return {
+    messages: [
+      `Skill activated: ${skill.name}`,
+      instruction.trim()
+        ? formatSkillActivationPrompt([activation])
+        : "No instruction was provided, so the interactive TUI will apply it to the next message.",
+    ],
+    skillActivation: activation,
+  };
+}
+
+function getSkillsService(context: SlashCommandContext): SkillsService {
+  return context.skillsService ?? createSkillsService({ workspaceRoot: context.workspaceRoot });
+}
+
+function formatSkillsListCommand(skills: Awaited<ReturnType<SkillsService["listSkills"]>>): string[] {
+  if (skills.active.length === 0) {
+    return ["No skills found."];
+  }
+
+  const lines = skills.active.flatMap((skill) => [
+    `${skill.name.padEnd(24)} ${formatSkillSource(skill)}`,
+    `  ${skill.description}`,
+  ]);
+
+  if (skills.shadowed.length > 0) {
+    lines.push("", `shadowed: ${skills.shadowed.length}`);
+  }
+
+  return lines;
+}
+
+function formatSkillSource(skill: { source: string; compatibilitySource?: string }): string {
+  return skill.compatibilitySource ? `${skill.source}:${skill.compatibilitySource}` : skill.source;
 }
 
 export function getSlashCommandSuggestions(input: string): SlashCommandSuggestion[] {

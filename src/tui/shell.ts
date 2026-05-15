@@ -20,6 +20,14 @@ import { fallbackOpenRouterStarterChoices, selectOpenRouterStarterChoices } from
 import { type SessionEventPayload } from "../session/events.js";
 import { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
 import { createSession, type SessionHandle } from "../session/store.js";
+import {
+  createSkillsService,
+  formatSkillActivationNotice,
+  formatSkillActivationPrompt,
+  type LoadedSkill,
+  type SkillActivation,
+  type SkillsService,
+} from "../skills/index.js";
 import { BusyIndicator } from "./busy.js";
 import { formatPlainError } from "./errors.js";
 import { createExitConfirmationInputListener } from "./exit-confirmation.js";
@@ -73,6 +81,8 @@ export class TopchesterTuiShell implements TuiShell {
   private sessionStartedAt = Date.now();
   private taskPlanNoticeTimer: ReturnType<typeof setTimeout> | undefined;
   private knowledgeStatusTimer: ReturnType<typeof setInterval> | undefined;
+  private readonly skillsService: SkillsService;
+  private pendingSkillActivations: LoadedSkill[] = [];
 
   constructor(
     private readonly context: AppContext,
@@ -81,6 +91,7 @@ export class TopchesterTuiShell implements TuiShell {
   ) {
     this.runtime = runtime ?? new TopchesterAgentRuntime(context);
     this.session = options.session;
+    this.skillsService = createSkillsService({ workspaceRoot: context.workspaceRoot });
   }
 
   /**
@@ -235,17 +246,20 @@ export class TopchesterTuiShell implements TuiShell {
         role: "user",
         text: message,
       });
-      for await (const event of this.runtime.submitMessageStream(
-        app.getConversationTurns(),
-        message,
-        abortController.signal,
-        {
-          onReasoning: reasoningDisplay?.sink,
-          session: this.session,
-          requestRunCommandApproval: (request) =>
-            this.requestRunCommandApproval(app, tui, busy, request, abortController.signal),
-        }
-      )) {
+      const pendingSkillActivations = this.pendingSkillActivations.splice(0);
+      const modelMessage =
+        pendingSkillActivations.length > 0
+          ? formatSkillActivationPrompt(pendingSkillActivations.map((skill) => ({ skill, instruction: message })))
+          : message;
+      const conversation =
+        modelMessage === message ? app.getConversationTurns() : app.getConversationTurns().slice(0, -1);
+
+      for await (const event of this.runtime.submitMessageStream(conversation, modelMessage, abortController.signal, {
+        onReasoning: reasoningDisplay?.sink,
+        session: this.session,
+        requestRunCommandApproval: (request) =>
+          this.requestRunCommandApproval(app, tui, busy, request, abortController.signal),
+      })) {
         if (event.type === "message" && event.role === "assistant") {
           reasoningDisplay?.commit(app);
           busy.clearActivity();
@@ -338,6 +352,12 @@ export class TopchesterTuiShell implements TuiShell {
   }
 
   private async submitSlashCommand(app: ChatLayout, tui: TUI, command: string): Promise<void> {
+    const skillActivation = await this.resolveSkillActivationCommand(command);
+    if (skillActivation) {
+      await this.submitSkillActivationCommand(app, tui, command, skillActivation);
+      return;
+    }
+
     if (isNewSessionCommand(command)) {
       await this.startNewSession(app, tui);
       return;
@@ -383,6 +403,120 @@ export class TopchesterTuiShell implements TuiShell {
     } finally {
       busy.stop();
       tui.requestRender();
+    }
+  }
+
+  private async submitSkillActivationCommand(
+    app: ChatLayout,
+    tui: TUI,
+    command: string,
+    activation: SkillActivation
+  ): Promise<void> {
+    await this.clearTaskPlanForNewTurn(app);
+    await this.persistPayloadWithWarning(app, slashCommandToSessionPayload(command));
+
+    const hasInstruction = activation.instruction.trim().length > 0;
+    app.addMessage(systemMessage(formatSkillActivationNotice(activation.skill.name, hasInstruction)));
+
+    if (!hasInstruction) {
+      this.pendingSkillActivations.push(activation.skill);
+      tui.requestRender();
+      return;
+    }
+
+    const busy = new BusyIndicator(app, tui, {
+      status: "thinking",
+      promptHint: "press Esc to stop",
+      activities: ["Loading skill...", "Calling model...", "Writing response..."],
+    });
+    const abortController = new AbortController();
+    const reasoningDisplay = isStreamReasoningEnabledByEnv() ? createBusyReasoningSink(busy) : undefined;
+    let cancelled = false;
+
+    app.setCancelPending(() => {
+      cancelled = true;
+      abortController.abort();
+    });
+    busy.start();
+    tui.requestRender();
+
+    try {
+      const conversation = app.getConversationTurns().slice(0, -1);
+      for await (const event of this.runtime.submitMessageStream(
+        conversation,
+        formatSkillActivationPrompt([activation]),
+        abortController.signal,
+        {
+          onReasoning: reasoningDisplay?.sink,
+          session: this.session,
+          requestRunCommandApproval: (request) =>
+            this.requestRunCommandApproval(app, tui, busy, request, abortController.signal),
+        }
+      )) {
+        if (event.type === "message" && event.role === "assistant") {
+          reasoningDisplay?.commit(app);
+          busy.clearActivity();
+        }
+        await this.applyRuntimeEvents(app, [event], tui);
+        tui.requestRender();
+      }
+    } catch (error) {
+      if (cancelled) {
+        app.addMessage(systemMessage("Response stopped."));
+        app.setStatus("ready");
+      } else {
+        app.addMessage(systemMessage(`Chat failed: ${formatPlainError(error)}`));
+        app.setStatus("chat failed");
+        await this.persistPayloadWithWarning(app, {
+          kind: "status",
+          status: "chat failed",
+        });
+      }
+    } finally {
+      app.setCancelPending(undefined);
+      busy.stop();
+      tui.requestRender();
+    }
+  }
+
+  private async resolveSkillActivationCommand(command: string): Promise<SkillActivation | undefined> {
+    const parts = command.trim().slice(1).split(/\s+/u).filter(Boolean);
+    const name = parts[0]?.toLowerCase();
+
+    if (
+      !name ||
+      name === "skills" ||
+      name === "kb" ||
+      isNewSessionCommand(command) ||
+      isConnectCommand(command) ||
+      isModelCommand(command)
+    ) {
+      return undefined;
+    }
+
+    if (name === "skill") {
+      const skillName = parts[1];
+      if (!skillName) {
+        return undefined;
+      }
+
+      return {
+        skill: await this.skillsService.viewSkill(skillName),
+        instruction: parts.slice(2).join(" "),
+      };
+    }
+
+    try {
+      return {
+        skill: await this.skillsService.viewSkill(name),
+        instruction: parts.slice(1).join(" "),
+      };
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("Unknown skill:")) {
+        return undefined;
+      }
+
+      throw error;
     }
   }
 
@@ -664,6 +798,7 @@ export class TopchesterTuiShell implements TuiShell {
     const messages = getStartupThreadMessages(this.context);
     this.session = session;
     this.sessionStartedAt = Date.now();
+    this.pendingSkillActivations = [];
 
     await persistMessagesWithWarning(session, messages, messages);
     await this.appendStartupRuntimeEvents(

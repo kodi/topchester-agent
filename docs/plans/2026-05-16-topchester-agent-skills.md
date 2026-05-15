@@ -562,7 +562,7 @@ Dependencies: Slices 1-3.
 
 ### Slice 5: Slash Commands And Activation Events
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Add `/skills`, `/skills list`, `/skills inspect`, `/skills reload`, `/skill <name>`, and `/<skill-name>` behavior.
 
@@ -588,6 +588,13 @@ Verification:
 
 ```sh
 pnpm test
+```
+
+Actual verification:
+
+```sh
+pnpm test test/commands.test.ts test/tui.render.test.ts
+pnpm typecheck
 ```
 
 Dependencies: Slices 1-4.
@@ -782,7 +789,8 @@ Do not ship without verifying:
 - 2026-05-16: Slice 2 added filesystem root scanning, linked-file discovery, duplicate resolution, and active/shadowed descriptor tests.
 - 2026-05-16: Slice 3 added a cached skills service, `skills_list` and `skill_view` model tools, profile/tool-registry integration, traversal rejection for linked skill files, and focused service/tool tests.
 - 2026-05-16: Slice 4 added five built-in skills under `skills/`, included them in package files, verified built-in discovery and workspace override behavior, and confirmed `pnpm pack --dry-run` includes `skills/**/SKILL.md`.
+- 2026-05-16: Slice 5 added `/skills list`, `/skills inspect <name>`, `/skills reload`, `/skill <name>`, skill shortcut commands, shared activation prompt formatting, and TUI activation handling for immediate or next-message skill use.
 
 ## Next Slice
 
-Start with Slice 5: Slash Commands And Activation Events.
+Start with Slice 6: TUI Skills Overlay.
