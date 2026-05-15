@@ -389,7 +389,7 @@ Verified:
 
 ## Slice 6: Add Parallel Execution For `task` Only
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal:
 
@@ -413,6 +413,21 @@ Verification:
 - Failure test proves one failed task is represented cleanly.
 - Cancellation test proves all running children stop.
 - `pnpm check`.
+
+Completed:
+
+- Added a task-only parallel scheduler path for native model responses containing multiple `task` calls.
+- Streamed child events through a shared event queue while concurrent task calls run.
+- Preserved source-order parent tool rows and model-visible task results after concurrent execution.
+- Added a conservative task concurrency limit of 3 per batch.
+- Continued using per-task error results and abort signals through the existing task execution path.
+
+Verified:
+
+- `pnpm test -- test/commands.test.ts`
+- `pnpm typecheck`
+- `pnpm check`
+- `mise run local-ci`
 
 ## Slice 7: Expand To General Multi-Tool Parallelism
 

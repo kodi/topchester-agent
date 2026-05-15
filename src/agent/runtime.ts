@@ -36,6 +36,7 @@ import {
 } from "./tools.js";
 
 const MAX_TOOL_CALLS_PER_TURN = 75;
+const DEFAULT_TASK_CONCURRENCY = 3;
 
 interface TurnTokenUsageTotals {
   inputTokens?: number;
@@ -275,6 +276,52 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         });
         yield agentEvent.status("ready");
         return;
+      }
+
+      if (result.toolCalls.length > 1 && result.toolCalls.every((call) => call.tool === "task")) {
+        const taskCalls = result.toolCalls.map((call) => call as ToolCall);
+        const taskResults: ToolExecutionResult<ToolResult>[] = [];
+
+        for (let index = 0; index < taskCalls.length; index += DEFAULT_TASK_CONCURRENCY) {
+          const batch = taskCalls.slice(index, index + DEFAULT_TASK_CONCURRENCY);
+          const taskEventQueue = createRuntimeEventQueue();
+          const batchResultPromise = Promise.all(
+            batch.map((call, batchIndex) =>
+              executeToolCall(this.context.workspaceRoot, call, {
+                logger: this.context.logger,
+                taskPlan: this.taskPlan,
+                profile,
+                permissions,
+                subagents,
+                abortSignal,
+                toolCallId: result.toolCalls[index + batchIndex]?.id,
+                eventSink: (event) => taskEventQueue.push(event),
+              })
+            )
+          ).finally(() => {
+            taskEventQueue.close();
+          });
+
+          for await (const event of taskEventQueue) {
+            yield event;
+          }
+
+          taskResults.push(...(await batchResultPromise));
+        }
+
+        for (let index = 0; index < taskCalls.length; index += 1) {
+          yield agentEvent.toolCall(taskCalls[index]!, formatToolCallMessage(taskCalls[index]!, taskResults[index]));
+        }
+
+        afterTool = "task";
+        nextPrompt = `${nextPrompt}\n\n${taskResults
+          .map((toolResult) => formatToolResultForPrompt(toolResult))
+          .join("\n\n")}\n\n${formatContinuationInstruction(
+          result.toolProtocol,
+          taskResults.at(-1)!,
+          isToolAllowed(permissions, "plan_todo")
+        )}`;
+        continue;
       }
 
       const executableToolCall = toolCall as ToolCall;
