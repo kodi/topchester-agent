@@ -337,7 +337,7 @@ Verified:
 
 ## Slice 5: Add `task`/`subagent` Tool Backed By `SubagentManager`
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal:
 
@@ -370,6 +370,22 @@ Verification:
 - Runtime event test proves child events stream before final parent completion.
 - TUI render test covers running, completed, and failed child task states.
 - `pnpm check`.
+
+Completed:
+
+- Added the `task` tool and registered it in the model-facing tool registry.
+- Added `SubagentManager` as a runtime service that creates child sessions, runs child runtimes, forwards child events, persists child logs, and returns bounded parent-visible results.
+- Passed session, permission, abort, tool-call id, event sink, and subagent-manager capabilities through tool execution context.
+- Rendered subagent lifecycle and forwarded child message/tool events as nested task rows in the TUI.
+- Moved runtime-event persistence mapping into a session helper so parent and child logs use one mapping.
+- Updated CLI/TUI/architecture docs for `task` and child-session behavior.
+
+Verified:
+
+- `pnpm test -- test/tools.test.ts test/commands.test.ts test/session.test.ts test/tui.render.test.ts`
+- `pnpm typecheck`
+- `pnpm check`
+- `mise run local-ci`
 
 ## Slice 6: Add Parallel Execution For `task` Only
 

@@ -51,6 +51,7 @@ export interface CreateChildSessionOptions {
   parentToolCallId: string;
   agentProfileId?: string;
   title?: string;
+  recordParentEvent?: boolean;
 }
 
 export function generateSessionId(): string {
@@ -115,19 +116,21 @@ export async function createChildSession(
   await writeFile(eventsPath, "", { flag: "wx" });
 
   const child = buildHandle(sessionDir, metadata);
-  await options.parent.append(
-    sessionEventPayload.subagentStarted(
-      {
-        sessionId: child.sessionId,
-        parentSessionId: options.parent.sessionId,
-        parentToolCallId: options.parentToolCallId,
-      },
-      {
-        ...(options.agentProfileId === undefined ? {} : { agentProfileId: options.agentProfileId }),
-        ...(options.title === undefined ? {} : { title: options.title }),
-      }
-    )
-  );
+  if (options.recordParentEvent ?? true) {
+    await options.parent.append(
+      sessionEventPayload.subagentStarted(
+        {
+          sessionId: child.sessionId,
+          parentSessionId: options.parent.sessionId,
+          parentToolCallId: options.parentToolCallId,
+        },
+        {
+          ...(options.agentProfileId === undefined ? {} : { agentProfileId: options.agentProfileId }),
+          ...(options.title === undefined ? {} : { title: options.title }),
+        }
+      )
+    );
+  }
 
   return child;
 }

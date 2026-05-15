@@ -277,6 +277,11 @@ Permission composition is monotonic for subagents: a child profile can reduce
 the parent permission view, but parent-denied tools remain denied and cannot be
 reintroduced by the child profile.
 
+The `task` tool is the first subagent entrypoint. It creates a real child
+session, runs the delegated prompt under a subagent profile, forwards child
+runtime events to the parent stream, and returns one bounded result to the
+parent model.
+
 ## Future GUI / IDE Path
 
 The TUI should be only one client of the same KB-aware runtime.

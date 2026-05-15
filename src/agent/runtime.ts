@@ -9,9 +9,18 @@ import { executeSlashCommand, parseSlashCommand } from "./commands.js";
 import { type ConversationTurn, buildConversationPrompt } from "./conversation.js";
 import { ABORT_CHOICE_VALUE, agentEvent, choiceAction, type AgentRuntimeEvent } from "./events.js";
 import { checkAgentReady } from "./health.js";
-import { createToolPermissionView, getProfileToolDefinitions, PRIMARY_AGENT_PROFILE } from "./profiles.js";
+import {
+  createToolPermissionView,
+  getProfileToolDefinitions,
+  isToolAllowed,
+  PRIMARY_AGENT_PROFILE,
+  type AgentProfile,
+  type ToolPermissionView,
+} from "./profiles.js";
 import { getChatSystemPrompt } from "./prompts.js";
+import { SubagentManager } from "./subagents.js";
 import { createTaskPlanController, hasOpenTaskPlan, type TaskPlanState } from "./task-plan.js";
+import { type SessionHandle } from "../session/store.js";
 import { type ModelAgentResult, type ModelReasoningSink } from "../model/index.js";
 import {
   executeToolCall,
@@ -56,10 +65,14 @@ export type AgentRuntimeEventSink = (event: AgentRuntimeEvent) => void | Promise
 
 export interface AgentRuntimeSubmitMessageOptions {
   onReasoning?: ModelReasoningSink;
+  session?: SessionHandle;
 }
 
 export interface TopchesterAgentRuntimeOptions {
   disableL1Context?: boolean;
+  profile?: AgentProfile;
+  parentPermissions?: ToolPermissionView;
+  session?: SessionHandle;
 }
 
 export class TopchesterAgentRuntime implements AgentRuntime {
@@ -131,9 +144,25 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     let nextPrompt = prompt;
     let totalDurationMs = 0;
     const tokenUsageTotals: TurnTokenUsageTotals = {};
-    const profile = PRIMARY_AGENT_PROFILE;
-    const permissions = createToolPermissionView(profile);
+    const profile = this.options.profile ?? PRIMARY_AGENT_PROFILE;
+    const permissions = createToolPermissionView(profile, {
+      deniedTools: this.options.parentPermissions?.deniedTools,
+    });
     const tools = getProfileToolDefinitions(permissions);
+    const session = options.session ?? this.options.session;
+    const subagents = new SubagentManager({
+      context: this.context,
+      parentSession: session,
+      parentProfile: profile,
+      parentPermissions: permissions,
+      createRuntime: ({ profile: childProfile, parentPermissions, session: childSession }) =>
+        new TopchesterAgentRuntime(this.context, {
+          ...this.options,
+          profile: childProfile,
+          parentPermissions,
+          session: childSession,
+        }),
+    });
     let lastModelId = "model";
     let afterTool: ToolCall["tool"] | undefined;
     let toolProtocolOverride = readToolProtocolEnvOverride();
@@ -264,12 +293,25 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         return;
       }
 
-      const toolResult = await executeToolCall(this.context.workspaceRoot, executableToolCall, {
+      const toolEventQueue = createRuntimeEventQueue();
+      const toolResultPromise = executeToolCall(this.context.workspaceRoot, executableToolCall, {
         logger: this.context.logger,
         taskPlan: this.taskPlan,
         profile,
         permissions,
+        subagents,
+        abortSignal,
+        toolCallId: toolCall.id,
+        eventSink: (event) => toolEventQueue.push(event),
+      }).finally(() => {
+        toolEventQueue.close();
       });
+
+      for await (const event of toolEventQueue) {
+        yield event;
+      }
+
+      const toolResult = await toolResultPromise;
       yield agentEvent.toolCall(executableToolCall, formatToolCallMessage(executableToolCall, toolResult));
       if (!isToolErrorResult(toolResult) && toolResult.tool === "plan_todo") {
         yield agentEvent.taskPlan(toolResult.plan);
@@ -277,7 +319,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       afterTool = executableToolCall.tool;
       nextPrompt = `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(
         result.toolProtocol,
-        toolResult
+        toolResult,
+        isToolAllowed(permissions, "plan_todo")
       )}`;
     }
 
@@ -418,6 +461,46 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       return prompt;
     }
   }
+}
+
+interface RuntimeEventQueue {
+  push(event: AgentRuntimeEvent): void;
+  close(): void;
+  [Symbol.asyncIterator](): AsyncIterator<AgentRuntimeEvent>;
+}
+
+function createRuntimeEventQueue(): RuntimeEventQueue {
+  const events: AgentRuntimeEvent[] = [];
+  let closed = false;
+  let notify: (() => void) | undefined;
+
+  return {
+    push(event) {
+      events.push(event);
+      notify?.();
+      notify = undefined;
+    },
+
+    close() {
+      closed = true;
+      notify?.();
+      notify = undefined;
+    },
+
+    async *[Symbol.asyncIterator]() {
+      while (!closed || events.length > 0) {
+        const event = events.shift();
+        if (event) {
+          yield event;
+          continue;
+        }
+
+        await new Promise<void>((resolve) => {
+          notify = resolve;
+        });
+      }
+    },
+  };
 }
 
 /**
@@ -635,6 +718,10 @@ function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult>): str
     return [`Tool result from ${result.tool}:`, result.content].join("\n");
   }
 
+  if (result.tool === "task") {
+    return [`Tool result from ${result.tool}:`, result.content].join("\n");
+  }
+
   if (result.tool === "edit_file") {
     return [
       `Tool result from ${result.tool}${path}:`,
@@ -770,7 +857,11 @@ function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult>): str
  * restates the current tool-call protocol so the next model step remains
  * parseable by the runtime.
  */
-function formatContinuationInstruction(protocol: ToolProtocol, result: ToolExecutionResult<ToolResult>): string {
+function formatContinuationInstruction(
+  protocol: ToolProtocol,
+  result: ToolExecutionResult<ToolResult>,
+  canUsePlanTodo = true
+): string {
   const toolInstruction =
     protocol === "text-xml"
       ? "If another tool is needed, reply with only one XML tool call."
@@ -785,8 +876,10 @@ function formatContinuationInstruction(protocol: ToolProtocol, result: ToolExecu
   return [
     "Continue the user's request using the tool result above and the visible plan when one is active.",
     resultInstruction,
-    "Update plan_todo after major progress changes.",
-    "Before a final answer, close the visible plan by calling plan_todo with all finished items marked completed, or with [] if abandoning the plan.",
+    canUsePlanTodo ? "Update plan_todo after major progress changes." : "",
+    canUsePlanTodo
+      ? "Before a final answer, close the visible plan by calling plan_todo with all finished items marked completed, or with [] if abandoning the plan."
+      : "",
     toolInstruction,
     "Otherwise answer the user. Do not guess.",
   ]
@@ -833,6 +926,10 @@ function formatToolCallMessage(call: ToolCall, result?: ToolExecutionResult<Tool
   }
 
   switch (call.tool) {
+    case "task":
+      return result?.tool === "task"
+        ? `task: ${result.status} ${result.childSessionId}`
+        : `task: ${call.args.description}`;
     case "plan_todo":
       return result?.tool === "plan_todo"
         ? `plan_todo: ${result.plan.items.length} items, ${result.inProgressCount} active`

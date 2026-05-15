@@ -2,7 +2,7 @@ import { ui } from "../cli/ui.js";
 import { type ToolCall } from "../agent/tools.js";
 import { renderMarkdown } from "./markdown.js";
 
-export type ChatMessageKind = "system" | "user" | "agent" | "thinking" | "tool_call" | "modal";
+export type ChatMessageKind = "system" | "user" | "agent" | "thinking" | "tool_call" | "modal" | "subagent";
 
 export interface SystemChatMessage {
   kind: "system";
@@ -35,6 +35,14 @@ export interface ToolCallChatMessage {
   resultSummary?: string;
 }
 
+export interface SubagentChatMessage {
+  kind: "subagent";
+  status: "running" | "event" | "completed" | "failed";
+  sessionId: string;
+  title?: string;
+  text?: string;
+}
+
 export interface ChatModalAction {
   label: string;
   value?: string;
@@ -54,6 +62,7 @@ export type ChatMessage =
   | AgentChatMessage
   | ThinkingChatMessage
   | ToolCallChatMessage
+  | SubagentChatMessage
   | ChatModalMessage;
 
 export function systemMessage(text: string): ChatMessage {
@@ -78,6 +87,10 @@ export function toolCallMessage(call: ToolCall, label: string, resultSummary?: s
     : { kind: "tool_call", call, label, resultSummary };
 }
 
+export function subagentMessage(message: Omit<SubagentChatMessage, "kind">): ChatMessage {
+  return { kind: "subagent", ...message };
+}
+
 export function modalMessage(message: Omit<ChatModalMessage, "kind">): ChatMessage {
   return { kind: "modal", ...message };
 }
@@ -94,6 +107,10 @@ export function renderChatMessage(message: ChatMessage, options: RenderChatMessa
 
   if (message.kind === "tool_call") {
     return renderToolCallMessage(message);
+  }
+
+  if (message.kind === "subagent") {
+    return renderSubagentMessage(message);
   }
 
   if (message.kind === "thinking") {
@@ -162,6 +179,25 @@ function renderToolCallMessage(message: ToolCallChatMessage): string[] {
       : message.label;
 
   return [`   ${ui.muted(expandTabs(visibleLabel))}`];
+}
+
+function renderSubagentMessage(message: SubagentChatMessage): string[] {
+  const label = message.title ?? shortSessionId(message.sessionId);
+
+  switch (message.status) {
+    case "running":
+      return [`   ${ui.muted(`↳ task: ${label} (running)`)}`];
+    case "event":
+      return message.text ? [`   ${ui.muted(`↳ task: ${label}: ${message.text}`)}`] : [];
+    case "completed":
+      return [`   ${ui.muted(`↳ task: ${label} (completed)`)}`, ...(message.text ? [`     ${message.text}`] : [])];
+    case "failed":
+      return [`   ${ui.warn(`↳ task: ${label} (failed)`)}`, ...(message.text ? [`     ${message.text}`] : [])];
+  }
+}
+
+function shortSessionId(sessionId: string): string {
+  return sessionId.length <= 8 ? sessionId : sessionId.slice(0, 8);
 }
 
 function expandTabs(line: string): string {

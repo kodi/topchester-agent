@@ -11,6 +11,7 @@ import {
   parseSlashCommand,
 } from "../src/agent/commands.js";
 import { TopchesterAgentRuntime } from "../src/agent/runtime.js";
+import { createSession, listChildSessions, loadSession } from "../src/session/store.js";
 
 describe("slash commands", () => {
   it("parses slash commands and arguments", () => {
@@ -533,6 +534,71 @@ describe("slash commands", () => {
     const collected = await runtimeWithFinalMessage(collectorWorkspace).submitMessage([], "hello");
 
     expect(normalizeRuntimeEventsForComparison(collected)).toEqual(normalizeRuntimeEventsForComparison(streamed));
+  });
+
+  it("runs task tool calls as child sessions and feeds the bounded result back to the parent", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-task-tool-"));
+    const session = await createSession(workspace);
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (request.prompt.includes("Child prompt")) {
+            return fakeAgentStep("Child found src/agent/runtime.ts.");
+          }
+
+          if (request.prompt.includes("Tool result from task:")) {
+            return fakeAgentStep("Parent received the child result.");
+          }
+
+          return fakeAgentStep("", [
+            {
+              id: "task-call-1",
+              source: "native" as const,
+              tool: "task",
+              args: {
+                description: "Inspect runtime",
+                prompt: "Child prompt",
+                subagent_type: "explore",
+              },
+            },
+          ]);
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await collectRuntimeEvents(runtime.submitMessageStream([], "delegate work", undefined, { session }));
+    const children = await listChildSessions(workspace, session.sessionId);
+    const child = await loadSession(workspace, children[0]!.sessionId);
+
+    expect(events.map((event) => event.type)).toEqual([
+      "subagent_started",
+      "subagent_event",
+      "subagent_event",
+      "subagent_completed",
+      "tool_call",
+      "message",
+      "status",
+    ]);
+    expect(events.find((event) => event.type === "tool_call")).toMatchObject({
+      label: expect.stringContaining("task: completed"),
+    });
+    expect(prompts.at(-1)).toContain("Child found src/agent/runtime.ts.");
+    expect(children).toHaveLength(1);
+    expect(child.metadata).toMatchObject({
+      source: "subagent",
+      parentSessionId: session.sessionId,
+      parentToolCallId: "task-call-1",
+      agentProfileId: "explore",
+      title: "Inspect runtime",
+    });
+    expect(child.events).toEqual([
+      expect.objectContaining({ kind: "message", role: "assistant", text: "Child found src/agent/runtime.ts." }),
+      expect.objectContaining({ kind: "status", status: "ready" }),
+    ]);
   });
 
   it("propagates aborts through the runtime stream path", async () => {
@@ -1427,4 +1493,19 @@ function normalizeRuntimeEventsForComparison(events: AgentRuntimeEvent[]): Agent
   return events.map((event) =>
     event.type === "message" && event.meta !== undefined ? { ...event, meta: "<model metadata>" } : event
   );
+}
+
+function fakeAgentStep(text: string, toolCalls: Array<Record<string, unknown>> = []) {
+  return {
+    text,
+    providerId: "fake",
+    modelId: "fake-agent",
+    purpose: "agent.primary" as const,
+    toolCalls,
+    toolProtocol: "native-openai-compatible" as const,
+    protocolAttempts: [],
+    providerRejectedTools: false,
+    warnings: [],
+    openRouterRoutingApplied: false,
+  };
 }

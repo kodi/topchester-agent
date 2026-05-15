@@ -90,6 +90,7 @@ If the KB is missing, empty, misconfigured, or not current, the startup KB statu
 
 The agent can use these workspace-scoped tools from the TUI:
 
+- `task` — delegate focused read-only exploration or isolated analysis to a child agent session.
 - `plan_todo` — replace the visible session task plan for multi-step work.
 - `read_file` — read a UTF-8 file inside the workspace and return hash metadata.
 - `list_files` — list files and folders inside a workspace folder.
@@ -107,6 +108,8 @@ Examples:
 ```text
 plan_todo: 3 items, 1 active
 read_file: README.md
+↳ task: Inspect runtime (running)
+↳ task: Inspect runtime (completed)
 edit_file: src/example.ts (changed +1/-1)
 inspect_command: pwd && rg --files docs/plans | head -20
 ```

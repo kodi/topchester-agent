@@ -359,6 +359,7 @@ describe("agent tools", () => {
 
   it("gets model prompt lines from the tool registry", () => {
     expect(getToolPromptLines()).toEqual([
+      'task: delegate focused read-only research or isolated analysis to a child agent session. Use it when parallel context gathering would help. To use it, reply with only JSON: {"tool":"task","args":{"description":"Inspect runtime event flow","prompt":"Read the runtime and summarize how events are emitted.","subagent_type":"explore"}}',
       'plan_todo: replace the visible session task plan for non-trivial multi-step work; keep 2-6 short items, exactly one in_progress item while work remains, and use [] only to clear. Do not use plan_todo just to report completed work before a final answer. To use it, reply with only JSON: {"tool":"plan_todo","args":{"items":[{"text":"Inspect relevant files","status":"in_progress"},{"text":"Implement focused change","status":"pending"}]}}',
       'read_file: read a UTF-8 file inside the workspace. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
       'list_files: list files and directories inside the workspace; top-level by default, recursive only when requested, with "/" after directory names. To use it, reply with only JSON: {"tool":"list_files","args":{"path":"src","recursive":false,"limit":500}}',

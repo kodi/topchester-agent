@@ -1,4 +1,6 @@
 import { isToolAllowed, type AgentProfile, type ToolPermissionView } from "../profiles.js";
+import { type AgentRuntimeEvent } from "../events.js";
+import { type SubagentManager } from "../subagents.js";
 import { getToolDefinition, isToolName, type ToolCall, type ToolResult } from "./registry.js";
 import { type ToolDefinition, type ToolContext, type ToolExecutionResult } from "./types.js";
 import { type Logger } from "pino";
@@ -10,6 +12,10 @@ export interface ExecuteToolCallOptions {
   taskPlan?: TaskPlanController;
   profile?: AgentProfile;
   permissions?: ToolPermissionView;
+  subagents?: SubagentManager;
+  eventSink?: (event: AgentRuntimeEvent) => void | Promise<void>;
+  abortSignal?: AbortSignal;
+  toolCallId?: string;
 }
 
 type RuntimeToolDefinition = ToolDefinition<string, unknown, ToolResult>;
@@ -27,6 +33,10 @@ export async function executeToolCall(
     taskPlan: options.taskPlan,
     profile: options.profile,
     permissions: options.permissions,
+    subagents: options.subagents,
+    eventSink: options.eventSink,
+    abortSignal: options.abortSignal,
+    toolCallId: options.toolCallId,
   };
 
   try {

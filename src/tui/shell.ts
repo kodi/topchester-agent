@@ -6,12 +6,15 @@ import { type AppContext } from "../app/context.js";
 import { ui } from "../cli/ui.js";
 import { type ModelReasoningEvent, type ModelReasoningSink } from "../model/index.js";
 import { type SessionEventPayload } from "../session/events.js";
+import { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
 import { createSession, type SessionHandle } from "../session/store.js";
 import { BusyIndicator, ReasoningTailBuffer } from "./busy.js";
 import { ChatLayout } from "./layout.js";
 import { type ChatMessage, systemMessage, thinkingMessage } from "./messages.js";
 import { renderRuntimeEvent } from "./runtime-events.js";
 import { getFolderName, getModelLabel, getStartupThreadMessages, renderStaticLayout } from "./status.js";
+
+export { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
 
 export interface TuiShell {
   render(): Promise<void>;
@@ -180,6 +183,7 @@ export class TopchesterTuiShell implements TuiShell {
         abortController.signal,
         {
           onReasoning: reasoningDisplay?.sink,
+          session: this.session,
         }
       )) {
         if (event.type === "message" && event.role === "assistant") {
@@ -357,6 +361,10 @@ export function chatMessageToSessionPayload(message: ChatMessage): SessionEventP
     return undefined;
   }
 
+  if (message.kind === "subagent") {
+    return undefined;
+  }
+
   if (message.kind === "modal") {
     return {
       kind: "choice",
@@ -376,78 +384,6 @@ export function chatMessageToSessionPayload(message: ChatMessage): SessionEventP
   }
 
   return undefined;
-}
-
-export function runtimeEventToSessionPayload(event: AgentRuntimeEvent): SessionEventPayload | undefined {
-  switch (event.type) {
-    case "message":
-      return {
-        kind: "message",
-        role: event.role,
-        text: event.text,
-        ...(event.meta === undefined ? {} : { meta: event.meta }),
-      };
-    case "tool_call":
-      return {
-        kind: "tool_call",
-        label: event.label,
-        call: event.call as unknown as Record<string, unknown>,
-      };
-    case "task_plan":
-      return {
-        kind: "task_plan",
-        items: event.plan.items,
-        updatedAt: event.plan.updatedAt,
-      };
-    case "knowledge_status":
-      return undefined;
-    case "choice":
-      return {
-        kind: "choice",
-        tone: event.tone,
-        title: event.title,
-        ...(event.body === undefined ? {} : { body: event.body }),
-        actions: event.actions,
-      };
-    case "subagent_started":
-      return {
-        kind: "subagent_started",
-        sessionId: event.sessionId,
-        parentSessionId: event.parentSessionId,
-        parentToolCallId: event.parentToolCallId,
-        ...(event.agentProfileId === undefined ? {} : { agentProfileId: event.agentProfileId }),
-        ...(event.title === undefined ? {} : { title: event.title }),
-      };
-    case "subagent_event":
-      return {
-        kind: "subagent_event",
-        sessionId: event.sessionId,
-        parentSessionId: event.parentSessionId,
-        parentToolCallId: event.parentToolCallId,
-        event: event.event as unknown as Record<string, unknown>,
-      };
-    case "subagent_completed":
-      return {
-        kind: "subagent_completed",
-        sessionId: event.sessionId,
-        parentSessionId: event.parentSessionId,
-        parentToolCallId: event.parentToolCallId,
-        ...(event.result === undefined ? {} : { result: event.result }),
-      };
-    case "subagent_failed":
-      return {
-        kind: "subagent_failed",
-        sessionId: event.sessionId,
-        parentSessionId: event.parentSessionId,
-        parentToolCallId: event.parentToolCallId,
-        error: event.error,
-      };
-    case "status":
-      return {
-        kind: "status",
-        status: event.status,
-      };
-  }
 }
 
 export function slashCommandToSessionPayload(command: string): SessionEventPayload {

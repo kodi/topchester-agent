@@ -38,6 +38,7 @@ import {
   type ChatMessage,
   modalMessage,
   renderChatMessage,
+  subagentMessage,
   systemMessage,
   toolCallMessage,
   userMessage,
@@ -1482,6 +1483,26 @@ describe("TUI rendering", () => {
       kind: "status",
       status: "ready",
     });
+    expect(
+      renderRuntimeEvent(
+        agentEvent.subagentStarted({
+          sessionId: "child-session",
+          parentSessionId: "parent-session",
+          parentToolCallId: "task-call-1",
+          title: "Inspect runtime",
+        })
+      )
+    ).toEqual([subagentMessage({ status: "running", sessionId: "child-session", title: "Inspect runtime" })]);
+    expect(
+      renderRuntimeEvent(
+        agentEvent.subagentCompleted({
+          sessionId: "child-session",
+          parentSessionId: "parent-session",
+          parentToolCallId: "task-call-1",
+          result: "Done",
+        })
+      )
+    ).toEqual([subagentMessage({ status: "completed", sessionId: "child-session", text: "Done" })]);
   });
 
   it("does not turn successful startup checks into visible ready messages", async () => {
@@ -2071,7 +2092,13 @@ describe("TUI rendering", () => {
     expect(appendCalls).toBe(1);
     expect(
       messages.map((message) =>
-        message.kind === "modal" ? message.title : "text" in message ? message.text : message.label
+        message.kind === "modal"
+          ? message.title
+          : message.kind === "tool_call"
+            ? message.label
+            : "text" in message
+              ? message.text
+              : ""
       )
     ).toEqual(["Saved later", "Session save failed: disk is full"]);
   });
@@ -2085,9 +2112,7 @@ describe("TUI rendering", () => {
     expect(layoutSource).not.toMatch(
       /node:fs|from ".*session|append\(|loadSession|createSession|getTopchesterSessionsPath/u
     );
-    expect(runtimeSource).not.toMatch(
-      /node:fs|from ".*session|append\(|loadSession|createSession|getTopchesterSessionsPath/u
-    );
+    expect(runtimeSource).not.toMatch(/node:fs|append\(|loadSession|getTopchesterSessionsPath/u);
   });
 });
 

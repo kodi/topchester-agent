@@ -1,4 +1,5 @@
 export { executeToolCall, type ExecuteToolCallOptions } from "./tools/executor.js";
+export { taskArgsSchema, taskTool, type TaskToolArgs, type TaskToolCall, type TaskToolResult } from "./tools/task.js";
 export { planTodoTool, type PlanTodoToolCall, type PlanTodoToolResult } from "./tools/plan-todo.js";
 export {
   applyTaskPlanUpdate,
