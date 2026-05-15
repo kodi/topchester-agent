@@ -15,6 +15,7 @@ async function runCli(args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) 
     cwd,
     env: {
       ...process.env,
+      HOME: cwd,
       TOPCHESTER_CONFIG: "",
       TOPCHESTER_LOG_FILE: "",
       TOPCHESTER_LOG_LEVEL: "",
