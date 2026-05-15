@@ -274,6 +274,25 @@ Config ignores are applied after built-in safety exclusions and `.gitignore`. Ne
 
 `ignore.paths` arrays concatenate across config layers in load order: user config, project config, local project config, `TOPCHESTER_CONFIG`, then CLI `--config`. Later entries win inside the effective ignore rule list.
 
+## Command Policy
+
+`run_command` is limited to validators and configured command prefixes. Add project-specific allow and deny rules under `tools.commands`:
+
+```jsonc
+{
+  "tools": {
+    "commands": {
+      "allow": ["node scripts/check-fixtures.mjs", "pnpm exec tsx scripts/dev/inspect-config.ts"],
+      "deny": ["pnpm publish", "npm publish"],
+    },
+  },
+}
+```
+
+Rules match normalized command display strings by exact command or prefix plus a following space. Deny rules win over allow rules. Command rules must be simple command prefixes, not shell syntax, paths, or glob patterns.
+
+`tools.commands.allow` and `tools.commands.deny` arrays concatenate across config layers in the same load order as `ignore.paths`.
+
 ## Security Rules
 
 - Prefer `apiKeyEnv` over `apiKey`.

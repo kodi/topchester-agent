@@ -36,7 +36,7 @@ describe("Topchester config loading", () => {
     expect((await stat(join(home, ".config", "topchester"))).isDirectory()).toBe(true);
   });
 
-  it("loads JSONC config files in documented precedence and concatenates ignore paths", async () => {
+  it("loads JSONC config files in documented precedence and concatenates list-based policy fields", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const home = join(root, "home");
     const workspace = join(root, "workspace");
@@ -52,7 +52,8 @@ describe("Topchester config loading", () => {
       [
         "{",
         '  "models": { "default": "openrouter/openai/gpt-4.1-mini" },',
-        '  "ignore": { "paths": ["user/**"] }',
+        '  "ignore": { "paths": ["user/**"] },',
+        '  "tools": { "commands": { "allow": ["node scripts/user-check.mjs"], "deny": ["pnpm publish"] } }',
         "}",
       ].join("\n")
     );
@@ -61,7 +62,8 @@ describe("Topchester config loading", () => {
       [
         "{",
         '  "models": { "default": "openrouter/qwen/qwen3-coder:free" },',
-        '  "ignore": { "paths": ["project/**"] }',
+        '  "ignore": { "paths": ["project/**"] },',
+        '  "tools": { "commands": { "allow": ["node scripts/project-check.mjs"], "deny": ["npm publish"] } }',
         "}",
       ].join("\n")
     );
@@ -70,15 +72,19 @@ describe("Topchester config loading", () => {
       [
         "{",
         '  "models": { "fast": "openrouter/google/gemini-3.1-flash-lite" },',
-        '  "ignore": { "paths": ["local/**"] }',
+        '  "ignore": { "paths": ["local/**"] },',
+        '  "tools": { "commands": { "allow": ["node scripts/local-check.mjs"] } }',
         "}",
       ].join("\n")
     );
     await writeFile(
       envConfig,
-      '{ "models": { "kb.summarize": "openrouter/google/gemini-3.1-pro" }, "ignore": { "paths": ["env/**"] } }\n'
+      '{ "models": { "kb.summarize": "openrouter/google/gemini-3.1-pro" }, "ignore": { "paths": ["env/**"] }, "tools": { "commands": { "deny": ["yarn publish"] } } }\n'
     );
-    await writeFile(cliConfig, '{ "ignore": { "paths": ["cli/**", "!cli/keep/**"] } }\n');
+    await writeFile(
+      cliConfig,
+      '{ "ignore": { "paths": ["cli/**", "!cli/keep/**"] }, "tools": { "commands": { "allow": ["node scripts/cli-check.mjs"] } } }\n'
+    );
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace, configPath: cliConfig });
 
@@ -95,6 +101,27 @@ describe("Topchester config loading", () => {
       provider: "openrouter",
     });
     expect(config.ignore?.paths).toEqual(["user/**", "project/**", "local/**", "env/**", "cli/**", "!cli/keep/**"]);
+    expect(config.tools?.commands?.allow).toEqual([
+      "node scripts/user-check.mjs",
+      "node scripts/project-check.mjs",
+      "node scripts/local-check.mjs",
+      "node scripts/cli-check.mjs",
+    ]);
+    expect(config.tools?.commands?.deny).toEqual(["pnpm publish", "npm publish", "yarn publish"]);
+  });
+
+  it("rejects command policy rules that look like shell syntax or globs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      join(workspace, "topchester.jsonc"),
+      '{ "tools": { "commands": { "allow": ["node scripts/*.mjs"] } } }\n'
+    );
+
+    expect(() => loadTopchesterConfig({ workspaceRoot: workspace })).toThrow(
+      "Command policy rule must be a simple command prefix"
+    );
   });
 
   it("keeps YAML config files as compatibility aliases while preferring JSONC in the same layer", async () => {
@@ -271,7 +298,10 @@ describe("Topchester config loading", () => {
 
   it("keeps a bare default model bare when no provider is known", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const home = join(root, "home");
     const workspace = join(root, "workspace");
+    process.env.HOME = home;
+    delete process.env.TOPCHESTER_CONFIG;
     await mkdir(workspace, { recursive: true });
     await writeFile(join(workspace, "topchester.yaml"), ["models:", "  default: local-model"].join("\n"));
 

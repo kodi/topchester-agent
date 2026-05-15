@@ -84,6 +84,49 @@ const ignorePathSchema = z
     }
   });
 
+const commandPatternSchema = z
+  .string()
+  .min(1)
+  .superRefine((value, context) => {
+    const trimmed = value.trim();
+
+    if (trimmed !== value) {
+      context.addIssue({
+        code: "custom",
+        message: "Command policy rule must not have leading or trailing whitespace.",
+      });
+    }
+
+    if (!trimmed) {
+      context.addIssue({
+        code: "custom",
+        message: "Command policy rule must name a command prefix.",
+      });
+      return;
+    }
+
+    if (trimmed.startsWith("/") || isAbsolute(trimmed) || win32.isAbsolute(trimmed)) {
+      context.addIssue({
+        code: "custom",
+        message: "Command policy rule must start with an executable name, not a path.",
+      });
+    }
+
+    if (/[<>|&;$`(){}*?[\]\r\n]/u.test(trimmed)) {
+      context.addIssue({
+        code: "custom",
+        message: "Command policy rule must be a simple command prefix, not shell syntax or a glob.",
+      });
+    }
+  });
+
+const commandPolicySchema = z
+  .object({
+    allow: z.array(commandPatternSchema).optional().default([]),
+    deny: z.array(commandPatternSchema).optional().default([]),
+  })
+  .strict();
+
 export const topchesterConfigSchema = z.object({
   models: z
     .object({
@@ -98,6 +141,12 @@ export const topchesterConfigSchema = z.object({
       paths: z.array(ignorePathSchema).optional(),
     })
     .optional(),
+  tools: z
+    .object({
+      commands: commandPolicySchema.optional(),
+    })
+    .strict()
+    .optional(),
 });
 
 const rawTopchesterConfigSchema = z.object({
@@ -106,6 +155,12 @@ const rawTopchesterConfigSchema = z.object({
     .object({
       paths: z.array(ignorePathSchema).optional(),
     })
+    .optional(),
+  tools: z
+    .object({
+      commands: commandPolicySchema.optional(),
+    })
+    .strict()
     .optional(),
 });
 
@@ -338,7 +393,12 @@ function isOpenAIProvider(providerId: string, baseURL: string): boolean {
 
 function deepMerge<T>(base: T, override: T, path: string[] = []): T {
   if (Array.isArray(base) && Array.isArray(override)) {
-    return (path.join(".") === "ignore.paths" ? [...base, ...override] : override) as T;
+    const joinedPath = path.join(".");
+    return (
+      joinedPath === "ignore.paths" || joinedPath === "tools.commands.allow" || joinedPath === "tools.commands.deny"
+        ? [...base, ...override]
+        : override
+    ) as T;
   }
 
   if (!isPlainObject(base) || !isPlainObject(override)) {

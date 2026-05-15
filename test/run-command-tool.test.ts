@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { executeToolCall, isToolErrorResult, parseToolCall } from "../src/agent/tools.js";
-import { validateValidatorCommand } from "../src/agent/tools/command-policy.js";
+import { validateRunCommandPolicy, validateValidatorCommand } from "../src/agent/tools/command-policy.js";
 
 describe("command policy", () => {
   it("accepts package-script validators for supported package managers", async () => {
@@ -221,6 +221,70 @@ describe("command policy", () => {
     expect(result).toMatchObject({
       tool: "run_validator",
       error: "run_validator could not run because 'pnpm' is not available on PATH.",
+    });
+  });
+
+  it("allows configured run_command policy commands and lets deny rules win", async () => {
+    const workspace = await createWorkspace({ scripts: { test: "vitest run" } });
+
+    await expect(
+      validateRunCommandPolicy(
+        { command: "node scripts/check-fixtures.mjs --quick" },
+        {
+          workspaceRoot: workspace,
+          commands: {
+            allow: ["node scripts/check-fixtures.mjs"],
+            deny: [],
+          },
+        }
+      )
+    ).resolves.toMatchObject({
+      allowed: true,
+      policy: {
+        kind: "configured_command",
+        matchedRule: "node scripts/check-fixtures.mjs",
+      },
+      plan: {
+        executable: "node",
+        args: ["scripts/check-fixtures.mjs", "--quick"],
+      },
+    });
+
+    await expect(
+      validateRunCommandPolicy(
+        { command: "node scripts/check-fixtures.mjs --quick" },
+        {
+          workspaceRoot: workspace,
+          commands: {
+            allow: ["node scripts/check-fixtures.mjs"],
+            deny: ["node scripts/check-fixtures.mjs"],
+          },
+        }
+      )
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason:
+        "command policy rejected 'node scripts/check-fixtures.mjs --quick' because it matches deny rule 'node scripts/check-fixtures.mjs'.",
+    });
+  });
+
+  it("allows validators through run_command policy but rejects unknown commands", async () => {
+    const workspace = await createWorkspace({ scripts: { test: "vitest run" } });
+
+    await expect(
+      validateRunCommandPolicy({ command: "pnpm test" }, { workspaceRoot: workspace })
+    ).resolves.toMatchObject({
+      allowed: true,
+      policy: {
+        kind: "validator",
+        validator: "test",
+      },
+    });
+    await expect(
+      validateRunCommandPolicy({ command: "node scripts/other.mjs" }, { workspaceRoot: workspace })
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason: "command policy rejected 'node scripts/other.mjs' because it is not a validator or configured command.",
     });
   });
 });

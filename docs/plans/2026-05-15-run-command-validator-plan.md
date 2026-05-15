@@ -776,7 +776,20 @@ Dependencies:
 
 ### Slice 6: `run_command` Policy Config
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
+
+Completed in Slice 6:
+
+- Extended config with validated `tools.commands.allow` and `tools.commands.deny` arrays.
+- Added concatenate merge semantics for command allow/deny arrays across config layers.
+- Added `validateRunCommandPolicy` so configured commands can be classified before `run_command` is registered, with deny rules winning over allow rules.
+- Documented the command policy config shape in `docs/MODEL_CONFIG.md`.
+
+Verification:
+
+```sh
+pnpm test test/config.test.ts test/run-command-tool.test.ts
+```
 
 Goal: Add config-backed command allow/deny rules before registering broader command execution.
 
