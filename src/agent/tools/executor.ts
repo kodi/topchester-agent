@@ -132,6 +132,15 @@ function summarizeToolArgs(call: ToolCall): unknown {
   }
 
   if (call.tool !== "edit_file") {
+    if (call.tool === "run_validator") {
+      return {
+        command: call.args.command,
+        validator: call.args.validator,
+        workdir: call.args.workdir,
+        timeoutMs: call.args.timeout_ms,
+      };
+    }
+
     return call.args;
   }
 
@@ -162,6 +171,21 @@ function summarizeToolResult(result: ToolResult): Record<string, unknown> {
       decision: result.decision,
       stdoutLength: result.stdout.length,
       stderrLength: result.stderr.length,
+    };
+  }
+
+  if (result.tool === "run_validator") {
+    return {
+      cwd: result.cwd,
+      command: result.command,
+      exitCode: result.exitCode,
+      durationMs: result.durationMs,
+      timedOut: result.timedOut,
+      truncated: result.truncated,
+      policy: result.policy,
+      stdoutLength: result.stdout.length,
+      stderrLength: result.stderr.length,
+      workspaceMayHaveChanged: result.workspaceMayHaveChanged,
     };
   }
 

@@ -456,6 +456,17 @@ describe("TUI rendering", () => {
       expect(
         renderChatMessage(
           toolCallMessage(
+            {
+              tool: "run_validator",
+              args: { command: "pnpm test test/tools.test.ts", workdir: ".", timeout_ms: 120000 },
+            },
+            "run_validator: pnpm test test/tools.test.ts (exit 0, 2.1s)"
+          )
+        )
+      ).toContain("   \u001b[90mrun_validator: pnpm test test/tools.test.ts (exit 0, 2.1s)\u001b[0m");
+      expect(
+        renderChatMessage(
+          toolCallMessage(
             { tool: "git_diff", args: { scope: "all", include_untracked: true, context_lines: 3, max_bytes: 40000 } },
             "git_diff: all (2 files, truncated)"
           )

@@ -640,7 +640,23 @@ Dependencies:
 
 ### Slice 3: `run_validator` Tool
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
+
+Completed in Slice 3:
+
+- Added and registered `run_validator` with strict policy approval, shared process execution, `CI=1` / `NO_COLOR=1`, bounded stdout/stderr, structured metadata, and non-zero exits returned as normal tool evidence.
+- Exported the tool from `src/agent/tools.ts`, included it in the registry, and kept read-only subagent profiles from receiving it through their allowlist.
+- Added model-facing result formatting, compact TUI labels with exit code/duration, and debug/trace-safe logging summaries.
+- Extended tests for parsing, execution, non-zero validator output, missing executable errors, TUI labels, and logging redaction.
+
+Verification:
+
+```sh
+pnpm test test/run-command-tool.test.ts test/tools.test.ts test/commands.test.ts test/tui.render.test.ts test/logging.test.ts
+pnpm format-check
+pnpm typecheck
+pnpm lint
+```
 
 Goal: Register and execute `run_validator` through the normal tool loop.
 

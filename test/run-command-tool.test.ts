@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { executeToolCall, isToolErrorResult, parseToolCall } from "../src/agent/tools.js";
 import { validateValidatorCommand } from "../src/agent/tools/command-policy.js";
 
 describe("command policy", () => {
@@ -169,6 +170,59 @@ describe("command policy", () => {
       },
     });
   });
+
+  it("executes run_validator and treats non-zero exits as tool results", async () => {
+    const workspace = await createWorkspace({ scripts: { test: "vitest run" } });
+    const bin = await mkdtemp(join(tmpdir(), "topchester-run-validator-bin-"));
+    await writeExecutable(
+      join(bin, "pnpm"),
+      'printf \'CI=%s NO_COLOR=%s args:%s %s %s\\n\' "$CI" "$NO_COLOR" "$1" "$2" "$3"\nprintf \'failed assertion\\n\' >&2\nexit 1'
+    );
+    const call = parseToolCall(
+      '{"tool":"run_validator","args":{"command":"pnpm test -- test/failing.test.ts","validator":"test","timeout_ms":10000}}'
+    );
+
+    if (!call) {
+      throw new Error("Expected run_validator tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call, { pathEnv: bin });
+
+    expect(isToolErrorResult(result)).toBe(false);
+    expect(result).toMatchObject({
+      tool: "run_validator",
+      command: "pnpm test -- test/failing.test.ts",
+      cwd: ".",
+      exitCode: 1,
+      timedOut: false,
+      truncated: false,
+      stdout: "CI=1 NO_COLOR=1 args:test -- test/failing.test.ts\n",
+      stderr: "failed assertion\n",
+      policy: {
+        kind: "validator",
+        validator: "test",
+      },
+    });
+    expect(result.content).toContain("exit_code: 1");
+    expect(result.content).toContain("policy: validator test command");
+  });
+
+  it("returns a tool error when run_validator cannot find the executable", async () => {
+    const workspace = await createWorkspace({ scripts: { test: "vitest run" } });
+    const bin = await mkdtemp(join(tmpdir(), "topchester-empty-bin-"));
+    const call = parseToolCall('{"tool":"run_validator","args":{"command":"pnpm test","timeout_ms":10000}}');
+
+    if (!call) {
+      throw new Error("Expected run_validator tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call, { pathEnv: bin });
+
+    expect(result).toMatchObject({
+      tool: "run_validator",
+      error: "run_validator could not run because 'pnpm' is not available on PATH.",
+    });
+  });
 });
 
 async function expectAllowed(workspace: string, command: string, validator: string, args: string[]): Promise<void> {
@@ -214,4 +268,9 @@ async function writePackageJson(
   packageJson: { packageManager?: string; scripts: Record<string, string> }
 ): Promise<void> {
   await writeFile(join(dir, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`);
+}
+
+async function writeExecutable(path: string, body: string): Promise<void> {
+  await writeFile(path, `#!/bin/sh\n${body}\n`);
+  await chmod(path, 0o755);
 }

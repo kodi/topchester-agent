@@ -132,6 +132,22 @@ describe("agent tools", () => {
     });
   });
 
+  it("parses run_validator tool calls from JSON", () => {
+    expect(
+      parseToolCall(
+        '{"tool":"run_validator","args":{"command":"pnpm test test/tools.test.ts","validator":"test","timeout_ms":120000}}'
+      )
+    ).toEqual({
+      tool: "run_validator",
+      args: {
+        command: "pnpm test test/tools.test.ts",
+        validator: "test",
+        workdir: ".",
+        timeout_ms: 120_000,
+      },
+    });
+  });
+
   it("parses the first tool call when the model emits concatenated tool JSON", () => {
     expect(
       parseToolCall(
@@ -373,6 +389,7 @@ describe("agent tools", () => {
       'git_add: stage only explicit paths the user asked to stage; first inspect git_status, reject broad paths, and pass expected_status for each path. To use it, reply with only JSON: {"tool":"git_add","args":{"paths":["src/example.ts"],"expected_status":[{"path":"src/example.ts","status":"modified"}]}}',
       'git_commit: commit only after the user explicitly asks and staged paths exactly match expected_staged_paths. To use it, reply with only JSON: {"tool":"git_commit","args":{"message":"Add feature","expected_staged_paths":["src/example.ts"]}}',
       'inspect_command: run a safe read-only discovery command inside the workspace for quick orientation; prefer read_file, list_files, grep, and find_file for exact file tasks, and do not use it for builds, tests, installs, network, shell scripts, or edits. To use it, reply with only JSON: {"tool":"inspect_command","args":{"command":"pwd && rg --files docs/plans | head -20","workdir":".","timeout_ms":10000}}',
+      'run_validator: run a strict verification command after edits, such as tests, lint, typecheck, build, check, format-check, or smoke; failed exits are useful evidence and should be inspected before retrying. To use it, reply with only JSON: {"tool":"run_validator","args":{"command":"pnpm test test/tools.test.ts","validator":"test","workdir":".","timeout_ms":120000}}',
     ]);
   });
 

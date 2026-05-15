@@ -99,7 +99,7 @@ const REJECTED_SYNTAX: Array<[RegExp, string]> = [
   [/\r|\n/, "multiline commands are not allowed"],
   [/[<>]/, "redirects are not allowed"],
   [/\|/, "pipelines are not allowed"],
-  [/\&/, "background jobs and command lists are not allowed"],
+  [/&/, "background jobs and command lists are not allowed"],
   [/;/, "command lists are not allowed"],
   [/\$\(|\$\{|\$/, "shell expansion is not allowed"],
   [/`/, "command substitution is not allowed"],
