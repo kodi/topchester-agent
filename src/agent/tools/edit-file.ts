@@ -5,6 +5,11 @@ import { type Logger } from "pino";
 import { z } from "zod";
 import { recordAgentFileEdit, type FileEditEvent } from "../../knowledge/session-overlay.js";
 import { enqueueFileMutation } from "./file-mutation-queue.js";
+import {
+  formatProjectInstructionRetryContent,
+  formatWorkspaceRelativeToolPath,
+  resolveToolProjectInstructions,
+} from "./project-instructions.js";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
 
 export const editFileEditSchema = z.object({
@@ -50,7 +55,23 @@ export const editFileTool = defineTool({
   prompt:
     'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. expected_current_hash is optional and must be the current/pre-edit hash returned by the latest read_file for that file; never invent it or use a predicted after-edit hash. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_current_hash":"sha256:current-file-hash-from-read_file","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
   argsSchema: editFileArgsSchema,
-  execute: (context, args) => editWorkspaceFile(context.workspaceRoot, args, { logger: context.logger }),
+  execute: async (context, args) => {
+    const projectInstructions = await resolveToolProjectInstructions(context, { targetPath: args.path });
+
+    if (projectInstructions) {
+      const relativePath = formatWorkspaceRelativeToolPath(context.workspaceRoot, args.path);
+
+      return {
+        tool: "edit_file",
+        path: relativePath,
+        content: formatProjectInstructionRetryContent("edit_file", relativePath, projectInstructions),
+        warning: "Project instructions loaded; retry edit_file after applying them.",
+        projectInstructions,
+      };
+    }
+
+    return editWorkspaceFile(context.workspaceRoot, args, { logger: context.logger });
+  },
 });
 
 interface MatchedEdit {

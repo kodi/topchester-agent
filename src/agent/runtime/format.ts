@@ -24,7 +24,7 @@ export interface TurnTokenUsageTotals {
  */
 export function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult>): string {
   const path = result.path ? ` ${JSON.stringify(result.path)}` : "";
-  const command = result.command ? ` via ${result.command}` : "";
+  const command = "command" in result && result.command ? ` via ${result.command}` : "";
   const warning = result.warning ? `\nWarning: ${result.warning}` : "";
 
   if (isToolErrorResult(result)) {
@@ -35,6 +35,10 @@ export function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult
       result.content,
       "```",
     ].join("\n");
+  }
+
+  if (isProjectInstructionRetryResult(result)) {
+    return [`Tool result from ${result.tool}${path}${command}:${warning}`, result.content].join("\n");
   }
 
   if (result.tool === "read_file") {
@@ -55,7 +59,7 @@ export function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult
     return [`Tool result from ${result.tool}:`, result.content].join("\n");
   }
 
-  if (result.tool === "edit_file") {
+  if (result.tool === "edit_file" && "diff" in result) {
     return [
       `Tool result from ${result.tool}${path}:`,
       `before_hash: ${result.beforeHash}`,
@@ -69,7 +73,7 @@ export function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult
     ].join("\n");
   }
 
-  if (result.tool === "write_file") {
+  if (result.tool === "write_file" && "hash" in result) {
     return [
       `Tool result from ${result.tool}${path}:`,
       result.beforeHash ? `before_hash: ${result.beforeHash}` : "",
@@ -414,7 +418,7 @@ function formatGitDiffCallSummary(
  * failure, and pre-result display.
  */
 function formatEditFileChangeSummary(result: ToolExecutionResult<ToolResult> | undefined): string {
-  if (result?.tool !== "edit_file" || isToolErrorResult(result)) {
+  if (result?.tool !== "edit_file" || isToolErrorResult(result) || !("editEvent" in result)) {
     return "";
   }
 
@@ -427,11 +431,24 @@ function formatEditFileChangeSummary(result: ToolExecutionResult<ToolResult> | u
  * result details out of the larger switch that formats all tool-call messages.
  */
 function formatWriteFileChangeSummary(result: ToolExecutionResult<ToolResult> | undefined): string {
-  if (result?.tool !== "write_file" || isToolErrorResult(result)) {
+  if (result?.tool !== "write_file" || isToolErrorResult(result) || !("writeEvent" in result)) {
     return "";
   }
 
   return ` (${result.writeEvent.writeSummary})`;
+}
+
+function isProjectInstructionRetryResult(
+  result: ToolExecutionResult<ToolResult>
+): result is ToolExecutionResult<ToolResult> & {
+  tool: "edit_file" | "write_file";
+  projectInstructions: NonNullable<ToolResult["projectInstructions"]>;
+} {
+  return Boolean(
+    !isToolErrorResult(result) &&
+    result.projectInstructions &&
+    (result.tool === "edit_file" || result.tool === "write_file")
+  );
 }
 
 function shouldShowTokenUsageByEnv(): boolean {

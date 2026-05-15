@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -72,6 +72,53 @@ describe("agent runtime project instructions", () => {
         text: "Project instructions: AGENTS.override.md",
       },
     ]);
+  });
+
+  it("feeds nested project instructions back before retrying a scoped edit", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "AGENTS.md"), "Root rule.\n");
+    await writeFile(join(workspace, "src", "AGENTS.md"), "Use src naming rules.\n");
+    await writeFile(join(workspace, "src", "value.txt"), "enabled=false\n");
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (request.prompt.includes("+enabled=true")) {
+            return {
+              text: "Edited.",
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          return {
+            text: JSON.stringify({
+              tool: "edit_file",
+              args: {
+                path: "src/value.txt",
+                edits: [{ old_text: "enabled=false\n", new_text: "enabled=true\n" }],
+              },
+            }),
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    await runtime.submitMessage([], "turn it on");
+
+    expect(prompts).toHaveLength(3);
+    expect(prompts[1]).toContain("edit_file did not change src/value.txt.");
+    expect(prompts[1]).toContain("Use src naming rules.");
+    expect(prompts[2]).toContain("+enabled=true");
+    expect(await readFile(join(workspace, "src", "value.txt"), "utf8")).toBe("enabled=true\n");
   });
 });
 

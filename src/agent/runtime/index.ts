@@ -286,10 +286,14 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     let toolProtocolOverride = readToolProtocolEnvOverride();
     let requestedPlanClosure = false;
     let invalidToolCallRepairs = 0;
+    const projectInstructionToolState = { shownSourceKeys: new Set<string>() };
 
     for (let toolCalls = 0; toolCalls <= MAX_TOOL_CALLS_PER_TURN; toolCalls += 1) {
       const startedAt = Date.now();
       const projectInstructions = await this.resolveBaseProjectInstructions();
+      for (const sourceKey of projectInstructions.sourceKeys) {
+        projectInstructionToolState.shownSourceKeys.add(sourceKey);
+      }
       const system = this.buildSystemPromptWithProjectInstructions({ profile, permissions }, projectInstructions);
       this.context.logger.debug(
         {
@@ -472,6 +476,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 profile,
                 permissions,
                 subagents,
+                projectInstructions: projectInstructionToolState,
                 abortSignal,
                 toolCallId: entry.toolCallId,
                 eventSink: (event) => taskEventQueue.push(event),
@@ -575,6 +580,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
               profile,
               permissions,
               subagents,
+              projectInstructions: projectInstructionToolState,
               abortSignal,
               toolCallId: entry.toolCallId,
             })
@@ -692,6 +698,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             profile,
             permissions,
             subagents,
+            projectInstructions: projectInstructionToolState,
             abortSignal,
             toolCallId: toolCall.id,
             eventSink: (event) => toolEventQueue.push(event),

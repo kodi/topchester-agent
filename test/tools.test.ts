@@ -332,6 +332,74 @@ describe("agent tools", () => {
     });
   });
 
+  it("loads nested project instructions once for path-scoped read tools", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "AGENTS.md"), "Root rule.\n");
+    await writeFile(join(workspace, "src", "AGENTS.md"), "Use src naming rules.\n");
+    await writeFile(join(workspace, "src", "a.txt"), "a\n");
+    await writeFile(join(workspace, "src", "b.txt"), "b\n");
+    const projectInstructions = { shownSourceKeys: new Set(["AGENTS.md"]) };
+    const firstCall = parseToolCall('{"tool":"read_file","args":{"path":"src/a.txt"}}');
+    const secondCall = parseToolCall('{"tool":"read_file","args":{"path":"src/b.txt"}}');
+
+    if (!firstCall || !secondCall) {
+      throw new Error("Expected read_file tool calls to parse.");
+    }
+
+    const first = await executeToolCall(workspace, firstCall, { projectInstructions });
+    const second = await executeToolCall(workspace, secondCall, { projectInstructions });
+
+    expect(first.content).toContain("Use src naming rules.");
+    expect(first.projectInstructions?.sources.map((source) => source.relativePath)).toEqual(["src/AGENTS.md"]);
+    expect(second.content).toBe("b\n");
+    expect(second.projectInstructions).toBeUndefined();
+  });
+
+  it("does not attach project instructions when directly reading an instruction file", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "src", "AGENTS.md"), "Use src naming rules.\n");
+    const call = parseToolCall('{"tool":"read_file","args":{"path":"src/AGENTS.md"}}');
+
+    if (!call) {
+      throw new Error("Expected read_file tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call, { projectInstructions: { shownSourceKeys: new Set() } });
+
+    expect(result.content).toBe("Use src naming rules.\n");
+    expect(result.projectInstructions).toBeUndefined();
+  });
+
+  it("guards nested edit_file until newly relevant project instructions have been shown", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "AGENTS.md"), "Root rule.\n");
+    await writeFile(join(workspace, "src", "AGENTS.md"), "Use src naming rules.\n");
+    await writeFile(join(workspace, "src", "value.txt"), "enabled=false\n");
+    const projectInstructions = { shownSourceKeys: new Set(["AGENTS.md"]) };
+    const call = parseToolCall(
+      '{"tool":"edit_file","args":{"path":"src/value.txt","edits":[{"old_text":"enabled=false\\n","new_text":"enabled=true\\n"}]}}'
+    );
+
+    if (!call) {
+      throw new Error("Expected edit_file tool call to parse.");
+    }
+
+    const guarded = await executeToolCall(workspace, call, { projectInstructions });
+
+    expect(guarded.content).toContain("edit_file did not change src/value.txt.");
+    expect(guarded.content).toContain("Use src naming rules.");
+    expect(guarded.warning).toContain("retry edit_file");
+    expect(await readFile(join(workspace, "src", "value.txt"), "utf8")).toBe("enabled=false\n");
+
+    const edited = await executeToolCall(workspace, call, { projectInstructions });
+
+    expect(edited.content).toContain("Edited src/value.txt");
+    expect(await readFile(join(workspace, "src", "value.txt"), "utf8")).toBe("enabled=true\n");
+  });
+
   it("executes plan_todo through runtime-provided task-plan state", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
     const taskPlan = createTaskPlanController();

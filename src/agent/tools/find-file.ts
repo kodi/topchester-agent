@@ -5,6 +5,7 @@ import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:p
 import { type Logger } from "pino";
 import { z } from "zod";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
+import { appendProjectInstructionsToToolContent, resolveToolProjectInstructions } from "./project-instructions.js";
 
 export const findFileArgsSchema = z.object({
   query: z.string().min(1),
@@ -48,8 +49,22 @@ export const findFileTool = defineTool({
   parallelSafe: true,
   mutatesWorkspace: false,
   resourceKeys: (args) => [`find:${args.path}`],
-  execute: (context, args) =>
-    findWorkspaceFilesByName(context.workspaceRoot, args, { pathEnv: context.pathEnv, logger: context.logger }),
+  execute: async (context, args) => {
+    const result = await findWorkspaceFilesByName(context.workspaceRoot, args, {
+      pathEnv: context.pathEnv,
+      logger: context.logger,
+    });
+    const projectInstructions = await resolveToolProjectInstructions(context, {
+      targetPath: args.path,
+      targetIsDirectory: true,
+    });
+
+    return {
+      ...result,
+      content: appendProjectInstructionsToToolContent(result.content, projectInstructions),
+      projectInstructions,
+    };
+  },
 });
 
 export async function findWorkspaceFilesByName(

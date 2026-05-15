@@ -16,6 +16,7 @@ export interface ExecuteToolCallOptions {
   profile?: AgentProfile;
   permissions?: ToolPermissionView;
   subagents?: SubagentManager;
+  projectInstructions?: ToolContext["projectInstructions"];
   eventSink?: (event: AgentRuntimeEvent) => void | Promise<void>;
   abortSignal?: AbortSignal;
   toolCallId?: string;
@@ -39,6 +40,7 @@ export async function executeToolCall(
     profile: options.profile,
     permissions: options.permissions,
     subagents: options.subagents,
+    projectInstructions: options.projectInstructions,
     eventSink: options.eventSink,
     abortSignal: options.abortSignal,
     toolCallId: options.toolCallId,
@@ -69,7 +71,7 @@ export async function executeToolCall(
         event: "tool_result",
         tool: result.tool,
         path: result.path,
-        command: result.command,
+        command: "command" in result ? result.command : undefined,
         warning: result.warning,
         durationMs,
         contentLength: result.content.length,
@@ -267,6 +269,10 @@ function summarizeToolResult(result: ToolResult): Record<string, unknown> {
   }
 
   if (result.tool === "write_file") {
+    if (!("hash" in result)) {
+      return {};
+    }
+
     return {
       hash: result.hash,
       bytesWritten: result.bytesWritten,
@@ -279,7 +285,7 @@ function summarizeToolResult(result: ToolResult): Record<string, unknown> {
     };
   }
 
-  if (result.tool !== "edit_file") {
+  if (result.tool !== "edit_file" || !("editEvent" in result)) {
     return {};
   }
 

@@ -4,6 +4,7 @@ import { type TaskPlanController } from "../task-plan.js";
 import { type AgentProfile, type ToolPermissionView } from "../profiles.js";
 import { type SubagentManager } from "../subagents.js";
 import { type TopchesterConfig } from "../../config/index.js";
+import { type ProjectInstructionSource } from "../instructions.js";
 
 export interface ToolContext {
   workspaceRoot: string;
@@ -15,9 +16,14 @@ export interface ToolContext {
   profile?: AgentProfile;
   permissions?: ToolPermissionView;
   subagents?: SubagentManager;
+  projectInstructions?: ProjectInstructionToolState;
   eventSink?: (event: import("../events.js").AgentRuntimeEvent) => void | Promise<void>;
   abortSignal?: AbortSignal;
   toolCallId?: string;
+}
+
+export interface ProjectInstructionToolState {
+  shownSourceKeys: Set<string>;
 }
 
 export interface RunCommandApprovalContext {
@@ -52,6 +58,12 @@ export interface ToolResult<Name extends string = string> {
   content: string;
   command?: string;
   warning?: string;
+  projectInstructions?: ProjectInstructionToolResult;
+}
+
+export interface ProjectInstructionToolResult {
+  sources: Array<Pick<ProjectInstructionSource, "relativePath" | "scopePath" | "bytes" | "truncated">>;
+  formatted: string;
 }
 
 export interface ToolErrorResult<Name extends string = string> extends ToolResult<Name> {

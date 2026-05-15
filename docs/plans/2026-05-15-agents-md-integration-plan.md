@@ -386,7 +386,7 @@ Dependencies:
 
 ### Slice 3: Path-Scoped Tool Context
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Teach file tools to surface nested instruction files exactly when they become relevant.
 
@@ -409,6 +409,7 @@ Verification:
 
 - `pnpm test test/tools.test.ts`
 - `pnpm test test/agent-runtime.test.ts`
+- 2026-05-16: Passed `pnpm test test/tools.test.ts`, `pnpm test test/agent-runtime.test.ts`, `pnpm exec tsgo --noEmit`, `pnpm format`, and focused `pnpm exec oxlint` on touched runtime/tool/test files.
 
 Dependencies:
 
@@ -595,4 +596,4 @@ Docs and smoke:
 
 ## Next Slice
 
-Start with Slice 3. Add path-scoped instruction discovery to file tools with duplicate suppression and edit/write retry guards.
+Start with Slice 4. Add explicit user-intent guards for editing `AGENTS.md` and `AGENTS.override.md`.

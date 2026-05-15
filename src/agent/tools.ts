@@ -164,6 +164,8 @@ export {
   type ToolDefinition,
   type ToolErrorResult,
   type ToolExecutionResult,
+  type ProjectInstructionToolResult,
+  type ProjectInstructionToolState,
   type ToolProtocol,
   type ToolProtocolAttempt,
   type ToolProtocolOverride,

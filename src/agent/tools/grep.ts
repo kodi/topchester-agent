@@ -5,6 +5,11 @@ import { delimiter, isAbsolute, join, relative, resolve } from "node:path";
 import { type Logger } from "pino";
 import { z } from "zod";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
+import {
+  appendProjectInstructionsToToolContent,
+  isWorkspacePathDirectory,
+  resolveToolProjectInstructions,
+} from "./project-instructions.js";
 
 export const grepArgsSchema = z.object({
   pattern: z.string(),
@@ -29,8 +34,23 @@ export const grepTool = defineTool({
   parallelSafe: true,
   mutatesWorkspace: false,
   resourceKeys: (args) => [`grep:${args.path ?? "."}`],
-  execute: (context, args) =>
-    grepWorkspace(context.workspaceRoot, args, { pathEnv: context.pathEnv, logger: context.logger }),
+  execute: async (context, args) => {
+    const result = await grepWorkspace(context.workspaceRoot, args, {
+      pathEnv: context.pathEnv,
+      logger: context.logger,
+    });
+    const targetPath = args.path ?? ".";
+    const projectInstructions = await resolveToolProjectInstructions(context, {
+      targetPath,
+      targetIsDirectory: await isWorkspacePathDirectory(context.workspaceRoot, targetPath),
+    });
+
+    return {
+      ...result,
+      content: appendProjectInstructionsToToolContent(result.content, projectInstructions),
+      projectInstructions,
+    };
+  },
 });
 
 export async function grepWorkspace(

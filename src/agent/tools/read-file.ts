@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
+import { appendProjectInstructionsToToolContent, resolveToolProjectInstructions } from "./project-instructions.js";
 
 export const readFileArgsSchema = z.object({
   path: z.string(),
@@ -23,7 +24,19 @@ export const readFileTool = defineTool({
   parallelSafe: true,
   mutatesWorkspace: false,
   resourceKeys: (args) => [`file:${args.path}`],
-  execute: (context, args) => readWorkspaceFile(context.workspaceRoot, args.path),
+  execute: async (context, args) => {
+    const result = await readWorkspaceFile(context.workspaceRoot, args.path);
+    const projectInstructions = await resolveToolProjectInstructions(context, {
+      targetPath: args.path,
+      skipWhenTargetIsInstructionFile: true,
+    });
+
+    return {
+      ...result,
+      content: appendProjectInstructionsToToolContent(result.content, projectInstructions),
+      projectInstructions,
+    };
+  },
 });
 
 export async function readWorkspaceFile(workspaceRoot: string, path: string): Promise<ReadFileToolResult> {
