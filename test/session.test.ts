@@ -258,6 +258,10 @@ describe("session store", () => {
       items: [{ text: "Inspect", status: "in_progress" }],
     });
     await session.append({
+      kind: "instruction_context",
+      sources: [{ path: "AGENTS.md", scopePath: ".", bytes: 42, truncated: false }],
+    });
+    await session.append({
       kind: "choice",
       tone: "warning",
       title: "Continue?",
@@ -323,6 +327,12 @@ describe("session store", () => {
       expect.objectContaining({
         version: 1,
         id: 4,
+        kind: "instruction_context",
+        sources: [{ path: "AGENTS.md", scopePath: ".", bytes: 42, truncated: false }],
+      }),
+      expect.objectContaining({
+        version: 1,
+        id: 5,
         kind: "choice",
         tone: "warning",
         title: "Continue?",
@@ -331,7 +341,7 @@ describe("session store", () => {
       }),
       expect.objectContaining({
         version: 1,
-        id: 5,
+        id: 6,
         kind: "subagent_started",
         sessionId: "child-session",
         parentSessionId: session.sessionId,
@@ -341,7 +351,7 @@ describe("session store", () => {
       }),
       expect.objectContaining({
         version: 1,
-        id: 6,
+        id: 7,
         kind: "subagent_event",
         sessionId: "child-session",
         parentSessionId: session.sessionId,
@@ -350,7 +360,7 @@ describe("session store", () => {
       }),
       expect.objectContaining({
         version: 1,
-        id: 7,
+        id: 8,
         kind: "subagent_completed",
         sessionId: "child-session",
         parentSessionId: session.sessionId,
@@ -359,7 +369,7 @@ describe("session store", () => {
       }),
       expect.objectContaining({
         version: 1,
-        id: 8,
+        id: 9,
         kind: "subagent_failed",
         sessionId: "child-session-2",
         parentSessionId: session.sessionId,

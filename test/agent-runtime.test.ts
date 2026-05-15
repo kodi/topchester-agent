@@ -112,9 +112,26 @@ describe("agent runtime project instructions", () => {
       } as unknown as AppContext["modelGateway"],
     });
 
-    await runtime.submitMessage([], "turn it on");
+    const events = await runtime.submitMessage([], "turn it on");
 
     expect(prompts).toHaveLength(3);
+    expect(events.filter((event) => event.type === "instruction_context")).toEqual([
+      {
+        type: "instruction_context",
+        sources: [{ path: "AGENTS.md", scopePath: ".", bytes: Buffer.byteLength("Root rule.\n"), truncated: false }],
+      },
+      {
+        type: "instruction_context",
+        sources: [
+          {
+            path: "src/AGENTS.md",
+            scopePath: "src",
+            bytes: Buffer.byteLength("Use src naming rules.\n"),
+            truncated: false,
+          },
+        ],
+      },
+    ]);
     expect(prompts[1]).toContain("edit_file did not change src/value.txt.");
     expect(prompts[1]).toContain("Use src naming rules.");
     expect(prompts[2]).toContain("+enabled=true");

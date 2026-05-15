@@ -7,6 +7,7 @@ export type AgentRuntimeEvent =
   | AgentMessageEvent
   | AgentToolCallEvent
   | AgentTaskPlanEvent
+  | AgentInstructionContextEvent
   | AgentKnowledgeStatusEvent
   | AgentChoiceEvent
   | AgentSubagentStartedEvent
@@ -35,6 +36,18 @@ export interface AgentToolCallEvent {
 export interface AgentTaskPlanEvent {
   type: "task_plan";
   plan: TaskPlanState;
+}
+
+export interface AgentInstructionContextSource {
+  path: string;
+  scopePath: string;
+  bytes: number;
+  truncated: boolean;
+}
+
+export interface AgentInstructionContextEvent {
+  type: "instruction_context";
+  sources: AgentInstructionContextSource[];
 }
 
 export interface AgentKnowledgeStatusEvent {
@@ -138,6 +151,10 @@ export const agentEvent = {
 
   taskPlan(plan: TaskPlanState): AgentTaskPlanEvent {
     return { type: "task_plan", plan };
+  },
+
+  instructionContext(sources: AgentInstructionContextSource[]): AgentInstructionContextEvent {
+    return { type: "instruction_context", sources };
   },
 
   knowledgeStatus(status: KnowledgeStatus, guidance?: string): AgentKnowledgeStatusEvent {

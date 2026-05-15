@@ -445,7 +445,7 @@ Dependencies:
 
 ### Slice 5: Session Persistence And Resume
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Record which instruction files affected a turn without storing full contents.
 
@@ -466,6 +466,7 @@ Verification:
 
 - `pnpm test test/session.test.ts`
 - `pnpm test test/tui.session.test.ts`
+- 2026-05-16: Passed `pnpm test test/session.test.ts`, `pnpm test test/agent-runtime.test.ts`, `pnpm exec tsgo --noEmit`, `pnpm format`, and focused `pnpm exec oxlint` on touched runtime/session/TUI test files. There is no `test/tui.session.test.ts` in this repo; `src/tui/runtime-events.ts` now renders `instruction_context` as no visible chat row.
 
 Dependencies:
 
@@ -597,4 +598,4 @@ Docs and smoke:
 
 ## Next Slice
 
-Start with Slice 5. Persist instruction source metadata for turns without storing instruction file contents.
+Start with Slice 6. Finish the user docs and add fake-API smoke coverage for root instructions and nested edit guarding.

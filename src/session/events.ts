@@ -66,6 +66,18 @@ const taskPlanPayloadSchema = z.object({
   updatedAt: isoTimestampSchema,
 });
 
+const instructionContextSourcePayloadSchema = z.object({
+  path: z.string(),
+  scopePath: z.string(),
+  bytes: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+});
+
+const instructionContextPayloadSchema = z.object({
+  kind: z.literal("instruction_context"),
+  sources: z.array(instructionContextSourcePayloadSchema),
+});
+
 const statusPayloadSchema = z.object({
   kind: z.literal("status"),
   status: z.string(),
@@ -120,6 +132,7 @@ export const sessionEventPayloadSchema = z.discriminatedUnion("kind", [
   messagePayloadSchema,
   toolCallPayloadSchema,
   taskPlanPayloadSchema,
+  instructionContextPayloadSchema,
   statusPayloadSchema,
   knowledgeStatusPayloadSchema,
   choicePayloadSchema,

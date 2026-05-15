@@ -22,6 +22,11 @@ export function runtimeEventToSessionPayload(event: AgentRuntimeEvent): SessionE
         items: event.plan.items,
         updatedAt: event.plan.updatedAt,
       };
+    case "instruction_context":
+      return {
+        kind: "instruction_context",
+        sources: event.sources,
+      };
     case "knowledge_status":
       return undefined;
     case "choice":

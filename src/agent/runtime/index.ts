@@ -5,7 +5,13 @@ import { createL1ContextPack, formatL1ContextPackForPrompt } from "../../knowled
 import { getKnowledgeStatus, type KnowledgeStatus } from "../../knowledge/status.js";
 import { executeSlashCommand } from "../commands.js";
 import { type ConversationTurn, buildConversationPrompt } from "../conversation.js";
-import { ABORT_CHOICE_VALUE, agentEvent, choiceAction, type AgentRuntimeEvent } from "../events.js";
+import {
+  ABORT_CHOICE_VALUE,
+  agentEvent,
+  choiceAction,
+  type AgentInstructionContextSource,
+  type AgentRuntimeEvent,
+} from "../events.js";
 import { checkAgentReady } from "../health.js";
 import { formatHookContextsForPrompt, runTopchesterHooks, type HookRunPayload, type HookRunResult } from "../hooks.js";
 import { resolveProjectInstructions, type ProjectInstructionContext } from "../instructions.js";
@@ -287,12 +293,19 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     let requestedPlanClosure = false;
     let invalidToolCallRepairs = 0;
     const projectInstructionToolState = { shownSourceKeys: new Set<string>() };
+    const persistedProjectInstructionKeys = new Set<string>();
 
     for (let toolCalls = 0; toolCalls <= MAX_TOOL_CALLS_PER_TURN; toolCalls += 1) {
       const startedAt = Date.now();
       const projectInstructions = await this.resolveBaseProjectInstructions();
       for (const sourceKey of projectInstructions.sourceKeys) {
         projectInstructionToolState.shownSourceKeys.add(sourceKey);
+      }
+      for (const event of createInstructionContextEventsFromProjectInstructions(
+        projectInstructions,
+        persistedProjectInstructionKeys
+      )) {
+        yield event;
       }
       const system = this.buildSystemPromptWithProjectInstructions({ profile, permissions }, projectInstructions);
       this.context.logger.debug(
@@ -503,6 +516,12 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           const call = taskCalls[index]!;
           const toolResult = taskResults[index]!;
 
+          for (const event of createInstructionContextEventsFromToolResult(
+            toolResult,
+            persistedProjectInstructionKeys
+          )) {
+            yield event;
+          }
           yield agentEvent.toolCall(call, formatToolCallMessage(call, toolResult));
           const postHook = await this.runPostToolUseHook(
             call,
@@ -598,6 +617,12 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           const call = parallelCalls[index]!;
           const toolResult = parallelResults[index]!;
 
+          for (const event of createInstructionContextEventsFromToolResult(
+            toolResult,
+            persistedProjectInstructionKeys
+          )) {
+            yield event;
+          }
           yield agentEvent.toolCall(call, formatToolCallMessage(call, toolResult));
           const postHook = await this.runPostToolUseHook(
             call,
@@ -717,6 +742,9 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         }
       }
 
+      for (const event of createInstructionContextEventsFromToolResult(toolResult, persistedProjectInstructionKeys)) {
+        yield event;
+      }
       yield agentEvent.toolCall(executableToolCall, formatToolCallMessage(executableToolCall, toolResult));
       if (!isToolErrorResult(toolResult) && toolResult.tool === "plan_todo") {
         yield agentEvent.taskPlan(toolResult.plan);
@@ -1127,4 +1155,55 @@ function summarizeProjectInstructionSources(instructions: ProjectInstructionCont
     bytes: source.bytes,
     truncated: source.truncated,
   }));
+}
+
+function createInstructionContextEventsFromProjectInstructions(
+  instructions: ProjectInstructionContext,
+  persistedKeys: Set<string>
+): AgentRuntimeEvent[] {
+  return createInstructionContextEvents(
+    instructions.sources.map((source) => ({
+      path: source.relativePath,
+      scopePath: source.scopePath,
+      bytes: source.bytes,
+      truncated: source.truncated,
+    })),
+    persistedKeys
+  );
+}
+
+function createInstructionContextEventsFromToolResult(
+  result: ToolExecutionResult<ToolResult>,
+  persistedKeys: Set<string>
+): AgentRuntimeEvent[] {
+  if (isToolErrorResult(result) || !result.projectInstructions) {
+    return [];
+  }
+
+  return createInstructionContextEvents(
+    result.projectInstructions.sources.map((source) => ({
+      path: source.relativePath,
+      scopePath: source.scopePath,
+      bytes: source.bytes,
+      truncated: source.truncated,
+    })),
+    persistedKeys
+  );
+}
+
+function createInstructionContextEvents(
+  sources: AgentInstructionContextSource[],
+  persistedKeys: Set<string>
+): AgentRuntimeEvent[] {
+  const newSources = sources.filter((source) => !persistedKeys.has(source.path));
+
+  if (newSources.length === 0) {
+    return [];
+  }
+
+  for (const source of newSources) {
+    persistedKeys.add(source.path);
+  }
+
+  return [agentEvent.instructionContext(newSources)];
 }
