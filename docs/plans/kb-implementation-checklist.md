@@ -6,6 +6,12 @@ Track implementation of the global knowledge base feature from current L1 suppor
 
 `docs/KNOWLEDGE.md` remains the design source. This file is the implementation checklist.
 
+Status legend:
+
+- `[x]` Done
+- `[-]` Partial or in progress
+- `[ ]` Not started
+
 ## Current Status
 
 - [x] Project KB folder initialization
@@ -17,9 +23,25 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [x] Mirrored L1 entry layout under `topchester-kb/l1-files/<source/path>.json`
 - [x] Basic manifest updates with L1 counts
 - [x] CLI `topchester kb compile`
+- [x] CLI `topchester kb search`
+- [x] CLI `topchester kb context`
+- [x] Top-level CLI `topchester search` alias for L1 KB search
 - [x] Slash command `/kb compile`
 - [x] CLI L1 progress with count, percentage, progress bar, and current file
 - [x] Workspace-scoped `edit_file` and create-by-default `write_file` tools mark changed files dirty-known and `needs_sync` in the runtime session overlay
+- [x] L1 in-memory search over paths, symbols, exports, responsibilities, summaries, imports, relationships, evidence, and tests
+- [x] L1 context pack generation for CLI and runtime prompt injection
+- [x] Agent runtime injects relevant L1 context packs when the KB is ready
+- [x] L1 post-processing infers file roles and reverse test links
+- [x] Provider-exposed reasoning can stream into the TUI without persisting thinking text into session/model context
+
+## Recent Implementation Notes
+
+- `e411787` added L1 search, compact context pack generation, CLI `kb search`/`kb context`, top-level `search`, runtime L1 context injection, L1 post-processing, and tests.
+- `eac6997`, `21a8825`, and `bbab1d2` added L1 search benchmarks, optimized index loading/prefix lookup, and stripped empty containers from JSON search/context-pack output.
+- `e5ae0b7` added the `TOPCHESTER_DISABLE_L1_CONTEXT=1` escape hatch and token-usage context notes.
+- `22b608c` added streamed provider reasoning in the TUI and hardened the plan/tool-call display path. This is TUI/runtime work, not canonical KB content.
+- L1 structural fields are currently model-extracted and normalized/post-processed. Deterministic static extraction before model summarization is still only partial.
 
 ## Global KB Setup and Configuration
 
@@ -44,16 +66,20 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [x] Durable queue statuses: `queued`, `in_progress`, `completed`, `failed`, `changed`, `missing_file`
 - [x] L1 entry schema/type validation
 - [x] Deterministic field overrides for model output
+- [x] Model-owned L1 fields normalize symbols, imports, exports, module ids, feature ids, test ids, evidence, and confidence before schema validation
 - [x] Existing current-entry skip/resume behavior
 - [x] Per-file failure metadata
 - [x] Orphan L1 entry cleanup
 - [x] Mirrored path-safe entry writes
 - [ ] Add stronger language/type detection
-- [ ] Add structural import/export/symbol extraction before summarization
-- [ ] Add test/doc coverage links where detectable
+- [-] Add structural import/export/symbol extraction before summarization; model prompt/schema normalization exists, but deterministic static extraction before summarization is still open
+- [-] Add test/doc coverage links where detectable; test links are implemented through `declared_test_targets`, `likely_test_targets`, and reverse `tested_by` post-processing, while doc relationship links are still open
 - [ ] Add chunking or fallback strategy for oversized text files
 - [ ] Add L1 schema JSON files under `topchester-kb/schema/`
 - [ ] Add L1 validation command/check
+- [x] Add L1 in-memory lexical index
+- [x] Add compact L1 context pack assembly with omitted empty containers and optional full L1 entries
+- [x] Add CLI formatting and JSON output for L1 search/context packs
 
 ## L2: Module Knowledge
 
@@ -122,10 +148,10 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [ ] Add `GET /manifest`
 - [ ] Add `GET /nodes/:id`
 - [ ] Add `GET /files/:encodedPath` or replacement file lookup
-- [ ] Implement `kb.search`
+- [-] Implement `kb.search`; in-process L1 search exists, but no KB service/RPC endpoint yet
 - [ ] Implement `kb.getNode`
 - [ ] Implement `kb.neighbors`
-- [ ] Implement `kb.contextPack`
+- [-] Implement `kb.contextPack`; in-process L1 context packs and CLI output exist, but no KB service/RPC endpoint yet
 - [ ] Implement `kb.driftCheck`
 - [ ] Implement `kb.impact`
 - [ ] Implement `kb.updatePlan`
@@ -143,6 +169,7 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [ ] Keep cache fully rebuildable from canonical KB
 - [ ] Add session overlay storage for dirty-but-known active work
 - [x] Add in-memory session overlay state for agent-authored `edit_file` changes
+- [x] Reuse `.agents/topchester-kb-cache/` for durable L1 queue and sync queue artifacts
 - [ ] Add cache tests
 
 ## Tool Execution
@@ -182,15 +209,15 @@ Track implementation of the global knowledge base feature from current L1 suppor
 
 ## Agent KB-Aware Behavior
 
-- [ ] Query KB before architecture answers
-- [ ] Request context pack before non-trivial coding tasks
+- [-] Query KB before architecture answers; runtime injects L1 context for normal chat turns when KB is ready, but there is no architecture-specific policy yet
+- [-] Request context pack before non-trivial coding tasks; runtime injects an L1 context pack for normal turns when KB is ready, with `TOPCHESTER_DISABLE_L1_CONTEXT=1` as an escape hatch
 - [ ] Run drift check before editing relevant files
-- [ ] Use KB context to orient, plan, estimate impact, and identify verification
+- [-] Use KB context to orient, plan, estimate impact, and identify verification; current implementation provides L1 orientation only, without impact or verification recommendations
 - [x] Keep non-trivial runtime work visible through session-only `plan_todo` state
-- [ ] Resolve task-critical facts against current working tree before acting
+- [-] Resolve task-critical facts against current working tree before acting; prompt contract says to read current files, but this is not enforced by runtime policy
 - [x] Track dirty files and suspect nodes in a session overlay during `edit_file` edits
 - [x] Track created files in the session overlay during `write_file` writes
-- [ ] Warn clearly when relevant KB is stale
+- [-] Warn clearly when relevant KB is stale; context packs carry `drift: unchecked` warnings, but scoped drift detection is not implemented
 - [x] Update or mark KB stale after `edit_file` edits
 - [x] Update or mark KB stale after `write_file` writes
 - [x] Mark session as `needs_sync` after `edit_file` edits and `write_file` writes
@@ -208,8 +235,10 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [ ] Add drift warning panel
 - [ ] Add knowledge diff view
 - [x] Show current `plan_todo` state above the prompt during multi-step work
+- [x] Show streamed provider reasoning as a non-persisted thinking row
 - [x] Add TUI tests for KB footer path health
 - [x] Add TUI tests for visible task-plan rendering
+- [x] Add TUI tests for reasoning display and runtime failure rendering
 
 ## Validation and CI
 
@@ -219,3 +248,6 @@ Track implementation of the global knowledge base feature from current L1 suppor
 - [ ] Add generated KB policy checks
 - [ ] Add test fixtures for small repos
 - [ ] Add end-to-end compile validation for a sample workspace
+- [x] Add focused tests for L1 search and context pack generation
+- [x] Add CLI integration tests for `kb search`, `kb context`, and top-level `search`
+- [x] Add L1 post-processing tests for inferred test links
