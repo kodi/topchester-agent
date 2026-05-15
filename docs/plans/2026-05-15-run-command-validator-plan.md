@@ -868,7 +868,19 @@ Dependencies:
 
 ### Slice 8: Approval Architecture Follow-Up
 
-Status: `[ ]` Not started
+Status: `[x]` Deferred by plan condition
+
+Completed in Slice 8:
+
+- Rechecked the plan condition for approval work. The implemented V0 still follows the plan decisions: strict built-in policy, config allow/deny for `run_command`, and no human approval UI in the first implementation.
+- Did not add same-turn approval because the plan scopes it to future alpha feedback: "if alpha feedback shows strict policy is too limiting." No such feedback is part of this implementation slice.
+- Kept the follow-up requirements below as the implementation checklist for a future approval slice.
+
+Verification:
+
+```sh
+pnpm test test/commands.test.ts test/tui.render.test.ts test/session.test.ts
+```
 
 Goal: Design and implement true same-turn command approval if alpha feedback shows strict policy is too limiting.
 
