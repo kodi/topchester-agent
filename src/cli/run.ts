@@ -103,13 +103,15 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
     } else {
       await session.append({ kind: "message", role: "user", text: options.prompt });
       pushJson(jsonEvents, runId, session.sessionId, "user.message", { text: options.prompt, inputType: "prompt" });
-      await applyRuntimeEvents({
-        events: await runtime.submitMessage(conversation, options.prompt, abortController.signal),
-        session,
-        jsonEvents,
-        runId,
-        plain: !options.json,
-      });
+      for await (const event of runtime.submitMessageStream(conversation, options.prompt, abortController.signal)) {
+        await applyRuntimeEvent({
+          event,
+          session,
+          jsonEvents,
+          runId,
+          plain: !options.json,
+        });
+      }
     }
 
     const durationMs = Date.now() - startedAt;
@@ -189,17 +191,27 @@ async function applyRuntimeEvents(options: {
   plain: boolean;
 }): Promise<void> {
   for (const event of options.events) {
-    const payload = runtimeEventToSessionPayload(event);
+    await applyRuntimeEvent({ ...options, event });
+  }
+}
 
-    if (payload) {
-      await options.session.append(payload);
-    }
+async function applyRuntimeEvent(options: {
+  event: AgentRuntimeEvent;
+  session: SessionHandle;
+  jsonEvents: RunJsonEvent[];
+  runId: string;
+  plain: boolean;
+}): Promise<void> {
+  const payload = runtimeEventToSessionPayload(options.event);
 
-    pushJson(options.jsonEvents, options.runId, options.session.sessionId, event.type, { event });
+  if (payload) {
+    await options.session.append(payload);
+  }
 
-    if (options.plain) {
-      printPlainEvent(event);
-    }
+  pushJson(options.jsonEvents, options.runId, options.session.sessionId, options.event.type, { event: options.event });
+
+  if (options.plain) {
+    printPlainEvent(options.event);
   }
 }
 

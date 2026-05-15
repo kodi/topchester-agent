@@ -203,7 +203,7 @@ Verified:
 
 ## Slice 2: Refactor Runtime To A First-Class Event Stream
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal:
 
@@ -228,6 +228,21 @@ Verification:
 - Abort tests prove no orphaned pending stream remains after cancellation.
 - Existing CLI and TUI tests pass.
 - `pnpm check`.
+
+Completed:
+
+- Added `submitMessageStream(...)` as the primary async runtime event stream.
+- Rebuilt `submitMessage(...)` as a collector over the stream path with callback compatibility.
+- Updated the TUI chat submission path to consume streamed events directly.
+- Updated non-interactive `topchester run` prompt execution to persist and print streamed events as they arrive.
+- Documented the runtime boundary as a typed event stream in `docs/ARCHITECTURE.md`.
+
+Verified:
+
+- `pnpm test -- test/commands.test.ts test/tui.render.test.ts test/cli.integration.test.ts`
+- `pnpm typecheck`
+- `pnpm check`
+- `mise run local-ci`
 
 ## Slice 3: Add Child Session Persistence
 

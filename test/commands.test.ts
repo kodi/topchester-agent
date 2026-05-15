@@ -502,6 +502,72 @@ describe("slash commands", () => {
     expect(JSON.stringify(events)).not.toContain("checking local context");
   });
 
+  it("collects submitMessage results from the runtime stream path", async () => {
+    function runtimeWithFinalMessage(workspace: string): TopchesterAgentRuntime {
+      return new TopchesterAgentRuntime({
+        ...createTestContext(workspace),
+        modelGateway: {
+          async generateAgentStep() {
+            return {
+              text: "Done.",
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+              toolCalls: [],
+              toolProtocol: "text-json" as const,
+              protocolAttempts: [],
+              providerRejectedTools: false,
+              warnings: [],
+              openRouterRoutingApplied: false,
+            };
+          },
+        } as unknown as AppContext["modelGateway"],
+      });
+    }
+
+    const streamWorkspace = await mkdtemp(join(tmpdir(), "topchester-stream-runtime-"));
+    const collectorWorkspace = await mkdtemp(join(tmpdir(), "topchester-stream-runtime-"));
+    const streamed = await collectRuntimeEvents(
+      runtimeWithFinalMessage(streamWorkspace).submitMessageStream([], "hello")
+    );
+    const collected = await runtimeWithFinalMessage(collectorWorkspace).submitMessage([], "hello");
+
+    expect(normalizeRuntimeEventsForComparison(collected)).toEqual(normalizeRuntimeEventsForComparison(streamed));
+  });
+
+  it("propagates aborts through the runtime stream path", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-stream-abort-"));
+    const abortController = new AbortController();
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep(request: { abortSignal?: AbortSignal }) {
+          return new Promise<never>((_, reject) => {
+            if (request.abortSignal?.aborted) {
+              reject(new DOMException("Aborted", "AbortError"));
+              return;
+            }
+
+            request.abortSignal?.addEventListener(
+              "abort",
+              () => {
+                reject(new DOMException("Aborted", "AbortError"));
+              },
+              { once: true }
+            );
+          });
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const iterator = runtime.submitMessageStream([], "abort", abortController.signal)[Symbol.asyncIterator]();
+    const pending = iterator.next();
+    abortController.abort();
+
+    await expect(pending).rejects.toThrow(/Aborted/u);
+    await expect(iterator.next()).resolves.toEqual({ value: undefined, done: true });
+  });
+
   it("logs each prompt sent to the model at debug level", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     await writeFile(join(workspace, "notes.txt"), "hello\n");
@@ -1345,4 +1411,20 @@ async function getRuntimeKnowledgeFolderState(
   return event?.type === "knowledge_status"
     ? { exists: event.status.kbExists, isDirectory: event.status.kbIsDirectory }
     : undefined;
+}
+
+async function collectRuntimeEvents(events: AsyncIterable<AgentRuntimeEvent>): Promise<AgentRuntimeEvent[]> {
+  const collected: AgentRuntimeEvent[] = [];
+
+  for await (const event of events) {
+    collected.push(event);
+  }
+
+  return collected;
+}
+
+function normalizeRuntimeEventsForComparison(events: AgentRuntimeEvent[]): AgentRuntimeEvent[] {
+  return events.map((event) =>
+    event.type === "message" && event.meta !== undefined ? { ...event, meta: "<model metadata>" } : event
+  );
 }

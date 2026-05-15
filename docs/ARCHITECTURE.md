@@ -229,9 +229,14 @@ The core runtime should expose a small command/event boundary:
 client command
   -> runtime command handler
   -> KB-aware agent loop
-  -> typed runtime events
+  -> typed runtime event stream
   -> TUI, CLI, GUI, IDE, or session log consumer
 ```
+
+For chat turns, `submitMessageStream(...)` is the primary in-process contract:
+clients consume an `AsyncIterable` of runtime events as the model and tools
+progress. `submitMessage(...)` remains as a compatibility collector for callers
+that still need the completed event array or the older callback shape.
 
 Initial command types:
 
@@ -251,7 +256,7 @@ Initial event types:
 - user choice requested,
 - turn finished or failed.
 
-This is enough structure to keep rendering code out of the runtime and runtime policy out of rendering code.
+This is enough structure to keep rendering code out of the runtime and runtime policy out of rendering code. Stream consumers should persist or render events as they arrive; they should not own the agent loop.
 
 Do not add a big global event bus in V0. A global bus can make small apps feel clean at first, but it hides ownership when every module can publish anything. Start with typed runtime events and explicit subscribers. The session event log should be the durable event stream; the in-process event path should stay narrow and boring.
 

@@ -36,6 +36,12 @@ interface TurnTokenUsageTotals {
 export interface AgentRuntime {
   checkAgent(abortSignal?: AbortSignal): Promise<AgentRuntimeEvent[]>;
   checkKnowledgeBase(): Promise<AgentRuntimeEvent[]>;
+  submitMessageStream(
+    conversation: ConversationTurn[],
+    message: string,
+    abortSignal?: AbortSignal,
+    options?: AgentRuntimeSubmitMessageOptions
+  ): AsyncIterable<AgentRuntimeEvent>;
   submitMessage(
     conversation: ConversationTurn[],
     message: string,
@@ -105,37 +111,23 @@ export class TopchesterAgentRuntime implements AgentRuntime {
   }
 
   /**
-   * Runs one user chat turn through the agent loop. It builds the model
+   * Streams one user chat turn through the agent loop. It builds the model
    * prompt with relevant KB context, calls the model, executes any requested
    * tools, feeds tool results back into the next prompt, and repeats until
    * the model returns a normal assistant message or the loop hits its safety
    * limit.
    *
-   * Events are accumulated for the caller and optionally streamed through
-   * `onEvent` as soon as tool calls, task-plan updates, choices, or final
-   * messages are available. The method also enforces visible task-plan
-   * closure before a final answer when the model leaves an open plan.
+   * This is the primary runtime execution contract. Compatibility wrappers
+   * can collect the stream, but the runtime's own turn loop only knows about
+   * ordered events.
    */
-  async submitMessage(
+  async *submitMessageStream(
     conversation: ConversationTurn[],
     message: string,
     abortSignal?: AbortSignal,
-    onEvent?: AgentRuntimeEventSink,
     options: AgentRuntimeSubmitMessageOptions = {}
-  ): Promise<AgentRuntimeEvent[]> {
+  ): AsyncIterable<AgentRuntimeEvent> {
     const prompt = await this.buildPromptWithKnowledgeContext(buildConversationPrompt(conversation, message), message);
-    const events: AgentRuntimeEvent[] = [];
-    const emit = async (...nextEvents: AgentRuntimeEvent[]) => {
-      events.push(...nextEvents);
-
-      if (!onEvent) {
-        return;
-      }
-
-      for (const event of nextEvents) {
-        await onEvent(event);
-      }
-    };
     let nextPrompt = prompt;
     let totalDurationMs = 0;
     const tokenUsageTotals: TurnTokenUsageTotals = {};
@@ -227,33 +219,29 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             continue;
           }
 
-          await emit(agentEvent.taskPlan(this.taskPlan.update({ items: [] })));
+          yield agentEvent.taskPlan(this.taskPlan.update({ items: [] }));
         }
 
-        await emit(
-          agentEvent.assistantMessage(
-            finalText.trim() || "I got an empty response from the model.",
-            formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
-          ),
-          agentEvent.status("ready")
+        yield agentEvent.assistantMessage(
+          finalText.trim() || "I got an empty response from the model.",
+          formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
         );
-        return events;
+        yield agentEvent.status("ready");
+        return;
       }
 
       if (toolCalls === MAX_TOOL_CALLS_PER_TURN) {
-        await emit(
-          agentEvent.choice({
-            tone: "warning",
-            title: "Tool call limit reached",
-            body: `Stopped after ${MAX_TOOL_CALLS_PER_TURN} tool calls in one turn. Continue starts another turn; abort leaves the call stopped.`,
-            actions: [
-              choiceAction("Continue", "Continue the previous task from where you stopped."),
-              choiceAction("Abort", ABORT_CHOICE_VALUE),
-            ],
-          }),
-          agentEvent.status("ready")
-        );
-        return events;
+        yield agentEvent.choice({
+          tone: "warning",
+          title: "Tool call limit reached",
+          body: `Stopped after ${MAX_TOOL_CALLS_PER_TURN} tool calls in one turn. Continue starts another turn; abort leaves the call stopped.`,
+          actions: [
+            choiceAction("Continue", "Continue the previous task from where you stopped."),
+            choiceAction("Abort", ABORT_CHOICE_VALUE),
+          ],
+        });
+        yield agentEvent.status("ready");
+        return;
       }
 
       const executableToolCall = toolCall as ToolCall;
@@ -264,23 +252,21 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       );
 
       if (suppressiblePlanTodoAnswer !== undefined) {
-        await emit(
-          agentEvent.assistantMessage(
-            suppressiblePlanTodoAnswer || "I got an empty response from the model.",
-            formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
-          ),
-          agentEvent.status("ready")
+        yield agentEvent.assistantMessage(
+          suppressiblePlanTodoAnswer || "I got an empty response from the model.",
+          formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
         );
-        return events;
+        yield agentEvent.status("ready");
+        return;
       }
 
       const toolResult = await executeToolCall(this.context.workspaceRoot, executableToolCall, {
         logger: this.context.logger,
         taskPlan: this.taskPlan,
       });
-      await emit(agentEvent.toolCall(executableToolCall, formatToolCallMessage(executableToolCall, toolResult)));
+      yield agentEvent.toolCall(executableToolCall, formatToolCallMessage(executableToolCall, toolResult));
       if (!isToolErrorResult(toolResult) && toolResult.tool === "plan_todo") {
-        await emit(agentEvent.taskPlan(toolResult.plan));
+        yield agentEvent.taskPlan(toolResult.plan);
       }
       afterTool = executableToolCall.tool;
       nextPrompt = `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(
@@ -289,13 +275,30 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       )}`;
     }
 
-    await emit(
-      agentEvent.assistantMessage(
-        "I stopped because the tool loop ended unexpectedly.",
-        formatAgentMessageMeta(lastModelId, totalDurationMs, tokenUsageTotals)
-      ),
-      agentEvent.status("ready")
+    yield agentEvent.assistantMessage(
+      "I stopped because the tool loop ended unexpectedly.",
+      formatAgentMessageMeta(lastModelId, totalDurationMs, tokenUsageTotals)
     );
+    yield agentEvent.status("ready");
+  }
+
+  /**
+   * Compatibility wrapper for callers that still expect a completed event
+   * array or use the older `onEvent` callback shape.
+   */
+  async submitMessage(
+    conversation: ConversationTurn[],
+    message: string,
+    abortSignal?: AbortSignal,
+    onEvent?: AgentRuntimeEventSink,
+    options: AgentRuntimeSubmitMessageOptions = {}
+  ): Promise<AgentRuntimeEvent[]> {
+    const events: AgentRuntimeEvent[] = [];
+
+    for await (const event of this.submitMessageStream(conversation, message, abortSignal, options)) {
+      events.push(event);
+      await onEvent?.(event);
+    }
 
     return events;
   }

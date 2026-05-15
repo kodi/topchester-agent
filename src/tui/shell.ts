@@ -174,20 +174,21 @@ export class TopchesterTuiShell implements TuiShell {
         role: "user",
         text: message,
       });
-      await this.runtime.submitMessage(
+      for await (const event of this.runtime.submitMessageStream(
         app.getConversationTurns(),
         message,
         abortController.signal,
-        async (event) => {
-          if (event.type === "message" && event.role === "assistant") {
-            reasoningDisplay?.commit(app);
-            busy.clearActivity();
-          }
-          await this.applyRuntimeEvents(app, [event], tui);
-          tui.requestRender();
-        },
-        { onReasoning: reasoningDisplay?.sink }
-      );
+        {
+          onReasoning: reasoningDisplay?.sink,
+        }
+      )) {
+        if (event.type === "message" && event.role === "assistant") {
+          reasoningDisplay?.commit(app);
+          busy.clearActivity();
+        }
+        await this.applyRuntimeEvents(app, [event], tui);
+        tui.requestRender();
+      }
     } catch (error) {
       if (cancelled) {
         app.addMessage(systemMessage("Response stopped."));

@@ -1719,6 +1719,14 @@ describe("TUI rendering", () => {
       async submitSlashCommand() {
         return [];
       },
+      async *submitMessageStream() {
+        yield agentEvent.toolCall({ tool: "read_file", args: { path: "README.md" } }, "read_file: README.md");
+        firstEventApplied?.();
+        await new Promise<void>((resolve) => {
+          releaseRuntime = resolve;
+        });
+        yield agentEvent.assistantMessage("Done.");
+      },
       async submitMessage(_conversation, _message, _abortSignal, onEvent) {
         await onEvent?.(
           agentEvent.toolCall({ tool: "read_file", args: { path: "README.md" } }, "read_file: README.md")
@@ -1785,6 +1793,14 @@ describe("TUI rendering", () => {
           },
           async submitSlashCommand() {
             return [];
+          },
+          async *submitMessageStream(_conversation, _message, _abortSignal, options) {
+            await options?.onReasoning?.({ type: "delta", text: "checking\nworkspace" });
+            reasoningApplied?.();
+            await new Promise<void>((resolve) => {
+              releaseRuntime = resolve;
+            });
+            yield agentEvent.assistantMessage("Done.");
           },
           async submitMessage(_conversation, _message, _abortSignal, onEvent, options) {
             await options?.onReasoning?.({ type: "delta", text: "checking\nworkspace" });
@@ -1861,6 +1877,14 @@ describe("TUI rendering", () => {
       },
       async submitSlashCommand() {
         return [];
+      },
+      async *submitMessageStream() {
+        if (Date.now() > 0) {
+          throw new Error(
+            "No endpoints found that can handle the requested parameters.\n    at doStream\n    at streamStep"
+          );
+        }
+        yield agentEvent.status("unreachable");
       },
       async submitMessage() {
         throw new Error(
@@ -1975,6 +1999,9 @@ describe("TUI rendering", () => {
         },
         async submitSlashCommand() {
           return [];
+        },
+        async *submitMessageStream() {
+          yield agentEvent.assistantMessage("Ready.");
         },
         async submitMessage(_conversation, _message, _abortSignal, onEvent) {
           await onEvent?.(agentEvent.assistantMessage("Ready."));
