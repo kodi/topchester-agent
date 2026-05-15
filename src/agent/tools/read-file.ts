@@ -20,6 +20,9 @@ export const readFileTool = defineTool({
   prompt:
     'read_file: read a UTF-8 file inside the workspace. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
   argsSchema: readFileArgsSchema,
+  parallelSafe: true,
+  mutatesWorkspace: false,
+  resourceKeys: (args) => [`file:${args.path}`],
   execute: (context, args) => readWorkspaceFile(context.workspaceRoot, args.path),
 });
 

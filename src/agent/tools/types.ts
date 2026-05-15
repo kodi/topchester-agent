@@ -62,6 +62,10 @@ export interface ToolDefinition<Name extends string, Args, Result extends ToolRe
   description: string;
   prompt: string;
   argsSchema: z.ZodType<Args>;
+  parallelSafe?: boolean;
+  mutatesWorkspace?: boolean;
+  requiresExclusiveWorkspace?: boolean;
+  resourceKeys?: (args: any) => readonly string[];
   execute(context: ToolContext, args: Args): Promise<Result>;
 }
 

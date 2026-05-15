@@ -24,6 +24,7 @@ import { type SessionHandle } from "../session/store.js";
 import { type ModelAgentResult, type ModelReasoningSink } from "../model/index.js";
 import {
   executeToolCall,
+  isParallelSafeToolName,
   isToolErrorResult,
   parseToolCallWithSource,
   type ModelToolCall,
@@ -319,6 +320,40 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           .join("\n\n")}\n\n${formatContinuationInstruction(
           result.toolProtocol,
           taskResults.at(-1)!,
+          isToolAllowed(permissions, "plan_todo")
+        )}`;
+        continue;
+      }
+
+      if (result.toolCalls.length > 1 && result.toolCalls.every((call) => isParallelSafeToolName(call.tool))) {
+        const parallelCalls = result.toolCalls.map((call) => call as ToolCall);
+        const parallelResults = await Promise.all(
+          parallelCalls.map((call, index) =>
+            executeToolCall(this.context.workspaceRoot, call, {
+              logger: this.context.logger,
+              taskPlan: this.taskPlan,
+              profile,
+              permissions,
+              subagents,
+              abortSignal,
+              toolCallId: result.toolCalls[index]?.id,
+            })
+          )
+        );
+
+        for (let index = 0; index < parallelCalls.length; index += 1) {
+          yield agentEvent.toolCall(
+            parallelCalls[index]!,
+            formatToolCallMessage(parallelCalls[index]!, parallelResults[index])
+          );
+        }
+
+        afterTool = parallelCalls.at(-1)?.tool;
+        nextPrompt = `${nextPrompt}\n\n${parallelResults
+          .map((toolResult) => formatToolResultForPrompt(toolResult))
+          .join("\n\n")}\n\n${formatContinuationInstruction(
+          result.toolProtocol,
+          parallelResults.at(-1)!,
           isToolAllowed(permissions, "plan_todo")
         )}`;
         continue;

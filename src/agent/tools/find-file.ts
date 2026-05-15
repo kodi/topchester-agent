@@ -45,6 +45,9 @@ export const findFileTool = defineTool({
   prompt:
     'find_file: find existing files by fuzzy path or filename inside the workspace; matches may appear in the middle of a filename, and results are file paths, not file contents. To use it, reply with only JSON: {"tool":"find_file","args":{"query":"runtime"}}',
   argsSchema: findFileArgsSchema,
+  parallelSafe: true,
+  mutatesWorkspace: false,
+  resourceKeys: (args) => [`find:${args.path}`],
   execute: (context, args) =>
     findWorkspaceFilesByName(context.workspaceRoot, args, { pathEnv: context.pathEnv, logger: context.logger }),
 });

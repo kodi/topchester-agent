@@ -124,6 +124,7 @@ export {
   getToolDefinition,
   getToolDefinitionsForPermissions,
   getToolPromptLines,
+  isParallelSafeToolName,
   isToolName,
   toolRegistry,
   type RegisteredTool,

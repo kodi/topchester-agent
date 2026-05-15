@@ -282,6 +282,15 @@ session, runs the delegated prompt under a subagent profile, forwards child
 runtime events to the parent stream, and returns one bounded result to the
 parent model.
 
+Tool definitions can opt into parallel scheduling with metadata:
+
+- `parallelSafe` marks tools that may run alongside other safe tools.
+- `mutatesWorkspace` and `requiresExclusiveWorkspace` keep write, Git mutation, command, and unknown tools sequential by default.
+- `resourceKeys(args)` gives future schedulers a stable conflict key, such as a file path or Git scope.
+
+Only explicitly read-only tools are marked parallel-safe initially. Unknown or
+unmarked tools remain sequential.
+
 ## Future GUI / IDE Path
 
 The TUI should be only one client of the same KB-aware runtime.

@@ -431,7 +431,7 @@ Verified:
 
 ## Slice 7: Expand To General Multi-Tool Parallelism
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal:
 
@@ -461,6 +461,22 @@ Verification:
 - Existing tool behavior remains unchanged when tools are not marked parallel-safe.
 - TUI tests cover interleaved tool progress.
 - `pnpm check`.
+
+Completed:
+
+- Added per-tool scheduling metadata: `parallelSafe`, `mutatesWorkspace`, `requiresExclusiveWorkspace`, and `resourceKeys`.
+- Marked read-only file/search/Git inspection tools as parallel-safe.
+- Left mutating, command, and unmarked tools on the existing sequential path by default.
+- Added a general native multi-tool scheduler path for explicitly parallel-safe tools.
+- Preserved source-order parent tool rows and model-visible tool results after parallel read-only execution.
+- Documented scheduling metadata for tool authors.
+
+Verified:
+
+- `pnpm test -- test/commands.test.ts test/tools.test.ts`
+- `pnpm typecheck`
+- `pnpm check`
+- `mise run local-ci`
 
 ## Open Questions
 

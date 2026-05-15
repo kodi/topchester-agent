@@ -49,3 +49,13 @@ export function getToolDefinitionsForPermissions(filter?: (toolName: ToolName) =
     .filter(([name]) => filter?.(name as ToolName) ?? true)
     .map(([, tool]) => tool);
 }
+
+export function isParallelSafeToolName(name: string): name is ToolName {
+  if (!isToolName(name)) {
+    return false;
+  }
+
+  const definition = toolRegistry[name];
+
+  return Boolean(definition.parallelSafe && !definition.mutatesWorkspace && !definition.requiresExclusiveWorkspace);
+}

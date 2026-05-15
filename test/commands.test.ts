@@ -667,6 +667,50 @@ describe("slash commands", () => {
     ).toEqual([expect.stringContaining("task: completed"), expect.stringContaining("task: completed")]);
   });
 
+  it("runs explicitly parallel-safe read-only tool calls from one model step", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-read-parallel-"));
+    await writeFile(join(workspace, "a.txt"), "A\n");
+    await writeFile(join(workspace, "b.txt"), "B\n");
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (request.prompt.includes("Tool result from read_file")) {
+            return fakeAgentStep("Read both files.");
+          }
+
+          return fakeAgentStep("", [
+            {
+              id: "read-a",
+              source: "native" as const,
+              tool: "read_file",
+              args: { path: "a.txt" },
+            },
+            {
+              id: "read-b",
+              source: "native" as const,
+              tool: "read_file",
+              args: { path: "b.txt" },
+            },
+          ]);
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "read both files");
+    const parentResultPrompt = prompts.find((prompt) => prompt.includes("Tool result from read_file")) ?? "";
+
+    expect(
+      events
+        .filter((event) => event.type === "tool_call")
+        .map((event) => (event.type === "tool_call" ? event.label : ""))
+    ).toEqual(["read_file: a.txt", "read_file: b.txt"]);
+    expect(parentResultPrompt.indexOf('"a.txt"')).toBeLessThan(parentResultPrompt.indexOf('"b.txt"'));
+  });
+
   it("propagates aborts through the runtime stream path", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-stream-abort-"));
     const abortController = new AbortController();
