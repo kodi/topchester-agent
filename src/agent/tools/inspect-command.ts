@@ -1,7 +1,5 @@
-import { spawn } from "node:child_process";
-import { constants } from "node:fs";
-import { access, realpath, stat } from "node:fs/promises";
-import { delimiter, isAbsolute, join, relative, resolve } from "node:path";
+import { realpath } from "node:fs/promises";
+import { resolve } from "node:path";
 import {
   type InspectCommandEntry,
   type InspectCommandPlan,
@@ -9,10 +7,8 @@ import {
   type InspectSimpleCommand,
 } from "./inspect-command-parser.js";
 import { type InspectCommandArgs, inspectCommandArgsSchema, validateInspectCommand } from "./inspect-command-policy.js";
+import { appendBoundedOutput, formatWorkspaceRelativePath, resolveWorkspaceCwd, runProcess } from "./process-runner.js";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
-
-const MAX_OUTPUT_BYTES = 40_000;
-const MAX_OUTPUT_LINES = 1_000;
 
 export { inspectCommandArgsSchema, type InspectCommandArgs };
 
@@ -71,7 +67,7 @@ export async function inspectWorkspaceCommand(
   }
 
   const resolvedWorkspace = await realpath(resolve(workspaceRoot));
-  const cwd = await resolveWorkspaceCwd(resolvedWorkspace, args.workdir);
+  const cwd = await resolveWorkspaceCwd(resolvedWorkspace, args.workdir, "inspect_command");
   const deadlineAt = startedAt + args.timeout_ms;
   const result = await executePlan(decision.plan, {
     cwd,
@@ -83,7 +79,7 @@ export async function inspectWorkspaceCommand(
   return {
     tool: "inspect_command",
     command: args.command,
-    cwd: relative(resolvedWorkspace, cwd) || ".",
+    cwd: formatWorkspaceRelativePath(resolvedWorkspace, cwd),
     content: formatInspectCommandContent(result),
     exitCode: result.exitCode,
     durationMs,
@@ -217,150 +213,24 @@ async function executeSimpleCommand(
     };
   }
 
-  const executablePath = await findExecutable(command.executable, context.pathEnv);
-
-  if (!executablePath) {
-    return {
-      stdout: "",
-      stderr: `inspect_command could not run because '${command.executable}' is not available on PATH.\n`,
-      exitCode: 127,
-      timedOut: false,
-      truncated: false,
-      missingExecutable: command.executable,
-    };
-  }
-
-  return runSpawnedCommand(executablePath, command.args, input, context);
-}
-
-function runSpawnedCommand(
-  command: string,
-  args: string[],
-  input: string,
-  context: { cwd: string; pathEnv: string; timeoutMs: number }
-): Promise<CommandExecutionResult> {
-  return new Promise((resolveCommand) => {
-    const detached = process.platform !== "win32";
-    const child = spawn(command, args, {
-      cwd: context.cwd,
-      detached,
-      env: {
-        ...process.env,
-        PATH: context.pathEnv,
-        PAGER: "cat",
-        GIT_PAGER: "cat",
-        LESS: "-F -X",
-      },
-      stdio: [input.length > 0 ? "pipe" : "ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    let truncated = false;
-    let settled = false;
-    let timedOut = false;
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      killChild(child.pid, detached, "SIGTERM");
-      setTimeout(() => {
-        if (!settled) {
-          killChild(child.pid, detached, "SIGKILL");
-        }
-      }, 250).unref();
-    }, context.timeoutMs);
-
-    child.stdout?.on("data", (chunk: Buffer) => {
-      const next = appendBoundedOutput(stdout, stripUnsafeControlCharacters(chunk.toString("utf8")));
-      stdout = next.output;
-      truncated = truncated || next.truncated;
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      const next = appendBoundedOutput(stderr, stripUnsafeControlCharacters(chunk.toString("utf8")));
-      stderr = next.output;
-      truncated = truncated || next.truncated;
-    });
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      settled = true;
-      resolveCommand({
-        stdout,
-        stderr: stderr || `${error.message}\n`,
-        exitCode: 1,
-        timedOut,
-        truncated,
-      });
-    });
-    child.on("close", (code, signal) => {
-      clearTimeout(timeout);
-      settled = true;
-      resolveCommand({
-        stdout,
-        stderr,
-        exitCode: timedOut ? 124 : (code ?? (signal ? 1 : 0)),
-        timedOut,
-        truncated,
-      });
-    });
-
-    if (child.stdin) {
-      child.stdin.on("error", (error: NodeJS.ErrnoException) => {
-        if (error.code !== "EPIPE") {
-          const next = appendBoundedOutput(stderr, `${error.message}\n`);
-          stderr = next.output;
-          truncated = truncated || next.truncated;
-        }
-      });
-      child.stdin.end(input);
-    }
+  const result = await runProcess({
+    executable: command.executable,
+    args: command.args,
+    input,
+    cwd: context.cwd,
+    pathEnv: context.pathEnv,
+    timeoutMs: context.timeoutMs,
+    missingExecutableLabel: "inspect_command",
   });
-}
 
-function killChild(pid: number | undefined, detached: boolean, signal: NodeJS.Signals): void {
-  if (pid === undefined) {
-    return;
-  }
-
-  try {
-    process.kill(detached ? -pid : pid, signal);
-  } catch {
-    try {
-      process.kill(pid, signal);
-    } catch {
-      // The process may already have exited.
-    }
-  }
-}
-
-async function resolveWorkspaceCwd(workspaceRoot: string, workdir: string): Promise<string> {
-  const resolvedCwd = resolve(workspaceRoot, workdir);
-  const info = await stat(resolvedCwd);
-
-  if (!info.isDirectory()) {
-    throw new Error(`inspect_command workdir must be a directory inside the workspace: ${workdir}`);
-  }
-
-  const realCwd = await realpath(resolvedCwd);
-  const relativePath = relative(workspaceRoot, realCwd);
-
-  if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
-    throw new Error(`inspect_command rejected path outside the workspace: ${workdir}`);
-  }
-
-  return realCwd;
-}
-
-async function findExecutable(name: string, pathEnv: string): Promise<string | undefined> {
-  for (const pathEntry of pathEnv.split(delimiter).filter(Boolean)) {
-    const executablePath = join(pathEntry, name);
-
-    try {
-      await access(executablePath, constants.X_OK);
-      return executablePath;
-    } catch {
-      continue;
-    }
-  }
-
-  return undefined;
+  return {
+    stdout: result.stdout,
+    stderr: result.stderr,
+    exitCode: result.exitCode,
+    timedOut: result.timedOut,
+    truncated: result.truncated,
+    missingExecutable: result.missingExecutable,
+  };
 }
 
 function shouldExecuteEntry(entry: InspectCommandEntry, previousExitCode: number): boolean {
@@ -398,31 +268,4 @@ function formatInspectCommandContent(result: PipelineExecutionResult): string {
   );
 
   return sections.join("\n\n");
-}
-
-function appendBoundedOutput(current: string, next: string): { output: string; truncated: boolean } {
-  const combined = current + next;
-  const byteLimited = Buffer.byteLength(combined, "utf8") > MAX_OUTPUT_BYTES;
-  const lines = combined.split("\n");
-  const lineLimited = lines.length > MAX_OUTPUT_LINES;
-
-  if (!byteLimited && !lineLimited) {
-    return { output: combined, truncated: false };
-  }
-
-  let output = combined;
-
-  if (byteLimited) {
-    output = output.slice(0, MAX_OUTPUT_BYTES);
-  }
-
-  if (lineLimited) {
-    output = output.split("\n").slice(0, MAX_OUTPUT_LINES).join("\n");
-  }
-
-  return { output: `${output.trimEnd()}\n[truncated]\n`, truncated: true };
-}
-
-function stripUnsafeControlCharacters(output: string): string {
-  return output.replace(/[^\t\n\r -~]/g, "");
 }

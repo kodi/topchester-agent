@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { inspectWorkspaceCommand } from "../src/agent/tools/inspect-command.js";
 import { parseInspectCommand } from "../src/agent/tools/inspect-command-parser.js";
 import { inspectCommandArgsSchema, validateInspectCommand } from "../src/agent/tools/inspect-command-policy.js";
+import { runProcess } from "../src/agent/tools/process-runner.js";
 
 describe("inspect_command parser and policy", () => {
   it("defines the inspect_command argument schema", () => {
@@ -159,6 +160,54 @@ function policyContext() {
 }
 
 describe("inspect_command execution engine", () => {
+  it("runs shared process-runner commands with env overrides and stripped control characters", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-runner-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-runner-bin-"));
+    await writeNodeExecutable(
+      join(bin, "print-env"),
+      "process.stdout.write(`${process.env.CUSTOM_FLAG}\\nunsafe:\\u001b[31mred\\n`);\n"
+    );
+
+    const result = await runProcess({
+      executable: "print-env",
+      args: [],
+      cwd: workspace,
+      pathEnv: bin,
+      timeoutMs: 10_000,
+      env: { CUSTOM_FLAG: "enabled" },
+    });
+
+    expect(result).toMatchObject({
+      exitCode: 0,
+      timedOut: false,
+      aborted: false,
+      truncated: false,
+    });
+    expect(result.stdout).toBe("enabled\nunsafe:[31mred\n");
+  });
+
+  it("aborts shared process-runner commands and cleans up the child", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-runner-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-runner-bin-"));
+    const controller = new AbortController();
+    await writeNodeExecutable(join(bin, "hang"), "setTimeout(() => console.log('late'), 2_000);\n");
+
+    const pending = runProcess({
+      executable: "hang",
+      args: [],
+      cwd: workspace,
+      pathEnv: bin,
+      timeoutMs: 10_000,
+      abortSignal: controller.signal,
+    });
+    controller.abort();
+    const result = await pending;
+
+    expect(result.exitCode).toBe(130);
+    expect(result.aborted).toBe(true);
+    expect(result.timedOut).toBe(false);
+  });
+
   it("runs the built-in pwd from the requested workspace workdir", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-inspect-"));
     await mkdir(join(workspace, "docs"));
