@@ -132,7 +132,6 @@ const DANGEROUS_PACKAGE_COMMANDS = new Set([
   "create",
   "deploy",
   "dlx",
-  "exec",
   "install",
   "link",
   "login",
@@ -622,6 +621,23 @@ function classifyPackageManagerCommand(
     return { allowed: true, validator: "test", packageManager: manager };
   }
 
+  if (firstArg === "exec") {
+    const execCommand = parsePackageExecValidatorCommand(command.args);
+
+    if (!execCommand) {
+      return {
+        allowed: false,
+        reason: `command policy rejected '${manager} exec' because it does not name a validator executable.`,
+      };
+    }
+
+    const directValidator = classifyDirectValidator(execCommand);
+
+    return directValidator.allowed
+      ? { allowed: true, validator: directValidator.validator, packageManager: manager }
+      : { allowed: false, reason: directValidator.reason };
+  }
+
   const scriptName = getPackageScriptName(manager, command.args);
 
   if (!scriptName) {
@@ -649,6 +665,22 @@ function classifyPackageManagerCommand(
   }
 
   return { allowed: true, validator, packageManager: manager };
+}
+
+function parsePackageExecValidatorCommand(args: string[]): SimpleCommand | undefined {
+  let execArgs = args.slice(1);
+
+  if (execArgs[0] === "--") {
+    execArgs = execArgs.slice(1);
+  }
+
+  const executable = execArgs[0];
+
+  if (!executable || executable.startsWith("-")) {
+    return undefined;
+  }
+
+  return { executable, args: execArgs.slice(1) };
 }
 
 function getPackageScriptName(manager: PackageManager, args: string[]): string | undefined {

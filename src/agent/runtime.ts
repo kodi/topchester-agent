@@ -26,10 +26,13 @@ import {
   executeToolCall,
   isParallelSafeToolName,
   isToolErrorResult,
+  parseToolCallRejection,
   parseToolCallWithSource,
   runCommandArgsSchema,
   type ModelToolCall,
   type ToolCall,
+  type ToolCallParseRejection,
+  type ToolCallSource,
   type ToolExecutionResult,
   type ToolProtocol,
   type ToolProtocolAttempt,
@@ -181,6 +184,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     let afterTool: ToolCall["tool"] | undefined;
     let toolProtocolOverride = readToolProtocolEnvOverride();
     let requestedPlanClosure = false;
+    let invalidToolCallRepairs = 0;
 
     for (let toolCalls = 0; toolCalls <= MAX_TOOL_CALLS_PER_TURN; toolCalls += 1) {
       const startedAt = Date.now();
@@ -257,6 +261,25 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       }
 
       if (!toolCall) {
+        const rejectedToolCall = parseToolCallRejection(result.text, getTextToolCallSources(result.toolProtocol));
+
+        if (rejectedToolCall && invalidToolCallRepairs < 2) {
+          invalidToolCallRepairs += 1;
+          this.context.logger.debug(
+            {
+              event: "invalid_text_tool_call",
+              purpose: "agent.primary",
+              tool: rejectedToolCall.tool,
+              reason: rejectedToolCall.reason,
+              source: rejectedToolCall.source,
+              afterTool,
+            },
+            "invalid text tool call"
+          );
+          nextPrompt = `${nextPrompt}\n\n${formatInvalidToolCallRepairInstruction(rejectedToolCall)}`;
+          continue;
+        }
+
         const plan = this.taskPlan.get();
         const finalText = stripSuppressiblePlanTodoPrefix(result.text, plan) ?? result.text;
 
@@ -1149,6 +1172,24 @@ function formatOpenPlanClosureInstruction(draftAnswer: string, protocol: ToolPro
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function formatInvalidToolCallRepairInstruction(rejection: ToolCallParseRejection): string {
+  return [
+    `Your previous response looked like a ${rejection.tool} tool call, but its arguments did not match the tool schema.`,
+    `Validation error: ${rejection.reason}`,
+    "Do not answer with that JSON as chat text.",
+    rejection.tool === "run_validator"
+      ? "If this command is not a strict validator shape but the user still needs command output, retry with run_command when project policy allows it."
+      : "",
+    "Reply now with one valid tool call JSON object for the next action, or answer in plain text if no tool is needed.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function getTextToolCallSources(protocol: ToolProtocol): readonly ToolCallSource[] {
+  return protocol === "text-xml" ? ["text-xml"] : protocol === "text-json" ? ["text-json"] : ["text-json", "text-xml"];
 }
 
 /**

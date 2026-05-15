@@ -16,6 +16,7 @@ import {
   isToolAllowed,
   listWorkspaceFiles,
   parseToolCall,
+  parseToolCallRejection,
   parseToolCallWithSource,
   resolveAgentProfile,
   readWorkspaceFile,
@@ -145,6 +146,41 @@ describe("agent tools", () => {
         workdir: ".",
         timeout_ms: 120_000,
       },
+    });
+
+    expect(
+      parseToolCall(
+        '{"tool":"run_validator","args":{"command":"pnpm format-check","validator":"format-check","workdir":".","timeout_ms":60000}}'
+      )
+    ).toEqual({
+      tool: "run_validator",
+      args: {
+        command: "pnpm format-check",
+        validator: "format_check",
+        workdir: ".",
+        timeout_ms: 60_000,
+      },
+    });
+
+    expect(
+      parseToolCall(
+        '{"tool":"run_validator","args":{"command":"pnpm exec oxfmt . --check","validator":"format","workdir":".","timeout_ms":30000}}'
+      )
+    ).toEqual({
+      tool: "run_validator",
+      args: {
+        command: "pnpm exec oxfmt . --check",
+        validator: "format_check",
+        workdir: ".",
+        timeout_ms: 30_000,
+      },
+    });
+  });
+
+  it("reports known text tool calls with invalid arguments", () => {
+    expect(parseToolCallRejection('{"tool":"read_file","args":{"path":123}}')).toMatchObject({
+      source: "text-json",
+      tool: "read_file",
     });
   });
 
@@ -449,6 +485,7 @@ describe("agent tools", () => {
 
     expect(prompt).toContain("After code edits, use run_validator when there is a relevant test");
     expect(prompt).toContain("Failed run_validator exits are evidence");
+    expect(prompt).toContain("retry with run_command when project policy allows it");
     expect(prompt).toContain("Do not use inspect_command for tests, builds, lint, typecheck");
     expect(prompt).toContain("Use run_command only for commands allowed by project command policy");
     expect(prompt).toContain("Do not use run_command for installs, deploys, network commands");

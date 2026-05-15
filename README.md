@@ -2,35 +2,155 @@
 
 Website: https://topchester.com
 
-## Overview
+Topchester is a terminal coding agent that learns a project before it starts making changes. It builds a local project knowledge base, uses that knowledge while chatting and editing, and helps keep the knowledge current as the code changes.
 
-Topchester Agent is a terminal-native TUI coding agent tightly coupled to a committed project knowledge base. The normal workflow is to compile project knowledge first, then let the agent use that knowledge while planning, editing, checking drift, and updating the repository.
+If you have used tools like Codex, Claude Code, or OpenCode, the shape should feel familiar: install a CLI, `cd` into a repo, run a command, chat in your terminal, review changes, and keep working. The difference is that Topchester treats project knowledge as part of the agent, not as an optional side index.
 
-## Knowledge Compiler
+## Quick Start
 
-The current `topchester kb compile` command handles L1 file knowledge:
+Requirements:
 
-- Requires `topchester kb init` to create the knowledge folders first.
-- Reads workspace `.gitignore` files, lists in-scope project files, and skips generated/cache folders such as `.git/`, `node_modules/`, `dist/`, `coverage/`, `topchester-kb/`, `.agents/topchester/`, and `.agents/topchester-kb-cache/`.
-- Queues L1 work at `.agents/topchester-kb-cache/l1-queue.json`.
-- Processes queued files with the configured `kb.summarize` model, or the `default` model when `kb.summarize` is not configured.
-- Writes the manifest at `topchester-kb/manifest.json`.
-- Writes current L1 file entries under `topchester-kb/l1-files/`.
-- Exits successfully only when every in-scope file has a current L1 entry.
+- Node.js `>=24`
+- A model provider key. The example below uses OpenRouter.
 
-## Setup
+Install the CLI:
 
-- Node.js: `>=24`
-- pnpm: `>=11`
-- Package manager: `pnpm@11.0.8`
+```sh
+npm install -g topchester-ai
+```
 
-Install dependencies with:
+From the project you want Topchester to work on, create `topchester.jsonc`:
+
+```jsonc
+{
+  "$schema": "https://topchester.com/schemas/config.v1.json",
+  "models": {
+    "default": "openrouter/google/gemini-3.1-flash-lite",
+  },
+}
+```
+
+Set your API key:
+
+```sh
+export OPENROUTER_API_KEY=...
+```
+
+Build the project knowledge base:
+
+```sh
+topchester kb init
+topchester kb compile
+```
+
+Start the agent:
+
+```sh
+topchester
+```
+
+For the short setup guide, see [onboarding.md](onboarding.md).
+
+## What Topchester Creates
+
+Topchester keeps project knowledge and local runtime data in separate places:
+
+- `topchester-kb/` — compiled project knowledge. This is the canonical knowledge base for the repo.
+- `.agents/topchester-kb-cache/` — local generated cache and queue files.
+- `.agents/topchester/sessions/` — local chat sessions, metadata, and event logs.
+- `.agents/topchester/logs/` — local debug logs when logging is enabled.
+
+Session folders, caches, and logs are local machine state and should not be committed.
+
+## Everyday Commands
+
+```sh
+topchester
+topchester --resume latest
+topchester run "Summarize this project."
+
+topchester kb status
+topchester kb sync
+topchester kb compile
+topchester kb search "status bar"
+topchester kb reset
+```
+
+Useful TUI slash commands:
+
+```text
+/kb status
+/kb sync
+/kb compile
+/new
+```
+
+`topchester kb status` is the cheap check. It shows files that are not current in the knowledge base. `topchester kb sync` updates only those non-clean files.
+
+## Configuration
+
+The smallest config uses one OpenRouter model for all Topchester work:
+
+```jsonc
+{
+  "$schema": "https://topchester.com/schemas/config.v1.json",
+  "models": {
+    "default": "openrouter/google/gemini-3.1-flash-lite",
+  },
+}
+```
+
+You can also use a stronger model for chat and a cheaper model for KB summaries:
+
+```jsonc
+{
+  "$schema": "https://topchester.com/schemas/config.v1.json",
+  "models": {
+    "default": "openrouter/anthropic/claude-sonnet-4.5",
+    "kb.summarize": "openrouter/google/gemini-3.1-flash-lite",
+  },
+}
+```
+
+Do not commit API keys. Put keys in environment variables, a user config file, or an uncommitted local config.
+
+Topchester reads config in this order, with later entries overriding earlier ones:
+
+1. `~/.config/topchester/config.yaml`
+2. `~/.config/topchester/config.jsonc`
+3. `topchester.yaml`
+4. `topchester.jsonc`
+5. `.topchester/config.local.yaml`
+6. `.topchester/config.local.jsonc`
+7. `TOPCHESTER_CONFIG`
+8. `--config <path>`
+
+Prefer `topchester.jsonc` for new project config. YAML paths are kept for compatibility.
+
+## How The Knowledge Base Works
+
+`topchester kb compile` scans the workspace, respects `.gitignore`, skips generated/cache folders, and writes one L1 knowledge entry per in-scope file under `topchester-kb/l1-files/`.
+
+The compiler uses `models["kb.summarize"]` when it is configured. If it is not configured, it uses `models.default`.
+
+Common KB states:
+
+- `kb: ready` — the KB exists and has compiled content.
+- `kb: empty` — the KB folder exists but has no compiled content yet.
+- `kb: missing` — run `topchester kb init`, then `topchester kb compile`.
+- `N dirty` — run `topchester kb sync`.
+
+## Working From Source
+
+This section is for contributors working in this repository.
 
 ```sh
 pnpm install
+pnpm build
+node dist/cli.mjs --help
 ```
 
-## Common Commands
+Common repo checks:
 
 ```sh
 pnpm check
@@ -38,50 +158,17 @@ pnpm test
 pnpm typecheck
 pnpm lint
 pnpm format-check
-
-topchester kb init
-topchester kb compile
-topchester kb status
-topchester kb reset
-
-topchester
-topchester --resume latest
-topchester --resume <session-id>
 ```
 
-## Sessions
+The package name is `topchester-ai`; the installed command is `topchester`.
 
-Running `topchester` starts a fresh project-local session by default. Session data is stored under `.agents/topchester/sessions/<session-id>/`, including `metadata.json` and an append-only `events.jsonl` log.
+## Read More
 
-Use `topchester --resume latest` to continue the newest session, or `topchester --resume <session-id>` to continue a specific session. Resume restores the visible history and appends new events to the same log.
-
-`.agents/topchester/sessions/` is local session data and should not be committed.
-
-## Configuration
-
-Model settings are loaded from YAML config files and merged in this order:
-
-1. `~/.config/topchester/config.yaml`
-2. `topchester.yaml`
-3. `.topchester/config.local.yaml`
-4. `TOPCHESTER_CONFIG`
-5. `--config <path>`
-
-Example configs live in `config/example.yaml` and `config/gemini.yaml`. OpenRouter configs expect `OPENROUTER_API_KEY` in the environment; do not commit API keys or other secrets.
-
-The smallest OpenRouter config uses one model for every Topchester purpose:
-
-```yaml
-models:
-  default: openrouter/google/gemini-3.1-flash-lite
-```
-
-## Docs
-
-- [Architecture](docs/ARCHITECTURE.md)
-- [Knowledge System](docs/KNOWLEDGE.md)
+- [Onboarding](onboarding.md)
 - [CLI Commands](docs/cli.md)
-- [Configuration](docs/config.md)
 - [TUI Guide](docs/tui.md)
+- [Configuration](docs/config.md)
 - [Model Configuration](docs/MODEL_CONFIG.md)
+- [Knowledge System](docs/KNOWLEDGE.md)
+- [Architecture](docs/ARCHITECTURE.md)
 - [Sessions](docs/SESSIONS.md)

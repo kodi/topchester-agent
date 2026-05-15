@@ -72,6 +72,8 @@ describe("command policy", () => {
       ["prettier --check src", "format_check"],
       ["oxfmt . --check", "format_check"],
       ["biome format --check src", "format_check"],
+      ["pnpm exec oxfmt . --check", "format_check"],
+      ["pnpm exec -- oxfmt . --check", "format_check"],
     ] as const) {
       const decision = await validateValidatorCommand({ command }, { workspaceRoot: workspace });
 

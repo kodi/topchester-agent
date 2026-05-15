@@ -119,7 +119,13 @@ export {
   type ListFilesToolCall,
   type ListFilesToolResult,
 } from "./tools/list-files.js";
-export { parseNativeToolCall, parseToolCall, parseToolCallWithSource } from "./tools/parser.js";
+export {
+  parseNativeToolCall,
+  parseToolCall,
+  parseToolCallRejection,
+  parseToolCallWithSource,
+  type ToolCallParseRejection,
+} from "./tools/parser.js";
 export { toAiSdkToolSet } from "./tools/ai-sdk-tools.js";
 export { readFileTool, readWorkspaceFile, type ReadFileToolArgs, type ReadFileToolCall } from "./tools/read-file.js";
 export {

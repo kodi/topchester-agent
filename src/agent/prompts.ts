@@ -79,8 +79,11 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
       ? [
           "- After code edits, use run_validator when there is a relevant test, lint, typecheck, build, check, format-check, or smoke command that can prove the change.",
           "- Failed run_validator exits are evidence. Read stdout and stderr, fix the issue when it is in scope, and rerun the narrowest useful validator.",
+          canUseTool("run_command")
+            ? "- If run_validator is rejected because the command is not a strict validator shape but the user still needs command output, retry with run_command when project policy allows it."
+            : "",
           "- Do not use inspect_command for tests, builds, lint, typecheck, format checks, or smoke checks. Use run_validator for verification.",
-        ]
+        ].filter(Boolean)
       : []),
     ...(canUseTool("run_command")
       ? [

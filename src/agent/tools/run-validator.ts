@@ -3,7 +3,10 @@ import { validateValidatorCommand, type ValidatorKind } from "./command-policy.j
 import { runProcess } from "./process-runner.js";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
 
-export const validatorKindSchema = z.enum(["test", "lint", "typecheck", "format_check", "build", "check", "smoke"]);
+export const validatorKindSchema = z.preprocess(
+  (value) => (value === "format" || value === "format-check" || value === "format:check" ? "format_check" : value),
+  z.enum(["test", "lint", "typecheck", "format_check", "build", "check", "smoke"])
+);
 
 export const runValidatorArgsSchema = z.object({
   command: z.string().min(1).max(2_000),

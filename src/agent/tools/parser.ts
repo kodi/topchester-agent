@@ -2,6 +2,12 @@ import { getToolDefinition, isToolName, type ToolCall } from "./registry.js";
 import { parseXmlToolCall } from "./xml-parser.js";
 import { type ToolCallSource } from "./types.js";
 
+export interface ToolCallParseRejection {
+  source: ToolCallSource;
+  tool: string;
+  reason: string;
+}
+
 export function parseToolCall(text: string): ToolCall | undefined {
   return parseJsonToolCall(text)?.call;
 }
@@ -27,6 +33,45 @@ export function parseToolCallWithSource(
   }
 
   return undefined;
+}
+
+export function parseToolCallRejection(
+  text: string,
+  allowedSources: readonly ToolCallSource[] = ["text-json", "text-xml"]
+): ToolCallParseRejection | undefined {
+  if (!allowedSources.includes("text-json")) {
+    return undefined;
+  }
+
+  const { json } = extractToolJsonCandidate(stripJsonFence(text.trim()));
+  let value: unknown;
+
+  try {
+    value = JSON.parse(json);
+  } catch {
+    try {
+      value = JSON.parse(escapeControlCharactersInJsonStrings(json));
+    } catch {
+      return undefined;
+    }
+  }
+
+  if (!isRecord(value) || typeof value.tool !== "string" || !isToolName(value.tool)) {
+    return undefined;
+  }
+
+  const definition = getToolDefinition(value.tool);
+  const parsed = definition.argsSchema.safeParse(value.args);
+
+  if (parsed.success) {
+    return undefined;
+  }
+
+  return {
+    source: "text-json",
+    tool: definition.name,
+    reason: parsed.error.issues.map(formatZodIssue).join("; "),
+  };
 }
 
 export function parseNativeToolCall(toolName: string, args: unknown): ToolCall | undefined {
@@ -191,4 +236,10 @@ function escapeControlCharactersInJsonStrings(text: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function formatZodIssue(issue: { path: PropertyKey[]; message: string }): string {
+  const path = issue.path.length > 0 ? issue.path.join(".") : "args";
+
+  return `${path}: ${issue.message}`;
 }
