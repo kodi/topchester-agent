@@ -28,6 +28,8 @@ The status line uses this shape:
 ready · my-project · qwen/qwen3-coder [openrouter] · ✅ kb: ready
 ```
 
+Assistant replies show a compact metadata line with the model and elapsed time. Set `TOPCHESTER_SHOW_TOKEN_USAGE=1` to also show cumulative input and output token counts for the full turn, including tool-loop model calls.
+
 KB status labels:
 
 - `✅ kb: ready` — the configured KB folder exists and has content.

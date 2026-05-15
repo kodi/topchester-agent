@@ -413,6 +413,56 @@ describe("slash commands", () => {
     expect(prompts[1]).not.toContain("Edited example.txt");
   });
 
+  it("shows cumulative model token usage in assistant metadata when enabled", async () => {
+    const previous = process.env.TOPCHESTER_SHOW_TOKEN_USAGE;
+    process.env.TOPCHESTER_SHOW_TOKEN_USAGE = "1";
+
+    try {
+      const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+      await writeFile(join(workspace, "notes.txt"), "hello\n");
+      let calls = 0;
+      const runtime = new TopchesterAgentRuntime({
+        ...createTestContext(workspace),
+        modelGateway: {
+          async generateText() {
+            calls += 1;
+
+            return calls === 1
+              ? {
+                  text: JSON.stringify({ tool: "read_file", args: { path: "notes.txt" } }),
+                  providerId: "fake",
+                  modelId: "fake-agent",
+                  purpose: "agent.primary" as const,
+                  usage: { inputTokens: 1_200, outputTokens: 30, totalTokens: 1_230 },
+                }
+              : {
+                  text: "Read notes.txt.",
+                  providerId: "fake",
+                  modelId: "fake-agent",
+                  purpose: "agent.primary" as const,
+                  usage: { inputTokens: 345, outputTokens: 67, totalTokens: 412 },
+                };
+          },
+        } as unknown as AppContext["modelGateway"],
+      });
+
+      const events = await runtime.submitMessage([], "read notes");
+      const assistantMessage = events.find((event) => event.type === "message" && event.role === "assistant");
+
+      expect(assistantMessage).toEqual(
+        expect.objectContaining({
+          meta: expect.stringMatching(/fake-agent · .* · 1,545 input \/ 97 output tokens/u),
+        })
+      );
+    } finally {
+      if (previous === undefined) {
+        delete process.env.TOPCHESTER_SHOW_TOKEN_USAGE;
+      } else {
+        process.env.TOPCHESTER_SHOW_TOKEN_USAGE = previous;
+      }
+    }
+  });
+
   it("logs each prompt sent to the model at debug level", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     await writeFile(join(workspace, "notes.txt"), "hello\n");
@@ -507,20 +557,23 @@ describe("slash commands", () => {
       )}\n`
     );
     const prompts: string[] = [];
-    const runtime = new TopchesterAgentRuntime({
-      ...createTestContext(workspace),
-      modelGateway: {
-        async generateText(request: { prompt: string }) {
-          prompts.push(request.prompt);
-          return {
-            text: "Use src/tui/status.ts.",
-            providerId: "fake",
-            modelId: "fake-agent",
-            purpose: "agent.primary" as const,
-          };
-        },
-      } as unknown as AppContext["modelGateway"],
-    });
+    const runtime = new TopchesterAgentRuntime(
+      {
+        ...createTestContext(workspace),
+        modelGateway: {
+          async generateText(request: { prompt: string }) {
+            prompts.push(request.prompt);
+            return {
+              text: "Use src/tui/status.ts.",
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          },
+        } as unknown as AppContext["modelGateway"],
+      },
+      { disableL1Context: false }
+    );
 
     const events = await runtime.submitMessage([], "status bar");
 
@@ -532,6 +585,73 @@ describe("slash commands", () => {
     expect(prompts[0]).toContain("Topchester KB context pack:");
     expect(prompts[0]).toContain("src/tui/status.ts");
     expect(prompts[0]).toContain("Conversation:\nUser: status bar");
+  });
+
+  it("skips L1 context pack injection when disabled by env", async () => {
+    const previous = process.env.TOPCHESTER_DISABLE_L1_CONTEXT;
+    process.env.TOPCHESTER_DISABLE_L1_CONTEXT = "1";
+
+    try {
+      const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+      await mkdir(join(workspace, "topchester-kb", "l1-files", "src", "tui"), { recursive: true });
+      await writeFile(join(workspace, "topchester-kb", "manifest.json"), '{"l1":{"currentEntries":1}}\n');
+      await writeFile(
+        join(workspace, "topchester-kb", "l1-files", "src", "tui", "status.ts.json"),
+        `${JSON.stringify(
+          {
+            $schema: "../schema/file-entry.v1.json",
+            id: "file:src/tui/status.ts",
+            layer: "L1",
+            type: "file",
+            path: "src/tui/status.ts",
+            language: "typescript",
+            content_hash: `sha256:${"f".repeat(64)}`,
+            size_bytes: 222,
+            last_scanned_at: "2026-05-14T00:00:00Z",
+            scan_status: "current",
+            summary: "Renders the TUI status bar.",
+            responsibilities: ["Show status bar details."],
+            symbols: [],
+            imports: [],
+            exports: [],
+            module_ids: [],
+            feature_ids: [],
+            test_ids: [],
+            evidence: [{ kind: "path", value: "src/tui/status.ts" }],
+            confidence: "medium",
+          },
+          null,
+          2
+        )}\n`
+      );
+      const prompts: string[] = [];
+      const runtime = new TopchesterAgentRuntime({
+        ...createTestContext(workspace),
+        modelGateway: {
+          async generateText(request: { prompt: string }) {
+            prompts.push(request.prompt);
+            return {
+              text: "Raw prompt only.",
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          },
+        } as unknown as AppContext["modelGateway"],
+      });
+
+      await runtime.submitMessage([{ role: "assistant", text: "Earlier answer." }], "status bar");
+
+      expect(prompts[0]).toBe("Assistant: Earlier answer.\n\nUser: status bar");
+      expect(prompts[0]).not.toContain("Topchester KB context pack:");
+      expect(prompts[0]).not.toContain("src/tui/status.ts");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.TOPCHESTER_DISABLE_L1_CONTEXT;
+      } else {
+        process.env.TOPCHESTER_DISABLE_L1_CONTEXT = previous;
+      }
+    }
   });
 
   it("formats write_file tool calls and results for the final model prompt", async () => {

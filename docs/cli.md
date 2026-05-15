@@ -298,6 +298,11 @@ topchester kb status
 topchester kb sync
 ```
 
+## Agent Experiment Flags
+
+- `TOPCHESTER_DISABLE_L1_CONTEXT=1` skips automatic L1 context-pack injection for normal agent prompts. The model receives only the retained user/assistant conversation for that turn. KB status checks, `/kb ...` commands, and manual KB search still work.
+- `TOPCHESTER_SHOW_TOKEN_USAGE=1` adds cumulative input and output token counts to the assistant metadata line after each agent turn, including model calls made before and after tool use.
+
 ## Logging
 
 - `TOPCHESTER_LOG_LEVEL=debug` writes structured JSON logs to `.agents/topchester/logs/topchester.log`.

@@ -28,6 +28,11 @@ import { type ModelAgentResult } from "../model/index.js";
 
 const MAX_TOOL_CALLS_PER_TURN = 75;
 
+interface TurnTokenUsageTotals {
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
 export interface AgentRuntime {
   checkAgent(abortSignal?: AbortSignal): Promise<AgentRuntimeEvent[]>;
   checkKnowledgeBase(): Promise<AgentRuntimeEvent[]>;
@@ -42,6 +47,10 @@ export interface AgentRuntime {
 
 export type AgentRuntimeEventSink = (event: AgentRuntimeEvent) => void | Promise<void>;
 
+export interface TopchesterAgentRuntimeOptions {
+  disableL1Context?: boolean;
+}
+
 export class TopchesterAgentRuntime implements AgentRuntime {
   private readonly taskPlan = createTaskPlanController();
 
@@ -51,7 +60,10 @@ export class TopchesterAgentRuntime implements AgentRuntime {
    * workspace, model gateway, logger, config, and task-plan state that
    * are passed in by the CLI or TUI layer.
    */
-  constructor(private readonly context: AppContext) {}
+  constructor(
+    private readonly context: AppContext,
+    private readonly options: TopchesterAgentRuntimeOptions = {}
+  ) {}
 
   /**
    * Performs the lightweight startup model check used by the interactive
@@ -120,6 +132,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     };
     let nextPrompt = prompt;
     let totalDurationMs = 0;
+    const tokenUsageTotals: TurnTokenUsageTotals = {};
     let lastModelId = "model";
     let afterTool: ToolCall["tool"] | undefined;
     let toolProtocolOverride = readToolProtocolEnvOverride();
@@ -152,6 +165,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       const toolCall = result.toolCalls[0];
       totalDurationMs += durationMs;
       lastModelId = result.modelId;
+      addTokenUsageTotals(tokenUsageTotals, result.usage);
 
       this.context.logger.debug(
         {
@@ -211,7 +225,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         await emit(
           agentEvent.assistantMessage(
             result.text.trim() || "I got an empty response from the model.",
-            formatAgentMessageMeta(result.modelId, totalDurationMs)
+            formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
           ),
           agentEvent.status("ready")
         );
@@ -253,7 +267,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     await emit(
       agentEvent.assistantMessage(
         "I stopped because the tool loop ended unexpectedly.",
-        formatAgentMessageMeta(lastModelId, totalDurationMs)
+        formatAgentMessageMeta(lastModelId, totalDurationMs, tokenUsageTotals)
       ),
       agentEvent.status("ready")
     );
@@ -313,6 +327,18 @@ export class TopchesterAgentRuntime implements AgentRuntime {
    * user's chat turn from reaching the model.
    */
   private async buildPromptWithKnowledgeContext(prompt: string, message: string): Promise<string> {
+    if (this.options.disableL1Context ?? isL1ContextDisabledByEnv()) {
+      this.context.logger.debug(
+        {
+          event: "kb_context_pack_skipped",
+          reason: "disabled",
+        },
+        "kb context pack skipped"
+      );
+
+      return prompt;
+    }
+
     const status = getKnowledgeStatus(this.context.workspaceRoot);
 
     if (!status.kbExists || !status.kbIsDirectory || status.kbContentState !== "ready") {
@@ -423,6 +449,18 @@ function readToolProtocolEnvOverride(): ToolProtocolOverride | undefined {
   }
 
   return undefined;
+}
+
+function isL1ContextDisabledByEnv(): boolean {
+  const value = process.env.TOPCHESTER_DISABLE_L1_CONTEXT?.trim().toLowerCase();
+
+  return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+
+function shouldShowTokenUsageByEnv(): boolean {
+  const value = process.env.TOPCHESTER_SHOW_TOKEN_USAGE?.trim().toLowerCase();
+
+  return value !== undefined && value !== "" && value !== "0" && value !== "false" && value !== "no" && value !== "off";
 }
 
 /**
@@ -803,8 +841,32 @@ function formatWriteFileChangeSummary(result: ToolExecutionResult<ToolResult> | 
  * The model identifier and cumulative turn duration are kept together here
  * so callers do not need to know how agent-loop timing should be presented.
  */
-function formatAgentMessageMeta(model: string, durationMs: number): string {
-  return `${model} · ${formatDuration(durationMs)}`;
+function formatAgentMessageMeta(model: string, durationMs: number, usage?: TurnTokenUsageTotals): string {
+  const tokenUsage = shouldShowTokenUsageByEnv() ? formatTokenUsage(usage) : undefined;
+
+  return [model, formatDuration(durationMs), tokenUsage].filter(Boolean).join(" · ");
+}
+
+function addTokenUsageTotals(totals: TurnTokenUsageTotals, usage: ModelAgentResult["usage"]): void {
+  if (!usage) {
+    return;
+  }
+
+  if (typeof usage.inputTokens === "number") {
+    totals.inputTokens = (totals.inputTokens ?? 0) + usage.inputTokens;
+  }
+
+  if (typeof usage.outputTokens === "number") {
+    totals.outputTokens = (totals.outputTokens ?? 0) + usage.outputTokens;
+  }
+}
+
+function formatTokenUsage(usage: TurnTokenUsageTotals | undefined): string | undefined {
+  if (usage?.inputTokens === undefined && usage?.outputTokens === undefined) {
+    return undefined;
+  }
+
+  return `${formatInteger(usage.inputTokens ?? 0)} input / ${formatInteger(usage.outputTokens ?? 0)} output tokens`;
 }
 
 /**
@@ -844,5 +906,11 @@ function formatNumber(value: number, fractionDigits: number): string {
   return value.toLocaleString("en", {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
+  });
+}
+
+function formatInteger(value: number): string {
+  return value.toLocaleString("en", {
+    maximumFractionDigits: 0,
   });
 }
