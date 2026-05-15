@@ -4,11 +4,14 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getTopchesterSessionsPath } from "../src/app/paths.js";
 import {
+  createChildSession,
   createSession,
   ensureSessionStorage,
   generateSessionId,
+  listChildSessions,
   loadSession,
   loadSessionForAppend,
+  loadSessionTree,
   rehydrateSession,
   resolveLatestSessionId,
 } from "../src/session/store.js";
@@ -392,6 +395,77 @@ describe("session store", () => {
       rootSessionId: session.sessionId,
       source: "user",
     });
+  });
+
+  it("creates child sessions with parent links and records the parent lifecycle reference", async () => {
+    const workspace = await tempWorkspace();
+    const parent = await createSession(workspace);
+
+    const child = await createChildSession(workspace, {
+      parent,
+      parentToolCallId: "task-call-1",
+      agentProfileId: "explore",
+      title: "Inspect runtime",
+    });
+    await child.append({ kind: "message", role: "assistant", text: "Child answer" });
+
+    const loadedParent = await loadSession(workspace, parent.sessionId);
+    const loadedChild = await loadSession(workspace, child.sessionId);
+
+    expect(loadedParent.events).toEqual([
+      expect.objectContaining({
+        kind: "subagent_started",
+        sessionId: child.sessionId,
+        parentSessionId: parent.sessionId,
+        parentToolCallId: "task-call-1",
+        agentProfileId: "explore",
+        title: "Inspect runtime",
+      }),
+    ]);
+    expect(loadedChild.metadata).toMatchObject({
+      sessionId: child.sessionId,
+      rootSessionId: parent.sessionId,
+      parentSessionId: parent.sessionId,
+      parentToolCallId: "task-call-1",
+      source: "subagent",
+      agentProfileId: "explore",
+      title: "Inspect runtime",
+    });
+    expect(loadedChild.events).toEqual([
+      expect.objectContaining({ kind: "message", role: "assistant", text: "Child answer" }),
+    ]);
+  });
+
+  it("lists child sessions and loads recursive session trees", async () => {
+    const workspace = await tempWorkspace();
+    const parent = await createSession(workspace);
+    const firstChild = await createChildSession(workspace, {
+      parent,
+      parentToolCallId: "task-call-1",
+      title: "First",
+    });
+    const secondChild = await createChildSession(workspace, {
+      parent,
+      parentToolCallId: "task-call-2",
+      title: "Second",
+    });
+    const grandchild = await createChildSession(workspace, {
+      parent: firstChild,
+      parentToolCallId: "task-call-1-1",
+      title: "Nested",
+    });
+
+    const children = await listChildSessions(workspace, parent.sessionId);
+    const tree = await loadSessionTree(workspace, parent.sessionId);
+
+    expect(children.map((child) => child.sessionId)).toEqual([firstChild.sessionId, secondChild.sessionId]);
+    expect(tree.session.sessionId).toBe(parent.sessionId);
+    expect(tree.children.map((child) => child.session.sessionId)).toEqual([
+      firstChild.sessionId,
+      secondChild.sessionId,
+    ]);
+    expect(tree.children[0]?.children.map((child) => child.session.sessionId)).toEqual([grandchild.sessionId]);
+    expect(tree.children[0]?.children[0]?.session.metadata.rootSessionId).toBe(parent.sessionId);
   });
 
   it("creates parent session folders inside the workspace only", async () => {

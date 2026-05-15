@@ -246,7 +246,7 @@ Verified:
 
 ## Slice 3: Add Child Session Persistence
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal:
 
@@ -271,6 +271,20 @@ Verification:
 - Unit tests create a parent session, create children, append child events, and reload the tree.
 - Backwards compatibility test loads an old metadata object with no parent fields.
 - `pnpm check`.
+
+Completed:
+
+- Added `createChildSession(...)` with child metadata and parent `subagent_started` event recording.
+- Added `listChildSessions(...)` and `loadSessionTree(...)` for direct-child and recursive tree loading.
+- Kept parent and child logs separate while preserving root session inheritance across nested children.
+- Updated session docs with child-session persistence behavior.
+
+Verified:
+
+- `pnpm test -- test/session.test.ts`
+- `pnpm typecheck`
+- `pnpm check`
+- `mise run local-ci`
 
 ## Slice 4: Add Agent Profiles And Tool Permission Filtering
 

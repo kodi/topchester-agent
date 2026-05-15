@@ -9,6 +9,7 @@ import { toolCallMessage, type ChatMessage } from "../tui/messages.js";
 import {
   SESSION_EVENT_VERSION,
   SESSION_METADATA_VERSION,
+  sessionEventPayload,
   sessionEventSchema,
   sessionMetadataSchema,
   type SessionEvent,
@@ -34,10 +35,22 @@ export interface LoadedSession {
   events: SessionEvent[];
 }
 
+export interface LoadedSessionTree {
+  session: LoadedSession;
+  children: LoadedSessionTree[];
+}
+
 export interface RehydratedSession {
   messages: ChatMessage[];
   status?: string;
   taskPlan?: TaskPlanState;
+}
+
+export interface CreateChildSessionOptions {
+  parent: SessionHandle;
+  parentToolCallId: string;
+  agentProfileId?: string;
+  title?: string;
 }
 
 export function generateSessionId(): string {
@@ -72,6 +85,53 @@ export async function createSession(workspaceRoot: string): Promise<SessionHandl
   return buildHandle(sessionDir, metadata);
 }
 
+export async function createChildSession(
+  workspaceRoot: string,
+  options: CreateChildSessionOptions
+): Promise<SessionHandle> {
+  validateSessionId(options.parent.sessionId);
+  const sessionId = generateSessionId();
+  const sessionDir = join(getTopchesterSessionsPath(workspaceRoot), sessionId);
+  const metadataPath = join(sessionDir, "metadata.json");
+  const eventsPath = join(sessionDir, "events.jsonl");
+  const createdAt = new Date().toISOString();
+  const metadata: SessionMetadata = {
+    version: SESSION_METADATA_VERSION,
+    sessionId,
+    rootSessionId: options.parent.metadata.rootSessionId,
+    parentSessionId: options.parent.sessionId,
+    parentToolCallId: options.parentToolCallId,
+    source: "subagent",
+    ...(options.agentProfileId === undefined ? {} : { agentProfileId: options.agentProfileId }),
+    ...(options.title === undefined ? {} : { title: options.title }),
+    workspaceRoot,
+    createdAt,
+    updatedAt: createdAt,
+    lastEventId: 0,
+  };
+
+  await mkdir(sessionDir, { recursive: true });
+  await writeMetadata(metadataPath, metadata);
+  await writeFile(eventsPath, "", { flag: "wx" });
+
+  const child = buildHandle(sessionDir, metadata);
+  await options.parent.append(
+    sessionEventPayload.subagentStarted(
+      {
+        sessionId: child.sessionId,
+        parentSessionId: options.parent.sessionId,
+        parentToolCallId: options.parentToolCallId,
+      },
+      {
+        ...(options.agentProfileId === undefined ? {} : { agentProfileId: options.agentProfileId }),
+        ...(options.title === undefined ? {} : { title: options.title }),
+      }
+    )
+  );
+
+  return child;
+}
+
 export async function loadSessionForAppend(workspaceRoot: string, sessionId: string): Promise<SessionHandle> {
   const loaded = await loadSession(workspaceRoot, sessionId);
 
@@ -99,6 +159,51 @@ export async function loadSession(workspaceRoot: string, sessionIdOrLatest: stri
   validateEventConsistency(metadata, events, eventsPath);
 
   return { sessionId, sessionDir, metadata, events };
+}
+
+export async function listChildSessions(workspaceRoot: string, parentSessionId: string): Promise<LoadedSession[]> {
+  validateSessionId(parentSessionId);
+  const sessionsPath = getTopchesterSessionsPath(workspaceRoot);
+  let entries: string[];
+  try {
+    entries = await readdir(sessionsPath);
+  } catch {
+    return [];
+  }
+
+  const children: LoadedSession[] = [];
+
+  for (const entry of entries.filter((candidate) => SESSION_ID_PATTERN.test(candidate)).sort()) {
+    const metadataPath = join(sessionsPath, entry, "metadata.json");
+    let metadata: SessionMetadata;
+    try {
+      metadata = await readMetadata(metadataPath);
+    } catch {
+      continue;
+    }
+
+    if (metadata.parentSessionId !== parentSessionId) {
+      continue;
+    }
+
+    children.push(await loadSession(workspaceRoot, entry));
+  }
+
+  return children.sort((left, right) => {
+    const byCreatedAt = left.metadata.createdAt.localeCompare(right.metadata.createdAt);
+    return byCreatedAt === 0 ? left.sessionId.localeCompare(right.sessionId) : byCreatedAt;
+  });
+}
+
+export async function loadSessionTree(workspaceRoot: string, sessionIdOrLatest: string): Promise<LoadedSessionTree> {
+  const session = await loadSession(workspaceRoot, sessionIdOrLatest);
+  const children = await Promise.all(
+    (await listChildSessions(workspaceRoot, session.sessionId)).map((child) =>
+      loadSessionTree(workspaceRoot, child.sessionId)
+    )
+  );
+
+  return { session, children };
 }
 
 export async function resolveLatestSessionId(workspaceRoot: string): Promise<string> {

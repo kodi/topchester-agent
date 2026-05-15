@@ -67,4 +67,10 @@ For existing sessions that do not have tree fields, loaders treat `source` as
 `user` and `rootSessionId` as the session's own `sessionId`. That keeps older
 project-local sessions readable without rewriting their JSONL.
 
+Child sessions are stored as normal session folders under the same project-local
+session root. Creating a child session writes the child's own `metadata.json`
+with `source: "subagent"` and appends a `subagent_started` reference to the
+parent `events.jsonl`. Child events stay in the child session's log, so replay
+can load a parent alone, list its direct children, or expand the full tree.
+
 Keep model-facing chat roles separate from UI/runtime events. The TUI can show both, but model context should only include what the agent runtime intentionally selects.
