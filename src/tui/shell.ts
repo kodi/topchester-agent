@@ -60,6 +60,7 @@ export class TopchesterTuiShell implements TuiShell {
   private session: SessionHandle | undefined;
   private sessionStartedAt = Date.now();
   private taskPlanNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+  private knowledgeStatusTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     private readonly context: AppContext,
@@ -97,6 +98,7 @@ export class TopchesterTuiShell implements TuiShell {
       }
 
       didExit = true;
+      this.stopKnowledgeStatusRefresh();
       tui.stop();
       this.printExitBannerForCurrentSession(session);
     };
@@ -132,6 +134,7 @@ export class TopchesterTuiShell implements TuiShell {
       })
     );
     tui.start();
+    this.startKnowledgeStatusRefresh(app, tui);
     this.startBackgroundTask(app, tui, "Agent check", () => this.checkAgent(app, tui));
   }
 
@@ -294,8 +297,14 @@ export class TopchesterTuiShell implements TuiShell {
         body: `${request.command}\n\n${request.reason}`,
         actions: [
           { label: "Run once", value: "run_once" },
-          { label: "Always allow exact command this session", value: "allow_session" },
-          { label: "Always allow exact command for this repo", value: "allow_repo" },
+          {
+            label: "Always allow exact command this session",
+            value: "allow_session",
+          },
+          {
+            label: "Always allow exact command for this repo",
+            value: "allow_repo",
+          },
           { label: "Cancel", value: "cancel" },
         ],
       });
@@ -307,7 +316,11 @@ export class TopchesterTuiShell implements TuiShell {
   private async persistRunCommandApproval(command: string): Promise<void> {
     await addProjectCommandAllowExactRule(this.context.workspaceRoot, command);
     this.context.config.tools ??= {};
-    const commands = (this.context.config.tools.commands ??= { allow: [], allowExact: [], deny: [] });
+    const commands = (this.context.config.tools.commands ??= {
+      allow: [],
+      allowExact: [],
+      deny: [],
+    });
     commands.allowExact ??= [];
 
     if (!commands.allowExact.includes(command)) {
@@ -582,9 +595,46 @@ export class TopchesterTuiShell implements TuiShell {
   }
 
   private reloadModelConfig(app: ChatLayout): void {
-    this.context.config = loadTopchesterConfig({ workspaceRoot: this.context.workspaceRoot });
+    this.context.config = loadTopchesterConfig({
+      workspaceRoot: this.context.workspaceRoot,
+    });
     this.context.modelGateway = createModelGatewayFromConfig(this.context.config);
     app.setModelLabel(getModelLabel(this.context));
+  }
+
+  private startKnowledgeStatusRefresh(app: ChatLayout, tui: TUI): void {
+    this.stopKnowledgeStatusRefresh();
+
+    this.knowledgeStatusTimer = setInterval(() => {
+      if (!app.isReady()) {
+        return;
+      }
+
+      void this.refreshKnowledgeFooter(app)
+        .then(() => {
+          this.context.logger.debug("Knowledge status refreshed");
+          tui.requestRender();
+        })
+        .catch((error: unknown) => {
+          this.context.logger.debug(
+            {
+              event: "knowledge_status_refresh_failed",
+              error: formatPlainError(error),
+            },
+            "knowledge status refresh failed"
+          );
+        });
+    }, 9_000);
+    this.knowledgeStatusTimer.unref?.();
+  }
+
+  private stopKnowledgeStatusRefresh(): void {
+    if (!this.knowledgeStatusTimer) {
+      return;
+    }
+
+    clearInterval(this.knowledgeStatusTimer);
+    this.knowledgeStatusTimer = undefined;
   }
 
   private async refreshKnowledgeFooter(app: ChatLayout): Promise<void> {
@@ -787,7 +837,10 @@ export function isStreamReasoningEnabledByEnv(): boolean {
   return value === "1" || value === "true" || value === "yes" || value === "on";
 }
 
-function createBusyReasoningSink(busy: BusyIndicator): { sink: ModelReasoningSink; commit(app: ChatLayout): void } {
+function createBusyReasoningSink(busy: BusyIndicator): {
+  sink: ModelReasoningSink;
+  commit(app: ChatLayout): void;
+} {
   const buffer = new ReasoningTailBuffer();
   let committed = false;
 

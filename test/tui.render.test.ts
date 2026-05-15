@@ -1762,6 +1762,112 @@ describe("TUI rendering", () => {
     expect(events.flatMap((event) => (event.type === "message" ? [event.text] : []))).not.toContain("ready");
   });
 
+  it("refreshes the KB footer every 90 seconds while ready", async () => {
+    vi.useFakeTimers();
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-periodic-kb-footer-"));
+    const context = createTestContext(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    let checkCount = 0;
+    let renderRequests = 0;
+    const shell = new TopchesterTuiShell(context, {
+      async checkAgent() {
+        return [];
+      },
+      async checkKnowledgeBase() {
+        checkCount += 1;
+        return [
+          agentEvent.knowledgeStatus({
+            workspaceRoot: workspace,
+            kbPath: join(workspace, "topchester-kb"),
+            cachePath: join(workspace, ".agents", "topchester-kb-cache"),
+            kbExists: true,
+            kbIsDirectory: true,
+            kbContentState: "ready",
+            nonCleanFileCount: checkCount,
+            cacheExists: false,
+            cacheIsDirectory: false,
+            kbPathSource: "default",
+            cachePathSource: "default",
+          }),
+        ];
+      },
+      async submitSlashCommand() {
+        return [];
+      },
+      async *submitMessageStream() {
+        yield agentEvent.assistantMessage("unused");
+      },
+      async submitMessage() {
+        return [];
+      },
+    });
+
+    try {
+      (
+        shell as unknown as { startKnowledgeStatusRefresh(app: ChatLayout, tui: { requestRender(): void }): void }
+      ).startKnowledgeStatusRefresh(app, {
+        requestRender() {
+          renderRequests += 1;
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(89_999);
+      expect(checkCount).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(checkCount).toBe(1);
+      expect(renderRequests).toBe(1);
+      expect(stripAnsi(app.render(100).join("\n"))).toContain("✅ kb: ready | 1 dirty");
+      expect(app.getConversationTurns()).toEqual([]);
+    } finally {
+      (shell as unknown as { stopKnowledgeStatusRefresh(): void }).stopKnowledgeStatusRefresh();
+      vi.useRealTimers();
+    }
+  });
+
+  it("skips periodic KB footer refresh while the app is busy", async () => {
+    vi.useFakeTimers();
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-periodic-kb-busy-"));
+    const context = createTestContext(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    let checkCount = 0;
+    const shell = new TopchesterTuiShell(context, {
+      async checkAgent() {
+        return [];
+      },
+      async checkKnowledgeBase() {
+        checkCount += 1;
+        return [];
+      },
+      async submitSlashCommand() {
+        return [];
+      },
+      async *submitMessageStream() {
+        yield agentEvent.assistantMessage("unused");
+      },
+      async submitMessage() {
+        return [];
+      },
+    });
+
+    try {
+      app.setStatus("thinking");
+      (
+        shell as unknown as { startKnowledgeStatusRefresh(app: ChatLayout, tui: { requestRender(): void }): void }
+      ).startKnowledgeStatusRefresh(app, { requestRender() {} });
+
+      await vi.advanceTimersByTimeAsync(90_000);
+      expect(checkCount).toBe(0);
+
+      app.setStatus("ready");
+      await vi.advanceTimersByTimeAsync(90_000);
+      expect(checkCount).toBe(1);
+    } finally {
+      (shell as unknown as { stopKnowledgeStatusRefresh(): void }).stopKnowledgeStatusRefresh();
+      vi.useRealTimers();
+    }
+  });
+
   it("refreshes the KB footer after selecting a model", async () => {
     const previousHome = process.env.HOME;
     const root = await mkdtemp(join(tmpdir(), "topchester-model-kb-footer-"));
