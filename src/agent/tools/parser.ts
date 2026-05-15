@@ -3,18 +3,18 @@ import { parseXmlToolCall } from "./xml-parser.js";
 import { type ToolCallSource } from "./types.js";
 
 export function parseToolCall(text: string): ToolCall | undefined {
-  return parseJsonToolCall(text);
+  return parseJsonToolCall(text)?.call;
 }
 
 export function parseToolCallWithSource(
   text: string,
   allowedSources: readonly ToolCallSource[] = ["text-json", "text-xml"]
-): { call: ToolCall; source: ToolCallSource } | undefined {
+): { call: ToolCall; source: ToolCallSource; remainder: string } | undefined {
   if (allowedSources.includes("text-json")) {
     const json = parseJsonToolCall(text);
 
     if (json) {
-      return { call: json, source: "text-json" };
+      return { ...json, source: "text-json" };
     }
   }
 
@@ -22,7 +22,7 @@ export function parseToolCallWithSource(
     const xml = parseXmlToolCall(text);
 
     if (xml) {
-      return { call: xml, source: "text-xml" };
+      return { call: xml, source: "text-xml", remainder: "" };
     }
   }
 
@@ -47,14 +47,18 @@ export function parseNativeToolCall(toolName: string, args: unknown): ToolCall |
   } as ToolCall;
 }
 
-function parseJsonToolCall(text: string): ToolCall | undefined {
-  const trimmed = extractToolJsonCandidate(stripJsonFence(text.trim()));
+function parseJsonToolCall(text: string): { call: ToolCall; remainder: string } | undefined {
+  const { json, remainder } = extractToolJsonCandidate(stripJsonFence(text.trim()));
   let value: unknown;
 
   try {
-    value = JSON.parse(trimmed);
+    value = JSON.parse(json);
   } catch {
-    return undefined;
+    try {
+      value = JSON.parse(escapeControlCharactersInJsonStrings(json));
+    } catch {
+      return undefined;
+    }
   }
 
   if (!isRecord(value) || typeof value.tool !== "string") {
@@ -73,9 +77,12 @@ function parseJsonToolCall(text: string): ToolCall | undefined {
   }
 
   return {
-    tool: definition.name,
-    args: parsed.data,
-  } as ToolCall;
+    call: {
+      tool: definition.name,
+      args: parsed.data,
+    } as ToolCall,
+    remainder: remainder.trim(),
+  };
 }
 
 function stripJsonFence(text: string): string {
@@ -84,14 +91,16 @@ function stripJsonFence(text: string): string {
   return match?.[1] ?? text;
 }
 
-function extractToolJsonCandidate(text: string): string {
+function extractToolJsonCandidate(text: string): { json: string; remainder: string } {
   if (!text.startsWith("{")) {
-    return text;
+    return { json: text, remainder: "" };
   }
 
   const endIndex = findJsonObjectEnd(text);
 
-  return endIndex === undefined ? text : text.slice(0, endIndex + 1);
+  return endIndex === undefined
+    ? { json: text, remainder: "" }
+    : { json: text.slice(0, endIndex + 1), remainder: text.slice(endIndex + 1) };
 }
 
 function findJsonObjectEnd(text: string): number | undefined {
@@ -128,6 +137,56 @@ function findJsonObjectEnd(text: string): number | undefined {
   }
 
   return undefined;
+}
+
+function escapeControlCharactersInJsonStrings(text: string): string {
+  let result = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (!inString) {
+      result += char;
+
+      if (char === '"') {
+        inString = true;
+      }
+
+      continue;
+    }
+
+    if (escaped) {
+      result += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      result += char;
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      result += char;
+      inString = false;
+      continue;
+    }
+
+    if (char === "\n") {
+      result += "\\n";
+    } else if (char === "\r") {
+      result += "\\r";
+    } else if (char === "\t") {
+      result += "\\t";
+    } else {
+      result += char;
+    }
+  }
+
+  return result;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

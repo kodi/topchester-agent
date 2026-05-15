@@ -153,6 +153,22 @@ describe("agent tools", () => {
     });
   });
 
+  it("parses a leading tool call with literal newlines inside JSON strings", () => {
+    expect(
+      parseToolCall(
+        '{"tool":"plan_todo","args":{"items":[{"text":"Inspect message rendering","status":"completed"},{"text":"Find background styling\n call","status":"completed"}]}}The answer starts here.'
+      )
+    ).toEqual({
+      tool: "plan_todo",
+      args: {
+        items: [
+          { text: "Inspect message rendering", status: "completed" },
+          { text: "Find background styling\n call", status: "completed" },
+        ],
+      },
+    });
+  });
+
   it("rejects unknown tools and invalid tool args", () => {
     expect(parseToolCall('{"tool":"unknown","args":{}}')).toBeUndefined();
     expect(
@@ -187,6 +203,7 @@ describe("agent tools", () => {
   it("parses conservative XML tool calls after JSON", () => {
     expect(parseToolCallWithSource("<read_file><path>data.txt</path></read_file>")).toEqual({
       source: "text-xml",
+      remainder: "",
       call: {
         tool: "read_file",
         args: { path: "data.txt" },
@@ -194,6 +211,7 @@ describe("agent tools", () => {
     });
     expect(parseToolCallWithSource('<tool_call>find_file query="runtime" limit=20</tool_call>')).toEqual({
       source: "text-xml",
+      remainder: "",
       call: {
         tool: "find_file",
         args: { query: "runtime", path: ".", limit: 20 },
@@ -201,6 +219,7 @@ describe("agent tools", () => {
     });
     expect(parseToolCallWithSource('<tool_call>grep {"pattern":"needle","path":"src"}</tool_call>')).toEqual({
       source: "text-xml",
+      remainder: "",
       call: {
         tool: "grep",
         args: { pattern: "needle", path: "src" },
@@ -212,6 +231,7 @@ describe("agent tools", () => {
       )
     ).toEqual({
       source: "text-xml",
+      remainder: "",
       call: {
         tool: "plan_todo",
         args: { items: [{ text: "Inspect files", status: "in_progress" }] },
@@ -288,7 +308,7 @@ describe("agent tools", () => {
 
   it("gets model prompt lines from the tool registry", () => {
     expect(getToolPromptLines()).toEqual([
-      'plan_todo: replace the visible session task plan for non-trivial multi-step work; keep 2-6 short items, exactly one in_progress item while work remains, and use [] only to clear. To use it, reply with only JSON: {"tool":"plan_todo","args":{"items":[{"text":"Inspect relevant files","status":"in_progress"},{"text":"Implement focused change","status":"pending"}]}}',
+      'plan_todo: replace the visible session task plan for non-trivial multi-step work; keep 2-6 short items, exactly one in_progress item while work remains, and use [] only to clear. Do not use plan_todo just to report completed work before a final answer. To use it, reply with only JSON: {"tool":"plan_todo","args":{"items":[{"text":"Inspect relevant files","status":"in_progress"},{"text":"Implement focused change","status":"pending"}]}}',
       'read_file: read a UTF-8 file inside the workspace. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
       'list_files: list files and directories inside the workspace; top-level by default, recursive only when requested, with "/" after directory names. To use it, reply with only JSON: {"tool":"list_files","args":{"path":"src","recursive":false,"limit":500}}',
       'grep: search text inside file contents in the workspace; output lines are the files containing the matched text, and paths mentioned inside those lines are not confirmed files unless checked with find_file or read_file. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
@@ -316,6 +336,7 @@ describe("agent tools", () => {
     expect(prompt).toContain("Use plan_todo for non-trivial multi-step work");
     expect(prompt).toContain("Keep plan_todo items short");
     expect(prompt).toContain("Do not use plan_todo for simple one-step answers");
+    expect(prompt).toContain("Do not call plan_todo only to summarize completed work before a final answer");
   });
 
   it("tells the model how to use edit_file safely", () => {

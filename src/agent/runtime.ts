@@ -10,7 +10,8 @@ import { type ConversationTurn, buildConversationPrompt } from "./conversation.j
 import { ABORT_CHOICE_VALUE, agentEvent, choiceAction, type AgentRuntimeEvent } from "./events.js";
 import { checkAgentReady } from "./health.js";
 import { getChatSystemPrompt } from "./prompts.js";
-import { createTaskPlanController, hasOpenTaskPlan } from "./task-plan.js";
+import { createTaskPlanController, hasOpenTaskPlan, type TaskPlanState } from "./task-plan.js";
+import { type ModelAgentResult, type ModelReasoningSink } from "../model/index.js";
 import {
   executeToolCall,
   isToolErrorResult,
@@ -24,7 +25,6 @@ import {
   type ToolProtocolOverride,
   type ToolResult,
 } from "./tools.js";
-import { type ModelAgentResult } from "../model/index.js";
 
 const MAX_TOOL_CALLS_PER_TURN = 75;
 
@@ -40,12 +40,17 @@ export interface AgentRuntime {
     conversation: ConversationTurn[],
     message: string,
     abortSignal?: AbortSignal,
-    onEvent?: AgentRuntimeEventSink
+    onEvent?: AgentRuntimeEventSink,
+    options?: AgentRuntimeSubmitMessageOptions
   ): Promise<AgentRuntimeEvent[]>;
   submitSlashCommand(command: string, onProgress?: KnowledgeProgressReporter): Promise<AgentRuntimeEvent[]>;
 }
 
 export type AgentRuntimeEventSink = (event: AgentRuntimeEvent) => void | Promise<void>;
+
+export interface AgentRuntimeSubmitMessageOptions {
+  onReasoning?: ModelReasoningSink;
+}
 
 export interface TopchesterAgentRuntimeOptions {
   disableL1Context?: boolean;
@@ -115,7 +120,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     conversation: ConversationTurn[],
     message: string,
     abortSignal?: AbortSignal,
-    onEvent?: AgentRuntimeEventSink
+    onEvent?: AgentRuntimeEventSink,
+    options: AgentRuntimeSubmitMessageOptions = {}
   ): Promise<AgentRuntimeEvent[]> {
     const prompt = await this.buildPromptWithKnowledgeContext(buildConversationPrompt(conversation, message), message);
     const events: AgentRuntimeEvent[] = [];
@@ -160,6 +166,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         prompt: nextPrompt,
         abortSignal,
         toolProtocol: toolProtocolOverride,
+        onReasoning: options.onReasoning,
       });
       const durationMs = Date.now() - startedAt;
       const toolCall = result.toolCalls[0];
@@ -211,11 +218,12 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
       if (!toolCall) {
         const plan = this.taskPlan.get();
+        const finalText = stripSuppressiblePlanTodoPrefix(result.text, plan) ?? result.text;
 
         if (hasOpenTaskPlan(plan)) {
           if (!requestedPlanClosure) {
             requestedPlanClosure = true;
-            nextPrompt = `${nextPrompt}\n\n${formatOpenPlanClosureInstruction(result.text, result.toolProtocol)}`;
+            nextPrompt = `${nextPrompt}\n\n${formatOpenPlanClosureInstruction(finalText, result.toolProtocol)}`;
             continue;
           }
 
@@ -224,7 +232,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
         await emit(
           agentEvent.assistantMessage(
-            result.text.trim() || "I got an empty response from the model.",
+            finalText.trim() || "I got an empty response from the model.",
             formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
           ),
           agentEvent.status("ready")
@@ -249,6 +257,23 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       }
 
       const executableToolCall = toolCall as ToolCall;
+      const suppressiblePlanTodoAnswer = getSuppressiblePlanTodoAnswer(
+        executableToolCall,
+        result.text,
+        this.taskPlan.get()
+      );
+
+      if (suppressiblePlanTodoAnswer !== undefined) {
+        await emit(
+          agentEvent.assistantMessage(
+            suppressiblePlanTodoAnswer || "I got an empty response from the model.",
+            formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
+          ),
+          agentEvent.status("ready")
+        );
+        return events;
+      }
+
       const toolResult = await executeToolCall(this.context.workspaceRoot, executableToolCall, {
         logger: this.context.logger,
         taskPlan: this.taskPlan,
@@ -401,6 +426,7 @@ async function generateAgentStep(
     prompt: string;
     abortSignal?: AbortSignal;
     toolProtocol?: ToolProtocolOverride;
+    onReasoning?: ModelReasoningSink;
   }
 ): Promise<ModelAgentResult> {
   if ("generateAgentStep" in context.modelGateway && typeof context.modelGateway.generateAgentStep === "function") {
@@ -433,6 +459,42 @@ async function generateAgentStep(
     warnings: [],
     openRouterRoutingApplied: false,
   };
+}
+
+function getSuppressiblePlanTodoAnswer(
+  call: ToolCall,
+  modelText: string,
+  currentPlan: TaskPlanState
+): string | undefined {
+  if (call.tool !== "plan_todo" || hasOpenTaskPlan(currentPlan)) {
+    return undefined;
+  }
+
+  const items = (call.args as { items?: unknown }).items;
+
+  if (!Array.isArray(items) || items.some((item) => !isCompletedPlanTodoItem(item))) {
+    return undefined;
+  }
+
+  const parsed = parseToolCallWithSource(modelText, ["text-json"]);
+
+  return parsed?.remainder ? parsed.remainder : undefined;
+}
+
+function stripSuppressiblePlanTodoPrefix(modelText: string, currentPlan: TaskPlanState): string | undefined {
+  const parsed = parseToolCallWithSource(modelText, ["text-json"]);
+
+  if (!parsed) {
+    return undefined;
+  }
+
+  return getSuppressiblePlanTodoAnswer(parsed.call, modelText, currentPlan);
+}
+
+function isCompletedPlanTodoItem(item: unknown): boolean {
+  return Boolean(
+    item && typeof item === "object" && "status" in item && (item as { status?: unknown }).status === "completed"
+  );
 }
 
 /**

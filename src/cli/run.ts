@@ -163,6 +163,7 @@ async function loadConversation(workspaceRoot: string, resume: string): Promise<
       case "agent":
         return message.modelContext === false ? [] : [{ role: "assistant", text: message.text }];
       case "system":
+      case "thinking":
       case "tool_call":
       case "modal":
         return [];

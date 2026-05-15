@@ -137,7 +137,7 @@ Important implementation detail: `BusyIndicator` currently rewrites the ephemera
 
 - Provider has no reasoning support: no reasoning callback events are emitted; spinner remains unchanged.
 - Provider emits empty or whitespace-only reasoning deltas: ignore them.
-- Provider emits a huge reasoning stream: keep only the rolling tail and do not store the full text.
+- Provider emits a huge reasoning stream: keep the full text for the current turn only, render it as wrapped dim thinking text, and do not store it in session history.
 - Provider emits reasoning while also preparing a tool call: clear the reasoning tail when the tool-call event is applied.
 - Native streaming call fails because tools are unsupported: preserve existing fallback behavior and then stream reasoning from the text fallback call if available.
 - Abort while reasoning is visible: abort controller stops the model call, busy stop clears the ephemeral line, and the session gets only the existing stopped message/status behavior.
@@ -173,7 +173,7 @@ If implementation requires adding a session event kind for reasoning, stop and r
 
 ### Slice 1: Add The Transient Reasoning Contract
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Define a small optional callback contract for provider-exposed reasoning without changing durable runtime events.
 
@@ -203,7 +203,7 @@ Dependencies: None.
 
 ### Slice 2: Stream Agent Steps Without Breaking Tool Protocols
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Add streaming model-gateway paths that preserve the existing `ModelAgentResult` behavior while forwarding reasoning deltas when requested.
 
@@ -235,7 +235,7 @@ Dependencies: Slice 1.
 
 ### Slice 3: Wire The Interactive TUI Env Gate
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Enable the feature only for interactive TUI chat turns when `TOPCHESTER_STREAM_REASONING=1` is set.
 
@@ -264,7 +264,7 @@ Dependencies: Slice 2.
 
 ### Slice 4: Render A Muted Rolling Reasoning Tail
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Show reasoning text through the existing ephemeral busy row without storing it.
 
@@ -295,7 +295,7 @@ Dependencies: Slice 3.
 
 ### Slice 5: Prove Reasoning Is Never Persisted
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Add persistence-focused coverage so future changes cannot accidentally write reasoning text into session history.
 
@@ -322,7 +322,7 @@ Dependencies: Slices 1-4.
 
 ### Slice 6: Docs And Final Verification
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
 
 Goal: Document the env var and run the standard check.
 
@@ -381,4 +381,10 @@ Manual expectations:
 
 ## Working Notes
 
-- Not started.
+- Implemented with a transient `ModelReasoningSink` path that stays outside `AgentRuntimeEvent` and session payload schemas.
+- Streaming is used only when a reasoning sink is present. The default non-streaming agent-step path remains in place when `TOPCHESTER_STREAM_REASONING` is unset.
+- Interactive TUI chat turns opt in through `TOPCHESTER_STREAM_REASONING=1`; `topchester run`, startup checks, and slash commands do not pass a reasoning sink.
+- Verification completed with focused model/runtime/TUI coverage, `pnpm check`, and `mise run local-ci`.
+- Follow-up UI adjustment: the TUI now keeps full provider reasoning visible as a dim non-persisted thinking row above the final answer instead of clearing it or showing a rolling tail after the answer.
+- Added regression coverage for leading `plan_todo` JSON followed by prose, including literal newlines inside JSON strings. Completed-only `plan_todo` text is suppressed when no visible plan is open, and the appended final answer renders without raw JSON.
+- Log-backed follow-up: `.agents/topchester/logs/topchester.log` showed OpenAI native tool mode returning `toolCalls: []` while putting text-JSON `plan_todo` in `text`. The model gateway now recovers leading text-JSON tool calls from native responses before returning final assistant text, even when native protocol is forced.

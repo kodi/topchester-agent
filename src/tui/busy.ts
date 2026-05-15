@@ -7,6 +7,10 @@ export interface BusyIndicatorOptions {
   activityEveryMs?: number;
 }
 
+export interface BusyIndicatorStopOptions {
+  clearEphemeralLine?: boolean;
+}
+
 interface RenderRequester {
   requestRender(): void;
 }
@@ -36,18 +40,31 @@ export class BusyIndicator {
     }, 80);
   }
 
-  stop(): void {
+  stop(options: BusyIndicatorStopOptions = {}): void {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
     }
 
     this.app.setPromptHint(undefined);
-    this.app.setEphemeralLine(undefined);
+
+    if (options.clearEphemeralLine ?? true) {
+      this.app.setEphemeralLine(undefined);
+    }
   }
 
   setActivity(activity: string): void {
     this.activityOverride = activity;
+    this.render();
+    this.tui.requestRender();
+  }
+
+  clearActivity(): void {
+    if (!this.activityOverride) {
+      return;
+    }
+
+    this.activityOverride = undefined;
     this.render();
     this.tui.requestRender();
   }
@@ -62,4 +79,48 @@ export class BusyIndicator {
     const activityIndex = Math.floor((this.ticks * 80) / activityEveryMs) % this.options.activities.length;
     this.app.setEphemeralLine(`${this.frames[this.index]} ${this.options.activities[activityIndex]}`);
   }
+}
+
+export class ReasoningTailBuffer {
+  private text = "";
+
+  get hasText(): boolean {
+    return this.text.length > 0;
+  }
+
+  get value(): string {
+    return this.text;
+  }
+
+  append(delta: string): string | undefined {
+    const normalized = normalizeReasoningText(`${this.text}${delta}`);
+
+    if (!normalized) {
+      return undefined;
+    }
+
+    this.text = normalized;
+
+    return this.text;
+  }
+
+  replace(summary: string): string | undefined {
+    const normalized = normalizeReasoningText(summary);
+
+    if (!normalized) {
+      return undefined;
+    }
+
+    this.text = normalized;
+
+    return this.text;
+  }
+
+  clear(): void {
+    this.text = "";
+  }
+}
+
+function normalizeReasoningText(text: string): string {
+  return text.replace(/\s+/gu, " ").trim();
 }

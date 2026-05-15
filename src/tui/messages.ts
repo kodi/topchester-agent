@@ -2,7 +2,7 @@ import { ui } from "../cli/ui.js";
 import { type ToolCall } from "../agent/tools.js";
 import { renderMarkdown } from "./markdown.js";
 
-export type ChatMessageKind = "system" | "user" | "agent" | "tool_call" | "modal";
+export type ChatMessageKind = "system" | "user" | "agent" | "thinking" | "tool_call" | "modal";
 
 export interface SystemChatMessage {
   kind: "system";
@@ -21,6 +21,11 @@ export interface AgentChatMessage {
   text: string;
   meta?: string;
   modelContext?: boolean;
+}
+
+export interface ThinkingChatMessage {
+  kind: "thinking";
+  text: string;
 }
 
 export interface ToolCallChatMessage {
@@ -47,6 +52,7 @@ export type ChatMessage =
   | SystemChatMessage
   | UserChatMessage
   | AgentChatMessage
+  | ThinkingChatMessage
   | ToolCallChatMessage
   | ChatModalMessage;
 
@@ -60,6 +66,10 @@ export function userMessage(text: string): ChatMessage {
 
 export function agentMessage(text: string, meta?: string): ChatMessage {
   return { kind: "agent", text, meta };
+}
+
+export function thinkingMessage(text: string): ChatMessage {
+  return { kind: "thinking", text };
 }
 
 export function toolCallMessage(call: ToolCall, label: string, resultSummary?: string): ChatMessage {
@@ -84,6 +94,10 @@ export function renderChatMessage(message: ChatMessage, options: RenderChatMessa
 
   if (message.kind === "tool_call") {
     return renderToolCallMessage(message);
+  }
+
+  if (message.kind === "thinking") {
+    return message.text.split("\n").map((line) => ui.muted(line));
   }
 
   if (message.text.length === 0) {

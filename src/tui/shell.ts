@@ -4,11 +4,12 @@ import { formatTaskPlanNotice, type TaskPlanState } from "../agent/task-plan.js"
 import { TopchesterAgentRuntime, type AgentRuntime } from "../agent/runtime.js";
 import { type AppContext } from "../app/context.js";
 import { ui } from "../cli/ui.js";
+import { type ModelReasoningEvent, type ModelReasoningSink } from "../model/index.js";
 import { type SessionEventPayload } from "../session/events.js";
 import { createSession, type SessionHandle } from "../session/store.js";
-import { BusyIndicator } from "./busy.js";
+import { BusyIndicator, ReasoningTailBuffer } from "./busy.js";
 import { ChatLayout } from "./layout.js";
-import { type ChatMessage, systemMessage } from "./messages.js";
+import { type ChatMessage, systemMessage, thinkingMessage } from "./messages.js";
 import { renderRuntimeEvent } from "./runtime-events.js";
 import { getFolderName, getModelLabel, getStartupThreadMessages, renderStaticLayout } from "./status.js";
 
@@ -75,10 +76,10 @@ export class TopchesterTuiShell implements TuiShell {
     });
     app.setTaskPlan(this.options.initialTaskPlan);
     app.setSubmitMessage((message) => {
-      void this.submitChatMessage(app, tui, message);
+      this.startBackgroundTask(app, tui, "Chat", () => this.submitChatMessage(app, tui, message));
     });
     app.setSubmitCommand((command) => {
-      void this.submitSlashCommand(app, tui, command);
+      this.startBackgroundTask(app, tui, "Command", () => this.submitSlashCommand(app, tui, command));
     });
 
     tui.addChild(app);
@@ -98,7 +99,16 @@ export class TopchesterTuiShell implements TuiShell {
       })
     );
     tui.start();
-    void this.checkAgent(app, tui);
+    this.startBackgroundTask(app, tui, "Agent check", () => this.checkAgent(app, tui));
+  }
+
+  private startBackgroundTask(app: ChatLayout, tui: TUI, label: string, task: () => Promise<void>): void {
+    void task().catch((error) => {
+      app.addMessage(systemMessage(`${label} failed: ${formatPlainError(error)}`));
+      app.setStatus("ready");
+      app.setCancelPending(undefined);
+      tui.requestRender();
+    });
   }
 
   private async checkAgent(app: ChatLayout, tui: TUI): Promise<void> {
@@ -124,7 +134,7 @@ export class TopchesterTuiShell implements TuiShell {
         app.addMessage(systemMessage("Agent check stopped."));
         app.setStatus("ready");
       } else {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = formatPlainError(error);
         app.addMessage(systemMessage(`Agent check failed: ${message}`));
         app.setStatus("agent check failed");
       }
@@ -147,6 +157,7 @@ export class TopchesterTuiShell implements TuiShell {
       activities: ["Thinking...", "Calling model...", "Writing response..."],
     });
     const abortController = new AbortController();
+    const reasoningDisplay = isStreamReasoningEnabledByEnv() ? createBusyReasoningSink(busy) : undefined;
     let cancelled = false;
 
     app.setCancelPending(() => {
@@ -163,17 +174,26 @@ export class TopchesterTuiShell implements TuiShell {
         role: "user",
         text: message,
       });
-      await this.runtime.submitMessage(app.getConversationTurns(), message, abortController.signal, async (event) => {
-        await this.applyRuntimeEvents(app, [event], tui);
-        tui.requestRender();
-      });
+      await this.runtime.submitMessage(
+        app.getConversationTurns(),
+        message,
+        abortController.signal,
+        async (event) => {
+          if (event.type === "message" && event.role === "assistant") {
+            reasoningDisplay?.commit(app);
+            busy.clearActivity();
+          }
+          await this.applyRuntimeEvents(app, [event], tui);
+          tui.requestRender();
+        },
+        { onReasoning: reasoningDisplay?.sink }
+      );
     } catch (error) {
       if (cancelled) {
         app.addMessage(systemMessage("Response stopped."));
         app.setStatus("ready");
       } else {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        app.addMessage(systemMessage(`Chat failed: ${errorMessage}`));
+        app.addMessage(systemMessage(`Chat failed: ${formatPlainError(error)}`));
         app.setStatus("chat failed");
         await this.persistPayloadWithWarning(app, {
           kind: "status",
@@ -209,8 +229,7 @@ export class TopchesterTuiShell implements TuiShell {
         tui
       );
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      app.addMessage(systemMessage(`Command failed: ${errorMessage}`));
+      app.addMessage(systemMessage(`Command failed: ${formatPlainError(error)}`));
       app.setStatus("command failed");
       await this.persistPayloadWithWarning(app, {
         kind: "status",
@@ -333,6 +352,10 @@ export function chatMessageToSessionPayload(message: ChatMessage): SessionEventP
     };
   }
 
+  if (message.kind === "thinking") {
+    return undefined;
+  }
+
   if (message.kind === "modal") {
     return {
       kind: "choice",
@@ -402,8 +425,52 @@ export function slashCommandToSessionPayload(command: string): SessionEventPaylo
   };
 }
 
+export function isStreamReasoningEnabledByEnv(): boolean {
+  const value = process.env.TOPCHESTER_STREAM_REASONING?.trim().toLowerCase();
+
+  return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+
+function createBusyReasoningSink(busy: BusyIndicator): { sink: ModelReasoningSink; commit(app: ChatLayout): void } {
+  const buffer = new ReasoningTailBuffer();
+  let committed = false;
+
+  return {
+    commit(app: ChatLayout) {
+      if (committed || !buffer.hasText) {
+        return;
+      }
+
+      app.addMessage(thinkingMessage(buffer.value));
+      committed = true;
+    },
+    async sink(event: ModelReasoningEvent) {
+      if (event.type === "clear") {
+        buffer.clear();
+        committed = false;
+        busy.clearActivity();
+        return;
+      }
+
+      const text = event.type === "summary" ? buffer.replace(event.text ?? "") : buffer.append(event.text ?? "");
+
+      if (!text) {
+        return;
+      }
+
+      busy.setActivity(ui.muted(text));
+    },
+  };
+}
+
 function formatPlainError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const text = error instanceof Error ? error.message : String(error);
+  const firstLine = text
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  return firstLine ?? "Unknown error";
 }
 
 export function printExitBanner(sessionId: string, durationMs: number): void {

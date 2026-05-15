@@ -21,7 +21,7 @@ export const planTodoTool = defineTool({
   name: "plan_todo",
   description: "Replace the visible session task plan for multi-step work.",
   prompt:
-    'plan_todo: replace the visible session task plan for non-trivial multi-step work; keep 2-6 short items, exactly one in_progress item while work remains, and use [] only to clear. To use it, reply with only JSON: {"tool":"plan_todo","args":{"items":[{"text":"Inspect relevant files","status":"in_progress"},{"text":"Implement focused change","status":"pending"}]}}',
+    'plan_todo: replace the visible session task plan for non-trivial multi-step work; keep 2-6 short items, exactly one in_progress item while work remains, and use [] only to clear. Do not use plan_todo just to report completed work before a final answer. To use it, reply with only JSON: {"tool":"plan_todo","args":{"items":[{"text":"Inspect relevant files","status":"in_progress"},{"text":"Implement focused change","status":"pending"}]}}',
   argsSchema: planTodoArgsSchema,
   async execute(context, args): Promise<PlanTodoToolResult> {
     if (!context.taskPlan) {

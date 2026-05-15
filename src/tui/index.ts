@@ -5,7 +5,7 @@ export {
   getRandomAsciiBanner,
   getRandomAsciiBannerColor,
 } from "./banner.js";
-export { BusyIndicator, type BusyIndicatorOptions } from "./busy.js";
+export { BusyIndicator, ReasoningTailBuffer, type BusyIndicatorOptions } from "./busy.js";
 export { ChatLayout } from "./layout.js";
 export { getKnowledgeStatusMessages, renderRuntimeEvent, renderRuntimeEvents } from "./runtime-events.js";
 export { TopchesterTuiShell, type TuiShell } from "./shell.js";

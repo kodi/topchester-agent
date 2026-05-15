@@ -18,6 +18,7 @@ import {
   getStartupThreadMessages,
   renderStaticLayout,
   renderRuntimeEvent,
+  ReasoningTailBuffer,
 } from "../src/tui/index.js";
 import { getKnowledgeStatus } from "../src/knowledge/status.js";
 import {
@@ -25,6 +26,7 @@ import {
   chatMessageToSessionPayload,
   createExitConfirmationInputListener,
   formatDuration,
+  isStreamReasoningEnabledByEnv,
   persistMessagesWithWarning,
   printExitBanner,
   runtimeEventToSessionPayload,
@@ -589,6 +591,17 @@ describe("TUI rendering", () => {
 
     expect(output).toContain(" ⠋ Calling agent.fast...");
     expect(output).toContain("│ > press Esc to stop");
+  });
+
+  it("wraps long ephemeral activity without truncating it", () => {
+    const app = new ChatLayout(new FakeTerminal(), [systemMessage("Welcome")], "repo", "model [provider]");
+    app.setEphemeralLine("⠋ Inspecting workspace files and considering next steps before editing source code");
+
+    const output = stripAnsi(app.render(44).join("\n"));
+
+    expect(output).toContain(" ⠋ Inspecting workspace files and");
+    expect(output).toContain("next steps before editing source");
+    expect(output).toContain("code");
   });
 
   it("renders exit notice separately from busy ephemeral rows", () => {
@@ -1215,6 +1228,59 @@ describe("TUI rendering", () => {
     expect(output).toContain("press Esc to stop");
   });
 
+  it("busy indicator can override and clear transient activity", () => {
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    const busy = new BusyIndicator(
+      app,
+      { requestRender() {} },
+      {
+        status: "working",
+        promptHint: "press Esc to stop",
+        activities: ["Doing one...", "Doing two..."],
+      }
+    );
+
+    busy.start();
+    busy.setActivity("checking files");
+    const overrideOutput = app.render(60).join("\n");
+    busy.clearActivity();
+    const clearedOutput = app.render(60).join("\n");
+    busy.stop();
+
+    expect(overrideOutput).toContain("checking files");
+    expect(clearedOutput).toContain("Doing one...");
+    expect(clearedOutput).not.toContain("checking files");
+  });
+
+  it("normalizes and caps transient reasoning tails", () => {
+    const buffer = new ReasoningTailBuffer();
+
+    expect(buffer.append("checking\n")).toBe("checking");
+    expect(buffer.append("  local\tfiles before editing")).toBe("checking local files before editing");
+    expect(buffer.replace("final\nsummary")).toBe("final summary");
+  });
+
+  it("reads the streamed reasoning env flag", () => {
+    const previous = process.env.TOPCHESTER_STREAM_REASONING;
+
+    try {
+      delete process.env.TOPCHESTER_STREAM_REASONING;
+      expect(isStreamReasoningEnabledByEnv()).toBe(false);
+
+      process.env.TOPCHESTER_STREAM_REASONING = "1";
+      expect(isStreamReasoningEnabledByEnv()).toBe(true);
+
+      process.env.TOPCHESTER_STREAM_REASONING = "off";
+      expect(isStreamReasoningEnabledByEnv()).toBe(false);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.TOPCHESTER_STREAM_REASONING;
+      } else {
+        process.env.TOPCHESTER_STREAM_REASONING = previous;
+      }
+    }
+  });
+
   it("adds startup guidance when the project has no KB", () => {
     const messages = getKnowledgeStatusMessages({
       workspaceRoot: "/repo",
@@ -1692,6 +1758,135 @@ describe("TUI rendering", () => {
     await submitting;
 
     expect(app.render(60).join("\n")).toContain("Done.");
+  });
+
+  it("keeps streamed reasoning visible after the answer without saving it", async () => {
+    const previous = process.env.TOPCHESTER_STREAM_REASONING;
+    process.env.TOPCHESTER_STREAM_REASONING = "1";
+
+    try {
+      const workspace = await mkdtemp(join(tmpdir(), "topchester-live-reasoning-"));
+      const context = createTestContext(workspace);
+      const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+      const session = await createSession(workspace);
+      let releaseRuntime: (() => void) | undefined;
+      let reasoningApplied: (() => void) | undefined;
+      const reasoningPromise = new Promise<void>((resolve) => {
+        reasoningApplied = resolve;
+      });
+      const shell = new TopchesterTuiShell(
+        context,
+        {
+          async checkAgent() {
+            return [];
+          },
+          async checkKnowledgeBase() {
+            return [];
+          },
+          async submitSlashCommand() {
+            return [];
+          },
+          async submitMessage(_conversation, _message, _abortSignal, onEvent, options) {
+            await options?.onReasoning?.({ type: "delta", text: "checking\nworkspace" });
+            reasoningApplied?.();
+            await new Promise<void>((resolve) => {
+              releaseRuntime = resolve;
+            });
+            await onEvent?.(agentEvent.assistantMessage("Done."));
+
+            return [];
+          },
+        },
+        {
+          session,
+        }
+      );
+
+      const submitting = (
+        shell as unknown as {
+          submitChatMessage(app: ChatLayout, tui: { requestRender(): void }, message: string): Promise<void>;
+        }
+      ).submitChatMessage(
+        app,
+        {
+          requestRender() {},
+        },
+        "reasoning test"
+      );
+
+      await reasoningPromise;
+      expect(stripAnsi(app.render(80).join("\n"))).toContain("checking workspace");
+
+      releaseRuntime?.();
+      await submitting;
+
+      const finalOutput = stripAnsi(app.render(80).join("\n"));
+      const rawSession = await readFile(session.eventsPath, "utf8");
+      const rehydrated = rehydrateSession((await loadSession(workspace, session.sessionId)).events);
+      const rehydratedApp = new ChatLayout(new FakeTerminal(), rehydrated.messages, "repo", "model [provider]");
+      const thinkingIndex = finalOutput.indexOf("checking workspace");
+      const answerIndex = finalOutput.indexOf("Done.");
+
+      expect(finalOutput).toContain("Done.");
+      expect(finalOutput).toContain("checking workspace");
+      expect(thinkingIndex).toBeGreaterThan(-1);
+      expect(answerIndex).toBeGreaterThan(thinkingIndex);
+      expect(rawSession).toContain("reasoning test");
+      expect(rawSession).toContain("Done.");
+      expect(rawSession).not.toContain("checking workspace");
+      expect(rehydratedApp.getConversationTurns()).toEqual([
+        { role: "user", text: "reasoning test" },
+        { role: "assistant", text: "Done." },
+      ]);
+      expect(JSON.stringify(rehydrated.messages)).not.toContain("checking workspace");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.TOPCHESTER_STREAM_REASONING;
+      } else {
+        process.env.TOPCHESTER_STREAM_REASONING = previous;
+      }
+    }
+  });
+
+  it("renders runtime failures as concise chat errors without throwing", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-chat-error-"));
+    const context = createTestContext(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    const shell = new TopchesterTuiShell(context, {
+      async checkAgent() {
+        return [];
+      },
+      async checkKnowledgeBase() {
+        return [];
+      },
+      async submitSlashCommand() {
+        return [];
+      },
+      async submitMessage() {
+        throw new Error(
+          "No endpoints found that can handle the requested parameters.\n    at doStream\n    at streamStep"
+        );
+      },
+    });
+
+    await (
+      shell as unknown as {
+        submitChatMessage(app: ChatLayout, tui: { requestRender(): void }, message: string): Promise<void>;
+      }
+    ).submitChatMessage(
+      app,
+      {
+        requestRender() {},
+      },
+      "trigger error"
+    );
+
+    const output = stripAnsi(app.render(80).join("\n"));
+
+    expect(output).toContain("Chat failed: No endpoints found that can handle the requested parameters.");
+    expect(output).not.toContain("doStream");
+    expect(output).not.toContain("streamStep");
+    expect(output).not.toContain("Thinking...");
   });
 
   it("applies task-plan runtime events as pinned UI state", async () => {

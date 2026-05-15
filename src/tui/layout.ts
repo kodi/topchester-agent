@@ -168,6 +168,7 @@ export class ChatLayout implements Component, Focusable {
             ? []
             : [{ role: "assistant", text: message.text }];
         case "system":
+        case "thinking":
         case "tool_call":
         case "modal":
           return [];

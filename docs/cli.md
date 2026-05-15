@@ -76,7 +76,7 @@ Current behavior:
 - In non-interactive output, the command prints a static version of the layout.
 - The coding loop can use workspace-scoped file tools: `read_file`, `list_files`, `grep`, `find_file`, `edit_file`, `write_file`, and `inspect_command`.
 - The coding loop can use structured Git tools: `git_status`, `git_diff`, `git_log`, `git_add`, and `git_commit`.
-- The coding loop can use `plan_todo` to keep a visible session-only task plan during non-trivial multi-step work.
+- The coding loop can use `plan_todo` to keep a visible session-only task plan during non-trivial multi-step work. Completed-only `plan_todo` text emitted with a final answer is ignored when no visible plan is open, so accidental closed-plan updates do not render as raw chat text.
 - `git_status`, `git_diff`, and `git_log` are the preferred path for Git state, diffs, and recent history. `inspect_command` can still inspect read-only Git commands, but it is an orientation fallback rather than the normal Git workflow.
 - `git_add` stages only explicit paths whose current status was acknowledged. It rejects broad pathspecs such as `.` and does not stage unrelated files by default.
 - `git_commit` commits only when staged paths exactly match `expected_staged_paths`. The model prompt still tells the agent not to stage or commit unless the user explicitly asks.
@@ -302,6 +302,7 @@ topchester kb sync
 
 - `TOPCHESTER_DISABLE_L1_CONTEXT=1` skips automatic L1 context-pack injection for normal agent prompts. The model receives only the retained user/assistant conversation for that turn. KB status checks, `/kb ...` commands, and manual KB search still work.
 - `TOPCHESTER_SHOW_TOKEN_USAGE=1` adds cumulative input and output token counts to the assistant metadata line after each agent turn, including model calls made before and after tool use.
+- `TOPCHESTER_STREAM_REASONING=1` lets the interactive TUI show provider-exposed reasoning text as dim thinking text above the final answer. It is provider-dependent, not saved, and does not affect `topchester run`.
 
 ## Logging
 

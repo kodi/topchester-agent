@@ -463,6 +463,45 @@ describe("slash commands", () => {
     }
   });
 
+  it("passes transient reasoning callbacks through the runtime without emitting durable events", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    const reasoningEvents: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep(request: { onReasoning?: (event: { type: "delta"; text: string }) => void }) {
+          request.onReasoning?.({ type: "delta", text: "checking local context" });
+
+          return {
+            text: "Done.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+            toolCalls: [],
+            toolProtocol: "text-json" as const,
+            protocolAttempts: [],
+            providerRejectedTools: false,
+            warnings: [],
+            openRouterRoutingApplied: false,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "think out loud", undefined, undefined, {
+      onReasoning(event) {
+        reasoningEvents.push(`${event.type}:${event.text}`);
+      },
+    });
+
+    expect(reasoningEvents).toEqual(["delta:checking local context"]);
+    expect(events).toEqual([
+      expect.objectContaining({ type: "message", role: "assistant", text: "Done." }),
+      { type: "status", status: "ready" },
+    ]);
+    expect(JSON.stringify(events)).not.toContain("checking local context");
+  });
+
   it("logs each prompt sent to the model at debug level", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     await writeFile(join(workspace, "notes.txt"), "hello\n");
@@ -769,6 +808,138 @@ describe("slash commands", () => {
     expect(prompts[1]).toContain("Tool result from plan_todo:");
     expect(prompts[1]).toContain("current: Read notes");
     expect(prompts[1]).toContain("visible plan when one is active");
+  });
+
+  it("suppresses completed-only plan_todo before appended prose when no plan is open", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    let calls = 0;
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText() {
+          calls += 1;
+
+          if (calls === 1) {
+            return {
+              text: `{"tool":"plan_todo","args":{"items":[{"text":"Locate user message styling","status":"completed"},{"text":"Report exact background
+ source","status":"completed"}]}}The background is set by ui.softBackground.`,
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          return {
+            text: "This second response should not be needed.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "where is the user message background set?");
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "message",
+        role: "assistant",
+        text: "The background is set by ui.softBackground.",
+      }),
+      { type: "status", status: "ready" },
+    ]);
+    expect(events.some((event) => event.type === "tool_call")).toBe(false);
+    expect(events.some((event) => event.type === "task_plan")).toBe(false);
+    expect(JSON.stringify(events)).not.toContain('"tool":"plan_todo"');
+    expect(JSON.stringify(events)).not.toContain("Report exact background");
+  });
+
+  it("suppresses completed-only plan_todo before appended prose after previous tools", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    await writeFile(join(workspace, "src.txt"), "content\n");
+    let calls = 0;
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText() {
+          calls += 1;
+
+          if (calls === 1) {
+            return {
+              text: JSON.stringify({ tool: "read_file", args: { path: "src.txt" } }),
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          return {
+            text: `{"tool":"plan_todo","args":{"items":[{"text":"Inspect message rendering","status":"completed"},{"text":"Trace background color
+ source","status":"completed"}]}}The user message background is set in src/tui/layout.ts.`,
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "where is the user message background set?");
+
+    expect(events).toEqual([
+      expect.objectContaining({ type: "tool_call", label: "read_file: src.txt" }),
+      expect.objectContaining({
+        type: "message",
+        role: "assistant",
+        text: "The user message background is set in src/tui/layout.ts.",
+      }),
+      { type: "status", status: "ready" },
+    ]);
+    expect(events.some((event) => event.type === "task_plan")).toBe(false);
+    expect(JSON.stringify(events)).not.toContain("The answer should not be rendered yet.");
+    expect(
+      events.some((event) => event.type === "message" && event.role === "assistant" && event.text.includes("plan_todo"))
+    ).toBe(false);
+  });
+
+  it("strips completed-only plan_todo from final text when the model gateway did not classify it as a tool call", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep() {
+          return {
+            text: `{"tool":"plan_todo","args":{"items":[{"text":"Inspect user message rendering","status":"completed"},{"text":"Locate background color
+ source","status":"completed"}]}}The user-message background is set in src/tui/layout.ts, not in src/tui/messages.ts.`,
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+            toolCalls: [],
+            toolProtocol: "native-openai-compatible" as const,
+            protocolAttempts: [{ protocol: "native-openai-compatible" as const, status: "used" as const }],
+            providerRejectedTools: false,
+            warnings: [],
+            openRouterRoutingApplied: false,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "where is the user message background set?");
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "message",
+        role: "assistant",
+        text: "The user-message background is set in src/tui/layout.ts, not in src/tui/messages.ts.",
+      }),
+      { type: "status", status: "ready" },
+    ]);
+    expect(events.some((event) => event.type === "tool_call")).toBe(false);
+    expect(events.some((event) => event.type === "task_plan")).toBe(false);
+    expect(JSON.stringify(events)).not.toContain('"tool":"plan_todo"');
+    expect(JSON.stringify(events)).not.toContain("Locate background color");
   });
 
   it("requires an open task plan to be closed before the final answer", async () => {

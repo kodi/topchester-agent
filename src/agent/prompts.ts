@@ -26,6 +26,7 @@ export function getChatSystemPrompt(): string {
     "- Use plan_todo for non-trivial multi-step work before the first substantive repository tool call.",
     "- Keep plan_todo items short, user-safe, and usually 2 to 6 items. Maintain exactly one in_progress item while work remains, update it after major progress changes, and clear it only when abandoning the plan or when no visible plan is useful.",
     "- Do not use plan_todo for simple one-step answers, tiny reads, or trivial edits.",
+    "- Do not call plan_todo only to summarize completed work before a final answer. If no visible plan is active and the work is done, answer directly.",
     "- Use read/search tools when the user asks about files, code, symbols, usages, tests, or project behavior.",
     "- Use find_file for path or filename lookup. Use grep for text inside files. If grep output mentions another path, treat that mentioned path as content until find_file or read_file confirms it exists.",
     "- Use list_files, grep, find_file, and read_file for exact file listing, search, lookup, and reading tasks.",

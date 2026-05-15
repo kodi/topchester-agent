@@ -61,6 +61,7 @@ export interface ModelTokenUsage {
 export interface ModelAgentRequest extends ModelRequest {
   tools: readonly ToolDefinition<string, unknown>[];
   toolProtocol?: ToolProtocolOverride;
+  onReasoning?: ModelReasoningSink;
 }
 
 export interface ModelAgentResult extends ModelTextResult {
@@ -72,6 +73,13 @@ export interface ModelAgentResult extends ModelTextResult {
   warnings: string[];
   openRouterRoutingApplied: boolean;
 }
+
+export interface ModelReasoningEvent {
+  type: "delta" | "summary" | "clear";
+  text?: string;
+}
+
+export type ModelReasoningSink = (event: ModelReasoningEvent) => void | Promise<void>;
 
 export class ModelGateway {
   readonly #config: ModelGatewayConfig;
@@ -170,11 +178,28 @@ export class ModelGateway {
       request.toolProtocol ?? resolved.modelConfig.toolProtocol ?? resolved.providerConfig.toolProtocol ?? "auto";
     const attempts: ToolProtocolAttempt[] = [];
 
+    if (override === "auto" && shouldUseTextProtocolForOpenRouterStreaming(request, resolved)) {
+      attempts.push({
+        protocol: "native-openai-compatible",
+        status: "skipped",
+        reason: "openrouter streaming auto uses text-json",
+      });
+
+      return this.generateTextAgentStep(
+        request,
+        resolved,
+        attempts,
+        "openrouter streaming auto uses text JSON protocol",
+        false,
+        ["text-json"]
+      );
+    }
+
     if (override === "native" || override === "auto") {
       try {
         const result = await this.generateNativeAgentStep(request, resolved, attempts);
 
-        if (result.toolCalls.length > 0 || override === "native") {
+        if (result.toolCalls.length > 0) {
           return result;
         }
 
@@ -247,15 +272,17 @@ export class ModelGateway {
   ): Promise<ModelAgentResult> {
     const providerOptions = buildNativeProviderOptions(resolved.providerId, resolved.providerConfig);
     const openRouterRoutingApplied = hasOpenRouterRoutingOptions(providerOptions, resolved.providerId);
-    const result = await generateText({
-      model: resolved.model,
-      system: request.system,
-      prompt: request.prompt,
-      tools: toAiSdkToolSet(request.tools),
-      toolChoice: "auto",
-      providerOptions,
-      abortSignal: request.abortSignal,
-    });
+    const result = request.onReasoning
+      ? await this.streamNativeAgentStep(request, resolved, providerOptions)
+      : await generateText({
+          model: resolved.model,
+          system: request.system,
+          prompt: request.prompt,
+          tools: toAiSdkToolSet(request.tools),
+          toolChoice: "auto",
+          providerOptions,
+          abortSignal: request.abortSignal,
+        });
     const usage = normalizeUsage(result.usage, {
       providerId: resolved.providerId,
       providerConfig: resolved.providerConfig,
@@ -301,12 +328,14 @@ export class ModelGateway {
     providerRejectedTools: boolean,
     allowedSources: Array<"text-json" | "text-xml">
   ): Promise<ModelAgentResult> {
-    const result = await generateText({
-      model: resolved.model,
-      system: request.system,
-      prompt: request.prompt,
-      abortSignal: request.abortSignal,
-    });
+    const result = request.onReasoning
+      ? await this.streamTextAgentStep(request, resolved)
+      : await generateText({
+          model: resolved.model,
+          system: request.system,
+          prompt: request.prompt,
+          abortSignal: request.abortSignal,
+        });
     const usage = normalizeUsage(result.usage, {
       providerId: resolved.providerId,
       providerConfig: resolved.providerConfig,
@@ -344,6 +373,210 @@ export class ModelGateway {
       openRouterRoutingApplied: false,
     };
   }
+
+  private async streamNativeAgentStep(
+    request: ModelAgentRequest,
+    resolved: ReturnType<ModelGateway["resolveModel"]>,
+    providerOptions: ProviderOptions
+  ) {
+    const result = streamText({
+      model: resolved.model,
+      system: request.system,
+      prompt: request.prompt,
+      tools: toAiSdkToolSet(request.tools),
+      toolChoice: "auto",
+      providerOptions,
+      abortSignal: request.abortSignal,
+      includeRawChunks: true,
+    });
+    guardStreamTextResultRejections(result);
+    let rawUsageBody: unknown;
+    let sawReasoningDelta = false;
+    let reasoningText: string | undefined;
+    let text: string;
+    let toolCalls: Awaited<typeof result.toolCalls>;
+    let usage: Awaited<typeof result.usage>;
+    let warnings: Awaited<typeof result.warnings>;
+    let response: Awaited<typeof result.response>;
+
+    try {
+      ({ rawUsageBody, sawReasoningDelta } = await consumeReasoningStream(result.fullStream, request.onReasoning));
+      [text, toolCalls, usage, warnings, response, reasoningText] = await Promise.all([
+        result.text,
+        result.toolCalls,
+        result.usage,
+        result.warnings,
+        result.response,
+        result.reasoningText,
+      ]);
+    } catch (error) {
+      await settleRejectedStreamTextResult(result);
+      throw error;
+    }
+
+    await emitReasoningSummary(request.onReasoning, sawReasoningDelta, reasoningText);
+
+    return {
+      text,
+      toolCalls,
+      usage,
+      warnings,
+      response: withRawUsageBody(response, rawUsageBody),
+    };
+  }
+
+  private async streamTextAgentStep(request: ModelAgentRequest, resolved: ReturnType<ModelGateway["resolveModel"]>) {
+    const result = streamText({
+      model: resolved.model,
+      system: request.system,
+      prompt: request.prompt,
+      abortSignal: request.abortSignal,
+      includeRawChunks: true,
+    });
+    guardStreamTextResultRejections(result);
+    let rawUsageBody: unknown;
+    let sawReasoningDelta = false;
+    let reasoningText: string | undefined;
+    let text: string;
+    let usage: Awaited<typeof result.usage>;
+    let warnings: Awaited<typeof result.warnings>;
+    let response: Awaited<typeof result.response>;
+
+    try {
+      ({ rawUsageBody, sawReasoningDelta } = await consumeReasoningStream(result.fullStream, request.onReasoning));
+      [text, usage, warnings, response, reasoningText] = await Promise.all([
+        result.text,
+        result.usage,
+        result.warnings,
+        result.response,
+        result.reasoningText,
+      ]);
+    } catch (error) {
+      await settleRejectedStreamTextResult(result);
+      throw error;
+    }
+
+    await emitReasoningSummary(request.onReasoning, sawReasoningDelta, reasoningText);
+
+    return {
+      text,
+      usage,
+      warnings,
+      response: withRawUsageBody(response, rawUsageBody),
+    };
+  }
+}
+
+function guardStreamTextResultRejections(result: {
+  text?: PromiseLike<unknown>;
+  toolCalls?: PromiseLike<unknown>;
+  usage?: PromiseLike<unknown>;
+  warnings?: PromiseLike<unknown>;
+  response?: PromiseLike<unknown>;
+  reasoningText?: PromiseLike<unknown>;
+}): void {
+  for (const promise of [
+    result.text,
+    result.toolCalls,
+    result.usage,
+    result.warnings,
+    result.response,
+    result.reasoningText,
+  ]) {
+    if (promise) {
+      void Promise.resolve(promise).catch(() => {});
+    }
+  }
+}
+
+async function settleRejectedStreamTextResult(result: {
+  text?: PromiseLike<unknown>;
+  toolCalls?: PromiseLike<unknown>;
+  usage?: PromiseLike<unknown>;
+  warnings?: PromiseLike<unknown>;
+  response?: PromiseLike<unknown>;
+  reasoningText?: PromiseLike<unknown>;
+}): Promise<void> {
+  await Promise.allSettled(
+    [result.text, result.toolCalls, result.usage, result.warnings, result.response, result.reasoningText]
+      .filter((promise): promise is PromiseLike<unknown> => promise !== undefined)
+      .map((promise) => Promise.resolve(promise))
+  );
+}
+
+async function consumeReasoningStream(
+  stream: AsyncIterable<unknown>,
+  onReasoning: ModelReasoningSink | undefined
+): Promise<{ sawReasoningDelta: boolean; rawUsageBody?: unknown }> {
+  let sawReasoningDelta = false;
+  let rawUsageBody: unknown;
+
+  for await (const part of stream) {
+    if (!part || typeof part !== "object") {
+      continue;
+    }
+
+    const typedPart = part as {
+      type?: string;
+      text?: unknown;
+      delta?: unknown;
+      error?: unknown;
+      rawValue?: unknown;
+    };
+
+    if (typedPart.type === "error") {
+      throw typedPart.error;
+    }
+
+    if (typedPart.type === "raw" && hasUsageCostBody(typedPart.rawValue)) {
+      rawUsageBody = typedPart.rawValue;
+      continue;
+    }
+
+    if (typedPart.type !== "reasoning-delta") {
+      continue;
+    }
+
+    const text = typeof typedPart.text === "string" ? typedPart.text : typedPart.delta;
+
+    if (typeof text !== "string" || text.trim().length === 0) {
+      continue;
+    }
+
+    sawReasoningDelta = true;
+    await onReasoning?.({ type: "delta", text });
+  }
+
+  return rawUsageBody === undefined ? { sawReasoningDelta } : { sawReasoningDelta, rawUsageBody };
+}
+
+async function emitReasoningSummary(
+  onReasoning: ModelReasoningSink | undefined,
+  sawReasoningDelta: boolean,
+  reasoningText: string | undefined
+): Promise<void> {
+  if (sawReasoningDelta || !reasoningText || reasoningText.trim().length === 0) {
+    return;
+  }
+
+  await onReasoning?.({ type: "summary", text: reasoningText });
+}
+
+function hasUsageCostBody(value: unknown): boolean {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    "usage" in value &&
+    (value as { usage?: unknown }).usage &&
+    typeof (value as { usage?: unknown }).usage === "object"
+  );
+}
+
+function withRawUsageBody<Response extends object>(
+  response: Response,
+  rawUsageBody: unknown
+): Response & { body?: unknown } {
+  return rawUsageBody === undefined ? response : { ...response, body: rawUsageBody };
 }
 
 function resolveApiKey(config: OpenAICompatibleProviderConfig): string | undefined {
@@ -389,6 +622,13 @@ function shouldApplyOpenRouterRoutingOptions(providerId: string, config: OpenAIC
 
 function isOpenRouterProvider(providerId: string, config: OpenAICompatibleProviderConfig): boolean {
   return providerId.toLowerCase().includes("openrouter") || config.baseURL.toLowerCase().includes("openrouter.ai");
+}
+
+function shouldUseTextProtocolForOpenRouterStreaming(
+  request: ModelAgentRequest,
+  resolved: ReturnType<ModelGateway["resolveModel"]>
+): boolean {
+  return request.onReasoning !== undefined && isOpenRouterProvider(resolved.providerId, resolved.providerConfig);
 }
 
 function hasOpenRouterRoutingOptions(providerOptions: ProviderOptions, providerId: string): boolean {
