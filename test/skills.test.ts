@@ -5,9 +5,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildSkillRoots,
   createSkillsService,
+  findSkillMentions,
   getSkillMetadataFromMarkdown,
   parseSkillMarkdown,
   resolveSkillCandidates,
+  resolveSkillMentionActivations,
   scanSkillRoot,
 } from "../src/skills/index.js";
 
@@ -192,6 +194,54 @@ describe("skills", () => {
     await expect(service.readLinkedFile("review", "references", "../secret.md")).rejects.toThrow(
       "Linked skill file path stays outside references."
     );
+  });
+
+  it("extracts active skill mentions in mention order", () => {
+    const skills = [
+      {
+        name: "code-review",
+        description: "Review code.",
+        source: "builtin" as const,
+        root: "/repo/skills",
+        skillDir: "/repo/skills/code-review",
+        skillFile: "/repo/skills/code-review/SKILL.md",
+        precedence: 0,
+        shadowed: false,
+      },
+      {
+        name: "test_driven.development",
+        description: "Write tests first.",
+        source: "builtin" as const,
+        root: "/repo/skills",
+        skillDir: "/repo/skills/test",
+        skillFile: "/repo/skills/test/SKILL.md",
+        precedence: 0,
+        shadowed: false,
+      },
+    ];
+
+    expect(findSkillMentions("Use @code-review and @missing then @test_driven.development", skills)).toEqual([
+      "code-review",
+      "test_driven.development",
+    ]);
+  });
+
+  it("resolves mentioned skills while preserving original text", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-skills-mentions-"));
+    await mkdir(join(root, "code-review"), { recursive: true });
+    await writeFile(join(root, "code-review", "SKILL.md"), "# Code Review\n");
+    const service = createSkillsService({
+      workspaceRoot: root,
+      roots: [{ source: "workspace-neutral", root, precedence: 6 }],
+    });
+
+    await expect(resolveSkillMentionActivations("@code-review review this diff", service)).resolves.toMatchObject([
+      {
+        skill: { name: "code-review" },
+        instruction: "@code-review review this diff",
+      },
+    ]);
+    await expect(resolveSkillMentionActivations("@unknown review this diff", service)).resolves.toEqual([]);
   });
 
   it("discovers built-in package skills", async () => {

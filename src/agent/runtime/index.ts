@@ -28,6 +28,11 @@ import { SubagentManager } from "../subagents.js";
 import { createTaskPlanController, hasOpenTaskPlan } from "../task-plan.js";
 import { type SessionHandle } from "../../session/store.js";
 import { type ModelReasoningSink } from "../../model/index.js";
+import {
+  createSkillsService,
+  formatSkillActivationPrompt,
+  resolveSkillMentionActivations,
+} from "../../skills/index.js";
 import { createRuntimeEventQueue } from "./event-queue.js";
 import {
   addTokenUsageTotals,
@@ -261,8 +266,14 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       return;
     }
 
+    const skillMentionActivations = await resolveSkillMentionActivations(
+      message,
+      createSkillsService({ workspaceRoot: this.context.workspaceRoot })
+    );
+    const modelMessage =
+      skillMentionActivations.length > 0 ? formatSkillActivationPrompt(skillMentionActivations) : message;
     const prompt = this.appendHookContextsToPrompt(
-      await this.buildPromptWithKnowledgeContext(buildConversationPrompt(conversation, message), message),
+      await this.buildPromptWithKnowledgeContext(buildConversationPrompt(conversation, modelMessage), message),
       "UserPromptSubmit",
       userPromptHook.contexts
     );

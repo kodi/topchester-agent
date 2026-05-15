@@ -1,5 +1,6 @@
 export * from "./activation.js";
 export * from "./frontmatter.js";
+export * from "./mentions.js";
 export * from "./resolve.js";
 export * from "./roots.js";
 export * from "./scanner.js";

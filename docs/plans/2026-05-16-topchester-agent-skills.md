@@ -641,7 +641,7 @@ Dependencies: Slices 3 and 5.
 
 ### Slice 7: Inline Mention Activation
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Let users activate skills inline by mentioning active skill names.
 
@@ -667,6 +667,13 @@ Verification:
 
 ```sh
 pnpm test
+```
+
+Actual verification:
+
+```sh
+pnpm test test/skills.test.ts test/agent-runtime.test.ts
+pnpm typecheck
 ```
 
 Dependencies: Slices 3 and 5.
@@ -798,7 +805,8 @@ Do not ship without verifying:
 - 2026-05-16: Slice 4 added five built-in skills under `skills/`, included them in package files, verified built-in discovery and workspace override behavior, and confirmed `pnpm pack --dry-run` includes `skills/**/SKILL.md`.
 - 2026-05-16: Slice 5 added `/skills list`, `/skills inspect <name>`, `/skills reload`, `/skill <name>`, skill shortcut commands, shared activation prompt formatting, and TUI activation handling for immediate or next-message skill use.
 - 2026-05-16: Slice 6 added a modal-backed Skills overlay for `/skills`, with filtering by `/skills <query>`, inspect, activate-for-next-message, reload, close/back actions, and focused overlay formatting tests.
+- 2026-05-16: Slice 7 added runtime inline mention activation for active `@skill-name` mentions, preserving the original user text as the skill instruction and ignoring unknown mentions.
 
 ## Next Slice
 
-Start with Slice 7: Inline Mention Activation.
+Start with Slice 8: Compatibility Fixtures And Docs.
