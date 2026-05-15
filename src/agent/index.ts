@@ -10,4 +10,4 @@ export {
   agentEvent,
   choiceAction,
 } from "./events.js";
-export { TopchesterAgentRuntime, getKnowledgeStatusEvents, type AgentRuntime } from "./runtime.js";
+export { TopchesterAgentRuntime, getKnowledgeStatusEvents, type AgentRuntime } from "./runtime/index.js";

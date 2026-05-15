@@ -50,7 +50,7 @@ import { type Terminal } from "@earendil-works/pi-tui";
 import { type AppContext } from "../src/app/context.js";
 import { getTopchesterSessionsPath } from "../src/app/paths.js";
 import { ABORT_CHOICE_VALUE, agentEvent } from "../src/agent/events.js";
-import { TopchesterAgentRuntime } from "../src/agent/runtime.js";
+import { TopchesterAgentRuntime } from "../src/agent/runtime/index.js";
 import { executeRunCommand } from "../src/cli/run.js";
 import { type SessionEventPayload } from "../src/session/events.js";
 import { createSession, loadSession, rehydrateSession, type SessionHandle } from "../src/session/store.js";
@@ -2557,7 +2557,7 @@ describe("TUI rendering", () => {
   it("keeps ChatLayout and AgentRuntime free of session persistence ownership", async () => {
     const [layoutSource, runtimeSource] = await Promise.all([
       readFile(join(process.cwd(), "src/tui/layout.ts"), "utf8"),
-      readFile(join(process.cwd(), "src/agent/runtime.ts"), "utf8"),
+      readFile(join(process.cwd(), "src/agent/runtime/index.ts"), "utf8"),
     ]);
 
     expect(layoutSource).not.toMatch(

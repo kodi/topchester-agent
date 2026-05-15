@@ -1,5 +1,5 @@
 import { type AgentRuntimeEvent } from "../agent/events.js";
-import { getKnowledgeStatusEvents } from "../agent/runtime.js";
+import { getKnowledgeStatusEvents } from "../agent/runtime/index.js";
 import { type KnowledgeStatus } from "../knowledge/status.js";
 import {
   agentMessage,

@@ -10,7 +10,7 @@ import {
   getSlashCommandSuggestions,
   parseSlashCommand,
 } from "../src/agent/commands.js";
-import { TopchesterAgentRuntime } from "../src/agent/runtime.js";
+import { TopchesterAgentRuntime } from "../src/agent/runtime/index.js";
 import { createSession, listChildSessions, loadSession } from "../src/session/store.js";
 
 describe("slash commands", () => {
@@ -609,7 +609,7 @@ describe("slash commands", () => {
           prompts.push(request.prompt);
 
           if (request.prompt.includes("Child prompt")) {
-            return fakeAgentStep("Child found src/agent/runtime.ts.");
+            return fakeAgentStep("Child found src/agent/runtime/index.ts.");
           }
 
           if (request.prompt.includes("Tool result from task:")) {
@@ -648,7 +648,7 @@ describe("slash commands", () => {
     expect(events.find((event) => event.type === "tool_call")).toMatchObject({
       label: expect.stringContaining("task: completed"),
     });
-    expect(prompts.at(-1)).toContain("Child found src/agent/runtime.ts.");
+    expect(prompts.at(-1)).toContain("Child found src/agent/runtime/index.ts.");
     expect(children).toHaveLength(1);
     expect(child.metadata).toMatchObject({
       source: "subagent",
@@ -658,7 +658,7 @@ describe("slash commands", () => {
       title: "Inspect runtime",
     });
     expect(child.events).toEqual([
-      expect.objectContaining({ kind: "message", role: "assistant", text: "Child found src/agent/runtime.ts." }),
+      expect.objectContaining({ kind: "message", role: "assistant", text: "Child found src/agent/runtime/index.ts." }),
       expect.objectContaining({ kind: "status", status: "ready" }),
     ]);
   });

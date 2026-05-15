@@ -131,7 +131,7 @@ export const gitLogTool = defineTool({
   name: "git_log",
   description: "Inspect recent Git commits as bounded structured summaries.",
   prompt:
-    'git_log: inspect recent commits without parsing shell output. To use it, reply with only JSON: {"tool":"git_log","args":{"limit":10,"path":"src/agent/runtime.ts"}}',
+    'git_log: inspect recent commits without parsing shell output. To use it, reply with only JSON: {"tool":"git_log","args":{"limit":10,"path":"src/agent/runtime/index.ts"}}',
   argsSchema: gitLogArgsSchema,
   parallelSafe: true,
   mutatesWorkspace: false,

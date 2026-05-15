@@ -5,7 +5,7 @@ import { cwd } from "node:process";
 import { parseSlashCommand } from "../agent/commands.js";
 import { type ConversationTurn } from "../agent/conversation.js";
 import { type AgentRuntimeEvent } from "../agent/events.js";
-import { TopchesterAgentRuntime } from "../agent/runtime.js";
+import { TopchesterAgentRuntime } from "../agent/runtime/index.js";
 import { formatTaskPlanNotice } from "../agent/task-plan.js";
 import { type AppContext } from "../app/context.js";
 import {

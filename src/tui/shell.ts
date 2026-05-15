@@ -1,6 +1,4 @@
-import { isKeyRelease, isKeyRepeat, matchesKey, ProcessTerminal, TUI } from "@earendil-works/pi-tui";
-import { homedir } from "node:os";
-import { relative } from "node:path";
+import { ProcessTerminal, TUI } from "@earendil-works/pi-tui";
 import { type AgentRuntimeEvent } from "../agent/events.js";
 import { formatTaskPlanNotice, type TaskPlanState } from "../agent/task-plan.js";
 import {
@@ -8,42 +6,56 @@ import {
   type AgentRuntime,
   type RunCommandApprovalDecision,
   type RunCommandApprovalRequest,
-} from "../agent/runtime.js";
+} from "../agent/runtime/index.js";
 import { createModelGatewayFromConfig, type AppContext } from "../app/context.js";
-import { ui } from "../cli/ui.js";
 import {
   addGlobalModelChoices,
-  addProjectCommandAllowExactRule,
   configureOpenRouterGlobalProvider,
   formatModelRef,
   getConfiguredModelChoices,
   loadTopchesterConfig,
   setGlobalDefaultModel,
 } from "../config/index.js";
-import { type ModelReasoningEvent, type ModelReasoningSink } from "../model/index.js";
-import {
-  fallbackOpenRouterStarterChoices,
-  fetchOpenRouterModelChoices,
-  rankOpenRouterModelChoices,
-  selectOpenRouterStarterChoices,
-  type OpenRouterModelChoice,
-} from "../model/openrouter.js";
+import { fallbackOpenRouterStarterChoices, selectOpenRouterStarterChoices } from "../model/openrouter.js";
 import { type SessionEventPayload } from "../session/events.js";
 import { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
 import { createSession, type SessionHandle } from "../session/store.js";
-import { BusyIndicator, ReasoningTailBuffer } from "./busy.js";
+import { BusyIndicator } from "./busy.js";
+import { formatPlainError } from "./errors.js";
+import { createExitConfirmationInputListener } from "./exit-confirmation.js";
 import { ChatLayout } from "./layout.js";
-import { type ChatMessage, systemMessage, thinkingMessage } from "./messages.js";
-import { renderRuntimeEvent } from "./runtime-events.js";
+import { type ChatMessage, systemMessage } from "./messages.js";
 import {
-  getFolderName,
-  getModelLabel,
-  getModelSetupHint,
-  getStartupThreadMessages,
-  renderStaticLayout,
-} from "./status.js";
+  fetchOpenRouterChoicesWithFallback,
+  filterOpenRouterChoices,
+  formatHomeRelativePath,
+  formatModelPickerLabel,
+} from "./model-picker.js";
+import { renderRuntimeEvent } from "./runtime-events.js";
+import { persistMessagesWithWarning, slashCommandToSessionPayload } from "./session-persistence.js";
+import {
+  createBusyReasoningSink,
+  formatAgentCheckSetupHint,
+  getSlashCommandActivities,
+  getSlashCommandArgs,
+  isConnectCommand,
+  isModelCommand,
+  isNewSessionCommand,
+  isStreamReasoningEnabledByEnv,
+  persistRunCommandApproval,
+  printExitBanner,
+} from "./shell-helpers.js";
+import { getFolderName, getModelLabel, getStartupThreadMessages, renderStaticLayout } from "./status.js";
 
 export { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
+export { createExitConfirmationInputListener, type ExitConfirmationOptions } from "./exit-confirmation.js";
+export { formatHomeRelativePath, formatModelPickerLabel } from "./model-picker.js";
+export {
+  chatMessageToSessionPayload,
+  persistMessagesWithWarning,
+  slashCommandToSessionPayload,
+} from "./session-persistence.js";
+export { formatDuration, isStreamReasoningEnabledByEnv, printExitBanner } from "./shell-helpers.js";
 
 export interface TuiShell {
   render(): Promise<void>;
@@ -71,6 +83,12 @@ export class TopchesterTuiShell implements TuiShell {
     this.session = options.session;
   }
 
+  /**
+   * --------------------------------------------
+   * Main render loop for the TUI shell.
+   * --------------------------------------------
+   * @returns
+   */
   async render(): Promise<void> {
     this.sessionStartedAt = Date.now();
     const session = this.options.session ?? (await createSession(this.context.workspaceRoot));
@@ -279,7 +297,7 @@ export class TopchesterTuiShell implements TuiShell {
             settle(action.value);
             return;
           case "allow_repo":
-            void this.persistRunCommandApproval(request.command)
+            void persistRunCommandApproval(this.context, request.command)
               .then(() => settle("allow_repo"))
               .catch((error: unknown) => {
                 app.addMessage(systemMessage(`Could not save command approval: ${formatPlainError(error)}`));
@@ -311,21 +329,6 @@ export class TopchesterTuiShell implements TuiShell {
       busy.setActivity("Waiting for command approval...");
       tui.requestRender();
     });
-  }
-
-  private async persistRunCommandApproval(command: string): Promise<void> {
-    await addProjectCommandAllowExactRule(this.context.workspaceRoot, command);
-    this.context.config.tools ??= {};
-    const commands = (this.context.config.tools.commands ??= {
-      allow: [],
-      allowExact: [],
-      deny: [],
-    });
-    commands.allowExact ??= [];
-
-    if (!commands.allowExact.includes(command)) {
-      commands.allowExact.push(command);
-    }
   }
 
   private async submitSlashCommand(app: ChatLayout, tui: TUI, command: string): Promise<void> {
@@ -494,7 +497,7 @@ export class TopchesterTuiShell implements TuiShell {
     tui.requestRender();
 
     try {
-      const choices = await this.fetchOpenRouterChoices();
+      const choices = await fetchOpenRouterChoicesWithFallback();
       const matches = filterOpenRouterChoices(choices, query);
 
       if (matches.length === 0) {
@@ -544,7 +547,7 @@ export class TopchesterTuiShell implements TuiShell {
       let starterChoices: string[];
 
       try {
-        starterChoices = selectOpenRouterStarterChoices(await this.fetchOpenRouterChoices());
+        starterChoices = selectOpenRouterStarterChoices(await fetchOpenRouterChoicesWithFallback());
       } catch {
         starterChoices = fallbackOpenRouterStarterChoices();
       }
@@ -624,7 +627,7 @@ export class TopchesterTuiShell implements TuiShell {
             "knowledge status refresh failed"
           );
         });
-    }, 9_000);
+    }, 90_000);
     this.knowledgeStatusTimer.unref?.();
   }
 
@@ -642,20 +645,6 @@ export class TopchesterTuiShell implements TuiShell {
       if (event.type === "knowledge_status") {
         app.setKnowledgeStatus(event.status);
       }
-    }
-  }
-
-  private async fetchOpenRouterChoices(): Promise<OpenRouterModelChoice[]> {
-    const apiKey = process.env.OPENROUTER_API_KEY;
-
-    if (!apiKey) {
-      return fetchOpenRouterModelChoices();
-    }
-
-    try {
-      return await fetchOpenRouterModelChoices({ apiKey, userFiltered: true });
-    } catch {
-      return fetchOpenRouterModelChoices({ apiKey });
     }
   }
 
@@ -753,296 +742,4 @@ export class TopchesterTuiShell implements TuiShell {
 
     printExitBanner(session.sessionId, Date.now() - this.sessionStartedAt);
   }
-}
-
-export async function persistMessagesWithWarning(
-  session: SessionHandle,
-  messages: ChatMessage[],
-  warningTarget: ChatMessage[] = messages
-): Promise<void> {
-  for (const message of messages) {
-    const payload = chatMessageToSessionPayload(message);
-    if (!payload) {
-      continue;
-    }
-
-    try {
-      await session.append(payload);
-    } catch (error) {
-      warningTarget.push(systemMessage(`Session save failed: ${formatPlainError(error)}`));
-      return;
-    }
-  }
-}
-
-export function chatMessageToSessionPayload(message: ChatMessage): SessionEventPayload | undefined {
-  if (message.kind === "system" || message.kind === "user") {
-    return {
-      kind: "message",
-      role: message.kind,
-      text: message.text,
-    };
-  }
-
-  if (message.kind === "agent") {
-    return {
-      kind: "message",
-      role: "assistant",
-      text: message.text,
-      ...(message.meta === undefined ? {} : { meta: message.meta }),
-    };
-  }
-
-  if (message.kind === "thinking") {
-    return undefined;
-  }
-
-  if (message.kind === "subagent") {
-    return undefined;
-  }
-
-  if (message.kind === "modal") {
-    return {
-      kind: "choice",
-      tone: message.tone,
-      title: message.title,
-      ...(message.body === undefined ? {} : { body: message.body }),
-      actions: message.actions,
-    };
-  }
-
-  if (message.kind === "tool_call") {
-    return {
-      kind: "tool_call",
-      label: message.label,
-      call: message.call as unknown as Record<string, unknown>,
-    };
-  }
-
-  return undefined;
-}
-
-export function slashCommandToSessionPayload(command: string): SessionEventPayload {
-  return {
-    kind: "message",
-    role: "user",
-    text: command,
-    meta: { source: "slash_command", visibleOnly: true },
-  };
-}
-
-export function isStreamReasoningEnabledByEnv(): boolean {
-  const value = process.env.TOPCHESTER_STREAM_REASONING?.trim().toLowerCase();
-
-  return value === "1" || value === "true" || value === "yes" || value === "on";
-}
-
-function createBusyReasoningSink(busy: BusyIndicator): {
-  sink: ModelReasoningSink;
-  commit(app: ChatLayout): void;
-} {
-  const buffer = new ReasoningTailBuffer();
-  let committed = false;
-
-  return {
-    commit(app: ChatLayout) {
-      if (committed || !buffer.hasText) {
-        return;
-      }
-
-      app.addMessage(thinkingMessage(buffer.value));
-      committed = true;
-    },
-    async sink(event: ModelReasoningEvent) {
-      if (event.type === "clear") {
-        buffer.clear();
-        committed = false;
-        busy.clearActivity();
-        return;
-      }
-
-      const text = event.type === "summary" ? buffer.replace(event.text ?? "") : buffer.append(event.text ?? "");
-
-      if (!text) {
-        return;
-      }
-
-      busy.setActivity(ui.muted(text));
-    },
-  };
-}
-
-function formatPlainError(error: unknown): string {
-  const text = error instanceof Error ? error.message : String(error);
-  const firstLine = text
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
-
-  return firstLine ?? "Unknown error";
-}
-
-function formatAgentCheckSetupHint(message: string, context: AppContext): string | undefined {
-  if (!/No (model|provider) configured/u.test(message)) {
-    return undefined;
-  }
-
-  return getModelSetupHint(context);
-}
-
-export function printExitBanner(sessionId: string, durationMs: number): void {
-  console.log("");
-  console.log(`${ui.heading("session ended")} ${ui.label(`after ${formatDuration(durationMs)}`)}`);
-  console.log(`${ui.label("To resume this session, run:")} ${ui.ok(`topchester --resume ${sessionId}`)}`);
-}
-
-export function formatDuration(durationMs: number): string {
-  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  const parts: string[] = [];
-
-  if (hours > 0) {
-    parts.push(`${hours} ${hours === 1 ? "hour" : "hours"}`);
-  }
-
-  if (minutes > 0) {
-    parts.push(`${minutes} ${minutes === 1 ? "minute" : "minutes"}`);
-  }
-
-  if (seconds > 0 || parts.length === 0) {
-    parts.push(`${seconds} ${seconds === 1 ? "second" : "seconds"}`);
-  }
-
-  return parts.join(" ");
-}
-
-function getSlashCommandActivities(command: string): string[] {
-  if (command.startsWith("/kb sync")) {
-    const isFullSync = command.split(/\s+/).includes("--full");
-    return [
-      "Checking project knowledge folders...",
-      "Reading .gitignore files...",
-      isFullSync ? "Listing project files..." : "Checking KB file status...",
-      "Queueing L1 work...",
-    ];
-  }
-
-  if (command.startsWith("/kb reset")) {
-    return ["Checking project knowledge paths...", "Removing knowledge folder...", "Removing local cache folder..."];
-  }
-
-  return ["Running command...", "Preparing project knowledge folders...", "Writing project knowledge folders..."];
-}
-
-function isNewSessionCommand(command: string): boolean {
-  return command.trim() === "/new";
-}
-
-function isConnectCommand(command: string): boolean {
-  const name = getSlashCommandName(command);
-
-  return name === "connect" || name === "provider" || name === "providers";
-}
-
-function isModelCommand(command: string): boolean {
-  const name = getSlashCommandName(command);
-
-  return name === "model" || name === "models";
-}
-
-function getSlashCommandName(command: string): string | undefined {
-  return command.trim().slice(1).split(/\s+/u).filter(Boolean)[0]?.toLowerCase();
-}
-
-function getSlashCommandArgs(command: string): string[] {
-  return command.trim().slice(1).split(/\s+/u).filter(Boolean).slice(1);
-}
-
-function filterOpenRouterChoices(choices: readonly OpenRouterModelChoice[], query: string): OpenRouterModelChoice[] {
-  const normalizedQuery = query.trim().toLowerCase();
-
-  if (!normalizedQuery) {
-    return rankOpenRouterModelChoices(choices);
-  }
-
-  return choices.filter((choice) => {
-    return (
-      choice.ref.toLowerCase().includes(normalizedQuery) ||
-      choice.id.toLowerCase().includes(normalizedQuery) ||
-      choice.label.toLowerCase().includes(normalizedQuery)
-    );
-  });
-}
-
-export function formatModelPickerLabel(modelRef: string): string {
-  return modelRef.startsWith("openrouter/") ? modelRef.slice("openrouter/".length) : modelRef;
-}
-
-export function formatHomeRelativePath(path: string): string {
-  const home = homedir();
-  const homeRelativePath = relative(home, path);
-
-  if (!homeRelativePath || homeRelativePath.startsWith("..") || homeRelativePath.startsWith("/")) {
-    return path;
-  }
-
-  return `~/${homeRelativePath}`;
-}
-
-export interface ExitConfirmationOptions {
-  setNoticeLine(line: string | undefined): void;
-  requestRender(): void;
-  exit(): void;
-  timeoutMs?: number;
-}
-
-export function createExitConfirmationInputListener(options: ExitConfirmationOptions) {
-  const timeoutMs = options.timeoutMs ?? 2500;
-  let exitPending = false;
-  let exitPendingUntil = 0;
-  let clearTimer: ReturnType<typeof setTimeout> | undefined;
-
-  const clearExitNotice = () => {
-    clearTimer = undefined;
-    exitPending = false;
-    exitPendingUntil = 0;
-    options.setNoticeLine(undefined);
-    options.requestRender();
-  };
-
-  return (data: string) => {
-    if ((isKeyRelease(data) || isKeyRepeat(data)) && matchesKey(data, "ctrl+c")) {
-      return { consume: true };
-    }
-
-    if (!matchesKey(data, "ctrl+c")) {
-      return undefined;
-    }
-
-    if (exitPending && Date.now() <= exitPendingUntil) {
-      if (clearTimer) {
-        clearTimeout(clearTimer);
-        clearTimer = undefined;
-      }
-
-      options.exit();
-      return { consume: true };
-    }
-
-    exitPending = true;
-    exitPendingUntil = Date.now() + timeoutMs;
-    options.setNoticeLine("press Ctrl-C again to exit.");
-    options.requestRender();
-
-    if (clearTimer) {
-      clearTimeout(clearTimer);
-    }
-
-    clearTimer = setTimeout(clearExitNotice, timeoutMs);
-    clearTimer.unref?.();
-
-    return { consume: true };
-  };
 }
