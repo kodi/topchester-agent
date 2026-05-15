@@ -8,6 +8,7 @@ import { planTodoTool } from "./plan-todo.js";
 import { readFileTool } from "./read-file.js";
 import { runCommandTool } from "./run-command.js";
 import { runValidatorTool } from "./run-validator.js";
+import { skillViewTool, skillsListTool } from "./skills.js";
 import { taskTool } from "./task.js";
 import { type ToolCallForDefinition, type ToolResultForDefinition } from "./types.js";
 import { writeFileTool } from "./write-file.js";
@@ -29,6 +30,8 @@ export const toolRegistry = {
   [inspectCommandTool.name]: inspectCommandTool,
   [runValidatorTool.name]: runValidatorTool,
   [runCommandTool.name]: runCommandTool,
+  [skillsListTool.name]: skillsListTool,
+  [skillViewTool.name]: skillViewTool,
 } as const;
 
 export type ToolName = keyof typeof toolRegistry;

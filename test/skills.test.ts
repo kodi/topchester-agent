@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildSkillRoots,
+  createSkillsService,
   getSkillMetadataFromMarkdown,
   parseSkillMarkdown,
   resolveSkillCandidates,
@@ -146,5 +147,50 @@ describe("skills", () => {
       shadowed: true,
       shadowedBy: join(workspace, "code-review"),
     });
+  });
+
+  it("lists and views active skills through the cached service", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-skills-service-"));
+    await mkdir(join(root, "debugging"), { recursive: true });
+    await writeFile(
+      join(root, "debugging", "SKILL.md"),
+      ["---", "name: debugging", "description: Debug carefully.", "---", "", "# Debugging", ""].join("\n")
+    );
+
+    const service = createSkillsService({
+      workspaceRoot: root,
+      roots: [{ source: "workspace-neutral", root, precedence: 6 }],
+    });
+
+    await expect(service.listSkills()).resolves.toMatchObject({
+      active: [{ name: "debugging", description: "Debug carefully." }],
+      shadowed: [],
+    });
+    await expect(service.viewSkill("debugging")).resolves.toMatchObject({
+      name: "debugging",
+      content: expect.stringContaining("# Debugging"),
+      linkedFiles: {
+        references: [],
+        templates: [],
+        scripts: [],
+        assets: [],
+      },
+    });
+  });
+
+  it("rejects linked skill file path traversal", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-skills-service-"));
+    await mkdir(join(root, "review", "references"), { recursive: true });
+    await writeFile(join(root, "review", "SKILL.md"), "# Review\n");
+    await writeFile(join(root, "secret.md"), "secret\n");
+
+    const service = createSkillsService({
+      workspaceRoot: root,
+      roots: [{ source: "workspace-neutral", root, precedence: 6 }],
+    });
+
+    await expect(service.readLinkedFile("review", "references", "../secret.md")).rejects.toThrow(
+      "Linked skill file path stays outside references."
+    );
   });
 });

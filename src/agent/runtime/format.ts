@@ -363,6 +363,12 @@ export function formatToolCallMessage(call: ToolCall, result?: ToolExecutionResu
       return result?.tool === "run_command" && !isToolErrorResult(result)
         ? `run_command: ${call.args.command} (${result.timedOut ? "timed out" : `exit ${result.exitCode}`}, ${formatSeconds(result.durationMs)})`
         : `run_command: ${call.args.command}`;
+    case "skills_list":
+      return result?.tool === "skills_list" && !isToolErrorResult(result)
+        ? `skills_list: ${result.skills.active.length} skills`
+        : "skills_list";
+    case "skill_view":
+      return `skill_view: ${call.args.name}`;
   }
 }
 

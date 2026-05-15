@@ -195,6 +195,17 @@ describe("agent tools", () => {
     });
   });
 
+  it("parses skills tool calls from JSON", () => {
+    expect(parseToolCall('{"tool":"skills_list","args":{}}')).toEqual({
+      tool: "skills_list",
+      args: {},
+    });
+    expect(parseToolCall('{"tool":"skill_view","args":{"name":"code-review"}}')).toEqual({
+      tool: "skill_view",
+      args: { name: "code-review" },
+    });
+  });
+
   it("parses the first tool call when the model emits concatenated tool JSON", () => {
     expect(
       parseToolCall(
@@ -540,6 +551,8 @@ describe("agent tools", () => {
       "grep",
       "list_files",
       "read_file",
+      "skill_view",
+      "skills_list",
     ]);
   });
 
@@ -586,6 +599,8 @@ describe("agent tools", () => {
       'inspect_command: run a safe read-only discovery command inside the workspace for quick repo orientation; prefer read_file, list_files, grep, and find_file for exact file tasks, and do not use it for builds, tests, installs, network, shell scripts, edits, or user-requested specific commands such as node --version, which node, or pnpm --version. To use it, reply with only JSON: {"tool":"inspect_command","args":{"command":"pwd && rg --files docs/plans | head -20","workdir":".","timeout_ms":10000}}',
       'run_validator: run a strict verification command after edits, such as tests, lint, typecheck, build, check, format-check, or smoke; failed exits are useful evidence and should be inspected before retrying. To use it, reply with only JSON: {"tool":"run_validator","args":{"command":"pnpm test test/tools.test.ts","validator":"test","workdir":".","timeout_ms":120000}}',
       'run_command: run a user-requested command when no more specific tool fits; it is the general policy-gated command runner, and runtime policy decides whether the command is allowed, rejected, or needs approval. Prefer run_validator for tests, lint, typecheck, build, check, format-check, and smoke. To use it, reply with only JSON: {"tool":"run_command","args":{"command":"node --version","workdir":".","timeout_ms":30000}}',
+      'skills_list: List available on-demand skills without loading full skill bodies. Args: {}. Example: {"tool":"skills_list","args":{}}',
+      'skill_view: Load full SKILL.md content for one skill by name. Args: {"name":"skill-name"}. Example: {"tool":"skill_view","args":{"name":"code-review"}}',
     ]);
   });
 

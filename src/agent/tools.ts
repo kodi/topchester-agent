@@ -120,6 +120,16 @@ export {
   type ListFilesToolResult,
 } from "./tools/list-files.js";
 export {
+  skillViewArgsSchema,
+  skillsListTool,
+  skillViewTool,
+  type SkillsListToolCall,
+  type SkillsListToolResult,
+  type SkillViewToolArgs,
+  type SkillViewToolCall,
+  type SkillViewToolResult,
+} from "./tools/skills.js";
+export {
   parseNativeToolCall,
   parseToolCall,
   parseToolCallRejection,
