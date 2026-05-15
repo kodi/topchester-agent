@@ -1,6 +1,14 @@
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildSkillRoots, getSkillMetadataFromMarkdown, parseSkillMarkdown } from "../src/skills/index.js";
+import {
+  buildSkillRoots,
+  getSkillMetadataFromMarkdown,
+  parseSkillMarkdown,
+  resolveSkillCandidates,
+  scanSkillRoot,
+} from "../src/skills/index.js";
 
 describe("skills", () => {
   it("parses YAML frontmatter and body from SKILL.md", () => {
@@ -68,5 +76,75 @@ describe("skills", () => {
       compatibilitySource: "claude",
     });
     expect(roots.at(-1)).toMatchObject({ source: "session", root: "/tmp/session-skills" });
+  });
+
+  it("scans skill directories with SKILL.md and linked files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-skills-root-"));
+    await mkdir(join(root, "code-review", "references"), { recursive: true });
+    await mkdir(join(root, "ignored"), { recursive: true });
+    await writeFile(
+      join(root, "code-review", "SKILL.md"),
+      ["---", "name: code-review", "description: Review code.", "---", "", "# Code Review", ""].join("\n")
+    );
+    await writeFile(join(root, "code-review", "references", "rubric.md"), "# Rubric\n");
+    await writeFile(join(root, "ignored", "README.md"), "# No skill\n");
+
+    const candidates = await scanSkillRoot({
+      source: "workspace-neutral",
+      root,
+      precedence: 6,
+    });
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      name: "code-review",
+      description: "Review code.",
+      source: "workspace-neutral",
+      precedence: 6,
+      shadowed: false,
+      linkedFiles: {
+        references: ["rubric.md"],
+        templates: [],
+        scripts: [],
+        assets: [],
+      },
+    });
+  });
+
+  it("resolves duplicate skills to the highest-precedence candidate", async () => {
+    const builtin = await mkdtemp(join(tmpdir(), "topchester-skills-builtin-"));
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-skills-workspace-"));
+    await mkdir(join(builtin, "code-review"), { recursive: true });
+    await mkdir(join(workspace, "code-review"), { recursive: true });
+    await writeFile(
+      join(builtin, "code-review", "SKILL.md"),
+      ["---", "name: code-review", "description: Built-in review.", "---", "", "# Built In", ""].join("\n")
+    );
+    await writeFile(
+      join(workspace, "code-review", "SKILL.md"),
+      ["---", "name: code-review", "description: Workspace review.", "---", "", "# Workspace", ""].join("\n")
+    );
+
+    const candidates = [
+      ...(await scanSkillRoot({ source: "builtin", root: builtin, precedence: 0, readonly: true })),
+      ...(await scanSkillRoot({ source: "workspace-neutral", root: workspace, precedence: 6 })),
+    ];
+    const resolved = resolveSkillCandidates(candidates);
+
+    expect(resolved.active).toHaveLength(1);
+    expect(resolved.active[0]).toMatchObject({
+      name: "code-review",
+      description: "Workspace review.",
+      source: "workspace-neutral",
+      shadowed: false,
+    });
+    expect(resolved.shadowed).toHaveLength(1);
+    expect(resolved.shadowed[0]).toMatchObject({
+      name: "code-review",
+      description: "Built-in review.",
+      source: "builtin",
+      shadowed: true,
+      shadowedBy: join(workspace, "code-review"),
+    });
   });
 });

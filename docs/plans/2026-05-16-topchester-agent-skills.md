@@ -438,7 +438,7 @@ Dependencies: None.
 
 ### Slice 2: Filesystem Scanner And Precedence Resolver
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Discover skill directories and choose the active descriptor for each duplicate skill name.
 
@@ -464,6 +464,13 @@ Verification:
 
 ```sh
 pnpm test
+```
+
+Actual verification:
+
+```sh
+pnpm test test/skills.test.ts
+pnpm typecheck
 ```
 
 Dependencies: Slice 1.
@@ -757,7 +764,8 @@ Do not ship without verifying:
 
 - 2026-05-16: Reworked the existing skills implementation plan from broad implementation sections into ordered slices. Product decisions, path choices, precedence, progressive disclosure, command behavior, data model, and MVP definition were preserved.
 - 2026-05-16: Slice 1 added `src/skills` core types, frontmatter metadata parsing, deterministic root ordering, and focused tests.
+- 2026-05-16: Slice 2 added filesystem root scanning, linked-file discovery, duplicate resolution, and active/shadowed descriptor tests.
 
 ## Next Slice
 
-Start with Slice 2: Filesystem Scanner And Precedence Resolver.
+Start with Slice 3: Skills Service And Model Tools.
