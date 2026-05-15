@@ -323,7 +323,7 @@ V0 can hardcode the default candidate names and limits, plus an environment esca
 
 ### Slice 1: Resolver And Formatting
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Add a standalone resolver with deterministic discovery and formatting.
 
@@ -348,6 +348,7 @@ Expected output:
 Verification:
 
 - `pnpm test test/agent-instructions.test.ts`
+- 2026-05-16: Passed `pnpm test test/agent-instructions.test.ts`, `pnpm exec oxlint src/agent/instructions.ts test/agent-instructions.test.ts`, and `pnpm exec tsgo --noEmit`.
 
 Dependencies:
 
@@ -593,4 +594,4 @@ Docs and smoke:
 
 ## Next Slice
 
-Start with Slice 1. Build the resolver and tests without changing model prompts yet.
+Start with Slice 2. Wire the resolver into base runtime prompts and startup/logging behavior without changing path-scoped tool behavior yet.
