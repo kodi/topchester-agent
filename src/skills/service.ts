@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { resolve, sep } from "node:path";
 import { buildSkillRoots, type BuildSkillRootsOptions } from "./roots.js";
 import { resolveSkillCandidates } from "./resolve.js";
 import { scanSkillRoots } from "./scanner.js";

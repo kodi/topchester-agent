@@ -49,6 +49,7 @@ KB status labels:
 - Use `Up` and `Down` in slash command suggestions to choose an item.
 - Press `Tab` while a slash command suggestion is selected to complete it.
 - Type `/new` to clear the terminal and start a fresh session in the same workspace.
+- Type `/skills` to open the Skills overlay.
 - Use `Up` and `Down` in the normal prompt to browse submitted prompt history.
 - Use your terminal scrollback to review chat history with the mouse wheel, touchpad, scrollbar, or terminal shortcuts such as `Shift+PageUp`.
 - Press `Ctrl-C` once to show `press Ctrl-C again to exit.`.
@@ -66,6 +67,13 @@ Most used commands:
 - `/model all [search]` — browse OpenRouter models and add one to choices.
 - `/connect` — connect a model provider.
 - `/new` — clear the terminal and start a fresh project-local session.
+- `/skills` — open the Skills overlay.
+- `/skills <query>` — open the Skills overlay filtered by text.
+- `/skills list` — print available skills.
+- `/skills inspect <name>` — show full `SKILL.md` content without activating the skill.
+- `/skills reload` — reload skill discovery.
+- `/skill <name> [instruction]` — activate a skill, either immediately with the instruction or for the next message.
+- `/<skill-name> [instruction]` — activate a skill when the name does not conflict with a built-in slash command.
 - `/kb status` — show files that are not current in the knowledge base.
 - `/kb sync` — process non-clean project files into L1 entries.
 - `/kb sync --full` — process all in-scope project files into L1 entries.
@@ -85,6 +93,10 @@ Example:
 `/model all [search]` asks OpenRouter for text models that support tool parameters, shows matching results in a scrollable picker, and saves the selected model to user choices before making it the default.
 
 `/new` keeps you in the same workspace but replaces the current thread with a normal startup screen, creates a new session folder, clears prompt history, and reruns startup checks.
+
+`/skills` opens a modal overlay. Use `Up` and `Down` to choose a skill, `Enter` to inspect it, and the modal actions to activate, reload, go back, or close. Activating from the overlay applies the skill to the next message. `/skills <query>` opens the same overlay filtered by skill name, description, or source.
+
+You can also activate active skills from normal prompts with `@skill-name`, such as `@code-review review this diff`. Unknown mentions stay normal text. Multiple skill mentions are applied in mention order.
 
 The TUI refreshes the KB status line after `/kb init`, `/kb reset`, `/kb sync`, `/kb sync --full`, and `/kb status`.
 
@@ -117,6 +129,8 @@ The agent can use these workspace-scoped tools from the TUI:
 - `inspect_command` — run a small allowlisted set of read-only discovery commands.
 - `run_validator` — run a strict test, lint, typecheck, build, check, format-check, or smoke command.
 - `run_command` — run a validator or project command allowed by command policy.
+- `skills_list` — list available skills as compact metadata.
+- `skill_view` — load full `SKILL.md` content for one skill.
 
 Tool activity appears as compact rows in the thread. These rows come from tool events, so regular system messages are still rendered as system messages even if their text mentions a tool name.
 

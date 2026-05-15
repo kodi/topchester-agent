@@ -82,6 +82,7 @@ Useful TUI slash commands:
 /kb status
 /kb sync
 /kb sync --full
+/skills
 /new
 ```
 
@@ -167,6 +168,7 @@ The package name is `topchester-ai`; the installed command is `topchester`.
 - [Onboarding](onboarding.md)
 - [CLI Commands](docs/cli.md)
 - [TUI Guide](docs/tui.md)
+- [Skills](docs/skills.md)
 - [Configuration](docs/config.md)
 - [Model Configuration](docs/MODEL_CONFIG.md)
 - [Knowledge System](docs/KNOWLEDGE.md)

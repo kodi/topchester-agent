@@ -310,4 +310,50 @@ describe("skills", () => {
       ])
     );
   });
+
+  it("discovers compatibility paths below .agents and .topchester skills", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-skills-compat-"));
+    await mkdir(join(workspace, ".claude", "skills", "release"), { recursive: true });
+    await mkdir(join(workspace, ".agents", "skills", "release"), { recursive: true });
+    await mkdir(join(workspace, ".topchester", "skills", "release"), { recursive: true });
+    await writeFile(
+      join(workspace, ".claude", "skills", "release", "SKILL.md"),
+      ["---", "name: release", "description: Claude release.", "---", "", "# Claude", ""].join("\n")
+    );
+    await writeFile(
+      join(workspace, ".agents", "skills", "release", "SKILL.md"),
+      ["---", "name: release", "description: Portable release.", "---", "", "# Portable", ""].join("\n")
+    );
+    await writeFile(
+      join(workspace, ".topchester", "skills", "release", "SKILL.md"),
+      ["---", "name: release", "description: Topchester release.", "---", "", "# Topchester", ""].join("\n")
+    );
+
+    const service = createSkillsService({
+      workspaceRoot: workspace,
+      homeDir: join(workspace, "home"),
+      packageRoot: workspace,
+    });
+    const skills = await service.listSkills();
+
+    expect(skills.active.find((skill) => skill.name === "release")).toMatchObject({
+      source: "workspace-topchester",
+      description: "Topchester release.",
+    });
+    expect(skills.shadowed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "release",
+          source: "workspace-neutral",
+          description: "Portable release.",
+        }),
+        expect.objectContaining({
+          name: "release",
+          source: "workspace-compat",
+          compatibilitySource: "claude",
+          description: "Claude release.",
+        }),
+      ])
+    );
+  });
 });

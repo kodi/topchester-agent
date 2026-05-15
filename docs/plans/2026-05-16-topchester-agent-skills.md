@@ -680,7 +680,7 @@ Dependencies: Slices 3 and 5.
 
 ### Slice 8: Compatibility Fixtures And Docs
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Prove compatibility paths work and document how users should structure and activate skills.
 
@@ -709,6 +709,14 @@ Verification:
 ```sh
 pnpm test
 pnpm check
+```
+
+Actual verification:
+
+```sh
+pnpm test test/skills.test.ts
+pnpm check
+mise run local-ci
 ```
 
 Dependencies: Slices 1-7.
@@ -806,7 +814,8 @@ Do not ship without verifying:
 - 2026-05-16: Slice 5 added `/skills list`, `/skills inspect <name>`, `/skills reload`, `/skill <name>`, skill shortcut commands, shared activation prompt formatting, and TUI activation handling for immediate or next-message skill use.
 - 2026-05-16: Slice 6 added a modal-backed Skills overlay for `/skills`, with filtering by `/skills <query>`, inspect, activate-for-next-message, reload, close/back actions, and focused overlay formatting tests.
 - 2026-05-16: Slice 7 added runtime inline mention activation for active `@skill-name` mentions, preserving the original user text as the skill instruction and ignoring unknown mentions.
+- 2026-05-16: Slice 8 added compatibility-path precedence fixtures, `docs/skills.md`, CLI/TUI/README docs updates, and passed `pnpm check` plus `mise run local-ci`.
 
 ## Next Slice
 
-Start with Slice 8: Compatibility Fixtures And Docs.
+All planned slices are complete.

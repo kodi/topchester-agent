@@ -11,6 +11,7 @@ topchester
 topchester --resume latest
 topchester run "Edit greeting.txt and change Hello to Goodbye."
 topchester run /kb status
+topchester run "/skill code-review review this diff"
 topchester search "status bar"
 
 topchester kb init
@@ -77,6 +78,7 @@ Current behavior:
 - In an interactive terminal, the command opens the TUI. See [TUI Guide](./tui.md).
 - In non-interactive output, the command prints a static version of the layout.
 - The coding loop can use workspace-scoped file and command tools: `read_file`, `list_files`, `grep`, `find_file`, `edit_file`, `write_file`, `inspect_command`, `run_validator`, and `run_command`.
+- The coding loop can use read-only skill tools: `skills_list` lists compact skill metadata, and `skill_view` loads one full `SKILL.md` on demand.
 - If `AGENTS.md` or `AGENTS.override.md` exists in the workspace, Topchester loads it as live project instructions. Nested instruction files are loaded when a tool works inside their folder. Config can opt into other filenames.
 - The coding loop can use structured Git tools: `git_status`, `git_diff`, `git_log`, `git_add`, and `git_commit`.
 - The coding loop runs configured lifecycle hooks from `hooks` config. Command hooks receive JSON on stdin and can add context, block a prompt or tool, or stop a turn. External integrations such as peon-ping are wired as normal command hooks.
@@ -124,6 +126,8 @@ topchester run "Read data.txt and summarize it."
 topchester run --json "Edit greeting.txt and change Hello to Goodbye."
 topchester run --output-json /tmp/topchester-events.jsonl "Run /kb status"
 topchester run /kb status
+topchester run "/skills list"
+topchester run "/skill code-review review this diff"
 ```
 
 Options:
@@ -144,6 +148,8 @@ Current behavior:
 - Persists child `task` sessions separately under the same project-local session root and records parent-child links in session metadata.
 - Includes a per-run `runId` in structured logs when `TOPCHESTER_LOG_LEVEL` enables logging.
 - Routes slash-command prompts such as `/kb status` through the same command dispatcher used by the TUI.
+- Routes skill slash commands such as `/skills list`, `/skills inspect <name>`, `/skills reload`, `/skill <name>`, and `/<skill-name>` through the shared command dispatcher.
+- Supports inline skill mentions such as `@code-review review this diff` in normal prompts.
 - Interactive picker commands such as `/model` and `/connect` are TUI-only. In `topchester run`, they print a short message that says to use the interactive TUI.
 - Does not open the interactive TUI.
 - Exits non-zero on runtime failure or timeout.
