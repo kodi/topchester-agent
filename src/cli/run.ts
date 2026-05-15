@@ -76,6 +76,17 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
     }
 
     await applyRuntimeEvents({
+      events: await runtime.runSessionStartHooks(session, {
+        isResumed: Boolean(options.resume),
+        abortSignal: abortController.signal,
+      }),
+      session,
+      jsonEvents,
+      runId,
+      plain: !options.json,
+    });
+
+    await applyRuntimeEvents({
       events: await runtime.checkKnowledgeBase(),
       session,
       jsonEvents,

@@ -7,6 +7,7 @@ import { executeSlashCommand } from "../commands.js";
 import { type ConversationTurn, buildConversationPrompt } from "../conversation.js";
 import { ABORT_CHOICE_VALUE, agentEvent, choiceAction, type AgentRuntimeEvent } from "../events.js";
 import { checkAgentReady } from "../health.js";
+import { formatHookContextsForPrompt, runTopchesterHooks, type HookRunPayload, type HookRunResult } from "../hooks.js";
 import {
   createToolPermissionView,
   getProfileToolDefinitions,
@@ -60,6 +61,14 @@ const DEFAULT_TASK_CONCURRENCY = 3;
 export interface AgentRuntime {
   checkAgent(abortSignal?: AbortSignal): Promise<AgentRuntimeEvent[]>;
   checkKnowledgeBase(): Promise<AgentRuntimeEvent[]>;
+  runSessionStartHooks?(
+    session?: SessionHandle,
+    options?: { isResumed?: boolean; abortSignal?: AbortSignal }
+  ): Promise<AgentRuntimeEvent[]>;
+  runPreCompactHooks?(
+    session?: SessionHandle,
+    options?: { reason?: string; abortSignal?: AbortSignal }
+  ): Promise<AgentRuntimeEvent[]>;
   submitMessageStream(
     conversation: ConversationTurn[],
     message: string,
@@ -102,6 +111,7 @@ export interface TopchesterAgentRuntimeOptions {
 export class TopchesterAgentRuntime implements AgentRuntime {
   private readonly taskPlan = createTaskPlanController();
   private readonly approvedRunCommands = new Set<string>();
+  private readonly startedHookSessionKeys = new Set<string>();
 
   /**
    * Holds the shared application context for one runtime instance.
@@ -148,6 +158,45 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     return getKnowledgeStatusEvents(await this.getKnowledgeStatusWithNonCleanFileCount());
   }
 
+  async runSessionStartHooks(
+    session?: SessionHandle,
+    options: { isResumed?: boolean; abortSignal?: AbortSignal } = {}
+  ): Promise<AgentRuntimeEvent[]> {
+    const sessionKey = session?.sessionId ?? `workspace:${this.context.workspaceRoot}`;
+
+    if (this.startedHookSessionKeys.has(sessionKey)) {
+      return [];
+    }
+
+    this.startedHookSessionKeys.add(sessionKey);
+
+    const result = await this.runHookEvent(
+      "SessionStart",
+      this.createBaseHookPayload("SessionStart", session, {
+        isResumed: Boolean(options.isResumed),
+        taskStartAlias: "TaskStart",
+      }),
+      { abortSignal: options.abortSignal }
+    );
+
+    return this.hookResultToEvents(result);
+  }
+
+  async runPreCompactHooks(
+    session?: SessionHandle,
+    options: { reason?: string; abortSignal?: AbortSignal } = {}
+  ): Promise<AgentRuntimeEvent[]> {
+    const result = await this.runHookEvent(
+      "PreCompact",
+      this.createBaseHookPayload("PreCompact", session, {
+        reason: options.reason ?? "Compaction is about to start.",
+      }),
+      { abortSignal: options.abortSignal }
+    );
+
+    return this.hookResultToEvents(result);
+  }
+
   /**
    * Streams one user chat turn through the agent loop. It builds the model
    * prompt with relevant KB context, calls the model, executes any requested
@@ -165,7 +214,40 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     abortSignal?: AbortSignal,
     options: AgentRuntimeSubmitMessageOptions = {}
   ): AsyncIterable<AgentRuntimeEvent> {
-    const prompt = await this.buildPromptWithKnowledgeContext(buildConversationPrompt(conversation, message), message);
+    const session = options.session ?? this.options.session;
+    for (const event of await this.runSessionStartHooks(session, { abortSignal })) {
+      yield event;
+    }
+
+    const userPromptHook = await this.runHookEvent(
+      "UserPromptSubmit",
+      this.createBaseHookPayload("UserPromptSubmit", session, {
+        prompt: { text: message },
+        prompt_text: message,
+        user_prompt: message,
+      }),
+      { abortSignal }
+    );
+    for (const event of this.hookResultToEvents(userPromptHook)) {
+      yield event;
+    }
+
+    if (userPromptHook.blocked || userPromptHook.stopped) {
+      const interruption = userPromptHook.blocked ?? userPromptHook.stopped!;
+
+      if (userPromptHook.messages.length === 0) {
+        yield agentEvent.systemMessage(interruption.message);
+      }
+
+      yield agentEvent.status("ready");
+      return;
+    }
+
+    const prompt = this.appendHookContextsToPrompt(
+      await this.buildPromptWithKnowledgeContext(buildConversationPrompt(conversation, message), message),
+      "UserPromptSubmit",
+      userPromptHook.contexts
+    );
     let nextPrompt = prompt;
     let totalDurationMs = 0;
     const tokenUsageTotals: TurnTokenUsageTotals = {};
@@ -174,7 +256,6 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       deniedTools: this.options.parentPermissions?.deniedTools,
     });
     const tools = getProfileToolDefinitions(permissions);
-    const session = options.session ?? this.options.session;
     const subagents = new SubagentManager({
       context: this.context,
       parentSession: session,
@@ -301,10 +382,15 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           yield agentEvent.taskPlan(this.taskPlan.update({ items: [] }));
         }
 
+        const finalMessage = finalText.trim() || "I got an empty response from the model.";
+
         yield agentEvent.assistantMessage(
-          finalText.trim() || "I got an empty response from the model.",
+          finalMessage,
           formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
         );
+        for (const event of await this.runStopHookEvents(session, finalMessage, "completed", abortSignal)) {
+          yield event;
+        }
         yield agentEvent.status("ready");
         return;
       }
@@ -325,14 +411,46 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
       if (modelToolCalls.length > 1 && modelToolCalls.every((call) => call.tool === "task")) {
         const taskCalls = modelToolCalls.map((call) => call as ToolCall);
-        const taskResults: ToolExecutionResult<ToolResult>[] = [];
+        const taskResults: Array<ToolExecutionResult<ToolResult> | undefined> = [];
+        const postHookContexts: string[] = [];
 
         for (let index = 0; index < taskCalls.length; index += DEFAULT_TASK_CONCURRENCY) {
           const batch = taskCalls.slice(index, index + DEFAULT_TASK_CONCURRENCY);
+          const executableBatch: Array<{ call: ToolCall; resultIndex: number; toolCallId?: string }> = [];
+
+          for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
+            const call = batch[batchIndex]!;
+            const resultIndex = index + batchIndex;
+            const preHook = await this.runPreToolUseHook(call, modelToolCalls[resultIndex]?.id, session, abortSignal);
+            for (const event of this.hookResultToEvents(preHook)) {
+              yield event;
+            }
+
+            if (preHook.stopped) {
+              if (preHook.messages.length === 0) {
+                yield agentEvent.systemMessage(preHook.stopped.message);
+              }
+
+              yield agentEvent.status("ready");
+              return;
+            }
+
+            if (preHook.blocked) {
+              taskResults[resultIndex] = createToolErrorResult(call.tool, preHook.blocked.message);
+              continue;
+            }
+
+            executableBatch.push({ call, resultIndex, toolCallId: modelToolCalls[resultIndex]?.id });
+          }
+
+          if (executableBatch.length === 0) {
+            continue;
+          }
+
           const taskEventQueue = createRuntimeEventQueue();
           const batchResultPromise = Promise.all(
-            batch.map((call, batchIndex) =>
-              executeToolCall(this.context.workspaceRoot, call, {
+            executableBatch.map((entry) =>
+              executeToolCall(this.context.workspaceRoot, entry.call, {
                 logger: this.context.logger,
                 config: this.context.config,
                 taskPlan: this.taskPlan,
@@ -340,7 +458,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 permissions,
                 subagents,
                 abortSignal,
-                toolCallId: modelToolCalls[index + batchIndex]?.id,
+                toolCallId: entry.toolCallId,
                 eventSink: (event) => taskEventQueue.push(event),
               })
             )
@@ -352,29 +470,90 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             yield event;
           }
 
-          taskResults.push(...(await batchResultPromise));
+          const batchResults = await batchResultPromise;
+
+          for (let batchIndex = 0; batchIndex < executableBatch.length; batchIndex += 1) {
+            const entry = executableBatch[batchIndex]!;
+            taskResults[entry.resultIndex] = batchResults[batchIndex]!;
+          }
         }
 
         for (let index = 0; index < taskCalls.length; index += 1) {
-          yield agentEvent.toolCall(taskCalls[index]!, formatToolCallMessage(taskCalls[index]!, taskResults[index]));
+          const call = taskCalls[index]!;
+          const toolResult = taskResults[index]!;
+
+          yield agentEvent.toolCall(call, formatToolCallMessage(call, toolResult));
+          const postHook = await this.runPostToolUseHook(
+            call,
+            modelToolCalls[index]?.id,
+            toolResult,
+            session,
+            abortSignal
+          );
+          for (const event of this.hookResultToEvents(postHook)) {
+            yield event;
+          }
+
+          postHookContexts.push(...postHook.contexts);
+
+          if (postHook.stopped) {
+            if (postHook.messages.length === 0) {
+              yield agentEvent.systemMessage(postHook.stopped.message);
+            }
+
+            yield agentEvent.status("ready");
+            return;
+          }
         }
 
         afterTool = "task";
-        nextPrompt = `${nextPrompt}\n\n${taskResults
-          .map((toolResult) => formatToolResultForPrompt(toolResult))
-          .join("\n\n")}\n\n${formatContinuationInstruction(
-          result.toolProtocol,
-          taskResults.at(-1)!,
-          isToolAllowed(permissions, "plan_todo")
-        )}`;
+        nextPrompt = this.appendHookContextsToPrompt(
+          `${nextPrompt}\n\n${taskResults
+            .map((toolResult) => formatToolResultForPrompt(toolResult!))
+            .join("\n\n")}\n\n${formatContinuationInstruction(
+            result.toolProtocol,
+            taskResults.at(-1)!,
+            isToolAllowed(permissions, "plan_todo")
+          )}`,
+          "PostToolUse",
+          postHookContexts
+        );
         continue;
       }
 
       if (modelToolCalls.length > 1 && modelToolCalls.every((call) => isParallelSafeToolName(call.tool))) {
         const parallelCalls = modelToolCalls.map((call) => call as ToolCall);
-        const parallelResults = await Promise.all(
-          parallelCalls.map((call, index) =>
-            executeToolCall(this.context.workspaceRoot, call, {
+        const parallelResults: Array<ToolExecutionResult<ToolResult> | undefined> = [];
+        const executableCalls: Array<{ call: ToolCall; resultIndex: number; toolCallId?: string }> = [];
+        const postHookContexts: string[] = [];
+
+        for (let index = 0; index < parallelCalls.length; index += 1) {
+          const call = parallelCalls[index]!;
+          const preHook = await this.runPreToolUseHook(call, modelToolCalls[index]?.id, session, abortSignal);
+          for (const event of this.hookResultToEvents(preHook)) {
+            yield event;
+          }
+
+          if (preHook.stopped) {
+            if (preHook.messages.length === 0) {
+              yield agentEvent.systemMessage(preHook.stopped.message);
+            }
+
+            yield agentEvent.status("ready");
+            return;
+          }
+
+          if (preHook.blocked) {
+            parallelResults[index] = createToolErrorResult(call.tool, preHook.blocked.message);
+            continue;
+          }
+
+          executableCalls.push({ call, resultIndex: index, toolCallId: modelToolCalls[index]?.id });
+        }
+
+        const executedResults = await Promise.all(
+          executableCalls.map((entry) =>
+            executeToolCall(this.context.workspaceRoot, entry.call, {
               logger: this.context.logger,
               config: this.context.config,
               taskPlan: this.taskPlan,
@@ -382,26 +561,56 @@ export class TopchesterAgentRuntime implements AgentRuntime {
               permissions,
               subagents,
               abortSignal,
-              toolCallId: modelToolCalls[index]?.id,
+              toolCallId: entry.toolCallId,
             })
           )
         );
 
+        for (let index = 0; index < executableCalls.length; index += 1) {
+          const entry = executableCalls[index]!;
+          parallelResults[entry.resultIndex] = executedResults[index]!;
+        }
+
         for (let index = 0; index < parallelCalls.length; index += 1) {
-          yield agentEvent.toolCall(
-            parallelCalls[index]!,
-            formatToolCallMessage(parallelCalls[index]!, parallelResults[index])
+          const call = parallelCalls[index]!;
+          const toolResult = parallelResults[index]!;
+
+          yield agentEvent.toolCall(call, formatToolCallMessage(call, toolResult));
+          const postHook = await this.runPostToolUseHook(
+            call,
+            modelToolCalls[index]?.id,
+            toolResult,
+            session,
+            abortSignal
           );
+          for (const event of this.hookResultToEvents(postHook)) {
+            yield event;
+          }
+
+          postHookContexts.push(...postHook.contexts);
+
+          if (postHook.stopped) {
+            if (postHook.messages.length === 0) {
+              yield agentEvent.systemMessage(postHook.stopped.message);
+            }
+
+            yield agentEvent.status("ready");
+            return;
+          }
         }
 
         afterTool = parallelCalls.at(-1)?.tool;
-        nextPrompt = `${nextPrompt}\n\n${parallelResults
-          .map((toolResult) => formatToolResultForPrompt(toolResult))
-          .join("\n\n")}\n\n${formatContinuationInstruction(
-          result.toolProtocol,
-          parallelResults.at(-1)!,
-          isToolAllowed(permissions, "plan_todo")
-        )}`;
+        nextPrompt = this.appendHookContextsToPrompt(
+          `${nextPrompt}\n\n${parallelResults
+            .map((toolResult) => formatToolResultForPrompt(toolResult!))
+            .join("\n\n")}\n\n${formatContinuationInstruction(
+            result.toolProtocol,
+            parallelResults.at(-1)!,
+            isToolAllowed(permissions, "plan_todo")
+          )}`,
+          "PostToolUse",
+          postHookContexts
+        );
         continue;
       }
 
@@ -413,59 +622,107 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       );
 
       if (suppressiblePlanTodoAnswer !== undefined) {
+        const finalMessage = suppressiblePlanTodoAnswer || "I got an empty response from the model.";
+
         yield agentEvent.assistantMessage(
-          suppressiblePlanTodoAnswer || "I got an empty response from the model.",
+          finalMessage,
           formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
         );
+        for (const event of await this.runStopHookEvents(session, finalMessage, "completed", abortSignal)) {
+          yield event;
+        }
         yield agentEvent.status("ready");
         return;
       }
 
-      const approval = await this.resolveRunCommandApproval(executableToolCall, options);
+      const preHook = await this.runPreToolUseHook(executableToolCall, toolCall.id, session, abortSignal);
+      for (const event of this.hookResultToEvents(preHook)) {
+        yield event;
+      }
+
       let toolResult: ToolExecutionResult<ToolResult>;
 
-      if (approval.cancelled) {
-        toolResult = createToolErrorResult(executableToolCall.tool, approval.reason);
-      } else {
-        const toolEventQueue = createRuntimeEventQueue();
-        const toolResultPromise = executeToolCall(this.context.workspaceRoot, executableToolCall, {
-          logger: this.context.logger,
-          config: this.context.config,
-          runCommandApprovals: { allowExactCommands: approval.approvedCommands },
-          taskPlan: this.taskPlan,
-          profile,
-          permissions,
-          subagents,
-          abortSignal,
-          toolCallId: toolCall.id,
-          eventSink: (event) => toolEventQueue.push(event),
-        }).finally(() => {
-          toolEventQueue.close();
-        });
-
-        for await (const event of toolEventQueue) {
-          yield event;
+      if (preHook.stopped) {
+        if (preHook.messages.length === 0) {
+          yield agentEvent.systemMessage(preHook.stopped.message);
         }
 
-        toolResult = await toolResultPromise;
+        yield agentEvent.status("ready");
+        return;
+      }
+
+      if (preHook.blocked) {
+        toolResult = createToolErrorResult(executableToolCall.tool, preHook.blocked.message);
+      } else {
+        const approval = await this.resolveRunCommandApproval(executableToolCall, options);
+
+        if (approval.cancelled) {
+          toolResult = createToolErrorResult(executableToolCall.tool, approval.reason);
+        } else {
+          const toolEventQueue = createRuntimeEventQueue();
+          const toolResultPromise = executeToolCall(this.context.workspaceRoot, executableToolCall, {
+            logger: this.context.logger,
+            config: this.context.config,
+            runCommandApprovals: { allowExactCommands: approval.approvedCommands },
+            taskPlan: this.taskPlan,
+            profile,
+            permissions,
+            subagents,
+            abortSignal,
+            toolCallId: toolCall.id,
+            eventSink: (event) => toolEventQueue.push(event),
+          }).finally(() => {
+            toolEventQueue.close();
+          });
+
+          for await (const event of toolEventQueue) {
+            yield event;
+          }
+
+          toolResult = await toolResultPromise;
+        }
       }
 
       yield agentEvent.toolCall(executableToolCall, formatToolCallMessage(executableToolCall, toolResult));
       if (!isToolErrorResult(toolResult) && toolResult.tool === "plan_todo") {
         yield agentEvent.taskPlan(toolResult.plan);
       }
+
+      const postHook = await this.runPostToolUseHook(executableToolCall, toolCall.id, toolResult, session, abortSignal);
+      for (const event of this.hookResultToEvents(postHook)) {
+        yield event;
+      }
+
+      if (postHook.stopped) {
+        if (postHook.messages.length === 0) {
+          yield agentEvent.systemMessage(postHook.stopped.message);
+        }
+
+        yield agentEvent.status("ready");
+        return;
+      }
+
       afterTool = executableToolCall.tool;
-      nextPrompt = `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(
-        result.toolProtocol,
-        toolResult,
-        isToolAllowed(permissions, "plan_todo")
-      )}`;
+      nextPrompt = this.appendHookContextsToPrompt(
+        `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(
+          result.toolProtocol,
+          toolResult,
+          isToolAllowed(permissions, "plan_todo")
+        )}`,
+        "PostToolUse",
+        postHook.contexts
+      );
     }
 
+    const finalMessage = "I stopped because the tool loop ended unexpectedly.";
+
     yield agentEvent.assistantMessage(
-      "I stopped because the tool loop ended unexpectedly.",
+      finalMessage,
       formatAgentMessageMeta(lastModelId, totalDurationMs, tokenUsageTotals)
     );
+    for (const event of await this.runStopHookEvents(session, finalMessage, "failed", abortSignal)) {
+      yield event;
+    }
     yield agentEvent.status("ready");
   }
 
@@ -488,6 +745,115 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     }
 
     return events;
+  }
+
+  private async runPreToolUseHook(
+    call: ToolCall,
+    toolCallId: string | undefined,
+    session: SessionHandle | undefined,
+    abortSignal: AbortSignal | undefined
+  ): Promise<HookRunResult> {
+    return this.runHookEvent("PreToolUse", this.createToolHookPayload("PreToolUse", call, toolCallId, session), {
+      toolName: call.tool,
+      abortSignal,
+    });
+  }
+
+  private async runPostToolUseHook(
+    call: ToolCall,
+    toolCallId: string | undefined,
+    result: ToolExecutionResult<ToolResult>,
+    session: SessionHandle | undefined,
+    abortSignal: AbortSignal | undefined
+  ): Promise<HookRunResult> {
+    return this.runHookEvent(
+      "PostToolUse",
+      this.createToolHookPayload("PostToolUse", call, toolCallId, session, { result }),
+      { toolName: call.tool, abortSignal }
+    );
+  }
+
+  private async runStopHookEvents(
+    session: SessionHandle | undefined,
+    finalMessage: string,
+    status: "completed" | "failed",
+    abortSignal: AbortSignal | undefined
+  ): Promise<AgentRuntimeEvent[]> {
+    const result = await this.runHookEvent(
+      "Stop",
+      this.createBaseHookPayload("Stop", session, {
+        taskCompleteAlias: "TaskComplete",
+        finalMessage,
+        status,
+      }),
+      { abortSignal }
+    );
+
+    return this.hookResultToEvents(result);
+  }
+
+  private async runHookEvent(
+    event: HookRunPayload["event"],
+    payload: HookRunPayload,
+    options: { toolName?: string; abortSignal?: AbortSignal } = {}
+  ): Promise<HookRunResult> {
+    return runTopchesterHooks(this.context, event, payload, options);
+  }
+
+  private createBaseHookPayload(
+    event: HookRunPayload["event"],
+    session: SessionHandle | undefined,
+    extra: Record<string, unknown> = {}
+  ): HookRunPayload {
+    return {
+      hook_event_name: event,
+      event,
+      cwd: this.context.workspaceRoot,
+      workspaceRoot: this.context.workspaceRoot,
+      source: "topchester",
+      ...(session
+        ? {
+            session_id: session.sessionId,
+            sessionId: session.sessionId,
+            session: {
+              sessionId: session.sessionId,
+              rootSessionId: session.metadata.rootSessionId,
+              parentSessionId: session.metadata.parentSessionId,
+              source: session.metadata.source,
+            },
+          }
+        : {}),
+      ...extra,
+    };
+  }
+
+  private createToolHookPayload(
+    event: HookRunPayload["event"],
+    call: ToolCall,
+    toolCallId: string | undefined,
+    session: SessionHandle | undefined,
+    extra: Record<string, unknown> = {}
+  ): HookRunPayload {
+    return this.createBaseHookPayload(event, session, {
+      tool_name: call.tool,
+      tool_input: call.args,
+      tool: {
+        name: call.tool,
+        input: call.args,
+        ...(toolCallId ? { callId: toolCallId } : {}),
+      },
+      ...extra,
+    });
+  }
+
+  private hookResultToEvents(result: HookRunResult): AgentRuntimeEvent[] {
+    return result.messages.map((message) => agentEvent.systemMessage(message));
+  }
+
+  private appendHookContextsToPrompt(prompt: string, event: HookRunPayload["event"], contexts: string[]): string {
+    const hookContext = formatHookContextsForPrompt(event, contexts);
+
+    return hookContext ? `${prompt}\n\n${hookContext}` : prompt;
   }
 
   private async resolveRunCommandApproval(

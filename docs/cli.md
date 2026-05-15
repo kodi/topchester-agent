@@ -78,6 +78,7 @@ Current behavior:
 - In non-interactive output, the command prints a static version of the layout.
 - The coding loop can use workspace-scoped file and command tools: `read_file`, `list_files`, `grep`, `find_file`, `edit_file`, `write_file`, `inspect_command`, `run_validator`, and `run_command`.
 - The coding loop can use structured Git tools: `git_status`, `git_diff`, `git_log`, `git_add`, and `git_commit`.
+- The coding loop runs configured lifecycle hooks from `hooks` config. Command hooks receive JSON on stdin and can add context, block a prompt or tool, or stop a turn. External integrations such as peon-ping are wired as normal command hooks.
 - The coding loop can use `plan_todo` to keep a visible session-only task plan during non-trivial multi-step work. Completed-only `plan_todo` text emitted with a final answer is ignored when no visible plan is open, so accidental closed-plan updates do not render as raw chat text.
 - The coding loop can use `task` to delegate focused read-only exploration or isolated analysis to a child agent session. The parent receives a bounded task result while child events are persisted in the child session log and forwarded as runtime events.
 - `git_status`, `git_diff`, and `git_log` are the preferred path for Git state, diffs, and recent history. `inspect_command` can still inspect read-only Git commands, but it is an orientation fallback rather than the normal Git workflow.
@@ -133,6 +134,7 @@ Options:
 Current behavior:
 
 - Creates a project-local session under `.agents/topchester/sessions/`.
+- Runs configured `SessionStart`, `UserPromptSubmit`, tool, and `Stop` hooks during the run.
 - Emits startup KB status before the prompt runs.
 - Persists user messages and runtime events to the session log.
 - Persists `plan_todo` task-plan events to the session log. Resume restores the latest visible plan without adding task-plan rows to future model context.

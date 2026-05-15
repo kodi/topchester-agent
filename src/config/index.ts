@@ -133,6 +133,58 @@ const commandPolicySchema = z
   })
   .strict();
 
+export const hookEventNames = [
+  "SessionStart",
+  "UserPromptSubmit",
+  "PreToolUse",
+  "PostToolUse",
+  "PreCompact",
+  "Stop",
+] as const;
+
+export type HookEventName = (typeof hookEventNames)[number];
+
+const hookEventAliasMap = {
+  TaskStart: "SessionStart",
+  TaskComplete: "Stop",
+} as const satisfies Record<string, HookEventName>;
+
+const hookTimeoutMsSchema = z.number().int().positive().max(600_000);
+const hookMatcherSchema = z.union([z.string().min(1), z.array(z.string().min(1))]).optional();
+
+const commandHookHandlerSchema = z
+  .object({
+    type: z.literal("command").optional(),
+    command: z.string().min(1),
+    timeoutMs: hookTimeoutMsSchema.optional(),
+    matcher: hookMatcherSchema,
+  })
+  .strict();
+
+const hookHandlerSchema = commandHookHandlerSchema;
+
+const canonicalHooksConfigSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    SessionStart: z.array(hookHandlerSchema).optional(),
+    UserPromptSubmit: z.array(hookHandlerSchema).optional(),
+    PreToolUse: z.array(hookHandlerSchema).optional(),
+    PostToolUse: z.array(hookHandlerSchema).optional(),
+    PreCompact: z.array(hookHandlerSchema).optional(),
+    Stop: z.array(hookHandlerSchema).optional(),
+  })
+  .strict();
+
+const rawHooksConfigSchema = canonicalHooksConfigSchema
+  .extend({
+    TaskStart: z.array(hookHandlerSchema).optional(),
+    TaskComplete: z.array(hookHandlerSchema).optional(),
+  })
+  .strict();
+
+export type HookHandlerConfig = z.infer<typeof hookHandlerSchema>;
+export type HooksConfig = z.infer<typeof canonicalHooksConfigSchema>;
+
 export const topchesterConfigSchema = z.object({
   models: z
     .object({
@@ -154,6 +206,7 @@ export const topchesterConfigSchema = z.object({
     })
     .strict()
     .optional(),
+  hooks: canonicalHooksConfigSchema.optional(),
 });
 
 const rawTopchesterConfigSchema = z.object({
@@ -169,6 +222,7 @@ const rawTopchesterConfigSchema = z.object({
     })
     .strict()
     .optional(),
+  hooks: rawHooksConfigSchema.optional(),
 });
 
 export type TopchesterConfig = z.infer<typeof topchesterConfigSchema>;
@@ -457,6 +511,12 @@ function parseConfigFile(path: string, value: unknown): TopchesterConfig {
 }
 
 function normalizeConfigInput(value: unknown): unknown {
+  const normalizedModels = normalizeModelsConfigInput(value);
+
+  return normalizeHooksConfigInput(normalizedModels);
+}
+
+function normalizeModelsConfigInput(value: unknown): unknown {
   if (!isPlainObject(value) || !isPlainObject(value.models)) {
     return value;
   }
@@ -510,6 +570,33 @@ function normalizeConfigInput(value: unknown): unknown {
       providers,
     },
   };
+}
+
+function normalizeHooksConfigInput(value: unknown): unknown {
+  if (!isPlainObject(value) || !isPlainObject(value.hooks)) {
+    return value;
+  }
+
+  const hooks: Record<string, unknown> = { ...value.hooks };
+
+  for (const [alias, canonical] of Object.entries(hookEventAliasMap)) {
+    const aliasHandlers = hooks[alias];
+
+    if (aliasHandlers === undefined) {
+      continue;
+    }
+
+    const canonicalHandlers = hooks[canonical];
+
+    if (!Array.isArray(aliasHandlers) || (canonicalHandlers !== undefined && !Array.isArray(canonicalHandlers))) {
+      continue;
+    }
+
+    hooks[canonical] = [...(canonicalHandlers ?? []), ...aliasHandlers];
+    delete hooks[alias];
+  }
+
+  return { ...value, hooks };
 }
 
 function normalizeModelRef(
@@ -618,7 +705,8 @@ function deepMerge<T>(base: T, override: T, path: string[] = []): T {
       joinedPath === "ignore.paths" ||
       joinedPath === "tools.commands.allow" ||
       joinedPath === "tools.commands.allowExact" ||
-      joinedPath === "tools.commands.deny"
+      joinedPath === "tools.commands.deny" ||
+      (path.length === 2 && path[0] === "hooks" && hookEventNames.includes(path[1] as HookEventName))
         ? [...base, ...override]
         : override
     ) as T;

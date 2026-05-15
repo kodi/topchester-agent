@@ -306,6 +306,21 @@ Rules match normalized command display strings by exact command or prefix plus a
 
 When an interactive `run_command` request is rejected only because it is not configured, the TUI can approve the exact command once, allow it for the current session, or permanently add it to this repo's `topchester.jsonc` under `tools.commands.allowExact`.
 
+## Hooks
+
+Lifecycle hooks live under `hooks` in the same layered config. Events are `SessionStart`/`TaskStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, and `Stop`/`TaskComplete`.
+
+```jsonc
+{
+  "hooks": {
+    "PreToolUse": [{ "matcher": "run_command", "command": ".topchester/hooks/check-command.sh" }],
+    "Stop": [{ "command": "peon >/dev/null" }],
+  },
+}
+```
+
+Command hooks receive JSON on stdin and may return JSON on stdout with `action: "continue" | "block" | "stop"`, optional `message`, and optional `context`. Integrations such as peon-ping are plain command hooks; redirect stdout for tools that print non-JSON status output. Hook arrays concatenate across config layers.
+
 ## Security Rules
 
 - Prefer `apiKeyEnv` over `apiKey`.

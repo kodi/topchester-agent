@@ -237,3 +237,102 @@ ignore:
 ```
 
 Ignore paths are workspace-relative glob patterns. Absolute paths and `..` traversal are rejected.
+
+## Command Policy
+
+`run_command` is limited to validators and configured command prefixes. Add project-specific allow and deny rules under `tools.commands`:
+
+```jsonc
+{
+  "tools": {
+    "commands": {
+      "allow": ["node scripts/check-fixtures.mjs"],
+      "allowExact": ["node --version"],
+      "deny": ["pnpm publish", "npm publish"],
+    },
+  },
+}
+```
+
+Deny rules win over allow rules. Command rules must be simple command prefixes, not shell syntax, paths, or glob patterns. `allowExact`, `allow`, and `deny` arrays concatenate across config layers.
+
+## Hooks
+
+Hooks let project or user config run small programs at agent lifecycle points. Topchester starts the hook command as a child shell process, writes one JSON payload to stdin, waits for it to finish, and reads an optional JSON response from stdout. Write logs to stderr.
+
+Supported events:
+
+- `SessionStart` / `TaskStart` — a Topchester session starts. `TaskStart` is an alias.
+- `UserPromptSubmit` — the user submits a prompt.
+- `PreToolUse` — before a tool runs.
+- `PostToolUse` — after a tool returns.
+- `PreCompact` — before context compaction. The hook is supported, but V0 has no automatic compaction path yet.
+- `Stop` / `TaskComplete` — the turn finishes. `TaskComplete` is an alias.
+
+Command hook example:
+
+```jsonc
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "command": ".topchester/hooks/check-command.sh",
+        "timeoutMs": 5000,
+      },
+    ],
+  },
+}
+```
+
+Hook payloads include `hook_event_name`, `event`, `cwd`, `workspaceRoot`, `source: "topchester"`, session ids when available, and event-specific fields. Tool hooks include `tool.name`, `tool.input`, `tool.callId`, and `result` on `PostToolUse`.
+
+Command hooks may return:
+
+```jsonc
+{ "action": "continue", "context": "extra model context" }
+{ "action": "block", "message": "Do not run deploy commands from this repo." }
+{ "action": "stop", "message": "Stop after this hook." }
+```
+
+Empty stdout means continue. Invalid JSON, non-zero exit, timeout, or hook process failure is logged and does not stop the agent.
+
+Hook arrays concatenate across config layers in the same load order as `ignore.paths`.
+
+### peon-ping
+
+Use normal command hooks to integrate [peon-ping](https://github.com/PeonPing/peon-ping). Topchester sends its hook payload as JSON on stdin to the configured command. Since peon-ping shell scripts usually print status lines instead of Topchester hook-response JSON, redirect stdout unless you wrap the command and intentionally return JSON to Topchester.
+
+```jsonc
+{
+  "hooks": {
+    "SessionStart": [{ "command": "peon >/dev/null" }],
+    "Stop": [{ "command": "peon >/dev/null" }],
+    "PostToolUse": [{ "matcher": "run_command", "command": "peon >/dev/null" }],
+  },
+}
+```
+
+If your shell only has an interactive alias, set the explicit script command:
+
+```jsonc
+{
+  "hooks": {
+    "Stop": [
+      {
+        "command": "bash /Users/kodi/.claude/hooks/peon-ping/peon.sh >/dev/null",
+      },
+    ],
+  },
+}
+```
+
+For custom event mapping, put the mapping in a wrapper script and configure that script as the hook command:
+
+```jsonc
+{
+  "hooks": {
+    "PreCompact": [{ "command": ".topchester/hooks/peon-resource-limit.sh >/dev/null" }],
+  },
+}
+```

@@ -99,6 +99,11 @@ export class TopchesterTuiShell implements TuiShell {
     if (!isResumed) {
       await persistMessagesWithWarning(session, messages, messages);
     }
+    await this.appendStartupRuntimeEvents(
+      session,
+      messages,
+      (await this.runtime.runSessionStartHooks?.(session, { isResumed })) ?? []
+    );
     const folderName = getFolderName(this.context.workspaceRoot);
     const modelLabel = getModelLabel(this.context);
 
@@ -660,9 +665,36 @@ export class TopchesterTuiShell implements TuiShell {
     this.sessionStartedAt = Date.now();
 
     await persistMessagesWithWarning(session, messages, messages);
+    await this.appendStartupRuntimeEvents(
+      session,
+      messages,
+      (await this.runtime.runSessionStartHooks?.(session, { isResumed: false })) ?? []
+    );
     app.resetForNewSession(messages);
     tui.requestRender();
     await this.checkAgent(app, tui);
+  }
+
+  private async appendStartupRuntimeEvents(
+    session: SessionHandle,
+    messages: ChatMessage[],
+    events: AgentRuntimeEvent[]
+  ): Promise<void> {
+    for (const event of events) {
+      messages.push(...renderRuntimeEvent(event));
+      const payload = runtimeEventToSessionPayload(event);
+
+      if (!payload) {
+        continue;
+      }
+
+      try {
+        await session.append(payload);
+      } catch (error) {
+        messages.push(systemMessage(`Session save failed: ${formatPlainError(error)}`));
+        return;
+      }
+    }
   }
 
   private async applyRuntimeEvents(

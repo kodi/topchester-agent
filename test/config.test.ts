@@ -144,6 +144,60 @@ describe("Topchester config loading", () => {
     ]);
   });
 
+  it("normalizes hook aliases and concatenates hook lists across config layers", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const home = join(root, "home");
+    const workspace = join(root, "workspace");
+    const envConfig = join(root, "env-config.jsonc");
+    process.env.HOME = home;
+    process.env.TOPCHESTER_CONFIG = envConfig;
+    await mkdir(join(home, ".config", "topchester"), { recursive: true });
+    await mkdir(workspace, { recursive: true });
+
+    await writeFile(
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        hooks: {
+          SessionStart: [{ command: ".topchester/hooks/project-start.sh" }],
+        },
+      })
+    );
+    await writeFile(
+      join(home, ".config", "topchester", "config.jsonc"),
+      JSON.stringify({
+        hooks: {
+          TaskStart: [{ command: "topchester-user-start" }],
+        },
+      })
+    );
+    await writeFile(
+      envConfig,
+      JSON.stringify({
+        hooks: {
+          TaskComplete: [{ command: "peon >/dev/null" }],
+        },
+      })
+    );
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(config.hooks?.SessionStart).toEqual([
+      { command: ".topchester/hooks/project-start.sh" },
+      { command: "topchester-user-start" },
+    ]);
+    expect(config.hooks?.Stop).toEqual([{ command: "peon >/dev/null" }]);
+  });
+
+  it("rejects non-command hook handler types", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+    const configPath = join(workspace, "topchester.jsonc");
+    await writeFile(configPath, JSON.stringify({ hooks: { Stop: [{ type: "peonPing" }] } }));
+
+    expect(() => loadTopchesterConfig({ workspaceRoot: workspace })).toThrow("hooks.Stop.0");
+  });
+
   it("rejects bare model choices because /model choices must name a provider", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const workspace = join(root, "workspace");
