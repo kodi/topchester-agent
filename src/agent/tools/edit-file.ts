@@ -6,8 +6,11 @@ import { z } from "zod";
 import { recordAgentFileEdit, type FileEditEvent } from "../../knowledge/session-overlay.js";
 import { enqueueFileMutation } from "./file-mutation-queue.js";
 import {
+  formatProjectInstructionMutationGuardContent,
   formatProjectInstructionRetryContent,
   formatWorkspaceRelativeToolPath,
+  hasExplicitProjectInstructionMutationIntent,
+  isProtectedProjectInstructionTarget,
   resolveToolProjectInstructions,
 } from "./project-instructions.js";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
@@ -56,6 +59,20 @@ export const editFileTool = defineTool({
     'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. expected_current_hash is optional and must be the current/pre-edit hash returned by the latest read_file for that file; never invent it or use a predicted after-edit hash. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_current_hash":"sha256:current-file-hash-from-read_file","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
   argsSchema: editFileArgsSchema,
   execute: async (context, args) => {
+    if (
+      isProtectedProjectInstructionTarget(context.workspaceRoot, args.path) &&
+      !hasExplicitProjectInstructionMutationIntent(context.currentUserMessage, args.path)
+    ) {
+      const relativePath = formatWorkspaceRelativeToolPath(context.workspaceRoot, args.path);
+
+      return {
+        tool: "edit_file",
+        path: relativePath,
+        content: formatProjectInstructionMutationGuardContent("edit_file", relativePath),
+        warning: "Project instruction files require explicit user intent before editing.",
+      };
+    }
+
     const projectInstructions = await resolveToolProjectInstructions(context, { targetPath: args.path });
 
     if (projectInstructions) {

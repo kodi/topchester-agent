@@ -17,6 +17,7 @@ export interface ToolContext {
   permissions?: ToolPermissionView;
   subagents?: SubagentManager;
   projectInstructions?: ProjectInstructionToolState;
+  currentUserMessage?: string;
   eventSink?: (event: import("../events.js").AgentRuntimeEvent) => void | Promise<void>;
   abortSignal?: AbortSignal;
   toolCallId?: string;

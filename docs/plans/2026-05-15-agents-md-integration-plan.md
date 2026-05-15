@@ -417,7 +417,7 @@ Dependencies:
 
 ### Slice 4: Instruction-File Mutation Guard
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Prevent accidental edits to files that control future agent behavior.
 
@@ -437,6 +437,7 @@ Expected output:
 Verification:
 
 - `pnpm test test/tools.test.ts`
+- 2026-05-16: Passed `pnpm test test/tools.test.ts`, `pnpm exec tsgo --noEmit`, `pnpm format`, and focused `pnpm exec oxlint` on touched runtime/tool/test files.
 
 Dependencies:
 
@@ -596,4 +597,4 @@ Docs and smoke:
 
 ## Next Slice
 
-Start with Slice 4. Add explicit user-intent guards for editing `AGENTS.md` and `AGENTS.override.md`.
+Start with Slice 5. Persist instruction source metadata for turns without storing instruction file contents.

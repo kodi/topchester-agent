@@ -41,6 +41,10 @@ export function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult
     return [`Tool result from ${result.tool}${path}${command}:${warning}`, result.content].join("\n");
   }
 
+  if ((result.tool === "edit_file" && !("diff" in result)) || (result.tool === "write_file" && !("hash" in result))) {
+    return [`Tool result from ${result.tool}${path}${command}:${warning}`, result.content].join("\n");
+  }
+
   if (result.tool === "read_file") {
     return [
       `Tool result from ${result.tool}${path}${command}:${warning}`,

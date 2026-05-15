@@ -477,6 +477,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 permissions,
                 subagents,
                 projectInstructions: projectInstructionToolState,
+                currentUserMessage: message,
                 abortSignal,
                 toolCallId: entry.toolCallId,
                 eventSink: (event) => taskEventQueue.push(event),
@@ -581,6 +582,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
               permissions,
               subagents,
               projectInstructions: projectInstructionToolState,
+              currentUserMessage: message,
               abortSignal,
               toolCallId: entry.toolCallId,
             })
@@ -699,6 +701,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             permissions,
             subagents,
             projectInstructions: projectInstructionToolState,
+            currentUserMessage: message,
             abortSignal,
             toolCallId: toolCall.id,
             eventSink: (event) => toolEventQueue.push(event),

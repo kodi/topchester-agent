@@ -400,6 +400,65 @@ describe("agent tools", () => {
     expect(await readFile(join(workspace, "src", "value.txt"), "utf8")).toBe("enabled=true\n");
   });
 
+  it("rejects instruction-file edits without explicit user intent", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await writeFile(join(workspace, "AGENTS.md"), "Keep this rule.\n");
+    const call = parseToolCall(
+      '{"tool":"edit_file","args":{"path":"AGENTS.md","edits":[{"old_text":"Keep this rule.\\n","new_text":"Change this rule.\\n"}]}}'
+    );
+
+    if (!call) {
+      throw new Error("Expected edit_file tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call, {
+      currentUserMessage: "Update the README.",
+      projectInstructions: { shownSourceKeys: new Set(["AGENTS.md"]) },
+    });
+
+    expect(result.content).toContain("edit_file did not change AGENTS.md.");
+    expect(result.warning).toContain("explicit user intent");
+    expect(await readFile(join(workspace, "AGENTS.md"), "utf8")).toBe("Keep this rule.\n");
+  });
+
+  it("allows instruction-file edits when the user explicitly asks for them", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await writeFile(join(workspace, "AGENTS.md"), "Keep this rule.\n");
+    const call = parseToolCall(
+      '{"tool":"edit_file","args":{"path":"AGENTS.md","edits":[{"old_text":"Keep this rule.\\n","new_text":"Change this rule.\\n"}]}}'
+    );
+
+    if (!call) {
+      throw new Error("Expected edit_file tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call, {
+      currentUserMessage: "Update AGENTS.md with the new instruction.",
+      projectInstructions: { shownSourceKeys: new Set(["AGENTS.md"]) },
+    });
+
+    expect(result.content).toContain("Edited AGENTS.md");
+    expect(await readFile(join(workspace, "AGENTS.md"), "utf8")).toBe("Change this rule.\n");
+  });
+
+  it("rejects instruction-file writes without explicit user intent", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const call = parseToolCall('{"tool":"write_file","args":{"path":"AGENTS.override.md","content":"Local rule.\\n"}}');
+
+    if (!call) {
+      throw new Error("Expected write_file tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call, {
+      currentUserMessage: "Create a local note.",
+      projectInstructions: { shownSourceKeys: new Set() },
+    });
+
+    expect(result.content).toContain("write_file did not change AGENTS.override.md.");
+    expect(result.warning).toContain("explicit user intent");
+    await expect(readFile(join(workspace, "AGENTS.override.md"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("executes plan_todo through runtime-provided task-plan state", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
     const taskPlan = createTaskPlanController();

@@ -95,6 +95,8 @@ Interactive startup does two checks:
 1. It checks the configured `agent.fast` model. When the check succeeds, the thread shows `Agent: ready`.
 2. It checks KB path health and updates the status line.
 
+If root `AGENTS.md` or `AGENTS.override.md` instructions are present, startup shows a compact `Project instructions: ...` line. The footer does not add a separate instruction status.
+
 If the model check takes too long, startup skips the check and prints a plain message.
 
 If model config is missing, startup shows a hint to run `/connect openrouter` and then `/model`, or to edit `topchester.jsonc` for shared project choices and `~/.config/topchester/config.jsonc` for personal defaults.
@@ -119,6 +121,8 @@ The agent can use these workspace-scoped tools from the TUI:
 Tool activity appears as compact rows in the thread. These rows come from tool events, so regular system messages are still rendered as system messages even if their text mentions a tool name.
 
 Configured lifecycle hooks run during the same agent loop. Hook feedback appears as normal system messages. A `PreToolUse` hook can block a tool before it runs; the blocked result is shown as the tool row and sent back to the model so it can continue safely. `UserActionRequired` hooks run before interactive approval prompts. External integrations such as peon-ping can play sounds by running through normal command hooks.
+
+`AGENTS.md` and `AGENTS.override.md` are protected because they change future agent behavior. Ask directly to update project instructions, or name the instruction file, when you want the agent to edit one.
 
 When the agent uses `plan_todo`, the current plan is pinned above the prompt instead of repeated as chat prose. It also prints a short transient notice such as `todo plan created`, `todo plan updated`, `todo plan completed`, or `todo plan cleared`. The pinned plan renders only the task items with status-colored `completed`, `in_progress`, and `pending` markers. It hides when empty, caps long plans, is restored from the latest session event on resume, and clears automatically when a new user message starts.
 

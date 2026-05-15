@@ -1,6 +1,11 @@
 import { stat } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve } from "node:path";
-import { formatProjectInstructions, isProjectInstructionPath, resolveProjectInstructions } from "../instructions.js";
+import {
+  formatProjectInstructions,
+  isProjectInstructionPath,
+  PROJECT_INSTRUCTION_FILENAMES,
+  resolveProjectInstructions,
+} from "../instructions.js";
 import { type ProjectInstructionToolResult, type ToolContext } from "./types.js";
 
 export interface ResolveToolProjectInstructionsOptions {
@@ -79,6 +84,37 @@ export function formatProjectInstructionRetryContent(
     "",
     instructions.formatted,
   ].join("\n");
+}
+
+export function formatProjectInstructionMutationGuardContent(toolName: string, targetPath: string): string {
+  return [
+    `${toolName} did not change ${targetPath}.`,
+    `${basename(targetPath)} controls future agent behavior.`,
+    "Ask explicitly to update project instructions or name the instruction file you want changed, then retry if the edit is still appropriate.",
+  ].join("\n");
+}
+
+export function hasExplicitProjectInstructionMutationIntent(message: string | undefined, targetPath: string): boolean {
+  const normalized = message?.toLowerCase() ?? "";
+
+  if (!normalized) {
+    return false;
+  }
+
+  const targetName = basename(targetPath).toLowerCase();
+  const mentionsInstructionFile =
+    PROJECT_INSTRUCTION_FILENAMES.some((name) => normalized.includes(name.toLowerCase())) ||
+    normalized.includes(targetName) ||
+    normalized.includes("project instruction") ||
+    normalized.includes("project instructions");
+  const asksForMutation =
+    /\b(add|adjust|change|create|edit|modify|rewrite|update|write)\b/u.test(normalized) || /\bmake\b/u.test(normalized);
+
+  return mentionsInstructionFile && asksForMutation;
+}
+
+export function isProtectedProjectInstructionTarget(workspaceRoot: string, path: string): boolean {
+  return isProjectInstructionPath(workspaceRoot, path);
 }
 
 export function formatWorkspaceRelativeToolPath(workspaceRoot: string, path: string): string {

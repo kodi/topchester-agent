@@ -77,6 +77,7 @@ Current behavior:
 - In an interactive terminal, the command opens the TUI. See [TUI Guide](./tui.md).
 - In non-interactive output, the command prints a static version of the layout.
 - The coding loop can use workspace-scoped file and command tools: `read_file`, `list_files`, `grep`, `find_file`, `edit_file`, `write_file`, `inspect_command`, `run_validator`, and `run_command`.
+- If `AGENTS.md` or `AGENTS.override.md` exists in the workspace, Topchester loads it as live project instructions. Nested instruction files are loaded when a tool works inside their folder.
 - The coding loop can use structured Git tools: `git_status`, `git_diff`, `git_log`, `git_add`, and `git_commit`.
 - The coding loop runs configured lifecycle hooks from `hooks` config. Command hooks receive JSON on stdin and can add context, block a prompt or tool, or stop a turn. External integrations such as peon-ping are wired as normal command hooks.
 - The coding loop can use `plan_todo` to keep a visible session-only task plan during non-trivial multi-step work. Completed-only `plan_todo` text emitted with a final answer is ignored when no visible plan is open, so accidental closed-plan updates do not render as raw chat text.
@@ -88,6 +89,7 @@ Current behavior:
 - `run_command` runs only validator-classified commands or project commands explicitly allowed by `tools.commands.allow` or `tools.commands.allowExact`. Deny rules win over allow rules. The model prompt still prefers `run_validator` for verification and dedicated tools for reads, edits, and Git.
 - `write_file` creates new UTF-8 files by default. It can create parent directories when explicitly requested, marks the file dirty-known and `needs_sync`, and fails if the target file already exists unless `overwrite: true` is paired with `expected_current_hash` from the latest `read_file` result for that file. The hash is a pre-write stale-read guard, not a predicted after-write hash.
 - `edit_file` remains the targeted edit tool for existing files; `inspect_command` remains read-only orientation and is not used for file creation.
+- `AGENTS.md` and `AGENTS.override.md` control future agent behavior. Topchester edits or writes them only when your current request explicitly asks to update project instructions or names the instruction file.
 
 ## `topchester update`
 
@@ -136,6 +138,7 @@ Current behavior:
 - Creates a project-local session under `.agents/topchester/sessions/`.
 - Runs configured `SessionStart`, `UserPromptSubmit`/`TaskAcknowledge`, tool, `PermissionRequest`/`UserActionRequired`, and `Stop` hooks during the run.
 - Emits startup KB status before the prompt runs.
+- Emits a short project-instruction startup line when root `AGENTS.md` or `AGENTS.override.md` is loaded.
 - Persists user messages and runtime events to the session log.
 - Persists `plan_todo` task-plan events to the session log. Resume restores the latest visible plan without adding task-plan rows to future model context.
 - Persists child `task` sessions separately under the same project-local session root and records parent-child links in session metadata.

@@ -17,6 +17,7 @@ export interface ExecuteToolCallOptions {
   permissions?: ToolPermissionView;
   subagents?: SubagentManager;
   projectInstructions?: ToolContext["projectInstructions"];
+  currentUserMessage?: string;
   eventSink?: (event: AgentRuntimeEvent) => void | Promise<void>;
   abortSignal?: AbortSignal;
   toolCallId?: string;
@@ -41,6 +42,7 @@ export async function executeToolCall(
     permissions: options.permissions,
     subagents: options.subagents,
     projectInstructions: options.projectInstructions,
+    currentUserMessage: options.currentUserMessage,
     eventSink: options.eventSink,
     abortSignal: options.abortSignal,
     toolCallId: options.toolCallId,

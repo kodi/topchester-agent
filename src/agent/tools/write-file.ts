@@ -11,8 +11,11 @@ import {
 } from "../../knowledge/session-overlay.js";
 import { enqueueFileMutation } from "./file-mutation-queue.js";
 import {
+  formatProjectInstructionMutationGuardContent,
   formatProjectInstructionRetryContent,
   formatWorkspaceRelativeToolPath,
+  hasExplicitProjectInstructionMutationIntent,
+  isProtectedProjectInstructionTarget,
   resolveToolProjectInstructions,
 } from "./project-instructions.js";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
@@ -60,6 +63,20 @@ export const writeFileTool = defineTool({
     'write_file: create a new UTF-8 file inside the workspace by default; use edit_file for targeted changes to existing files; pass create_parent_dirs:true only when creating the folder path is intended. Replace an existing whole file only with overwrite:true and expected_current_hash set to the current/pre-write hash returned by the latest read_file for that file; never invent it or use a predicted after-write hash. To create a file, reply with only JSON: {"tool":"write_file","args":{"path":"test/example.test.ts","content":"import { it, expect } from \\"vitest\\";\\n\\nit(\\"works\\", () => {\\n  expect(true).toBe(true);\\n});\\n","create_parent_dirs":true}}',
   argsSchema: writeFileArgsSchema,
   execute: async (context, args) => {
+    if (
+      isProtectedProjectInstructionTarget(context.workspaceRoot, args.path) &&
+      !hasExplicitProjectInstructionMutationIntent(context.currentUserMessage, args.path)
+    ) {
+      const relativePath = formatWorkspaceRelativeToolPath(context.workspaceRoot, args.path);
+
+      return {
+        tool: "write_file",
+        path: relativePath,
+        content: formatProjectInstructionMutationGuardContent("write_file", relativePath),
+        warning: "Project instruction files require explicit user intent before writing.",
+      };
+    }
+
     const projectInstructions = await resolveToolProjectInstructions(context, { targetPath: args.path });
 
     if (projectInstructions) {
