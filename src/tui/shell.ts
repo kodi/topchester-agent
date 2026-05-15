@@ -408,6 +408,39 @@ export function runtimeEventToSessionPayload(event: AgentRuntimeEvent): SessionE
         ...(event.body === undefined ? {} : { body: event.body }),
         actions: event.actions,
       };
+    case "subagent_started":
+      return {
+        kind: "subagent_started",
+        sessionId: event.sessionId,
+        parentSessionId: event.parentSessionId,
+        parentToolCallId: event.parentToolCallId,
+        ...(event.agentProfileId === undefined ? {} : { agentProfileId: event.agentProfileId }),
+        ...(event.title === undefined ? {} : { title: event.title }),
+      };
+    case "subagent_event":
+      return {
+        kind: "subagent_event",
+        sessionId: event.sessionId,
+        parentSessionId: event.parentSessionId,
+        parentToolCallId: event.parentToolCallId,
+        event: event.event as unknown as Record<string, unknown>,
+      };
+    case "subagent_completed":
+      return {
+        kind: "subagent_completed",
+        sessionId: event.sessionId,
+        parentSessionId: event.parentSessionId,
+        parentToolCallId: event.parentToolCallId,
+        ...(event.result === undefined ? {} : { result: event.result }),
+      };
+    case "subagent_failed":
+      return {
+        kind: "subagent_failed",
+        sessionId: event.sessionId,
+        parentSessionId: event.parentSessionId,
+        parentToolCallId: event.parentToolCallId,
+        error: event.error,
+      };
     case "status":
       return {
         kind: "status",

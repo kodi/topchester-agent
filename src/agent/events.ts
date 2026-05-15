@@ -8,7 +8,11 @@ export type AgentRuntimeEvent =
   | AgentToolCallEvent
   | AgentTaskPlanEvent
   | AgentKnowledgeStatusEvent
-  | AgentChoiceEvent;
+  | AgentChoiceEvent
+  | AgentSubagentStartedEvent
+  | AgentSubagentEvent
+  | AgentSubagentCompletedEvent
+  | AgentSubagentFailedEvent;
 
 export interface AgentStatusEvent {
   type: "status";
@@ -52,11 +56,63 @@ export interface AgentChoiceAction {
   value?: string;
 }
 
+export interface AgentSubagentStartedEvent {
+  type: "subagent_started";
+  sessionId: string;
+  parentSessionId: string;
+  parentToolCallId: string;
+  agentProfileId?: string;
+  title?: string;
+}
+
+export interface AgentSubagentEvent {
+  type: "subagent_event";
+  sessionId: string;
+  parentSessionId: string;
+  parentToolCallId: string;
+  event: AgentRuntimeEvent;
+}
+
+export interface AgentSubagentCompletedEvent {
+  type: "subagent_completed";
+  sessionId: string;
+  parentSessionId: string;
+  parentToolCallId: string;
+  result?: string;
+}
+
+export interface AgentSubagentFailedEvent {
+  type: "subagent_failed";
+  sessionId: string;
+  parentSessionId: string;
+  parentToolCallId: string;
+  error: string;
+}
+
 export interface AgentChoiceOptions {
   tone: AgentChoiceEvent["tone"];
   title: string;
   body?: string;
   actions: AgentChoiceAction[];
+}
+
+export interface AgentSubagentEventBaseOptions {
+  sessionId: string;
+  parentSessionId: string;
+  parentToolCallId: string;
+}
+
+export interface AgentSubagentStartedOptions extends AgentSubagentEventBaseOptions {
+  agentProfileId?: string;
+  title?: string;
+}
+
+export interface AgentSubagentCompletedOptions extends AgentSubagentEventBaseOptions {
+  result?: string;
+}
+
+export interface AgentSubagentFailedOptions extends AgentSubagentEventBaseOptions {
+  error: string;
 }
 
 export const ABORT_CHOICE_VALUE = "__topchester_abort__";
@@ -93,8 +149,30 @@ export const agentEvent = {
   choice(options: AgentChoiceOptions): AgentChoiceEvent {
     return { type: "choice", ...options };
   },
+
+  subagentStarted(options: AgentSubagentStartedOptions): AgentSubagentStartedEvent {
+    return { type: "subagent_started", ...options };
+  },
+
+  subagentEvent(options: AgentSubagentEventBaseOptions, event: AgentRuntimeEvent): AgentSubagentEvent {
+    return { type: "subagent_event", ...options, event };
+  },
+
+  subagentCompleted(options: AgentSubagentCompletedOptions): AgentSubagentCompletedEvent {
+    return { type: "subagent_completed", ...options };
+  },
+
+  subagentFailed(options: AgentSubagentFailedOptions): AgentSubagentFailedEvent {
+    return { type: "subagent_failed", ...options };
+  },
 } as const;
 
 export function choiceAction(label: string, value?: string): AgentChoiceAction {
   return value === undefined ? { label } : { label, value };
+}
+
+export function isSubagentRuntimeEvent(
+  event: AgentRuntimeEvent
+): event is AgentSubagentStartedEvent | AgentSubagentEvent | AgentSubagentCompletedEvent | AgentSubagentFailedEvent {
+  return event.type.startsWith("subagent_");
 }

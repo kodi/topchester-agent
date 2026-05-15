@@ -37,6 +37,11 @@ export function renderRuntimeEvent(event: AgentRuntimeEvent): ChatMessage[] {
       ];
     case "task_plan":
       return [];
+    case "subagent_started":
+    case "subagent_event":
+    case "subagent_completed":
+    case "subagent_failed":
+      return [];
     case "status":
       return [];
   }

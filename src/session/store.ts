@@ -57,6 +57,8 @@ export async function createSession(workspaceRoot: string): Promise<SessionHandl
   const metadata: SessionMetadata = {
     version: SESSION_METADATA_VERSION,
     sessionId,
+    rootSessionId: sessionId,
+    source: "user",
     workspaceRoot,
     createdAt,
     updatedAt: createdAt,
@@ -176,6 +178,11 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
         };
         break;
       case "knowledge_status":
+        break;
+      case "subagent_started":
+      case "subagent_event":
+      case "subagent_completed":
+      case "subagent_failed":
         break;
       case "choice":
         messages.push({

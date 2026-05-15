@@ -155,7 +155,7 @@ Likely updates:
 
 ## Slice 1: Define Event And Session Tree Types
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal:
 
@@ -185,6 +185,21 @@ Verification:
 - Focused session schema tests.
 - Existing TUI render tests still pass without child events.
 - `pnpm check`.
+
+Completed:
+
+- Added runtime subagent lifecycle event types, factories, and a subagent-event predicate.
+- Added optional session-tree metadata fields with backwards-compatible defaults for old metadata.
+- Added durable subagent lifecycle payload schemas and payload constructors.
+- Kept current TUI/session rehydration behavior neutral for child events until later rendering slices.
+- Updated session docs with metadata fields and compatibility rules.
+
+Verified:
+
+- `pnpm test -- test/session.test.ts test/tui.render.test.ts`
+- `pnpm typecheck`
+- `pnpm check`
+- `mise run local-ci`
 
 ## Slice 2: Refactor Runtime To A First-Class Event Stream
 
