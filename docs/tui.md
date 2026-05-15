@@ -99,6 +99,7 @@ The agent can use these workspace-scoped tools from the TUI:
 - `edit_file` — edit existing UTF-8 files with exact `old_text` and `new_text` replacements.
 - `inspect_command` — run a small allowlisted set of read-only discovery commands.
 - `run_validator` — run a strict test, lint, typecheck, build, check, format-check, or smoke command.
+- `run_command` — run a validator or project command allowed by command policy.
 
 Tool activity appears as compact rows in the thread. These rows come from tool events, so regular system messages are still rendered as system messages even if their text mentions a tool name.
 
@@ -114,6 +115,7 @@ read_file: README.md
 edit_file: src/example.ts (changed +1/-1)
 inspect_command: pwd && rg --files docs/plans | head -20
 run_validator: pnpm test test/tools.test.ts (exit 0, 2.1s)
+run_command: node scripts/check-fixtures.mjs (exit 0, 0.7s)
 ```
 
 ## Progress And Busy States

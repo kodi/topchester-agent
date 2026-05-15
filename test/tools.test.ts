@@ -148,6 +148,17 @@ describe("agent tools", () => {
     });
   });
 
+  it("parses run_command tool calls from JSON", () => {
+    expect(parseToolCall('{"tool":"run_command","args":{"command":"node scripts/check-fixtures.mjs"}}')).toEqual({
+      tool: "run_command",
+      args: {
+        command: "node scripts/check-fixtures.mjs",
+        workdir: ".",
+        timeout_ms: 30_000,
+      },
+    });
+  });
+
   it("parses the first tool call when the model emits concatenated tool JSON", () => {
     expect(
       parseToolCall(
@@ -390,6 +401,7 @@ describe("agent tools", () => {
       'git_commit: commit only after the user explicitly asks and staged paths exactly match expected_staged_paths. To use it, reply with only JSON: {"tool":"git_commit","args":{"message":"Add feature","expected_staged_paths":["src/example.ts"]}}',
       'inspect_command: run a safe read-only discovery command inside the workspace for quick orientation; prefer read_file, list_files, grep, and find_file for exact file tasks, and do not use it for builds, tests, installs, network, shell scripts, or edits. To use it, reply with only JSON: {"tool":"inspect_command","args":{"command":"pwd && rg --files docs/plans | head -20","workdir":".","timeout_ms":10000}}',
       'run_validator: run a strict verification command after edits, such as tests, lint, typecheck, build, check, format-check, or smoke; failed exits are useful evidence and should be inspected before retrying. To use it, reply with only JSON: {"tool":"run_validator","args":{"command":"pnpm test test/tools.test.ts","validator":"test","workdir":".","timeout_ms":120000}}',
+      'run_command: run a project command only when strict policy allows it; prefer run_validator for tests, lint, typecheck, build, check, format-check, and smoke. To use it, reply with only JSON: {"tool":"run_command","args":{"command":"node scripts/check-fixtures.mjs","workdir":".","timeout_ms":30000}}',
     ]);
   });
 
@@ -438,6 +450,8 @@ describe("agent tools", () => {
     expect(prompt).toContain("After code edits, use run_validator when there is a relevant test");
     expect(prompt).toContain("Failed run_validator exits are evidence");
     expect(prompt).toContain("Do not use inspect_command for tests, builds, lint, typecheck");
+    expect(prompt).toContain("Use run_command only for commands allowed by project command policy");
+    expect(prompt).toContain("Do not use run_command for installs, deploys, network commands");
   });
 
   it("tells the model inspect_command is only for read-only orientation", () => {

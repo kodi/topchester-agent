@@ -96,6 +96,14 @@ export {
   type InspectCommandToolResult,
 } from "./tools/inspect-command.js";
 export {
+  runCommandArgsSchema,
+  runCommandTool,
+  runWorkspaceCommand,
+  type RunCommandArgs,
+  type RunCommandToolCall,
+  type RunCommandToolResult,
+} from "./tools/run-command.js";
+export {
   runValidatorArgsSchema,
   runValidatorCommand,
   runValidatorTool,

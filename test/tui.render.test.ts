@@ -467,6 +467,17 @@ describe("TUI rendering", () => {
       expect(
         renderChatMessage(
           toolCallMessage(
+            {
+              tool: "run_command",
+              args: { command: "node scripts/check-fixtures.mjs", workdir: ".", timeout_ms: 30000 },
+            },
+            "run_command: node scripts/check-fixtures.mjs (exit 0, 0.7s)"
+          )
+        )
+      ).toContain("   \u001b[90mrun_command: node scripts/check-fixtures.mjs (exit 0, 0.7s)\u001b[0m");
+      expect(
+        renderChatMessage(
+          toolCallMessage(
             { tool: "git_diff", args: { scope: "all", include_untracked: true, context_lines: 3, max_bytes: 40000 } },
             "git_diff: all (2 files, truncated)"
           )

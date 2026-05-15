@@ -287,6 +287,64 @@ describe("command policy", () => {
       reason: "command policy rejected 'node scripts/other.mjs' because it is not a validator or configured command.",
     });
   });
+
+  it("executes configured run_command commands", async () => {
+    const workspace = await createWorkspace({ scripts: {} });
+    const bin = await mkdtemp(join(tmpdir(), "topchester-run-command-bin-"));
+    await writeExecutable(
+      join(bin, "node"),
+      "printf 'configured command ran: %s %s\\n' \"$1\" \"$2\"\nprintf 'configured stderr\\n' >&2"
+    );
+    const call = parseToolCall(
+      '{"tool":"run_command","args":{"command":"node scripts/check-fixtures.mjs --quick","timeout_ms":10000}}'
+    );
+
+    if (!call) {
+      throw new Error("Expected run_command tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call, {
+      pathEnv: bin,
+      config: {
+        tools: {
+          commands: {
+            allow: ["node scripts/check-fixtures.mjs"],
+            deny: [],
+          },
+        },
+      },
+    });
+
+    expect(isToolErrorResult(result)).toBe(false);
+    expect(result).toMatchObject({
+      tool: "run_command",
+      command: "node scripts/check-fixtures.mjs --quick",
+      exitCode: 0,
+      stdout: "configured command ran: scripts/check-fixtures.mjs --quick\n",
+      stderr: "configured stderr\n",
+      policy: {
+        kind: "configured_command",
+        matchedRule: "node scripts/check-fixtures.mjs",
+      },
+      workspaceMayHaveChanged: true,
+    });
+  });
+
+  it("returns a tool error for unconfigured run_command commands", async () => {
+    const workspace = await createWorkspace({ scripts: {} });
+    const call = parseToolCall('{"tool":"run_command","args":{"command":"node scripts/unknown.mjs"}}');
+
+    if (!call) {
+      throw new Error("Expected run_command tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call);
+
+    expect(result).toMatchObject({
+      tool: "run_command",
+      error: "command policy rejected 'node scripts/unknown.mjs' because it is not a validator or configured command.",
+    });
+  });
 });
 
 async function expectAllowed(workspace: string, command: string, validator: string, args: string[]): Promise<void> {

@@ -82,6 +82,12 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
           "- Do not use inspect_command for tests, builds, lint, typecheck, format checks, or smoke checks. Use run_validator for verification.",
         ]
       : []),
+    ...(canUseTool("run_command")
+      ? [
+          "- Use run_command only for commands allowed by project command policy. Prefer dedicated read, edit, Git, and validator tools when they fit.",
+          "- Do not use run_command for installs, deploys, network commands, destructive commands, interactive commands, file reads, file writes, Git inspection, or validation when run_validator can do it.",
+        ]
+      : []),
     ...(canUseTool("edit_file") && canUseTool("read_file")
       ? ["- Use read_file before editing a file so your edit is based on current file content and hash metadata."]
       : []),

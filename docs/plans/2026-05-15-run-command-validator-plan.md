@@ -820,7 +820,20 @@ Dependencies:
 
 ### Slice 7: `run_command` Tool
 
-Status: `[ ]` Not started
+Status: `[x]` Completed
+
+Completed in Slice 7:
+
+- Added and registered `run_command` with config-backed policy, validator fallback, shared process execution, structured metadata, compact TUI labels, and debug/trace-safe logging summaries.
+- Passed resolved Topchester config into tool execution so project command policy is available at runtime.
+- Updated prompt and docs so models prefer `run_validator` and dedicated tools when available.
+- Added tests for parsing, configured execution, unknown-command rejection, prompt/registry lines, TUI labels, and logging.
+
+Verification:
+
+```sh
+pnpm test test/run-command-tool.test.ts test/tools.test.ts test/commands.test.ts test/tui.render.test.ts test/logging.test.ts
+```
 
 Goal: Register `run_command` for strictly allowed project commands.
 

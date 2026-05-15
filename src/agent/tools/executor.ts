@@ -5,10 +5,12 @@ import { getToolDefinition, isToolName, type ToolCall, type ToolResult } from ".
 import { type ToolDefinition, type ToolContext, type ToolExecutionResult } from "./types.js";
 import { type Logger } from "pino";
 import { type TaskPlanController } from "../task-plan.js";
+import { type TopchesterConfig } from "../../config/index.js";
 
 export interface ExecuteToolCallOptions {
   pathEnv?: string;
   logger?: Logger;
+  config?: TopchesterConfig;
   taskPlan?: TaskPlanController;
   profile?: AgentProfile;
   permissions?: ToolPermissionView;
@@ -30,6 +32,7 @@ export async function executeToolCall(
     workspaceRoot,
     pathEnv: options.pathEnv,
     logger: options.logger,
+    config: options.config,
     taskPlan: options.taskPlan,
     profile: options.profile,
     permissions: options.permissions,
@@ -132,6 +135,14 @@ function summarizeToolArgs(call: ToolCall): unknown {
   }
 
   if (call.tool !== "edit_file") {
+    if (call.tool === "run_command") {
+      return {
+        command: call.args.command,
+        workdir: call.args.workdir,
+        timeoutMs: call.args.timeout_ms,
+      };
+    }
+
     if (call.tool === "run_validator") {
       return {
         command: call.args.command,
@@ -175,6 +186,21 @@ function summarizeToolResult(result: ToolResult): Record<string, unknown> {
   }
 
   if (result.tool === "run_validator") {
+    return {
+      cwd: result.cwd,
+      command: result.command,
+      exitCode: result.exitCode,
+      durationMs: result.durationMs,
+      timedOut: result.timedOut,
+      truncated: result.truncated,
+      policy: result.policy,
+      stdoutLength: result.stdout.length,
+      stderrLength: result.stderr.length,
+      workspaceMayHaveChanged: result.workspaceMayHaveChanged,
+    };
+  }
+
+  if (result.tool === "run_command") {
     return {
       cwd: result.cwd,
       command: result.command,

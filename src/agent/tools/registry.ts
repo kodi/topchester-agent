@@ -6,6 +6,7 @@ import { inspectCommandTool } from "./inspect-command.js";
 import { listFilesTool } from "./list-files.js";
 import { planTodoTool } from "./plan-todo.js";
 import { readFileTool } from "./read-file.js";
+import { runCommandTool } from "./run-command.js";
 import { runValidatorTool } from "./run-validator.js";
 import { taskTool } from "./task.js";
 import { type ToolCallForDefinition, type ToolResultForDefinition } from "./types.js";
@@ -27,6 +28,7 @@ export const toolRegistry = {
   [gitCommitTool.name]: gitCommitTool,
   [inspectCommandTool.name]: inspectCommandTool,
   [runValidatorTool.name]: runValidatorTool,
+  [runCommandTool.name]: runCommandTool,
 } as const;
 
 export type ToolName = keyof typeof toolRegistry;

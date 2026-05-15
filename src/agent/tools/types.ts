@@ -3,11 +3,13 @@ import { type Logger } from "pino";
 import { type TaskPlanController } from "../task-plan.js";
 import { type AgentProfile, type ToolPermissionView } from "../profiles.js";
 import { type SubagentManager } from "../subagents.js";
+import { type TopchesterConfig } from "../../config/index.js";
 
 export interface ToolContext {
   workspaceRoot: string;
   pathEnv?: string;
   logger?: Logger;
+  config?: TopchesterConfig;
   taskPlan?: TaskPlanController;
   profile?: AgentProfile;
   permissions?: ToolPermissionView;

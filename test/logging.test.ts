@@ -207,6 +207,62 @@ describe("logging", () => {
       expect(logText).not.toContain("SECRET_VALIDATOR_OUTPUT");
     });
   });
+
+  it("logs run_command metadata without debug-level command output", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-logging-"));
+    const bin = await mkdtemp(join(tmpdir(), "topchester-logging-bin-"));
+    await writeFile(join(workspace, "package.json"), "{}\n");
+    await writeExecutable(join(bin, "node"), "printf 'SECRET_COMMAND_OUTPUT\\n'\nexit 0");
+
+    await withEnv({ TOPCHESTER_LOG_LEVEL: "debug", TOPCHESTER_LOG_FILE: "" }, async () => {
+      const loggerInfo = createTopchesterLogger(workspace);
+      const call = parseToolCall('{"tool":"run_command","args":{"command":"node scripts/check-fixtures.mjs"}}');
+
+      if (!call) {
+        throw new Error("Expected run_command tool call to parse.");
+      }
+
+      await executeToolCall(workspace, call, {
+        logger: loggerInfo.logger,
+        pathEnv: bin,
+        config: {
+          tools: {
+            commands: {
+              allow: ["node scripts/check-fixtures.mjs"],
+              deny: [],
+            },
+          },
+        },
+      });
+
+      const logFilePath = loggerInfo.logFilePath;
+
+      if (!logFilePath) {
+        throw new Error("Expected logger to create a log file path.");
+      }
+
+      const logText = await readFile(logFilePath, "utf8");
+      const logLines = logText
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+      expect(logLines).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "tool_result",
+            tool: "run_command",
+            command: "node scripts/check-fixtures.mjs",
+            exitCode: 0,
+            policy: expect.objectContaining({ kind: "configured_command" }),
+            stdoutLength: 22,
+            stderrLength: 0,
+          }),
+        ])
+      );
+      expect(logText).not.toContain("SECRET_COMMAND_OUTPUT");
+    });
+  });
 });
 
 async function withEnv(env: Record<string, string>, run: () => Promise<void>): Promise<void> {

@@ -181,6 +181,7 @@ Status legend:
 - [x] Add workspace-scoped `write_file` for create-by-default UTF-8 file writes
 - [x] Add workspace-scoped `inspect_command` for read-only repo orientation through a narrow allowlist
 - [x] Add workspace-scoped `run_validator` for strict tests, lint, typecheck, build, check, format-check, and smoke verification
+- [x] Add workspace-scoped `run_command` for validator or configured project commands
 - [x] Add workspace-scoped `git_status`, `git_diff`, and `git_log` for structured Git inspection
 - [x] Add guarded `git_add` for explicit-path staging after current status acknowledgement
 - [x] Add guarded `git_commit` for exact staged-path commits when the user explicitly asks
