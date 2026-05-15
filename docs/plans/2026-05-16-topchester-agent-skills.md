@@ -517,7 +517,7 @@ Dependencies: Slices 1-2.
 
 ### Slice 4: Built-In Skills Packaging
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Ship a small read-only built-in skill set and ensure package artifacts include them.
 
@@ -547,6 +547,14 @@ Verification:
 
 ```sh
 pnpm test
+pnpm pack --dry-run
+```
+
+Actual verification:
+
+```sh
+pnpm test test/skills.test.ts
+pnpm typecheck
 pnpm pack --dry-run
 ```
 
@@ -773,7 +781,8 @@ Do not ship without verifying:
 - 2026-05-16: Slice 1 added `src/skills` core types, frontmatter metadata parsing, deterministic root ordering, and focused tests.
 - 2026-05-16: Slice 2 added filesystem root scanning, linked-file discovery, duplicate resolution, and active/shadowed descriptor tests.
 - 2026-05-16: Slice 3 added a cached skills service, `skills_list` and `skill_view` model tools, profile/tool-registry integration, traversal rejection for linked skill files, and focused service/tool tests.
+- 2026-05-16: Slice 4 added five built-in skills under `skills/`, included them in package files, verified built-in discovery and workspace override behavior, and confirmed `pnpm pack --dry-run` includes `skills/**/SKILL.md`.
 
 ## Next Slice
 
-Start with Slice 4: Built-In Skills Packaging.
+Start with Slice 5: Slash Commands And Activation Events.

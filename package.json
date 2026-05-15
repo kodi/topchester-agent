@@ -12,7 +12,8 @@
     "topchester": "dist/cli.mjs"
   },
   "files": [
-    "dist"
+    "dist",
+    "skills"
   ],
   "type": "module",
   "scripts": {

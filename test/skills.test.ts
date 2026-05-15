@@ -193,4 +193,71 @@ describe("skills", () => {
       "Linked skill file path stays outside references."
     );
   });
+
+  it("discovers built-in package skills", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-skills-workspace-"));
+    const service = createSkillsService({
+      workspaceRoot: workspace,
+      homeDir: join(workspace, "home"),
+      packageRoot: process.cwd(),
+    });
+
+    const skills = await service.listSkills();
+
+    expect(skills.active).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "code-review",
+          source: "builtin",
+          description: "Review code for correctness, maintainability, security, and project fit.",
+        }),
+        expect.objectContaining({
+          name: "systematic-debugging",
+          source: "builtin",
+        }),
+        expect.objectContaining({
+          name: "test-driven-development",
+          source: "builtin",
+        }),
+        expect.objectContaining({
+          name: "plan",
+          source: "builtin",
+        }),
+        expect.objectContaining({
+          name: "repo-orientation",
+          source: "builtin",
+        }),
+      ])
+    );
+  });
+
+  it("lets workspace skills override built-in skills", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-skills-workspace-"));
+    await mkdir(join(workspace, ".agents", "skills", "code-review"), { recursive: true });
+    await writeFile(
+      join(workspace, ".agents", "skills", "code-review", "SKILL.md"),
+      ["---", "name: code-review", "description: Workspace review.", "---", "", "# Workspace Review", ""].join("\n")
+    );
+
+    const service = createSkillsService({
+      workspaceRoot: workspace,
+      homeDir: join(workspace, "home"),
+      packageRoot: process.cwd(),
+    });
+    const skills = await service.listSkills();
+
+    expect(skills.active.find((skill) => skill.name === "code-review")).toMatchObject({
+      source: "workspace-neutral",
+      description: "Workspace review.",
+    });
+    expect(skills.shadowed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "code-review",
+          source: "builtin",
+          shadowed: true,
+        }),
+      ])
+    );
+  });
 });
