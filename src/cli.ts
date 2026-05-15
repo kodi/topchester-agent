@@ -75,21 +75,6 @@ program
   });
 
 program
-  .command("update")
-  .alias("upgrade")
-  .description("update Topchester with the package manager that installed it")
-  .argument("[target]", "version or npm dist tag to install", "latest")
-  .action(async (target: string) => {
-    try {
-      const command = await runSelfUpdate({ target });
-      console.log(formatSelfUpdateSuccess(command).join("\n"));
-    } catch (error) {
-      console.error(formatStartupError(error));
-      process.exitCode = 1;
-    }
-  });
-
-program
   .command("run")
   .description("run one prompt or slash command without opening the TUI")
   .argument("<prompt...>", "prompt text or slash command")
@@ -228,6 +213,21 @@ kbCommand
     );
 
     console.log(formatKnowledgeCompileStatusResult(result, { formatSyncStatus: formatDryRunSyncStatus }).join("\n"));
+  });
+
+program
+  .command("update")
+  .alias("upgrade")
+  .description("update Topchester with the package manager that installed it")
+  .argument("[target]", "version or npm dist tag to install", "latest")
+  .action(async (target: string) => {
+    try {
+      const command = await runSelfUpdate({ target });
+      console.log(formatSelfUpdateSuccess(command).join("\n"));
+    } catch (error) {
+      console.error(formatStartupError(error));
+      process.exitCode = 1;
+    }
   });
 
 await program.parseAsync();

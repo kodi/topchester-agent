@@ -12,7 +12,6 @@ topchester --resume latest
 topchester run "Edit greeting.txt and change Hello to Goodbye."
 topchester run /kb status
 topchester search "status bar"
-topchester update
 
 topchester kb init
 topchester kb sync
@@ -41,7 +40,6 @@ On startup, Topchester creates the user config folder `~/.config/topchester/` if
 | Command                 | Purpose                                                  |
 | ----------------------- | -------------------------------------------------------- |
 | `topchester`            | Start the interactive coding agent.                      |
-| `topchester update`     | Update Topchester with npm, pnpm, or bun.                |
 | `topchester run`        | Run one prompt or slash command without opening the TUI. |
 | `topchester search`     | Search compiled L1 file knowledge.                       |
 | `topchester dev`        | Print local development startup details.                 |
@@ -52,6 +50,7 @@ On startup, Topchester creates the user config folder `~/.config/topchester/` if
 | `topchester kb sync`    | Build or update L1 entries for non-clean files.          |
 | `topchester kb reset`   | Delete the local knowledge base and cache.               |
 | `topchester kb status`  | Show files that are not current in the knowledge base.   |
+| `topchester update`     | Update Topchester with npm, pnpm, or bun.                |
 
 ## `topchester`
 
