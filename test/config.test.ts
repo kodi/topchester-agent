@@ -331,7 +331,7 @@ describe("Topchester config loading", () => {
     });
   });
 
-  it("does not replace an explicitly configured OpenRouter provider with shortcut defaults", async () => {
+  it("adds attribution defaults to explicitly configured OpenRouter providers", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
@@ -346,6 +346,7 @@ describe("Topchester config loading", () => {
         "      baseURL: https://custom-openrouter.example/v1",
         "      apiKeyEnv: CUSTOM_OPENROUTER_KEY",
         "      supportsStructuredOutputs: false",
+        "      service_tier: flex",
         "      toolProtocol: native",
         "      openRouterToolRouting: off",
         "      headers:",
@@ -360,10 +361,43 @@ describe("Topchester config loading", () => {
       baseURL: "https://custom-openrouter.example/v1",
       apiKeyEnv: "CUSTOM_OPENROUTER_KEY",
       supportsStructuredOutputs: false,
+      service_tier: "flex",
       toolProtocol: "native",
       openRouterToolRouting: "off",
       headers: {
+        "HTTP-Referer": "https://topchester.com",
+        "X-Title": "Topchester",
         "X-Test": "custom",
+      },
+    });
+  });
+
+  it("preserves explicit OpenRouter attribution header overrides", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      join(workspace, "topchester.yaml"),
+      [
+        "models:",
+        "  default: openrouter/google/gemini-3.1-flash-lite",
+        "  providers:",
+        "    openrouter:",
+        "      type: openai-compatible",
+        "      baseURL: https://openrouter.ai/api/v1",
+        "      apiKeyEnv: OPENROUTER_API_KEY",
+        "      headers:",
+        "        HTTP-Referer: https://example.com",
+        "        X-Title: Custom App",
+      ].join("\n")
+    );
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(config.models?.providers?.openrouter).toMatchObject({
+      headers: {
+        "HTTP-Referer": "https://example.com",
+        "X-Title": "Custom App",
       },
     });
   });
@@ -455,6 +489,7 @@ describe("Topchester config loading", () => {
         "      baseURL: https://openrouter.ai/api/v1",
         "      apiKeyEnv: OPENROUTER_API_KEY",
         "      supportsStructuredOutputs: true",
+        "      service_tier: flex",
         "      toolProtocol: auto",
         "      openRouterToolRouting: force",
         "      headers:",
@@ -487,8 +522,14 @@ describe("Topchester config loading", () => {
     expect(config.models?.providers?.openrouter).toMatchObject({
       baseURL: "https://openrouter.ai/api/v1",
       apiKeyEnv: "OPENROUTER_API_KEY",
+      service_tier: "flex",
       toolProtocol: "auto",
       openRouterToolRouting: "force",
+      headers: {
+        "HTTP-Referer": "https://topchester.com",
+        "X-Title": "Topchester",
+        "X-Test": "custom",
+      },
     });
     expect(config.models?.providers?.ollama).toMatchObject({
       baseURL: "http://localhost:11434/v1",

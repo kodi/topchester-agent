@@ -6,10 +6,12 @@ import { inspectCommandTool } from "./inspect-command.js";
 import { listFilesTool } from "./list-files.js";
 import { planTodoTool } from "./plan-todo.js";
 import { readFileTool } from "./read-file.js";
+import { taskTool } from "./task.js";
 import { type ToolCallForDefinition, type ToolResultForDefinition } from "./types.js";
 import { writeFileTool } from "./write-file.js";
 
 export const toolRegistry = {
+  [taskTool.name]: taskTool,
   [planTodoTool.name]: planTodoTool,
   [readFileTool.name]: readFileTool,
   [listFilesTool.name]: listFilesTool,
@@ -38,6 +40,22 @@ export function getToolDefinition<Name extends ToolName>(name: Name): (typeof to
   return toolRegistry[name];
 }
 
-export function getToolPromptLines(): string[] {
-  return Object.values(toolRegistry).map((tool) => tool.prompt);
+export function getToolPromptLines(filter?: (toolName: ToolName) => boolean): string[] {
+  return getToolDefinitionsForPermissions(filter).map((tool) => tool.prompt);
+}
+
+export function getToolDefinitionsForPermissions(filter?: (toolName: ToolName) => boolean): RegisteredTool[] {
+  return Object.entries(toolRegistry)
+    .filter(([name]) => filter?.(name as ToolName) ?? true)
+    .map(([, tool]) => tool);
+}
+
+export function isParallelSafeToolName(name: string): name is ToolName {
+  if (!isToolName(name)) {
+    return false;
+  }
+
+  const definition = toolRegistry[name];
+
+  return Boolean(definition.parallelSafe && !definition.mutatesWorkspace && !definition.requiresExclusiveWorkspace);
 }

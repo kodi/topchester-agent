@@ -229,9 +229,14 @@ The core runtime should expose a small command/event boundary:
 client command
   -> runtime command handler
   -> KB-aware agent loop
-  -> typed runtime events
+  -> typed runtime event stream
   -> TUI, CLI, GUI, IDE, or session log consumer
 ```
+
+For chat turns, `submitMessageStream(...)` is the primary in-process contract:
+clients consume an `AsyncIterable` of runtime events as the model and tools
+progress. `submitMessage(...)` remains as a compatibility collector for callers
+that still need the completed event array or the older callback shape.
 
 Initial command types:
 
@@ -251,11 +256,40 @@ Initial event types:
 - user choice requested,
 - turn finished or failed.
 
-This is enough structure to keep rendering code out of the runtime and runtime policy out of rendering code.
+This is enough structure to keep rendering code out of the runtime and runtime policy out of rendering code. Stream consumers should persist or render events as they arrive; they should not own the agent loop.
 
 Do not add a big global event bus in V0. A global bus can make small apps feel clean at first, but it hides ownership when every module can publish anything. Start with typed runtime events and explicit subscribers. The session event log should be the durable event stream; the in-process event path should stay narrow and boring.
 
 If plugins, background jobs, or multiple clients need fan-out later, add a scoped event hub around the runtime/session boundary. Keep events named, versioned, and tied to the session log shape.
+
+## Agent Profiles And Tool Permissions
+
+Runtime turns execute under an agent profile. The primary profile uses the normal
+model slot and can see the full registered tool set. Subagent profiles can add
+prompt instructions, choose a model slot, and narrow the tool set.
+
+Tool permissions are enforced twice:
+
+- prompt/model schema filtering hides denied tools from the model-facing tool list;
+- execution-time checks reject denied tools even if a model emits one anyway.
+
+Permission composition is monotonic for subagents: a child profile can reduce
+the parent permission view, but parent-denied tools remain denied and cannot be
+reintroduced by the child profile.
+
+The `task` tool is the first subagent entrypoint. It creates a real child
+session, runs the delegated prompt under a subagent profile, forwards child
+runtime events to the parent stream, and returns one bounded result to the
+parent model.
+
+Tool definitions can opt into parallel scheduling with metadata:
+
+- `parallelSafe` marks tools that may run alongside other safe tools.
+- `mutatesWorkspace` and `requiresExclusiveWorkspace` keep write, Git mutation, command, and unknown tools sequential by default.
+- `resourceKeys(args)` gives future schedulers a stable conflict key, such as a file path or Git scope.
+
+Only explicitly read-only tools are marked parallel-safe initially. Unknown or
+unmarked tools remain sequential.
 
 ## Future GUI / IDE Path
 

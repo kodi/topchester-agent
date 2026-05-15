@@ -11,6 +11,7 @@ import {
   parseSlashCommand,
 } from "../src/agent/commands.js";
 import { TopchesterAgentRuntime } from "../src/agent/runtime.js";
+import { createSession, listChildSessions, loadSession } from "../src/session/store.js";
 
 describe("slash commands", () => {
   it("parses slash commands and arguments", () => {
@@ -500,6 +501,247 @@ describe("slash commands", () => {
       { type: "status", status: "ready" },
     ]);
     expect(JSON.stringify(events)).not.toContain("checking local context");
+  });
+
+  it("collects submitMessage results from the runtime stream path", async () => {
+    function runtimeWithFinalMessage(workspace: string): TopchesterAgentRuntime {
+      return new TopchesterAgentRuntime({
+        ...createTestContext(workspace),
+        modelGateway: {
+          async generateAgentStep() {
+            return {
+              text: "Done.",
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+              toolCalls: [],
+              toolProtocol: "text-json" as const,
+              protocolAttempts: [],
+              providerRejectedTools: false,
+              warnings: [],
+              openRouterRoutingApplied: false,
+            };
+          },
+        } as unknown as AppContext["modelGateway"],
+      });
+    }
+
+    const streamWorkspace = await mkdtemp(join(tmpdir(), "topchester-stream-runtime-"));
+    const collectorWorkspace = await mkdtemp(join(tmpdir(), "topchester-stream-runtime-"));
+    const streamed = await collectRuntimeEvents(
+      runtimeWithFinalMessage(streamWorkspace).submitMessageStream([], "hello")
+    );
+    const collected = await runtimeWithFinalMessage(collectorWorkspace).submitMessage([], "hello");
+
+    expect(normalizeRuntimeEventsForComparison(collected)).toEqual(normalizeRuntimeEventsForComparison(streamed));
+  });
+
+  it("runs task tool calls as child sessions and feeds the bounded result back to the parent", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-task-tool-"));
+    const session = await createSession(workspace);
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (request.prompt.includes("Child prompt")) {
+            return fakeAgentStep("Child found src/agent/runtime.ts.");
+          }
+
+          if (request.prompt.includes("Tool result from task:")) {
+            return fakeAgentStep("Parent received the child result.");
+          }
+
+          return fakeAgentStep("", [
+            {
+              id: "task-call-1",
+              source: "native" as const,
+              tool: "task",
+              args: {
+                description: "Inspect runtime",
+                prompt: "Child prompt",
+                subagent_type: "explore",
+              },
+            },
+          ]);
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await collectRuntimeEvents(runtime.submitMessageStream([], "delegate work", undefined, { session }));
+    const children = await listChildSessions(workspace, session.sessionId);
+    const child = await loadSession(workspace, children[0]!.sessionId);
+
+    expect(events.map((event) => event.type)).toEqual([
+      "subagent_started",
+      "subagent_event",
+      "subagent_event",
+      "subagent_completed",
+      "tool_call",
+      "message",
+      "status",
+    ]);
+    expect(events.find((event) => event.type === "tool_call")).toMatchObject({
+      label: expect.stringContaining("task: completed"),
+    });
+    expect(prompts.at(-1)).toContain("Child found src/agent/runtime.ts.");
+    expect(children).toHaveLength(1);
+    expect(child.metadata).toMatchObject({
+      source: "subagent",
+      parentSessionId: session.sessionId,
+      parentToolCallId: "task-call-1",
+      agentProfileId: "explore",
+      title: "Inspect runtime",
+    });
+    expect(child.events).toEqual([
+      expect.objectContaining({ kind: "message", role: "assistant", text: "Child found src/agent/runtime.ts." }),
+      expect.objectContaining({ kind: "status", status: "ready" }),
+    ]);
+  });
+
+  it("runs multiple task calls concurrently while preserving parent result order", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-task-parallel-"));
+    const session = await createSession(workspace);
+    const prompts: string[] = [];
+    let releaseChildA: (() => void) | undefined;
+    const childAReleased = new Promise<void>((resolve) => {
+      releaseChildA = resolve;
+    });
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (request.prompt.includes("Child A")) {
+            await childAReleased;
+            return fakeAgentStep("A result");
+          }
+
+          if (request.prompt.includes("Child B")) {
+            return fakeAgentStep("B result");
+          }
+
+          if (request.prompt.includes("Tool result from task:")) {
+            return fakeAgentStep("Parent received both task results.");
+          }
+
+          return fakeAgentStep("", [
+            {
+              id: "task-a",
+              source: "native" as const,
+              tool: "task",
+              args: { description: "A", prompt: "Child A", subagent_type: "explore" },
+            },
+            {
+              id: "task-b",
+              source: "native" as const,
+              tool: "task",
+              args: { description: "B", prompt: "Child B", subagent_type: "explore" },
+            },
+          ]);
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const eventsPromise = collectRuntimeEvents(
+      runtime.submitMessageStream([], "delegate twice", undefined, { session })
+    );
+    await waitForPrompt(prompts, "Child B");
+    releaseChildA?.();
+    const events = await eventsPromise;
+    const firstCompletionIndex = events.findIndex((event) => event.type === "subagent_completed");
+    const startedBeforeCompletion = events
+      .slice(0, firstCompletionIndex)
+      .filter((event) => event.type === "subagent_started");
+    const parentResultPrompt = prompts.find((prompt) => prompt.includes("Tool result from task:")) ?? "";
+
+    expect(startedBeforeCompletion).toHaveLength(2);
+    expect(parentResultPrompt.indexOf("A result")).toBeLessThan(parentResultPrompt.indexOf("B result"));
+    expect(
+      events
+        .filter((event) => event.type === "tool_call")
+        .map((event) => (event.type === "tool_call" ? event.label : ""))
+    ).toEqual([expect.stringContaining("task: completed"), expect.stringContaining("task: completed")]);
+  });
+
+  it("runs explicitly parallel-safe read-only tool calls from one model step", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-read-parallel-"));
+    await writeFile(join(workspace, "a.txt"), "A\n");
+    await writeFile(join(workspace, "b.txt"), "B\n");
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (request.prompt.includes("Tool result from read_file")) {
+            return fakeAgentStep("Read both files.");
+          }
+
+          return fakeAgentStep("", [
+            {
+              id: "read-a",
+              source: "native" as const,
+              tool: "read_file",
+              args: { path: "a.txt" },
+            },
+            {
+              id: "read-b",
+              source: "native" as const,
+              tool: "read_file",
+              args: { path: "b.txt" },
+            },
+          ]);
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "read both files");
+    const parentResultPrompt = prompts.find((prompt) => prompt.includes("Tool result from read_file")) ?? "";
+
+    expect(
+      events
+        .filter((event) => event.type === "tool_call")
+        .map((event) => (event.type === "tool_call" ? event.label : ""))
+    ).toEqual(["read_file: a.txt", "read_file: b.txt"]);
+    expect(parentResultPrompt.indexOf('"a.txt"')).toBeLessThan(parentResultPrompt.indexOf('"b.txt"'));
+  });
+
+  it("propagates aborts through the runtime stream path", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-stream-abort-"));
+    const abortController = new AbortController();
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep(request: { abortSignal?: AbortSignal }) {
+          return new Promise<never>((_, reject) => {
+            if (request.abortSignal?.aborted) {
+              reject(new DOMException("Aborted", "AbortError"));
+              return;
+            }
+
+            request.abortSignal?.addEventListener(
+              "abort",
+              () => {
+                reject(new DOMException("Aborted", "AbortError"));
+              },
+              { once: true }
+            );
+          });
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const iterator = runtime.submitMessageStream([], "abort", abortController.signal)[Symbol.asyncIterator]();
+    const pending = iterator.next();
+    abortController.abort();
+
+    await expect(pending).rejects.toThrow(/Aborted/u);
+    await expect(iterator.next()).resolves.toEqual({ value: undefined, done: true });
   });
 
   it("logs each prompt sent to the model at debug level", async () => {
@@ -1345,4 +1587,46 @@ async function getRuntimeKnowledgeFolderState(
   return event?.type === "knowledge_status"
     ? { exists: event.status.kbExists, isDirectory: event.status.kbIsDirectory }
     : undefined;
+}
+
+async function collectRuntimeEvents(events: AsyncIterable<AgentRuntimeEvent>): Promise<AgentRuntimeEvent[]> {
+  const collected: AgentRuntimeEvent[] = [];
+
+  for await (const event of events) {
+    collected.push(event);
+  }
+
+  return collected;
+}
+
+function normalizeRuntimeEventsForComparison(events: AgentRuntimeEvent[]): AgentRuntimeEvent[] {
+  return events.map((event) =>
+    event.type === "message" && event.meta !== undefined ? { ...event, meta: "<model metadata>" } : event
+  );
+}
+
+function fakeAgentStep(text: string, toolCalls: Array<Record<string, unknown>> = []) {
+  return {
+    text,
+    providerId: "fake",
+    modelId: "fake-agent",
+    purpose: "agent.primary" as const,
+    toolCalls,
+    toolProtocol: "native-openai-compatible" as const,
+    protocolAttempts: [],
+    providerRejectedTools: false,
+    warnings: [],
+    openRouterRoutingApplied: false,
+  };
+}
+
+async function waitForPrompt(prompts: string[], pattern: string): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (prompts.some((prompt) => prompt.includes(pattern))) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  throw new Error(`Timed out waiting for prompt containing ${pattern}`);
 }

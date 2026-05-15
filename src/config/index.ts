@@ -8,6 +8,10 @@ const modelPurposeSchema = z.enum(["agent.primary", "agent.fast", "kb.scan", "kb
 
 const modelPurposes = modelPurposeSchema.options;
 const toolProtocolSchema = z.enum(["auto", "native", "text-json", "text-xml"]);
+const openRouterAttributionHeaders = {
+  "HTTP-Referer": "https://topchester.com",
+  "X-Title": "Topchester",
+};
 
 const providerSchema = z.object({
   type: z.literal("openai-compatible"),
@@ -16,6 +20,7 @@ const providerSchema = z.object({
   apiKey: z.string().optional(),
   headers: z.record(z.string(), z.string()).optional(),
   supportsStructuredOutputs: z.boolean().optional(),
+  service_tier: z.enum(["flex", "priority"]).optional(),
   toolProtocol: toolProtocolSchema.optional(),
   openRouterToolRouting: z.enum(["auto", "force", "off"]).optional(),
 });
@@ -280,10 +285,7 @@ function ensureKnownProvider(providers: Record<string, unknown>, provider: strin
     baseURL: "https://openrouter.ai/api/v1",
     apiKeyEnv: "OPENROUTER_API_KEY",
     supportsStructuredOutputs: true,
-    headers: {
-      "HTTP-Referer": "https://topchester.com",
-      "X-Title": "Topchester",
-    },
+    headers: { ...openRouterAttributionHeaders },
   };
 }
 
@@ -297,7 +299,18 @@ function applyKnownProviderDefaults(providers: Record<string, unknown>) {
       provider.supportsStructuredOutputs ??= true;
       provider.toolProtocol ??= "native";
     }
+
+    if (isOpenRouterProvider(providerId, provider.baseURL)) {
+      provider.headers = {
+        ...openRouterAttributionHeaders,
+        ...(isPlainObject(provider.headers) ? provider.headers : {}),
+      };
+    }
   }
+}
+
+function isOpenRouterProvider(providerId: string, baseURL: string): boolean {
+  return providerId.toLowerCase().includes("openrouter") || baseURL.toLowerCase().includes("openrouter.ai");
 }
 
 function isOpenAIProvider(providerId: string, baseURL: string): boolean {

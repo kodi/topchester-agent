@@ -40,6 +40,37 @@ Early event kinds:
 - `message` — user, agent, or system-visible chat row.
 - `status` — transient or persisted state changes.
 - `tool_call` — command/tool request.
-- `tool_result` — command/tool result.
+- `task_plan` — visible session-only task plan state.
+- `choice` — visible user choice prompt.
+- `subagent_started` — parent log reference to a child session starting.
+- `subagent_event` — parent log reference to a forwarded child runtime event.
+- `subagent_completed` — parent log reference to a child session completing.
+- `subagent_failed` — parent log reference to a child session failing.
+
+`metadata.json` includes the root session identity and, for child sessions, the
+parent link:
+
+```json
+{
+  "version": 1,
+  "sessionId": "019e0000-0000-7000-8000-000000000000",
+  "rootSessionId": "019e0000-0000-7000-8000-000000000000",
+  "parentSessionId": "019e0000-0000-7000-8000-000000000000",
+  "parentToolCallId": "task-call-1",
+  "source": "subagent",
+  "agentProfileId": "explore",
+  "title": "Inspect runtime"
+}
+```
+
+For existing sessions that do not have tree fields, loaders treat `source` as
+`user` and `rootSessionId` as the session's own `sessionId`. That keeps older
+project-local sessions readable without rewriting their JSONL.
+
+Child sessions are stored as normal session folders under the same project-local
+session root. Creating a child session writes the child's own `metadata.json`
+with `source: "subagent"` and appends a `subagent_started` reference to the
+parent `events.jsonl`. Child events stay in the child session's log, so replay
+can load a parent alone, list its direct children, or expand the full tree.
 
 Keep model-facing chat roles separate from UI/runtime events. The TUI can show both, but model context should only include what the agent runtime intentionally selects.

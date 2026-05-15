@@ -170,6 +170,7 @@ export class ChatLayout implements Component, Focusable {
         case "system":
         case "thinking":
         case "tool_call":
+        case "subagent":
         case "modal":
           return [];
       }

@@ -5,15 +5,19 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   applyExactEdits,
+  createToolPermissionView,
   editWorkspaceFile,
   executeToolCall,
   findWorkspaceFilesByName,
+  getProfileToolDefinitions,
   getToolPromptLines,
   grepWorkspace,
   isToolErrorResult,
+  isToolAllowed,
   listWorkspaceFiles,
   parseToolCall,
   parseToolCallWithSource,
+  resolveAgentProfile,
   readWorkspaceFile,
   toAiSdkToolSet,
   writeWorkspaceFile,
@@ -306,8 +310,56 @@ describe("agent tools", () => {
     expect(result.content).toContain("plan_todo requires runtime task-plan state");
   });
 
+  it("filters denied tools out of profile prompts and native tool schemas", () => {
+    const profile = resolveAgentProfile("explore");
+    const permissions = createToolPermissionView(profile);
+    const prompt = getChatSystemPrompt({ profile, permissions });
+    const nativeTools = toAiSdkToolSet(getProfileToolDefinitions(permissions));
+
+    expect(prompt).toContain("Agent profile: Explore (explore).");
+    expect(prompt).not.toContain("plan_todo:");
+    expect(prompt).not.toContain("edit_file:");
+    expect(prompt).not.toContain("write_file:");
+    expect(prompt).not.toContain("git_commit:");
+    expect(Object.keys(nativeTools).sort()).toEqual([
+      "find_file",
+      "git_diff",
+      "git_log",
+      "git_status",
+      "grep",
+      "list_files",
+      "read_file",
+    ]);
+  });
+
+  it("rejects denied tools at execution time", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const permissions = createToolPermissionView(resolveAgentProfile("explore"));
+    const call = parseToolCall(
+      '{"tool":"edit_file","args":{"path":"a.txt","edits":[{"old_text":"a","new_text":"b"}]}}'
+    );
+
+    if (!call) {
+      throw new Error("Expected edit_file tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call, { permissions });
+
+    expect(isToolErrorResult(result)).toBe(true);
+    expect(result.content).toContain('Tool "edit_file" is not allowed for agent profile "explore"');
+  });
+
+  it("inherits parent denied tools when building child profile permissions", () => {
+    const profile = resolveAgentProfile("explore");
+    const permissions = createToolPermissionView(profile, { deniedTools: ["read_file"] });
+
+    expect(isToolAllowed(permissions, "read_file")).toBe(false);
+    expect(isToolAllowed(permissions, "grep")).toBe(true);
+  });
+
   it("gets model prompt lines from the tool registry", () => {
     expect(getToolPromptLines()).toEqual([
+      'task: delegate focused read-only research or isolated analysis to a child agent session. Use it when parallel context gathering would help. To use it, reply with only JSON: {"tool":"task","args":{"description":"Inspect runtime event flow","prompt":"Read the runtime and summarize how events are emitted.","subagent_type":"explore"}}',
       'plan_todo: replace the visible session task plan for non-trivial multi-step work; keep 2-6 short items, exactly one in_progress item while work remains, and use [] only to clear. Do not use plan_todo just to report completed work before a final answer. To use it, reply with only JSON: {"tool":"plan_todo","args":{"items":[{"text":"Inspect relevant files","status":"in_progress"},{"text":"Implement focused change","status":"pending"}]}}',
       'read_file: read a UTF-8 file inside the workspace. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
       'list_files: list files and directories inside the workspace; top-level by default, recursive only when requested, with "/" after directory names. To use it, reply with only JSON: {"tool":"list_files","args":{"path":"src","recursive":false,"limit":500}}',

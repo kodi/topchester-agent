@@ -1,4 +1,5 @@
 export { executeToolCall, type ExecuteToolCallOptions } from "./tools/executor.js";
+export { taskArgsSchema, taskTool, type TaskToolArgs, type TaskToolCall, type TaskToolResult } from "./tools/task.js";
 export { planTodoTool, type PlanTodoToolCall, type PlanTodoToolResult } from "./tools/plan-todo.js";
 export {
   applyTaskPlanUpdate,
@@ -105,8 +106,25 @@ export { parseNativeToolCall, parseToolCall, parseToolCallWithSource } from "./t
 export { toAiSdkToolSet } from "./tools/ai-sdk-tools.js";
 export { readFileTool, readWorkspaceFile, type ReadFileToolArgs, type ReadFileToolCall } from "./tools/read-file.js";
 export {
+  AGENT_PROFILES,
+  PRIMARY_AGENT_PROFILE,
+  SUBAGENT_PROFILES,
+  createToolPermissionView,
+  getDeniedToolNames,
+  getProfileToolDefinitions,
+  isToolAllowed,
+  resolveAgentProfile,
+  type AgentProfile,
+  type AgentProfileMode,
+  type ToolPermissionDefault,
+  type ToolPermissionParentView,
+  type ToolPermissionView,
+} from "./profiles.js";
+export {
   getToolDefinition,
+  getToolDefinitionsForPermissions,
   getToolPromptLines,
+  isParallelSafeToolName,
   isToolName,
   toolRegistry,
   type RegisteredTool,

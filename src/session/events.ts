@@ -15,14 +15,26 @@ const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
   ])
 );
 
-export const sessionMetadataSchema = z.object({
+const sessionMetadataBaseSchema = z.object({
   version: z.literal(SESSION_METADATA_VERSION),
   sessionId: z.string(),
+  rootSessionId: z.string().optional(),
+  parentSessionId: z.string().optional(),
+  parentToolCallId: z.string().optional(),
+  source: z.enum(["user", "subagent"]).optional(),
+  agentProfileId: z.string().optional(),
+  title: z.string().optional(),
   workspaceRoot: z.string().min(1),
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
   lastEventId: z.number().int().min(0),
 });
+
+export const sessionMetadataSchema = sessionMetadataBaseSchema.transform((metadata) => ({
+  ...metadata,
+  rootSessionId: metadata.rootSessionId ?? metadata.sessionId,
+  source: metadata.source ?? "user",
+}));
 
 const eventEnvelopeSchema = z.object({
   version: z.literal(SESSION_EVENT_VERSION),
@@ -77,6 +89,33 @@ const choicePayloadSchema = z.object({
   ),
 });
 
+const subagentLifecycleBasePayloadSchema = z.object({
+  sessionId: z.string(),
+  parentSessionId: z.string(),
+  parentToolCallId: z.string(),
+});
+
+const subagentStartedPayloadSchema = subagentLifecycleBasePayloadSchema.extend({
+  kind: z.literal("subagent_started"),
+  agentProfileId: z.string().optional(),
+  title: z.string().optional(),
+});
+
+const subagentEventPayloadSchema = subagentLifecycleBasePayloadSchema.extend({
+  kind: z.literal("subagent_event"),
+  event: z.record(z.string(), jsonValueSchema),
+});
+
+const subagentCompletedPayloadSchema = subagentLifecycleBasePayloadSchema.extend({
+  kind: z.literal("subagent_completed"),
+  result: z.string().optional(),
+});
+
+const subagentFailedPayloadSchema = subagentLifecycleBasePayloadSchema.extend({
+  kind: z.literal("subagent_failed"),
+  error: z.string(),
+});
+
 export const sessionEventPayloadSchema = z.discriminatedUnion("kind", [
   messagePayloadSchema,
   toolCallPayloadSchema,
@@ -84,6 +123,10 @@ export const sessionEventPayloadSchema = z.discriminatedUnion("kind", [
   statusPayloadSchema,
   knowledgeStatusPayloadSchema,
   choicePayloadSchema,
+  subagentStartedPayloadSchema,
+  subagentEventPayloadSchema,
+  subagentCompletedPayloadSchema,
+  subagentFailedPayloadSchema,
 ]);
 
 export const sessionEventSchema = z.intersection(eventEnvelopeSchema, sessionEventPayloadSchema);
@@ -91,3 +134,38 @@ export const sessionEventSchema = z.intersection(eventEnvelopeSchema, sessionEve
 export type SessionMetadata = z.infer<typeof sessionMetadataSchema>;
 export type SessionEventPayload = z.infer<typeof sessionEventPayloadSchema>;
 export type SessionEvent = z.infer<typeof sessionEventSchema>;
+
+export interface SubagentSessionReference {
+  sessionId: string;
+  parentSessionId: string;
+  parentToolCallId: string;
+}
+
+export const sessionEventPayload = {
+  subagentStarted(
+    reference: SubagentSessionReference,
+    options: { agentProfileId?: string; title?: string } = {}
+  ): SessionEventPayload {
+    return { kind: "subagent_started", ...reference, ...options };
+  },
+
+  subagentEvent(reference: SubagentSessionReference, event: Record<string, unknown>): SessionEventPayload {
+    return { kind: "subagent_event", ...reference, event };
+  },
+
+  subagentCompleted(reference: SubagentSessionReference, result?: string): SessionEventPayload {
+    return result === undefined
+      ? { kind: "subagent_completed", ...reference }
+      : { kind: "subagent_completed", ...reference, result };
+  },
+
+  subagentFailed(reference: SubagentSessionReference, error: string): SessionEventPayload {
+    return { kind: "subagent_failed", ...reference, error };
+  },
+} as const;
+
+export function isSubagentSessionPayload(
+  payload: SessionEventPayload
+): payload is Extract<SessionEventPayload, { kind: `subagent_${string}` }> {
+  return payload.kind.startsWith("subagent_");
+}

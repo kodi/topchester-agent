@@ -62,7 +62,7 @@ models:
 
 ## Example 4: Custom OpenRouter Settings
 
-Use this when you want a custom environment variable name, headers, or tool behavior.
+Use this when you want a custom environment variable name, extra headers, or tool behavior.
 
 ```yaml
 models:
@@ -184,6 +184,7 @@ models:
       apiKeyEnv: MY_PROVIDER_API_KEY
       apiKey: optional-inline-key
       supportsStructuredOutputs: true
+      service_tier: flex
       toolProtocol: auto
       openRouterToolRouting: auto
       headers:
@@ -191,6 +192,10 @@ models:
 ```
 
 Prefer `apiKeyEnv` over `apiKey` so secrets stay out of config files.
+
+Topchester adds default `HTTP-Referer` and `X-Title` headers for OpenRouter providers unless the config sets those header names explicitly.
+
+`service_tier` is passed through to compatible OpenRouter requests. Use `flex` for lower cost with higher latency, or `priority` for faster service at higher cost.
 
 `toolProtocol` can be:
 

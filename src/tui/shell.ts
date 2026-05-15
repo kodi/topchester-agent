@@ -6,12 +6,15 @@ import { type AppContext } from "../app/context.js";
 import { ui } from "../cli/ui.js";
 import { type ModelReasoningEvent, type ModelReasoningSink } from "../model/index.js";
 import { type SessionEventPayload } from "../session/events.js";
+import { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
 import { createSession, type SessionHandle } from "../session/store.js";
 import { BusyIndicator, ReasoningTailBuffer } from "./busy.js";
 import { ChatLayout } from "./layout.js";
 import { type ChatMessage, systemMessage, thinkingMessage } from "./messages.js";
 import { renderRuntimeEvent } from "./runtime-events.js";
 import { getFolderName, getModelLabel, getStartupThreadMessages, renderStaticLayout } from "./status.js";
+
+export { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
 
 export interface TuiShell {
   render(): Promise<void>;
@@ -174,20 +177,22 @@ export class TopchesterTuiShell implements TuiShell {
         role: "user",
         text: message,
       });
-      await this.runtime.submitMessage(
+      for await (const event of this.runtime.submitMessageStream(
         app.getConversationTurns(),
         message,
         abortController.signal,
-        async (event) => {
-          if (event.type === "message" && event.role === "assistant") {
-            reasoningDisplay?.commit(app);
-            busy.clearActivity();
-          }
-          await this.applyRuntimeEvents(app, [event], tui);
-          tui.requestRender();
-        },
-        { onReasoning: reasoningDisplay?.sink }
-      );
+        {
+          onReasoning: reasoningDisplay?.sink,
+          session: this.session,
+        }
+      )) {
+        if (event.type === "message" && event.role === "assistant") {
+          reasoningDisplay?.commit(app);
+          busy.clearActivity();
+        }
+        await this.applyRuntimeEvents(app, [event], tui);
+        tui.requestRender();
+      }
     } catch (error) {
       if (cancelled) {
         app.addMessage(systemMessage("Response stopped."));
@@ -356,6 +361,10 @@ export function chatMessageToSessionPayload(message: ChatMessage): SessionEventP
     return undefined;
   }
 
+  if (message.kind === "subagent") {
+    return undefined;
+  }
+
   if (message.kind === "modal") {
     return {
       kind: "choice",
@@ -375,45 +384,6 @@ export function chatMessageToSessionPayload(message: ChatMessage): SessionEventP
   }
 
   return undefined;
-}
-
-export function runtimeEventToSessionPayload(event: AgentRuntimeEvent): SessionEventPayload | undefined {
-  switch (event.type) {
-    case "message":
-      return {
-        kind: "message",
-        role: event.role,
-        text: event.text,
-        ...(event.meta === undefined ? {} : { meta: event.meta }),
-      };
-    case "tool_call":
-      return {
-        kind: "tool_call",
-        label: event.label,
-        call: event.call as unknown as Record<string, unknown>,
-      };
-    case "task_plan":
-      return {
-        kind: "task_plan",
-        items: event.plan.items,
-        updatedAt: event.plan.updatedAt,
-      };
-    case "knowledge_status":
-      return undefined;
-    case "choice":
-      return {
-        kind: "choice",
-        tone: event.tone,
-        title: event.title,
-        ...(event.body === undefined ? {} : { body: event.body }),
-        actions: event.actions,
-      };
-    case "status":
-      return {
-        kind: "status",
-        status: event.status,
-      };
-  }
 }
 
 export function slashCommandToSessionPayload(command: string): SessionEventPayload {

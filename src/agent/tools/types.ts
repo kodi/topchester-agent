@@ -1,12 +1,20 @@
 import { type z } from "zod";
 import { type Logger } from "pino";
 import { type TaskPlanController } from "../task-plan.js";
+import { type AgentProfile, type ToolPermissionView } from "../profiles.js";
+import { type SubagentManager } from "../subagents.js";
 
 export interface ToolContext {
   workspaceRoot: string;
   pathEnv?: string;
   logger?: Logger;
   taskPlan?: TaskPlanController;
+  profile?: AgentProfile;
+  permissions?: ToolPermissionView;
+  subagents?: SubagentManager;
+  eventSink?: (event: import("../events.js").AgentRuntimeEvent) => void | Promise<void>;
+  abortSignal?: AbortSignal;
+  toolCallId?: string;
 }
 
 export interface ToolCall<Name extends string = string, Args = unknown> {
@@ -54,6 +62,10 @@ export interface ToolDefinition<Name extends string, Args, Result extends ToolRe
   description: string;
   prompt: string;
   argsSchema: z.ZodType<Args>;
+  parallelSafe?: boolean;
+  mutatesWorkspace?: boolean;
+  requiresExclusiveWorkspace?: boolean;
+  resourceKeys?: (args: any) => readonly string[];
   execute(context: ToolContext, args: Args): Promise<Result>;
 }
 

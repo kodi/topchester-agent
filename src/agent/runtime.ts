@@ -9,14 +9,24 @@ import { executeSlashCommand, parseSlashCommand } from "./commands.js";
 import { type ConversationTurn, buildConversationPrompt } from "./conversation.js";
 import { ABORT_CHOICE_VALUE, agentEvent, choiceAction, type AgentRuntimeEvent } from "./events.js";
 import { checkAgentReady } from "./health.js";
+import {
+  createToolPermissionView,
+  getProfileToolDefinitions,
+  isToolAllowed,
+  PRIMARY_AGENT_PROFILE,
+  type AgentProfile,
+  type ToolPermissionView,
+} from "./profiles.js";
 import { getChatSystemPrompt } from "./prompts.js";
+import { SubagentManager } from "./subagents.js";
 import { createTaskPlanController, hasOpenTaskPlan, type TaskPlanState } from "./task-plan.js";
+import { type SessionHandle } from "../session/store.js";
 import { type ModelAgentResult, type ModelReasoningSink } from "../model/index.js";
 import {
   executeToolCall,
+  isParallelSafeToolName,
   isToolErrorResult,
   parseToolCallWithSource,
-  toolRegistry,
   type ModelToolCall,
   type ToolCall,
   type ToolExecutionResult,
@@ -27,6 +37,7 @@ import {
 } from "./tools.js";
 
 const MAX_TOOL_CALLS_PER_TURN = 75;
+const DEFAULT_TASK_CONCURRENCY = 3;
 
 interface TurnTokenUsageTotals {
   inputTokens?: number;
@@ -36,6 +47,12 @@ interface TurnTokenUsageTotals {
 export interface AgentRuntime {
   checkAgent(abortSignal?: AbortSignal): Promise<AgentRuntimeEvent[]>;
   checkKnowledgeBase(): Promise<AgentRuntimeEvent[]>;
+  submitMessageStream(
+    conversation: ConversationTurn[],
+    message: string,
+    abortSignal?: AbortSignal,
+    options?: AgentRuntimeSubmitMessageOptions
+  ): AsyncIterable<AgentRuntimeEvent>;
   submitMessage(
     conversation: ConversationTurn[],
     message: string,
@@ -50,10 +67,14 @@ export type AgentRuntimeEventSink = (event: AgentRuntimeEvent) => void | Promise
 
 export interface AgentRuntimeSubmitMessageOptions {
   onReasoning?: ModelReasoningSink;
+  session?: SessionHandle;
 }
 
 export interface TopchesterAgentRuntimeOptions {
   disableL1Context?: boolean;
+  profile?: AgentProfile;
+  parentPermissions?: ToolPermissionView;
+  session?: SessionHandle;
 }
 
 export class TopchesterAgentRuntime implements AgentRuntime {
@@ -105,40 +126,45 @@ export class TopchesterAgentRuntime implements AgentRuntime {
   }
 
   /**
-   * Runs one user chat turn through the agent loop. It builds the model
+   * Streams one user chat turn through the agent loop. It builds the model
    * prompt with relevant KB context, calls the model, executes any requested
    * tools, feeds tool results back into the next prompt, and repeats until
    * the model returns a normal assistant message or the loop hits its safety
    * limit.
    *
-   * Events are accumulated for the caller and optionally streamed through
-   * `onEvent` as soon as tool calls, task-plan updates, choices, or final
-   * messages are available. The method also enforces visible task-plan
-   * closure before a final answer when the model leaves an open plan.
+   * This is the primary runtime execution contract. Compatibility wrappers
+   * can collect the stream, but the runtime's own turn loop only knows about
+   * ordered events.
    */
-  async submitMessage(
+  async *submitMessageStream(
     conversation: ConversationTurn[],
     message: string,
     abortSignal?: AbortSignal,
-    onEvent?: AgentRuntimeEventSink,
     options: AgentRuntimeSubmitMessageOptions = {}
-  ): Promise<AgentRuntimeEvent[]> {
+  ): AsyncIterable<AgentRuntimeEvent> {
     const prompt = await this.buildPromptWithKnowledgeContext(buildConversationPrompt(conversation, message), message);
-    const events: AgentRuntimeEvent[] = [];
-    const emit = async (...nextEvents: AgentRuntimeEvent[]) => {
-      events.push(...nextEvents);
-
-      if (!onEvent) {
-        return;
-      }
-
-      for (const event of nextEvents) {
-        await onEvent(event);
-      }
-    };
     let nextPrompt = prompt;
     let totalDurationMs = 0;
     const tokenUsageTotals: TurnTokenUsageTotals = {};
+    const profile = this.options.profile ?? PRIMARY_AGENT_PROFILE;
+    const permissions = createToolPermissionView(profile, {
+      deniedTools: this.options.parentPermissions?.deniedTools,
+    });
+    const tools = getProfileToolDefinitions(permissions);
+    const session = options.session ?? this.options.session;
+    const subagents = new SubagentManager({
+      context: this.context,
+      parentSession: session,
+      parentProfile: profile,
+      parentPermissions: permissions,
+      createRuntime: ({ profile: childProfile, parentPermissions, session: childSession }) =>
+        new TopchesterAgentRuntime(this.context, {
+          ...this.options,
+          profile: childProfile,
+          parentPermissions,
+          session: childSession,
+        }),
+    });
     let lastModelId = "model";
     let afterTool: ToolCall["tool"] | undefined;
     let toolProtocolOverride = readToolProtocolEnvOverride();
@@ -146,7 +172,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
     for (let toolCalls = 0; toolCalls <= MAX_TOOL_CALLS_PER_TURN; toolCalls += 1) {
       const startedAt = Date.now();
-      const system = getChatSystemPrompt();
+      const system = getChatSystemPrompt({ profile, permissions });
       this.context.logger.debug(
         {
           event: "model_prompt",
@@ -167,6 +193,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         abortSignal,
         toolProtocol: toolProtocolOverride,
         onReasoning: options.onReasoning,
+        tools,
       });
       const durationMs = Date.now() - startedAt;
       const toolCall = result.toolCalls[0];
@@ -227,33 +254,109 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             continue;
           }
 
-          await emit(agentEvent.taskPlan(this.taskPlan.update({ items: [] })));
+          yield agentEvent.taskPlan(this.taskPlan.update({ items: [] }));
         }
 
-        await emit(
-          agentEvent.assistantMessage(
-            finalText.trim() || "I got an empty response from the model.",
-            formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
-          ),
-          agentEvent.status("ready")
+        yield agentEvent.assistantMessage(
+          finalText.trim() || "I got an empty response from the model.",
+          formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
         );
-        return events;
+        yield agentEvent.status("ready");
+        return;
       }
 
       if (toolCalls === MAX_TOOL_CALLS_PER_TURN) {
-        await emit(
-          agentEvent.choice({
-            tone: "warning",
-            title: "Tool call limit reached",
-            body: `Stopped after ${MAX_TOOL_CALLS_PER_TURN} tool calls in one turn. Continue starts another turn; abort leaves the call stopped.`,
-            actions: [
-              choiceAction("Continue", "Continue the previous task from where you stopped."),
-              choiceAction("Abort", ABORT_CHOICE_VALUE),
-            ],
-          }),
-          agentEvent.status("ready")
+        yield agentEvent.choice({
+          tone: "warning",
+          title: "Tool call limit reached",
+          body: `Stopped after ${MAX_TOOL_CALLS_PER_TURN} tool calls in one turn. Continue starts another turn; abort leaves the call stopped.`,
+          actions: [
+            choiceAction("Continue", "Continue the previous task from where you stopped."),
+            choiceAction("Abort", ABORT_CHOICE_VALUE),
+          ],
+        });
+        yield agentEvent.status("ready");
+        return;
+      }
+
+      if (result.toolCalls.length > 1 && result.toolCalls.every((call) => call.tool === "task")) {
+        const taskCalls = result.toolCalls.map((call) => call as ToolCall);
+        const taskResults: ToolExecutionResult<ToolResult>[] = [];
+
+        for (let index = 0; index < taskCalls.length; index += DEFAULT_TASK_CONCURRENCY) {
+          const batch = taskCalls.slice(index, index + DEFAULT_TASK_CONCURRENCY);
+          const taskEventQueue = createRuntimeEventQueue();
+          const batchResultPromise = Promise.all(
+            batch.map((call, batchIndex) =>
+              executeToolCall(this.context.workspaceRoot, call, {
+                logger: this.context.logger,
+                taskPlan: this.taskPlan,
+                profile,
+                permissions,
+                subagents,
+                abortSignal,
+                toolCallId: result.toolCalls[index + batchIndex]?.id,
+                eventSink: (event) => taskEventQueue.push(event),
+              })
+            )
+          ).finally(() => {
+            taskEventQueue.close();
+          });
+
+          for await (const event of taskEventQueue) {
+            yield event;
+          }
+
+          taskResults.push(...(await batchResultPromise));
+        }
+
+        for (let index = 0; index < taskCalls.length; index += 1) {
+          yield agentEvent.toolCall(taskCalls[index]!, formatToolCallMessage(taskCalls[index]!, taskResults[index]));
+        }
+
+        afterTool = "task";
+        nextPrompt = `${nextPrompt}\n\n${taskResults
+          .map((toolResult) => formatToolResultForPrompt(toolResult))
+          .join("\n\n")}\n\n${formatContinuationInstruction(
+          result.toolProtocol,
+          taskResults.at(-1)!,
+          isToolAllowed(permissions, "plan_todo")
+        )}`;
+        continue;
+      }
+
+      if (result.toolCalls.length > 1 && result.toolCalls.every((call) => isParallelSafeToolName(call.tool))) {
+        const parallelCalls = result.toolCalls.map((call) => call as ToolCall);
+        const parallelResults = await Promise.all(
+          parallelCalls.map((call, index) =>
+            executeToolCall(this.context.workspaceRoot, call, {
+              logger: this.context.logger,
+              taskPlan: this.taskPlan,
+              profile,
+              permissions,
+              subagents,
+              abortSignal,
+              toolCallId: result.toolCalls[index]?.id,
+            })
+          )
         );
-        return events;
+
+        for (let index = 0; index < parallelCalls.length; index += 1) {
+          yield agentEvent.toolCall(
+            parallelCalls[index]!,
+            formatToolCallMessage(parallelCalls[index]!, parallelResults[index])
+          );
+        }
+
+        afterTool = parallelCalls.at(-1)?.tool;
+        nextPrompt = `${nextPrompt}\n\n${parallelResults
+          .map((toolResult) => formatToolResultForPrompt(toolResult))
+          .join("\n\n")}\n\n${formatContinuationInstruction(
+          result.toolProtocol,
+          parallelResults.at(-1)!,
+          isToolAllowed(permissions, "plan_todo")
+        )}`;
+        continue;
       }
 
       const executableToolCall = toolCall as ToolCall;
@@ -264,38 +367,69 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       );
 
       if (suppressiblePlanTodoAnswer !== undefined) {
-        await emit(
-          agentEvent.assistantMessage(
-            suppressiblePlanTodoAnswer || "I got an empty response from the model.",
-            formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
-          ),
-          agentEvent.status("ready")
+        yield agentEvent.assistantMessage(
+          suppressiblePlanTodoAnswer || "I got an empty response from the model.",
+          formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
         );
-        return events;
+        yield agentEvent.status("ready");
+        return;
       }
 
-      const toolResult = await executeToolCall(this.context.workspaceRoot, executableToolCall, {
+      const toolEventQueue = createRuntimeEventQueue();
+      const toolResultPromise = executeToolCall(this.context.workspaceRoot, executableToolCall, {
         logger: this.context.logger,
         taskPlan: this.taskPlan,
+        profile,
+        permissions,
+        subagents,
+        abortSignal,
+        toolCallId: toolCall.id,
+        eventSink: (event) => toolEventQueue.push(event),
+      }).finally(() => {
+        toolEventQueue.close();
       });
-      await emit(agentEvent.toolCall(executableToolCall, formatToolCallMessage(executableToolCall, toolResult)));
+
+      for await (const event of toolEventQueue) {
+        yield event;
+      }
+
+      const toolResult = await toolResultPromise;
+      yield agentEvent.toolCall(executableToolCall, formatToolCallMessage(executableToolCall, toolResult));
       if (!isToolErrorResult(toolResult) && toolResult.tool === "plan_todo") {
-        await emit(agentEvent.taskPlan(toolResult.plan));
+        yield agentEvent.taskPlan(toolResult.plan);
       }
       afterTool = executableToolCall.tool;
       nextPrompt = `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(
         result.toolProtocol,
-        toolResult
+        toolResult,
+        isToolAllowed(permissions, "plan_todo")
       )}`;
     }
 
-    await emit(
-      agentEvent.assistantMessage(
-        "I stopped because the tool loop ended unexpectedly.",
-        formatAgentMessageMeta(lastModelId, totalDurationMs, tokenUsageTotals)
-      ),
-      agentEvent.status("ready")
+    yield agentEvent.assistantMessage(
+      "I stopped because the tool loop ended unexpectedly.",
+      formatAgentMessageMeta(lastModelId, totalDurationMs, tokenUsageTotals)
     );
+    yield agentEvent.status("ready");
+  }
+
+  /**
+   * Compatibility wrapper for callers that still expect a completed event
+   * array or use the older `onEvent` callback shape.
+   */
+  async submitMessage(
+    conversation: ConversationTurn[],
+    message: string,
+    abortSignal?: AbortSignal,
+    onEvent?: AgentRuntimeEventSink,
+    options: AgentRuntimeSubmitMessageOptions = {}
+  ): Promise<AgentRuntimeEvent[]> {
+    const events: AgentRuntimeEvent[] = [];
+
+    for await (const event of this.submitMessageStream(conversation, message, abortSignal, options)) {
+      events.push(event);
+      await onEvent?.(event);
+    }
 
     return events;
   }
@@ -411,6 +545,46 @@ export class TopchesterAgentRuntime implements AgentRuntime {
   }
 }
 
+interface RuntimeEventQueue {
+  push(event: AgentRuntimeEvent): void;
+  close(): void;
+  [Symbol.asyncIterator](): AsyncIterator<AgentRuntimeEvent>;
+}
+
+function createRuntimeEventQueue(): RuntimeEventQueue {
+  const events: AgentRuntimeEvent[] = [];
+  let closed = false;
+  let notify: (() => void) | undefined;
+
+  return {
+    push(event) {
+      events.push(event);
+      notify?.();
+      notify = undefined;
+    },
+
+    close() {
+      closed = true;
+      notify?.();
+      notify = undefined;
+    },
+
+    async *[Symbol.asyncIterator]() {
+      while (!closed || events.length > 0) {
+        const event = events.shift();
+        if (event) {
+          yield event;
+          continue;
+        }
+
+        await new Promise<void>((resolve) => {
+          notify = resolve;
+        });
+      }
+    },
+  };
+}
+
 /**
  * Calls the configured model gateway for a single agent step and normalizes
  * the result into the newer `ModelAgentResult` shape. Gateways that implement
@@ -427,12 +601,12 @@ async function generateAgentStep(
     abortSignal?: AbortSignal;
     toolProtocol?: ToolProtocolOverride;
     onReasoning?: ModelReasoningSink;
+    tools: ReturnType<typeof getProfileToolDefinitions>;
   }
 ): Promise<ModelAgentResult> {
   if ("generateAgentStep" in context.modelGateway && typeof context.modelGateway.generateAgentStep === "function") {
     return context.modelGateway.generateAgentStep({
       ...request,
-      tools: Object.values(toolRegistry),
     });
   }
 
@@ -626,6 +800,10 @@ function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult>): str
     return [`Tool result from ${result.tool}:`, result.content].join("\n");
   }
 
+  if (result.tool === "task") {
+    return [`Tool result from ${result.tool}:`, result.content].join("\n");
+  }
+
   if (result.tool === "edit_file") {
     return [
       `Tool result from ${result.tool}${path}:`,
@@ -761,7 +939,11 @@ function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult>): str
  * restates the current tool-call protocol so the next model step remains
  * parseable by the runtime.
  */
-function formatContinuationInstruction(protocol: ToolProtocol, result: ToolExecutionResult<ToolResult>): string {
+function formatContinuationInstruction(
+  protocol: ToolProtocol,
+  result: ToolExecutionResult<ToolResult>,
+  canUsePlanTodo = true
+): string {
   const toolInstruction =
     protocol === "text-xml"
       ? "If another tool is needed, reply with only one XML tool call."
@@ -776,8 +958,10 @@ function formatContinuationInstruction(protocol: ToolProtocol, result: ToolExecu
   return [
     "Continue the user's request using the tool result above and the visible plan when one is active.",
     resultInstruction,
-    "Update plan_todo after major progress changes.",
-    "Before a final answer, close the visible plan by calling plan_todo with all finished items marked completed, or with [] if abandoning the plan.",
+    canUsePlanTodo ? "Update plan_todo after major progress changes." : "",
+    canUsePlanTodo
+      ? "Before a final answer, close the visible plan by calling plan_todo with all finished items marked completed, or with [] if abandoning the plan."
+      : "",
     toolInstruction,
     "Otherwise answer the user. Do not guess.",
   ]
@@ -824,6 +1008,10 @@ function formatToolCallMessage(call: ToolCall, result?: ToolExecutionResult<Tool
   }
 
   switch (call.tool) {
+    case "task":
+      return result?.tool === "task"
+        ? `task: ${result.status} ${result.childSessionId}`
+        : `task: ${call.args.description}`;
     case "plan_todo":
       return result?.tool === "plan_todo"
         ? `plan_todo: ${result.plan.items.length} items, ${result.inProgressCount} active`

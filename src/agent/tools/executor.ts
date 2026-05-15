@@ -1,4 +1,7 @@
-import { getToolDefinition, type ToolCall, type ToolResult } from "./registry.js";
+import { isToolAllowed, type AgentProfile, type ToolPermissionView } from "../profiles.js";
+import { type AgentRuntimeEvent } from "../events.js";
+import { type SubagentManager } from "../subagents.js";
+import { getToolDefinition, isToolName, type ToolCall, type ToolResult } from "./registry.js";
 import { type ToolDefinition, type ToolContext, type ToolExecutionResult } from "./types.js";
 import { type Logger } from "pino";
 import { type TaskPlanController } from "../task-plan.js";
@@ -7,6 +10,12 @@ export interface ExecuteToolCallOptions {
   pathEnv?: string;
   logger?: Logger;
   taskPlan?: TaskPlanController;
+  profile?: AgentProfile;
+  permissions?: ToolPermissionView;
+  subagents?: SubagentManager;
+  eventSink?: (event: AgentRuntimeEvent) => void | Promise<void>;
+  abortSignal?: AbortSignal;
+  toolCallId?: string;
 }
 
 type RuntimeToolDefinition = ToolDefinition<string, unknown, ToolResult>;
@@ -22,9 +31,23 @@ export async function executeToolCall(
     pathEnv: options.pathEnv,
     logger: options.logger,
     taskPlan: options.taskPlan,
+    profile: options.profile,
+    permissions: options.permissions,
+    subagents: options.subagents,
+    eventSink: options.eventSink,
+    abortSignal: options.abortSignal,
+    toolCallId: options.toolCallId,
   };
 
   try {
+    if (!isToolName(call.tool)) {
+      throw new Error(`Unknown tool "${call.tool}".`);
+    }
+
+    if (options.permissions && !isToolAllowed(options.permissions, call.tool)) {
+      throw new Error(`Tool "${call.tool}" is not allowed for agent profile "${options.permissions.profileId}".`);
+    }
+
     const definition = getToolDefinition(call.tool) as RuntimeToolDefinition;
     const parsedCall = { ...call, args: definition.argsSchema.parse(call.args) } as ToolCall;
 

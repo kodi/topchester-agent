@@ -1,7 +1,14 @@
 import { type AgentRuntimeEvent } from "../agent/events.js";
 import { getKnowledgeStatusEvents } from "../agent/runtime.js";
 import { type KnowledgeStatus } from "../knowledge/status.js";
-import { agentMessage, modalMessage, systemMessage, toolCallMessage, type ChatMessage } from "./messages.js";
+import {
+  agentMessage,
+  modalMessage,
+  subagentMessage,
+  systemMessage,
+  toolCallMessage,
+  type ChatMessage,
+} from "./messages.js";
 import { formatKnowledgePathStatus } from "./status.js";
 
 export function getKnowledgeStatusMessages(status: KnowledgeStatus): ChatMessage[] {
@@ -37,9 +44,59 @@ export function renderRuntimeEvent(event: AgentRuntimeEvent): ChatMessage[] {
       ];
     case "task_plan":
       return [];
+    case "subagent_started":
+      return [
+        subagentMessage({
+          status: "running",
+          sessionId: event.sessionId,
+          title: event.title,
+        }),
+      ];
+    case "subagent_event":
+      return formatForwardedSubagentEvent(event.sessionId, event.event);
+    case "subagent_completed":
+      return [
+        subagentMessage({
+          status: "completed",
+          sessionId: event.sessionId,
+          text: event.result,
+        }),
+      ];
+    case "subagent_failed":
+      return [
+        subagentMessage({
+          status: "failed",
+          sessionId: event.sessionId,
+          text: event.error,
+        }),
+      ];
     case "status":
       return [];
   }
+}
+
+function formatForwardedSubagentEvent(sessionId: string, event: AgentRuntimeEvent): ChatMessage[] {
+  if (event.type === "message" && event.role === "assistant") {
+    return [
+      subagentMessage({
+        status: "event",
+        sessionId,
+        text: event.text,
+      }),
+    ];
+  }
+
+  if (event.type === "tool_call") {
+    return [
+      subagentMessage({
+        status: "event",
+        sessionId,
+        text: event.label,
+      }),
+    ];
+  }
+
+  return [];
 }
 
 function formatKbPathSource(status: KnowledgeStatus): string {

@@ -24,6 +24,9 @@ export const listFilesTool = defineTool({
   prompt:
     'list_files: list files and directories inside the workspace; top-level by default, recursive only when requested, with "/" after directory names. To use it, reply with only JSON: {"tool":"list_files","args":{"path":"src","recursive":false,"limit":500}}',
   argsSchema: listFilesArgsSchema,
+  parallelSafe: true,
+  mutatesWorkspace: false,
+  resourceKeys: (args) => [`dir:${args.path}`],
   execute: (context, args) => listWorkspaceFiles(context.workspaceRoot, args),
 });
 

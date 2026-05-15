@@ -38,6 +38,7 @@ import {
   type ChatMessage,
   modalMessage,
   renderChatMessage,
+  subagentMessage,
   systemMessage,
   toolCallMessage,
   userMessage,
@@ -1482,6 +1483,26 @@ describe("TUI rendering", () => {
       kind: "status",
       status: "ready",
     });
+    expect(
+      renderRuntimeEvent(
+        agentEvent.subagentStarted({
+          sessionId: "child-session",
+          parentSessionId: "parent-session",
+          parentToolCallId: "task-call-1",
+          title: "Inspect runtime",
+        })
+      )
+    ).toEqual([subagentMessage({ status: "running", sessionId: "child-session", title: "Inspect runtime" })]);
+    expect(
+      renderRuntimeEvent(
+        agentEvent.subagentCompleted({
+          sessionId: "child-session",
+          parentSessionId: "parent-session",
+          parentToolCallId: "task-call-1",
+          result: "Done",
+        })
+      )
+    ).toEqual([subagentMessage({ status: "completed", sessionId: "child-session", text: "Done" })]);
   });
 
   it("does not turn successful startup checks into visible ready messages", async () => {
@@ -1719,6 +1740,14 @@ describe("TUI rendering", () => {
       async submitSlashCommand() {
         return [];
       },
+      async *submitMessageStream() {
+        yield agentEvent.toolCall({ tool: "read_file", args: { path: "README.md" } }, "read_file: README.md");
+        firstEventApplied?.();
+        await new Promise<void>((resolve) => {
+          releaseRuntime = resolve;
+        });
+        yield agentEvent.assistantMessage("Done.");
+      },
       async submitMessage(_conversation, _message, _abortSignal, onEvent) {
         await onEvent?.(
           agentEvent.toolCall({ tool: "read_file", args: { path: "README.md" } }, "read_file: README.md")
@@ -1785,6 +1814,14 @@ describe("TUI rendering", () => {
           },
           async submitSlashCommand() {
             return [];
+          },
+          async *submitMessageStream(_conversation, _message, _abortSignal, options) {
+            await options?.onReasoning?.({ type: "delta", text: "checking\nworkspace" });
+            reasoningApplied?.();
+            await new Promise<void>((resolve) => {
+              releaseRuntime = resolve;
+            });
+            yield agentEvent.assistantMessage("Done.");
           },
           async submitMessage(_conversation, _message, _abortSignal, onEvent, options) {
             await options?.onReasoning?.({ type: "delta", text: "checking\nworkspace" });
@@ -1861,6 +1898,14 @@ describe("TUI rendering", () => {
       },
       async submitSlashCommand() {
         return [];
+      },
+      async *submitMessageStream() {
+        if (Date.now() > 0) {
+          throw new Error(
+            "No endpoints found that can handle the requested parameters.\n    at doStream\n    at streamStep"
+          );
+        }
+        yield agentEvent.status("unreachable");
       },
       async submitMessage() {
         throw new Error(
@@ -1976,6 +2021,9 @@ describe("TUI rendering", () => {
         async submitSlashCommand() {
           return [];
         },
+        async *submitMessageStream() {
+          yield agentEvent.assistantMessage("Ready.");
+        },
         async submitMessage(_conversation, _message, _abortSignal, onEvent) {
           await onEvent?.(agentEvent.assistantMessage("Ready."));
 
@@ -2044,7 +2092,13 @@ describe("TUI rendering", () => {
     expect(appendCalls).toBe(1);
     expect(
       messages.map((message) =>
-        message.kind === "modal" ? message.title : "text" in message ? message.text : message.label
+        message.kind === "modal"
+          ? message.title
+          : message.kind === "tool_call"
+            ? message.label
+            : "text" in message
+              ? message.text
+              : ""
       )
     ).toEqual(["Saved later", "Session save failed: disk is full"]);
   });
@@ -2058,9 +2112,7 @@ describe("TUI rendering", () => {
     expect(layoutSource).not.toMatch(
       /node:fs|from ".*session|append\(|loadSession|createSession|getTopchesterSessionsPath/u
     );
-    expect(runtimeSource).not.toMatch(
-      /node:fs|from ".*session|append\(|loadSession|createSession|getTopchesterSessionsPath/u
-    );
+    expect(runtimeSource).not.toMatch(/node:fs|append\(|loadSession|getTopchesterSessionsPath/u);
   });
 });
 

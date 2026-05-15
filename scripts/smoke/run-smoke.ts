@@ -65,6 +65,15 @@ const scenarioSchema = z.object({
       lastActiveItem: z.string().optional(),
     })
     .optional(),
+  expectedSubagent: z
+    .object({
+      completed: z.boolean().optional().default(true),
+      agentProfileId: z.string().optional(),
+      requiredChildToolCalls: z.array(z.string()).optional().default([]),
+      expectedResultContains: z.array(z.string()).optional().default([]),
+      expectedChildMessagesContain: z.array(z.string()).optional().default([]),
+    })
+    .optional(),
   expectedGit: z
     .object({
       stagedPaths: z.array(z.string()).optional(),
@@ -506,6 +515,7 @@ async function assertScenario(
   }
 
   await expectTaskPlanState(outputDir, scenario.expectedTaskPlan, failures);
+  await expectSubagentState(workspace, outputDir, scenario.expectedSubagent, failures);
   await expectGitState(workspace, scenario.expectedGit, failures);
 }
 
@@ -539,6 +549,144 @@ async function expectTaskPlanState(
       `last task plan active item was ${JSON.stringify(lastActiveItem)}, expected ${JSON.stringify(expectation.lastActiveItem)}`
     );
   }
+}
+
+async function expectSubagentState(
+  workspace: string,
+  outputDir: string,
+  expectation: Scenario["expectedSubagent"],
+  failures: string[]
+): Promise<void> {
+  if (!expectation) {
+    return;
+  }
+
+  const runtimeEvents = await readRuntimeJsonEvents(outputDir);
+  const started = runtimeEvents.filter((event) => event.type === "subagent_started");
+  const completed = runtimeEvents.filter((event) => event.type === "subagent_completed");
+  const failed = runtimeEvents.filter((event) => event.type === "subagent_failed");
+  const childEvents = runtimeEvents.filter((event) => event.type === "subagent_event");
+
+  if (started.length === 0) {
+    failures.push("expected at least one subagent_started event");
+    return;
+  }
+
+  if (expectation.completed && completed.length === 0) {
+    failures.push("expected at least one subagent_completed event");
+  }
+
+  if (expectation.completed && failed.length > 0) {
+    failures.push(`expected no subagent_failed events, saw ${failed.length}`);
+  }
+
+  const childSessionIds = started
+    .map((event) => getStringField(event, "sessionId"))
+    .filter((id): id is string => Boolean(id));
+
+  for (const childSessionId of childSessionIds) {
+    await expectChildSessionMetadata(workspace, childSessionId, started, expectation, failures);
+  }
+
+  for (const tool of expectation.requiredChildToolCalls) {
+    const sawTool = childEvents.some((event) => {
+      const childEvent = getRecordField(event, "event");
+      const call = getRecordField(childEvent, "call");
+      return getStringField(childEvent, "type") === "tool_call" && getStringField(call, "tool") === tool;
+    });
+
+    if (!sawTool) {
+      failures.push(`expected child tool ${tool} was not called`);
+    }
+  }
+
+  for (const text of expectation.expectedResultContains) {
+    const sawResult = completed.some((event) => getStringField(event, "result")?.includes(text));
+
+    if (!sawResult) {
+      failures.push(`subagent completed result did not contain ${JSON.stringify(text)}`);
+    }
+  }
+
+  for (const text of expectation.expectedChildMessagesContain) {
+    const sawMessage = childEvents.some((event) => {
+      const childEvent = getRecordField(event, "event");
+      return (
+        getStringField(childEvent, "type") === "message" &&
+        getStringField(childEvent, "role") === "assistant" &&
+        Boolean(getStringField(childEvent, "text")?.includes(text))
+      );
+    });
+
+    if (!sawMessage) {
+      failures.push(`subagent child messages did not contain ${JSON.stringify(text)}`);
+    }
+  }
+}
+
+async function expectChildSessionMetadata(
+  workspace: string,
+  childSessionId: string,
+  startedEvents: Record<string, unknown>[],
+  expectation: NonNullable<Scenario["expectedSubagent"]>,
+  failures: string[]
+): Promise<void> {
+  const metadataPath = join(workspace, ".agents", "topchester", "sessions", childSessionId, "metadata.json");
+  const raw = await readFile(metadataPath, "utf8").catch(() => undefined);
+
+  if (raw === undefined) {
+    failures.push(`expected child session metadata for ${childSessionId}`);
+    return;
+  }
+
+  const metadata = JSON.parse(raw) as Record<string, unknown>;
+  const started = startedEvents.find((event) => getStringField(event, "sessionId") === childSessionId);
+  const parentSessionId = getStringField(started, "parentSessionId");
+
+  if (getStringField(metadata, "source") !== "subagent") {
+    failures.push(`child session ${childSessionId} source was not subagent`);
+  }
+
+  if (parentSessionId && getStringField(metadata, "parentSessionId") !== parentSessionId) {
+    failures.push(`child session ${childSessionId} parentSessionId did not match subagent_started`);
+  }
+
+  if (expectation.agentProfileId && getStringField(metadata, "agentProfileId") !== expectation.agentProfileId) {
+    failures.push(
+      `child session ${childSessionId} agentProfileId was ${JSON.stringify(getStringField(metadata, "agentProfileId"))}, expected ${JSON.stringify(expectation.agentProfileId)}`
+    );
+  }
+}
+
+async function readRuntimeJsonEvents(outputDir: string): Promise<Record<string, unknown>[]> {
+  const eventFiles = (await readdir(outputDir))
+    .filter((entry) => /^events-\d+\.jsonl$/u.test(entry))
+    .sort((left, right) => left.localeCompare(right));
+  const events = (await Promise.all(eventFiles.map((entry) => readJsonLines<JsonLine>(join(outputDir, entry))))).flat();
+
+  return events.map((entry) => entry.event).filter(isRecord);
+}
+
+function getRecordField(value: unknown, field: string): Record<string, unknown> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const child = value[field];
+  return isRecord(child) ? child : undefined;
+}
+
+function getStringField(value: unknown, field: string): string | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const child = value[field];
+  return typeof child === "string" ? child : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 async function collectGlobalLogs(

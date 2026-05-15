@@ -187,6 +187,26 @@ function chooseResponse(prompt: string): string {
     });
   }
 
+  if (prompt.includes("TASK_SUBAGENT_SMOKE") && prompt.includes("Tool result from task")) {
+    return "Subagent found marker aqua.";
+  }
+
+  if (prompt.includes("TASK_SUBAGENT_SMOKE")) {
+    return toolCall("task", {
+      description: "Inspect task subagent smoke marker",
+      prompt: "TASK_SUBAGENT_CHILD read docs/task-subagent-note.txt and report the exact marker line from that file.",
+      subagent_type: "explore",
+    });
+  }
+
+  if (prompt.includes("TASK_SUBAGENT_CHILD") && prompt.includes("Tool result from read_file")) {
+    return "Child result: subagent marker: aqua";
+  }
+
+  if (prompt.includes("TASK_SUBAGENT_CHILD")) {
+    return toolCall("read_file", { path: "docs/task-subagent-note.txt" });
+  }
+
   if (prompt.includes("Tool result from edit_file")) {
     return "Done.";
   }

@@ -109,6 +109,9 @@ export const gitStatusTool = defineTool({
   prompt:
     'git_status: inspect branch, head, clean state, staged, unstaged, and untracked files without parsing shell output. To use it, reply with only JSON: {"tool":"git_status","args":{"path":".","include_untracked":true}}',
   argsSchema: gitStatusArgsSchema,
+  parallelSafe: true,
+  mutatesWorkspace: false,
+  resourceKeys: (args) => [`git-status:${args.path}`],
   execute: (context, args) => inspectGitStatus(context, args),
 });
 
@@ -118,6 +121,9 @@ export const gitDiffTool = defineTool({
   prompt:
     'git_diff: inspect a bounded Git diff; use scope "all", "unstaged", or "staged", and include_untracked:true only when untracked file patches are needed. To use it, reply with only JSON: {"tool":"git_diff","args":{"scope":"all","include_untracked":true}}',
   argsSchema: gitDiffArgsSchema,
+  parallelSafe: true,
+  mutatesWorkspace: false,
+  resourceKeys: (args) => [`git-diff:${args.path ?? "."}:${args.scope}`],
   execute: (context, args) => inspectGitDiff(context, args),
 });
 
@@ -127,6 +133,9 @@ export const gitLogTool = defineTool({
   prompt:
     'git_log: inspect recent commits without parsing shell output. To use it, reply with only JSON: {"tool":"git_log","args":{"limit":10,"path":"src/agent/runtime.ts"}}',
   argsSchema: gitLogArgsSchema,
+  parallelSafe: true,
+  mutatesWorkspace: false,
+  resourceKeys: (args) => [`git-log:${args.path ?? "."}`],
   execute: (context, args) => inspectGitLog(context, args),
 });
 
