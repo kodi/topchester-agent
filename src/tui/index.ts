@@ -10,6 +10,13 @@ export { ChatLayout } from "./layout.js";
 export { getKnowledgeStatusMessages, renderRuntimeEvent, renderRuntimeEvents } from "./runtime-events.js";
 export { TopchesterTuiShell, type TuiShell } from "./shell.js";
 export {
+  createSkillInspectActions,
+  createSkillsOverlayActions,
+  filterSkillsForOverlay,
+  formatSkillInspectBody,
+  formatSkillsOverlayBody,
+} from "./skills-overlay.js";
+export {
   formatKnowledgeFooterStatus,
   formatKnowledgePathStatus,
   formatPathStatus,

@@ -53,6 +53,16 @@ import {
   persistRunCommandApproval,
   printExitBanner,
 } from "./shell-helpers.js";
+import {
+  createSkillInspectActions,
+  createSkillsOverlayActions,
+  filterSkillsForOverlay,
+  formatSkillInspectBody,
+  formatSkillsOverlayBody,
+  SKILL_OVERLAY_BACK_VALUE,
+  SKILL_OVERLAY_CLOSE_VALUE,
+  SKILL_OVERLAY_RELOAD_VALUE,
+} from "./skills-overlay.js";
 import { getFolderName, getModelLabel, getStartupThreadMessages, renderStaticLayout } from "./status.js";
 
 export { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
@@ -358,6 +368,13 @@ export class TopchesterTuiShell implements TuiShell {
       return;
     }
 
+    if (this.isSkillsOverlayCommand(command)) {
+      await this.clearTaskPlanForNewTurn(app);
+      await this.persistPayloadWithWarning(app, slashCommandToSessionPayload(command));
+      await this.showSkillsOverlay(app, tui, this.getSkillsOverlayFilter(command));
+      return;
+    }
+
     if (isNewSessionCommand(command)) {
       await this.startNewSession(app, tui);
       return;
@@ -518,6 +535,84 @@ export class TopchesterTuiShell implements TuiShell {
 
       throw error;
     }
+  }
+
+  private isSkillsOverlayCommand(command: string): boolean {
+    const parts = command.trim().slice(1).split(/\s+/u).filter(Boolean);
+
+    return (
+      parts[0]?.toLowerCase() === "skills" && !["list", "inspect", "reload"].includes(parts[1]?.toLowerCase() ?? "")
+    );
+  }
+
+  private getSkillsOverlayFilter(command: string): string {
+    return command.trim().slice(1).split(/\s+/u).filter(Boolean).slice(1).join(" ");
+  }
+
+  private async showSkillsOverlay(app: ChatLayout, tui: TUI, query = ""): Promise<void> {
+    const skills = await this.skillsService.listSkills();
+    const visibleSkills = filterSkillsForOverlay(skills.active, query);
+
+    app.setModalActionHandler((action) => {
+      const value = action.value;
+
+      if (value === SKILL_OVERLAY_CLOSE_VALUE || value === "cancel") {
+        tui.requestRender();
+        return;
+      }
+
+      if (value === SKILL_OVERLAY_RELOAD_VALUE) {
+        this.skillsService.reload();
+        this.startBackgroundTask(app, tui, "Skills", () => this.showSkillsOverlay(app, tui, query));
+        return;
+      }
+
+      if (value?.startsWith("inspect:")) {
+        this.startBackgroundTask(app, tui, "Skills", () =>
+          this.showSkillInspectOverlay(app, tui, value.slice(8), query)
+        );
+      }
+    });
+    app.addMessage({
+      kind: "modal",
+      tone: "info",
+      title: query ? `Skills: ${query}` : "Skills",
+      body: formatSkillsOverlayBody(skills, visibleSkills),
+      actions: createSkillsOverlayActions(visibleSkills),
+    });
+    tui.requestRender();
+  }
+
+  private async showSkillInspectOverlay(app: ChatLayout, tui: TUI, skillName: string, query = ""): Promise<void> {
+    const skill = await this.skillsService.viewSkill(skillName);
+
+    app.setModalActionHandler((action) => {
+      const value = action.value;
+
+      if (value === SKILL_OVERLAY_CLOSE_VALUE || value === "cancel") {
+        tui.requestRender();
+        return;
+      }
+
+      if (value === SKILL_OVERLAY_BACK_VALUE) {
+        this.startBackgroundTask(app, tui, "Skills", () => this.showSkillsOverlay(app, tui, query));
+        return;
+      }
+
+      if (value?.startsWith("activate:")) {
+        this.pendingSkillActivations.push(skill);
+        app.addMessage(systemMessage(formatSkillActivationNotice(skill.name, false)));
+        tui.requestRender();
+      }
+    });
+    app.addMessage({
+      kind: "modal",
+      tone: "info",
+      title: skill.name,
+      body: formatSkillInspectBody(skill),
+      actions: createSkillInspectActions(skill),
+    });
+    tui.requestRender();
   }
 
   private async submitConnectCommand(app: ChatLayout, tui: TUI, command: string): Promise<void> {

@@ -601,7 +601,7 @@ Dependencies: Slices 1-4.
 
 ### Slice 6: TUI Skills Overlay
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Add a navigable UI for listing, inspecting, activating, searching, and reloading skills.
 
@@ -628,6 +628,13 @@ Verification:
 
 ```sh
 pnpm test
+```
+
+Actual verification:
+
+```sh
+pnpm test test/tui.render.test.ts test/commands.test.ts
+pnpm typecheck
 ```
 
 Dependencies: Slices 3 and 5.
@@ -790,7 +797,8 @@ Do not ship without verifying:
 - 2026-05-16: Slice 3 added a cached skills service, `skills_list` and `skill_view` model tools, profile/tool-registry integration, traversal rejection for linked skill files, and focused service/tool tests.
 - 2026-05-16: Slice 4 added five built-in skills under `skills/`, included them in package files, verified built-in discovery and workspace override behavior, and confirmed `pnpm pack --dry-run` includes `skills/**/SKILL.md`.
 - 2026-05-16: Slice 5 added `/skills list`, `/skills inspect <name>`, `/skills reload`, `/skill <name>`, skill shortcut commands, shared activation prompt formatting, and TUI activation handling for immediate or next-message skill use.
+- 2026-05-16: Slice 6 added a modal-backed Skills overlay for `/skills`, with filtering by `/skills <query>`, inspect, activate-for-next-message, reload, close/back actions, and focused overlay formatting tests.
 
 ## Next Slice
 
-Start with Slice 6: TUI Skills Overlay.
+Start with Slice 7: Inline Mention Activation.

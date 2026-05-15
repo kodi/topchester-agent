@@ -14,6 +14,10 @@ import {
   formatKnowledgeFooterStatus,
   formatKnowledgePathStatus,
   formatStatusLine,
+  filterSkillsForOverlay,
+  formatSkillsOverlayBody,
+  createSkillsOverlayActions,
+  formatSkillInspectBody,
   getModelSetupHint,
   getKnowledgeStatusMessages,
   getStartupThreadMessages,
@@ -279,6 +283,77 @@ describe("TUI rendering", () => {
     expect(formatKnowledgeFooterStatus({ ...baseStatus, kbExists: true, kbIsDirectory: false })).toBe(
       "✕ kb: path conflict"
     );
+  });
+
+  it("formats and filters the Skills overlay", () => {
+    const skills = {
+      active: [
+        {
+          name: "code-review",
+          description: "Review code.",
+          source: "builtin" as const,
+          root: "/repo/skills",
+          skillDir: "/repo/skills/code-review",
+          skillFile: "/repo/skills/code-review/SKILL.md",
+          precedence: 0,
+          shadowed: false,
+        },
+        {
+          name: "release-checklist",
+          description: "Prepare a release.",
+          source: "workspace-neutral" as const,
+          root: "/repo/.agents/skills",
+          skillDir: "/repo/.agents/skills/release-checklist",
+          skillFile: "/repo/.agents/skills/release-checklist/SKILL.md",
+          precedence: 6,
+          shadowed: false,
+        },
+      ],
+      shadowed: [
+        {
+          name: "code-review",
+          description: "Old review.",
+          source: "builtin" as const,
+          root: "/repo/skills",
+          skillDir: "/repo/skills/code-review-old",
+          skillFile: "/repo/skills/code-review-old/SKILL.md",
+          precedence: 0,
+          shadowed: true,
+          shadowedBy: "/repo/.agents/skills/code-review",
+        },
+      ],
+    };
+    const visible = filterSkillsForOverlay(skills.active, "release");
+
+    expect(visible.map((skill) => skill.name)).toEqual(["release-checklist"]);
+    expect(formatSkillsOverlayBody(skills, visible)).toContain("shadowed: 1");
+    expect(createSkillsOverlayActions(visible)).toEqual([
+      { label: "Inspect release-checklist", value: "inspect:release-checklist" },
+      { label: "Reload", value: "__topchester_skills_reload__" },
+      { label: "Close", value: "__topchester_skills_close__" },
+    ]);
+  });
+
+  it("formats Skills inspect content", () => {
+    expect(
+      formatSkillInspectBody({
+        name: "code-review",
+        description: "Review code.",
+        source: "builtin",
+        root: "/repo/skills",
+        skillDir: "/repo/skills/code-review",
+        skillFile: "/repo/skills/code-review/SKILL.md",
+        precedence: 0,
+        shadowed: false,
+        content: "# Code Review\n",
+        linkedFiles: {
+          references: ["rubric.md"],
+          templates: [],
+          scripts: ["check.js"],
+          assets: [],
+        },
+      })
+    ).toContain("linked: references 1, templates 0, scripts 1, assets 0");
   });
 
   it("detects empty and ready KB content from the manifest", async () => {
