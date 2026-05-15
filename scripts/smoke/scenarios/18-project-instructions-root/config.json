@@ -1,0 +1,9 @@
+{
+  "id": "18-project-instructions-root",
+  "name": "Root project instructions",
+  "description": "Checks root AGENTS.md instructions are loaded into the model prompt.",
+  "timeoutMs": 10000,
+  "prompt": "PROJECT_INSTRUCTIONS_ROOT_SMOKE answer according to the project instructions.",
+  "requiredToolCalls": [],
+  "expectedOutputContains": ["root instruction applied"]
+}

@@ -474,7 +474,7 @@ Dependencies:
 
 ### Slice 6: Docs And Smoke Coverage
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Make the feature understandable and cover it in the fake-API smoke suite.
 
@@ -496,6 +496,7 @@ Verification:
 
 - `pnpm test`
 - `pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --trials 1`
+- 2026-05-16: Passed `pnpm test`, `pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --trials 1`, `pnpm exec tsgo --noEmit`, `pnpm format`, and focused `pnpm exec oxlint scripts/smoke/fake-api.ts`.
 
 Dependencies:
 
@@ -598,4 +599,4 @@ Docs and smoke:
 
 ## Next Slice
 
-Start with Slice 6. Finish the user docs and add fake-API smoke coverage for root instructions and nested edit guarding.
+Run the final completion audit and `mise run local-ci`.

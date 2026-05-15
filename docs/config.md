@@ -238,6 +238,12 @@ ignore:
 
 Ignore paths are workspace-relative glob patterns. Absolute paths and `..` traversal are rejected.
 
+## Project Instructions
+
+Topchester loads `AGENTS.override.md` or `AGENTS.md` from the workspace as live project instructions. Nested files apply inside their folders, and deeper folders win when instructions conflict.
+
+V0 has no config knobs for this feature. Topchester does not load `CLAUDE.md`, `.clinerules`, `.cursor/rules`, remote URLs, or home-level instruction files by default.
+
 ## Command Policy
 
 `run_command` is limited to validators and configured command prefixes. Add project-specific allow and deny rules under `tools.commands`:

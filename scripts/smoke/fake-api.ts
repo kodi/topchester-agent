@@ -220,6 +220,39 @@ function chooseResponse(prompt: string): string {
     });
   }
 
+  if (
+    prompt.includes("PROJECT_INSTRUCTIONS_NESTED_EDIT_SMOKE") &&
+    prompt.includes("Tool result from edit_file") &&
+    prompt.includes("+marker=nested-ok")
+  ) {
+    return "Nested project instructions were applied.";
+  }
+
+  if (
+    prompt.includes("PROJECT_INSTRUCTIONS_NESTED_EDIT_SMOKE") &&
+    prompt.includes("Tool result from edit_file") &&
+    prompt.includes("did not change src/value.txt")
+  ) {
+    return toolCall("edit_file", {
+      path: "src/value.txt",
+      edits: [{ old_text: "marker=old\n", new_text: "marker=nested-ok\n" }],
+    });
+  }
+
+  if (prompt.includes("PROJECT_INSTRUCTIONS_NESTED_EDIT_SMOKE")) {
+    return toolCall("edit_file", {
+      path: "src/value.txt",
+      edits: [{ old_text: "marker=old\n", new_text: "marker=nested-ok\n" }],
+    });
+  }
+
+  if (
+    prompt.includes("PROJECT_INSTRUCTIONS_ROOT_SMOKE") &&
+    prompt.includes("ROOT_INSTRUCTION_EXPECTED: root instruction applied")
+  ) {
+    return "root instruction applied";
+  }
+
   if (prompt.includes("Tool result from edit_file")) {
     return "Done.";
   }

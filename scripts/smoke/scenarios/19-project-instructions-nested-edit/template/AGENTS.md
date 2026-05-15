@@ -1,0 +1,1 @@
+Root smoke instruction.
