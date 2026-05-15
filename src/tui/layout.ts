@@ -76,7 +76,7 @@ export class ChatLayout implements Component, Focusable {
     private readonly terminal: Terminal,
     private readonly messages: ChatMessage[],
     private readonly folderName: string,
-    private readonly modelLabel: string,
+    private modelLabel: string,
     options: (() => void) | ChatLayoutOptions = {}
   ) {
     this.exitAgent = typeof options === "function" ? options : (options.exitAgent ?? (() => {}));
@@ -97,6 +97,10 @@ export class ChatLayout implements Component, Focusable {
 
   setKnowledgeStatus(status: KnowledgeStatus): void {
     this.knowledgeStatus = formatKnowledgeFooterStatus(status);
+  }
+
+  setModelLabel(modelLabel: string): void {
+    this.modelLabel = modelLabel;
   }
 
   setTaskPlan(plan: TaskPlanState | undefined): TaskPlanChangeKind {
@@ -262,7 +266,7 @@ export class ChatLayout implements Component, Focusable {
     const safeWidth = Math.max(20, width);
     const footerLines = this.getActiveModal() ? this.renderModalHelp(safeWidth) : this.renderPrompt(safeWidth);
     const threadHeight = Math.max(1, this.terminal.rows - footerLines.length);
-    const allThreadLines = this.renderThread(safeWidth);
+    const allThreadLines = this.renderThread(safeWidth, threadHeight);
 
     if (this.transcriptMode === "inline") {
       this.threadScrollOffset = 0;
@@ -281,12 +285,13 @@ export class ChatLayout implements Component, Focusable {
     return [...padLines(threadLines, threadHeight, safeWidth), ...footerLines];
   }
 
-  private renderThread(width: number): string[] {
+  private renderThread(width: number, threadHeight: number): string[] {
     const innerWidth = Math.max(1, width);
 
     const activeModalIndex = this.getActiveModalIndex();
     const lines = this.messages.flatMap((message, index) => {
       const messageLines = renderChatMessage(message, {
+        maxModalHeight: index === activeModalIndex ? threadHeight : undefined,
         selectedActionIndex: index === activeModalIndex ? this.activeModalActionIndex : undefined,
         width: innerWidth,
       });

@@ -1,12 +1,24 @@
 import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAppContext } from "../src/app/context.js";
-import { addProjectCommandAllowExactRule, loadTopchesterConfig } from "../src/config/index.js";
+import {
+  addGlobalModelChoices,
+  addProjectCommandAllowExactRule,
+  configureOpenRouterGlobalProvider,
+  loadTopchesterConfig,
+  setGlobalDefaultModel,
+} from "../src/config/index.js";
 
 const envKeys = ["HOME", "TOPCHESTER_CONFIG", "TOPCHESTER_LOG_LEVEL"] as const;
 const originalEnv = new Map(envKeys.map((key) => [key, process.env[key]]));
+
+beforeEach(async () => {
+  process.env.HOME = await mkdtemp(join(tmpdir(), "topchester-home-"));
+  delete process.env.TOPCHESTER_CONFIG;
+  delete process.env.TOPCHESTER_LOG_LEVEL;
+});
 
 afterEach(() => {
   for (const key of envKeys) {
@@ -61,7 +73,7 @@ describe("Topchester config loading", () => {
       join(workspace, "topchester.jsonc"),
       [
         "{",
-        '  "models": { "default": "openrouter/qwen/qwen3-coder:free" },',
+        '  "models": { "default": "openrouter/qwen/qwen3-coder:free", "fast": "openrouter/google/project-fast" },',
         '  "ignore": { "paths": ["project/**"] },',
         '  "tools": { "commands": { "allow": ["node scripts/project-check.mjs"], "allowExact": ["node --project"], "deny": ["npm publish"] } }',
         "}",
@@ -89,26 +101,141 @@ describe("Topchester config loading", () => {
     const config = loadTopchesterConfig({ workspaceRoot: workspace, configPath: cliConfig });
 
     expect(config.models?.assignments?.["agent.primary"]).toEqual({
-      name: "qwen/qwen3-coder:free",
+      name: "openai/gpt-4.1-mini",
       provider: "openrouter",
     });
     expect(config.models?.assignments?.["agent.fast"]).toEqual({
-      name: "google/gemini-3.1-flash-lite",
+      name: "google/project-fast",
       provider: "openrouter",
     });
     expect(config.models?.assignments?.["kb.summarize"]).toEqual({
       name: "google/gemini-3.1-pro",
       provider: "openrouter",
     });
-    expect(config.ignore?.paths).toEqual(["user/**", "project/**", "local/**", "env/**", "cli/**", "!cli/keep/**"]);
+    expect(config.ignore?.paths).toEqual(["project/**", "user/**", "env/**", "cli/**", "!cli/keep/**"]);
     expect(config.tools?.commands?.allow).toEqual([
-      "node scripts/user-check.mjs",
       "node scripts/project-check.mjs",
-      "node scripts/local-check.mjs",
+      "node scripts/user-check.mjs",
       "node scripts/cli-check.mjs",
     ]);
-    expect(config.tools?.commands?.allowExact).toEqual(["node --user", "node --project"]);
-    expect(config.tools?.commands?.deny).toEqual(["pnpm publish", "npm publish", "yarn publish"]);
+    expect(config.tools?.commands?.allowExact).toEqual(["node --project", "node --user"]);
+    expect(config.tools?.commands?.deny).toEqual(["npm publish", "pnpm publish", "yarn publish"]);
+  });
+
+  it("normalizes provider-qualified model choices", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        models: {
+          default: "openrouter/qwen/qwen3-coder",
+          choices: ["openrouter/qwen/qwen3-coder", "openrouter/anthropic/claude-sonnet-4.5"],
+        },
+      })
+    );
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(config.models?.choices).toEqual([
+      { provider: "openrouter", name: "qwen/qwen3-coder" },
+      { provider: "openrouter", name: "anthropic/claude-sonnet-4.5" },
+    ]);
+  });
+
+  it("rejects bare model choices because /model choices must name a provider", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+    const configPath = join(workspace, "topchester.jsonc");
+    await writeFile(configPath, JSON.stringify({ models: { choices: ["qwen3-coder"] } }));
+
+    expect(() => loadTopchesterConfig({ workspaceRoot: workspace })).toThrow("models.choices.0.provider");
+  });
+
+  it("writes OpenRouter provider setup and model choices to global user config", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const home = join(root, "home");
+    const workspace = join(root, "workspace");
+    process.env.HOME = home;
+    await mkdir(workspace, { recursive: true });
+
+    await expect(configureOpenRouterGlobalProvider()).resolves.toMatchObject({
+      path: join(home, ".config", "topchester", "config.jsonc"),
+    });
+    await addGlobalModelChoices(["openrouter/qwen/qwen3-coder"]);
+    await setGlobalDefaultModel("openrouter/anthropic/claude-sonnet-4.5");
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+    const written = await readFile(join(home, ".config", "topchester", "config.jsonc"), "utf8");
+
+    expect(config.models?.providers?.default).toBe("openrouter");
+    expect(config.models?.providers?.openrouter).toMatchObject({
+      type: "openai-compatible",
+      baseURL: "https://openrouter.ai/api/v1",
+      apiKeyEnv: "OPENROUTER_API_KEY",
+    });
+    expect(config.models?.assignments?.["agent.primary"]).toEqual({
+      provider: "openrouter",
+      name: "anthropic/claude-sonnet-4.5",
+    });
+    expect(config.models?.choices).toEqual([
+      { provider: "openrouter", name: "anthropic/claude-sonnet-4.5" },
+      { provider: "openrouter", name: "qwen/qwen3-coder" },
+    ]);
+    expect(written).toContain('"OPENROUTER_API_KEY"');
+  });
+
+  it("moves the selected global model choice to the top", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const home = join(root, "home");
+    const workspace = join(root, "workspace");
+    process.env.HOME = home;
+    await mkdir(workspace, { recursive: true });
+
+    await addGlobalModelChoices([
+      "openrouter/qwen/qwen3-coder",
+      "openrouter/anthropic/claude-sonnet-4.5",
+      "openrouter/google/gemini-3.1-flash-lite",
+    ]);
+    await setGlobalDefaultModel("openrouter/google/gemini-3.1-flash-lite");
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(config.models?.choices?.map((choice) => `${choice.provider}/${choice.name}`)).toEqual([
+      "openrouter/google/gemini-3.1-flash-lite",
+      "openrouter/qwen/qwen3-coder",
+      "openrouter/anthropic/claude-sonnet-4.5",
+    ]);
+  });
+
+  it("can promote starter model choices ahead of older global choices", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const home = join(root, "home");
+    const workspace = join(root, "workspace");
+    process.env.HOME = home;
+    await mkdir(workspace, { recursive: true });
+
+    await addGlobalModelChoices([
+      "openrouter/qwen/qwen3-coder-next",
+      "openrouter/qwen/qwen3-coder",
+      "openrouter/anthropic/claude-sonnet-4.5",
+    ]);
+    await addGlobalModelChoices(
+      ["openrouter/qwen/qwen3-coder:free", "openrouter/qwen/qwen3-coder", "openrouter/google/gemini-3.1-flash-lite"],
+      { prioritize: true }
+    );
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(config.models?.choices?.map((choice) => `${choice.provider}/${choice.name}`)).toEqual([
+      "openrouter/qwen/qwen3-coder:free",
+      "openrouter/qwen/qwen3-coder",
+      "openrouter/google/gemini-3.1-flash-lite",
+      "openrouter/qwen/qwen3-coder-next",
+      "openrouter/anthropic/claude-sonnet-4.5",
+    ]);
   });
 
   it("adds repo-scoped command approvals to topchester.jsonc", async () => {
@@ -185,7 +312,7 @@ describe("Topchester config loading", () => {
     expect(config.models?.assignments?.["agent.primary"]?.name).toBe("jsonc/model");
   });
 
-  it("expands a simple OpenRouter default model into every supported internal purpose", async () => {
+  it("expands a simple OpenRouter default model into the primary and fallback slots", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
@@ -199,11 +326,10 @@ describe("Topchester config loading", () => {
     expect(config.models?.defaultPurpose).toBeUndefined();
     expect(config.models?.assignments).toMatchObject({
       "agent.primary": { name: "google/gemini-3.1-flash-lite", provider: "openrouter" },
-      "agent.fast": { name: "google/gemini-3.1-flash-lite", provider: "openrouter" },
-      "kb.scan": { name: "google/gemini-3.1-flash-lite", provider: "openrouter" },
-      "kb.summarize": { name: "google/gemini-3.1-flash-lite", provider: "openrouter" },
       "fallback": { name: "google/gemini-3.1-flash-lite", provider: "openrouter" },
     });
+    expect(config.models?.assignments?.["agent.fast"]).toBeUndefined();
+    expect(config.models?.assignments?.["kb.summarize"]).toBeUndefined();
     expect(config.models?.providers?.default).toBe("openrouter");
     expect(config.models?.providers?.openrouter).toMatchObject({
       type: "openai-compatible",
@@ -357,7 +483,7 @@ describe("Topchester config loading", () => {
     expect(config.models?.providers?.openrouter).toBeUndefined();
   });
 
-  it("lets a later default model replace an earlier default model", async () => {
+  it("lets the user default model replace a project default model", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const home = join(root, "home");
     const workspace = join(root, "workspace");
@@ -377,16 +503,16 @@ describe("Topchester config loading", () => {
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
 
     expect(config.models?.assignments?.["agent.primary"]).toEqual({
-      name: "qwen/qwen3-coder:free",
+      name: "openai/gpt-4.1-mini",
       provider: "openrouter",
     });
-    expect(config.models?.assignments?.["kb.summarize"]).toEqual({
-      name: "qwen/qwen3-coder:free",
+    expect(config.models?.assignments?.fallback).toEqual({
+      name: "openai/gpt-4.1-mini",
       provider: "openrouter",
     });
   });
 
-  it("lets later fast and kb.summarize slots override an earlier default", async () => {
+  it("keeps project fast and kb.summarize slots when user config sets a default", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const home = join(root, "home");
     const workspace = join(root, "workspace");

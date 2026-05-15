@@ -14,6 +14,7 @@ import {
   formatKnowledgeFooterStatus,
   formatKnowledgePathStatus,
   formatStatusLine,
+  getModelSetupHint,
   getKnowledgeStatusMessages,
   getStartupThreadMessages,
   renderStaticLayout,
@@ -26,6 +27,8 @@ import {
   chatMessageToSessionPayload,
   createExitConfirmationInputListener,
   formatDuration,
+  formatHomeRelativePath,
+  formatModelPickerLabel,
   isStreamReasoningEnabledByEnv,
   persistMessagesWithWarning,
   printExitBanner,
@@ -84,6 +87,29 @@ describe("TUI rendering", () => {
     expect(formatDuration(1000)).toBe("1 second");
     expect(formatDuration(61_000)).toBe("1 minute 1 second");
     expect(formatDuration(3_661_000)).toBe("1 hour 1 minute 1 second");
+  });
+
+  it("shortens OpenRouter model refs for modal picker labels", () => {
+    expect(formatModelPickerLabel("openrouter/deepseek/deepseek-chat")).toBe("deepseek/deepseek-chat");
+    expect(formatModelPickerLabel("anthropic/claude-sonnet-4.5")).toBe("anthropic/claude-sonnet-4.5");
+  });
+
+  it("shortens home config paths in user-facing messages", () => {
+    expect(formatHomeRelativePath(join(process.env.HOME ?? "", ".config", "topchester", "config.jsonc"))).toBe(
+      "~/.config/topchester/config.jsonc"
+    );
+    expect(formatHomeRelativePath("/var/tmp/topchester/config.jsonc")).toBe("/var/tmp/topchester/config.jsonc");
+  });
+
+  it("shows a setup hint when startup has no model config", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-startup-model-hint-"));
+    const context = createTestContext(workspace);
+    const output = renderChatMessage(getStartupThreadMessages(context)[0]!).join("\n");
+
+    expect(getModelSetupHint(context)).toContain("run /connect openrouter");
+    expect(output).toContain("model assignments: none configured");
+    expect(output).toContain("providers: none configured");
+    expect(output).toContain("Model setup: run /connect openrouter, then /model to choose a model.");
   });
 
   it("prints an exit banner with resume command", () => {
@@ -340,6 +366,16 @@ describe("TUI rendering", () => {
     expect(output).toContain("   Welcome");
     expect(output).toContain("│ >");
     expect(output).toContain("● ready ·  repo · model [provider]");
+  });
+
+  it("updates the footer model label after a model switch", () => {
+    const app = new ChatLayout(new FakeTerminal(), [systemMessage("Welcome")], "repo", "old [openrouter]");
+
+    app.setModelLabel("new/model [openrouter]");
+
+    const output = app.render(60).join("\n");
+    expect(output).toContain("● ready ·  repo · new/model [openrouter]");
+    expect(output).not.toContain("old [openrouter]");
   });
 
   it("hides the task plan block when there are no plan items", () => {
@@ -1194,6 +1230,33 @@ describe("TUI rendering", () => {
     expect(output).toContain("> 2) Skip creation");
   });
 
+  it("renders a scroll window for long chat modal action lists", () => {
+    const app = new ChatLayout(
+      new FakeTerminal(),
+      [
+        modalMessage({
+          tone: "info",
+          title: "Choose model",
+          actions: Array.from({ length: 25 }, (_, index) => ({ label: `Choice ${index + 1}` })),
+        }),
+      ],
+      "repo",
+      "model [provider]"
+    );
+
+    for (let index = 0; index < 12; index += 1) {
+      app.handleInput("\u001b[B");
+    }
+
+    const output = app.render(80).join("\n");
+
+    expect(output).toMatch(/↑ \d+ more/u);
+    expect(output).toContain("> 13) Choice 13");
+    expect(output).toMatch(/↓ \d+ more/u);
+    expect(output).not.toContain("  1) Choice 1");
+    expect(output).not.toContain("  25) Choice 25");
+  });
+
   it("submits the active chat modal action on enter", () => {
     let submitted = "";
     const app = new ChatLayout(
@@ -1697,6 +1760,104 @@ describe("TUI rendering", () => {
 
     expect(events).toEqual([agentEvent.status("ready")]);
     expect(events.flatMap((event) => (event.type === "message" ? [event.text] : []))).not.toContain("ready");
+  });
+
+  it("refreshes the KB footer after selecting a model", async () => {
+    const previousHome = process.env.HOME;
+    const root = await mkdtemp(join(tmpdir(), "topchester-model-kb-footer-"));
+    const home = join(root, "home");
+    const workspace = join(root, "workspace");
+    process.env.HOME = home;
+    await mkdir(workspace, { recursive: true });
+
+    try {
+      const context = createTestContext(workspace);
+      const app = new ChatLayout(new FakeTerminal(), [], "repo", "not set");
+      const shell = new TopchesterTuiShell(context, {
+        async checkAgent() {
+          return [];
+        },
+        async checkKnowledgeBase() {
+          return [
+            agentEvent.knowledgeStatus({
+              workspaceRoot: workspace,
+              kbPath: join(workspace, "topchester-kb"),
+              cachePath: join(workspace, ".agents", "topchester-kb-cache"),
+              kbExists: true,
+              kbIsDirectory: true,
+              kbContentState: "ready",
+              nonCleanFileCount: 0,
+              cacheExists: false,
+              cacheIsDirectory: false,
+              kbPathSource: "default",
+              cachePathSource: "default",
+            }),
+          ];
+        },
+        async submitSlashCommand() {
+          return [];
+        },
+        async *submitMessageStream() {
+          yield agentEvent.assistantMessage("unused");
+        },
+        async submitMessage() {
+          return [];
+        },
+      });
+
+      await (
+        shell as unknown as {
+          selectModelChoice(app: ChatLayout, tui: { requestRender(): void }, modelRef: string): Promise<void>;
+        }
+      ).selectModelChoice(app, { requestRender() {} }, "openrouter/google/gemini-3.1-flash-lite");
+
+      const output = app.render(100).join("\n");
+
+      expect(output).toContain("google/gemini-3.1-flash-lite [openrouter]");
+      expect(output).toContain("✅ kb: ready | clean");
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+    }
+  });
+
+  it("adds a setup hint when startup agent check has no model config", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-check-hint-"));
+    const context = createTestContext(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "not set");
+    const shell = new TopchesterTuiShell(
+      context,
+      {
+        async checkAgent() {
+          throw new Error('No model configured for purpose "agent.fast".');
+        },
+        async checkKnowledgeBase() {
+          return [];
+        },
+        async submitSlashCommand() {
+          return [];
+        },
+        async *submitMessageStream() {
+          yield agentEvent.assistantMessage("unused");
+        },
+        async submitMessage() {
+          return [];
+        },
+      },
+      { initialMessages: [] }
+    );
+
+    await (
+      shell as unknown as { checkAgent(app: ChatLayout, tui: { requestRender(): void }): Promise<void> }
+    ).checkAgent(app, { requestRender() {} });
+
+    const output = app.render(80).join("\n");
+
+    expect(output).toContain('Agent check failed: No model configured for purpose "agent.fast".');
+    expect(output).toContain("Model setup: run /connect openrouter, then /model to choose a model.");
   });
 
   it("marks slash-command submissions as visible-only command input", () => {

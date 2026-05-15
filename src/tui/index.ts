@@ -16,6 +16,7 @@ export {
   formatStatusLine,
   getFolderName,
   getModelLabel,
+  getModelSetupHint,
   getStartupThreadMessages,
   renderStaticLayout,
 } from "./status.js";

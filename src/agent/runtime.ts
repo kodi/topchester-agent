@@ -47,6 +47,7 @@ const DEFAULT_TASK_CONCURRENCY = 3;
 interface TurnTokenUsageTotals {
   inputTokens?: number;
   outputTokens?: number;
+  costUsd?: number;
 }
 
 export interface AgentRuntime {
@@ -1317,14 +1318,24 @@ function addTokenUsageTotals(totals: TurnTokenUsageTotals, usage: ModelAgentResu
   if (typeof usage.outputTokens === "number") {
     totals.outputTokens = (totals.outputTokens ?? 0) + usage.outputTokens;
   }
+
+  if (typeof usage.costUsd === "number") {
+    totals.costUsd = (totals.costUsd ?? 0) + usage.costUsd;
+  }
 }
 
 function formatTokenUsage(usage: TurnTokenUsageTotals | undefined): string | undefined {
-  if (usage?.inputTokens === undefined && usage?.outputTokens === undefined) {
+  if (usage?.inputTokens === undefined && usage?.outputTokens === undefined && usage?.costUsd === undefined) {
     return undefined;
   }
 
-  return `${formatInteger(usage.inputTokens ?? 0)} input / ${formatInteger(usage.outputTokens ?? 0)} output tokens`;
+  const tokenUsage =
+    usage.inputTokens === undefined && usage.outputTokens === undefined
+      ? undefined
+      : `${formatInteger(usage.inputTokens ?? 0)} input / ${formatInteger(usage.outputTokens ?? 0)} output tokens`;
+  const cost = usage.costUsd === undefined ? undefined : formatUsdCost(usage.costUsd);
+
+  return [tokenUsage, cost].filter(Boolean).join(" / ");
 }
 
 /**
@@ -1371,4 +1382,18 @@ function formatInteger(value: number): string {
   return value.toLocaleString("en", {
     maximumFractionDigits: 0,
   });
+}
+
+function formatUsdCost(value: number): string | undefined {
+  if (!Number.isFinite(value)) {
+    return undefined;
+  }
+
+  const fractionDigits = value >= 1 ? 2 : value >= 0.01 ? 4 : 6;
+  const formatted = value
+    .toFixed(fractionDigits)
+    .replace(/(\.\d*?[1-9])0+$/u, "$1")
+    .replace(/\.0+$/u, ".00");
+
+  return `$${formatted}`;
 }

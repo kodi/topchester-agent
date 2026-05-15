@@ -96,13 +96,16 @@ export function modalMessage(message: Omit<ChatModalMessage, "kind">): ChatMessa
 }
 
 export interface RenderChatMessageOptions {
+  maxModalHeight?: number;
   selectedActionIndex?: number;
   width?: number;
 }
 
+const DEFAULT_MODAL_VISIBLE_ACTION_LIMIT = 16;
+
 export function renderChatMessage(message: ChatMessage, options: RenderChatMessageOptions = {}): string[] {
   if (message.kind === "modal") {
-    return renderChatModal(message, options.selectedActionIndex);
+    return renderChatModal(message, options.selectedActionIndex, options.maxModalHeight);
   }
 
   if (message.kind === "tool_call") {
@@ -230,16 +233,32 @@ function getPrefix(kind: UserChatMessage["kind"] | AgentChatMessage["kind"] | Sy
   }
 }
 
-function renderChatModal(message: ChatModalMessage, selectedActionIndex?: number): string[] {
+function renderChatModal(message: ChatModalMessage, selectedActionIndex?: number, maxModalHeight?: number): string[] {
   const icon = message.tone === "warning" ? "⚠️" : "ℹ️";
   const title = message.tone === "warning" ? ui.warn(message.title) : ui.label(message.title);
   const bodyLines = message.body ? ["", ...message.body.split("\n")] : [];
-  const actionLines = message.actions.map((action, index) => {
-    const prefix = selectedActionIndex === index ? ">" : " ";
+  const baseContentLineCount = 2 + bodyLines.length;
+  const maxScrollableActionRows =
+    maxModalHeight === undefined
+      ? DEFAULT_MODAL_VISIBLE_ACTION_LIMIT
+      : Math.max(1, maxModalHeight - baseContentLineCount - 2);
+  const selectedIndex =
+    message.actions.length === 0 ? 0 : Math.max(0, Math.min(selectedActionIndex ?? 0, message.actions.length - 1));
+  const visibleActions = getVisibleModalActions(message.actions, selectedIndex, maxScrollableActionRows);
+  const actionLines = visibleActions.actions.map((action, offset) => {
+    const index = visibleActions.startIndex + offset;
+    const prefix = selectedIndex === index ? ">" : " ";
 
     return `${prefix} ${index + 1}) ${action.label}`;
   });
-  const contentLines = [`${icon}  ${title}:`, ...bodyLines, "", ...actionLines];
+  const scrollHintLines = [
+    ...(visibleActions.startIndex > 0 ? [`  ↑ ${visibleActions.startIndex} more`] : []),
+    ...actionLines,
+    ...(visibleActions.endIndex < message.actions.length
+      ? [`  ↓ ${message.actions.length - visibleActions.endIndex} more`]
+      : []),
+  ];
+  const contentLines = [`${icon}  ${title}:`, ...bodyLines, "", ...scrollHintLines];
   const contentWidth = Math.max(...contentLines.map(stripAnsi).map((line) => line.length), 1);
   const top = `╭${"─".repeat(contentWidth + 2)}╮`;
   const bottom = `╰${"─".repeat(contentWidth + 2)}╯`;
@@ -249,6 +268,52 @@ function renderChatModal(message: ChatModalMessage, selectedActionIndex?: number
     ...contentLines.map((line) => `│ ${line}${" ".repeat(contentWidth - stripAnsi(line).length)} │`),
     bottom,
   ];
+}
+
+function getVisibleModalActions(
+  actions: ChatModalAction[],
+  selectedIndex: number,
+  maxRows: number
+): { actions: ChatModalAction[]; startIndex: number; endIndex: number } {
+  const maxActionRows = Math.max(1, Math.min(DEFAULT_MODAL_VISIBLE_ACTION_LIMIT, maxRows));
+
+  if (actions.length <= maxActionRows) {
+    return { actions, startIndex: 0, endIndex: actions.length };
+  }
+
+  let actionRowCount = maxActionRows;
+  let window = getModalActionWindow(actions.length, selectedIndex, actionRowCount);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const hintRows = (window.startIndex > 0 ? 1 : 0) + (window.endIndex < actions.length ? 1 : 0);
+    const nextActionRowCount = Math.max(1, Math.min(DEFAULT_MODAL_VISIBLE_ACTION_LIMIT, maxRows - hintRows));
+
+    if (nextActionRowCount === actionRowCount) {
+      break;
+    }
+
+    actionRowCount = nextActionRowCount;
+    window = getModalActionWindow(actions.length, selectedIndex, actionRowCount);
+  }
+
+  return {
+    actions: actions.slice(window.startIndex, window.endIndex),
+    startIndex: window.startIndex,
+    endIndex: window.endIndex,
+  };
+}
+
+function getModalActionWindow(
+  actionCount: number,
+  selectedIndex: number,
+  actionRowCount: number
+): { startIndex: number; endIndex: number } {
+  const boundedActionRowCount = Math.max(1, Math.min(actionCount, actionRowCount));
+  const maxStartIndex = actionCount - boundedActionRowCount;
+  const centeredStartIndex = selectedIndex - Math.floor(boundedActionRowCount / 2);
+  const startIndex = Math.max(0, Math.min(centeredStartIndex, maxStartIndex));
+
+  return { startIndex, endIndex: startIndex + boundedActionRowCount };
 }
 
 function stripAnsi(text: string): string {

@@ -1,4 +1,6 @@
 import { isKeyRelease, isKeyRepeat, matchesKey, ProcessTerminal, TUI } from "@earendil-works/pi-tui";
+import { homedir } from "node:os";
+import { relative } from "node:path";
 import { type AgentRuntimeEvent } from "../agent/events.js";
 import { formatTaskPlanNotice, type TaskPlanState } from "../agent/task-plan.js";
 import {
@@ -7,10 +9,25 @@ import {
   type RunCommandApprovalDecision,
   type RunCommandApprovalRequest,
 } from "../agent/runtime.js";
-import { type AppContext } from "../app/context.js";
+import { createModelGatewayFromConfig, type AppContext } from "../app/context.js";
 import { ui } from "../cli/ui.js";
-import { addProjectCommandAllowExactRule } from "../config/index.js";
+import {
+  addGlobalModelChoices,
+  addProjectCommandAllowExactRule,
+  configureOpenRouterGlobalProvider,
+  formatModelRef,
+  getConfiguredModelChoices,
+  loadTopchesterConfig,
+  setGlobalDefaultModel,
+} from "../config/index.js";
 import { type ModelReasoningEvent, type ModelReasoningSink } from "../model/index.js";
+import {
+  fallbackOpenRouterStarterChoices,
+  fetchOpenRouterModelChoices,
+  rankOpenRouterModelChoices,
+  selectOpenRouterStarterChoices,
+  type OpenRouterModelChoice,
+} from "../model/openrouter.js";
 import { type SessionEventPayload } from "../session/events.js";
 import { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
 import { createSession, type SessionHandle } from "../session/store.js";
@@ -18,7 +35,13 @@ import { BusyIndicator, ReasoningTailBuffer } from "./busy.js";
 import { ChatLayout } from "./layout.js";
 import { type ChatMessage, systemMessage, thinkingMessage } from "./messages.js";
 import { renderRuntimeEvent } from "./runtime-events.js";
-import { getFolderName, getModelLabel, getStartupThreadMessages, renderStaticLayout } from "./status.js";
+import {
+  getFolderName,
+  getModelLabel,
+  getModelSetupHint,
+  getStartupThreadMessages,
+  renderStaticLayout,
+} from "./status.js";
 
 export { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
 
@@ -145,7 +168,8 @@ export class TopchesterTuiShell implements TuiShell {
         app.setStatus("ready");
       } else {
         const message = formatPlainError(error);
-        app.addMessage(systemMessage(`Agent check failed: ${message}`));
+        const setupHint = formatAgentCheckSetupHint(message, this.context);
+        app.addMessage(systemMessage(`Agent check failed: ${message}${setupHint ? `\n${setupHint}` : ""}`));
         app.setStatus("agent check failed");
       }
     } finally {
@@ -297,6 +321,16 @@ export class TopchesterTuiShell implements TuiShell {
       return;
     }
 
+    if (isConnectCommand(command)) {
+      await this.submitConnectCommand(app, tui, command);
+      return;
+    }
+
+    if (isModelCommand(command)) {
+      await this.submitModelCommand(app, tui, command);
+      return;
+    }
+
     const busy = new BusyIndicator(app, tui, {
       status: "running command",
       promptHint: "working...",
@@ -327,6 +361,251 @@ export class TopchesterTuiShell implements TuiShell {
     } finally {
       busy.stop();
       tui.requestRender();
+    }
+  }
+
+  private async submitConnectCommand(app: ChatLayout, tui: TUI, command: string): Promise<void> {
+    await this.clearTaskPlanForNewTurn(app);
+    await this.persistPayloadWithWarning(app, slashCommandToSessionPayload(command));
+    const args = getSlashCommandArgs(command);
+
+    if (args.length === 0) {
+      this.showProviderPicker(app, tui);
+      return;
+    }
+
+    if (args.length === 1 && args[0]?.toLowerCase() === "openrouter") {
+      await this.connectOpenRouter(app, tui);
+      return;
+    }
+
+    app.addMessage(systemMessage("Usage: /connect openrouter"));
+    tui.requestRender();
+  }
+
+  private async submitModelCommand(app: ChatLayout, tui: TUI, command: string): Promise<void> {
+    await this.clearTaskPlanForNewTurn(app);
+    await this.persistPayloadWithWarning(app, slashCommandToSessionPayload(command));
+    const args = getSlashCommandArgs(command);
+
+    if (args[0]?.toLowerCase() === "all") {
+      await this.showOpenRouterCatalogPicker(app, tui, args.slice(1).join(" "));
+      return;
+    }
+
+    const query = args.join(" ");
+    const choices = getConfiguredModelChoices(this.context.config);
+
+    if (choices.length === 0) {
+      app.addMessage(systemMessage("No model choices are set yet. Run /connect openrouter first."));
+      tui.requestRender();
+      return;
+    }
+
+    const exactChoice = choices.find((choice) => formatModelRef(choice) === query);
+    if (exactChoice) {
+      await this.selectModelChoice(app, tui, formatModelRef(exactChoice));
+      return;
+    }
+
+    this.showModelPicker(app, tui, query);
+  }
+
+  private showProviderPicker(app: ChatLayout, tui: TUI): void {
+    app.setModalActionHandler((action) => {
+      if (action.value === "openrouter") {
+        this.startBackgroundTask(app, tui, "Connect", () => this.connectOpenRouter(app, tui));
+      }
+    });
+    app.addMessage({
+      kind: "modal",
+      tone: "info",
+      title: "Connect provider",
+      body: "OpenRouter is the first provider in V0. Topchester will use OPENROUTER_API_KEY from your environment.",
+      actions: [
+        { label: "OpenRouter", value: "openrouter" },
+        { label: "Cancel", value: "cancel" },
+      ],
+    });
+    tui.requestRender();
+  }
+
+  private showModelPicker(app: ChatLayout, tui: TUI, query = ""): void {
+    const normalizedQuery = query.trim().toLowerCase();
+    const currentModel = getModelLabel(this.context);
+    const choices = getConfiguredModelChoices(this.context.config).filter((choice) => {
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      const ref = formatModelRef(choice).toLowerCase();
+      return ref.includes(normalizedQuery) || choice.name.toLowerCase().includes(normalizedQuery);
+    });
+
+    if (choices.length === 0) {
+      app.addMessage(systemMessage("No model choices matched. Use /model all to browse OpenRouter models."));
+      tui.requestRender();
+      return;
+    }
+
+    app.setModalActionHandler((action) => {
+      const value = action.value;
+      if (value?.startsWith("model:")) {
+        this.startBackgroundTask(app, tui, "Model", () => this.selectModelChoice(app, tui, value.slice(6)));
+      }
+    });
+    app.addMessage({
+      kind: "modal",
+      tone: "info",
+      title: "Choose model",
+      body: `Current: ${currentModel}`,
+      actions: [
+        ...choices.map((choice) => {
+          const ref = formatModelRef(choice);
+          return { label: formatModelPickerLabel(ref), value: `model:${ref}` };
+        }),
+        { label: "Cancel", value: "cancel" },
+      ],
+    });
+    tui.requestRender();
+  }
+
+  private async showOpenRouterCatalogPicker(app: ChatLayout, tui: TUI, query = ""): Promise<void> {
+    const busy = new BusyIndicator(app, tui, {
+      status: "loading models",
+      promptHint: "working...",
+      activities: ["Asking OpenRouter for models...", "Filtering text models...", "Building model choices..."],
+    });
+
+    busy.start();
+    tui.requestRender();
+
+    try {
+      const choices = await this.fetchOpenRouterChoices();
+      const matches = filterOpenRouterChoices(choices, query);
+
+      if (matches.length === 0) {
+        app.addMessage(systemMessage("No OpenRouter models matched."));
+        return;
+      }
+
+      app.setModalActionHandler((action) => {
+        const value = action.value;
+        if (value?.startsWith("model:")) {
+          this.startBackgroundTask(app, tui, "Model", () => this.selectModelChoice(app, tui, value.slice(6)));
+        }
+      });
+      app.addMessage({
+        kind: "modal",
+        tone: "info",
+        title: "OpenRouter models",
+        body: "Picking one adds it to choices and makes it the default model.",
+        actions: [
+          ...matches.map((choice) => ({
+            label: `${formatModelPickerLabel(choice.ref)}  ${choice.description}`,
+            value: `model:${choice.ref}`,
+          })),
+          { label: "Cancel", value: "cancel" },
+        ],
+      });
+    } catch (error) {
+      app.addMessage(systemMessage(`Could not load OpenRouter models: ${formatPlainError(error)}`));
+    } finally {
+      busy.stop();
+      tui.requestRender();
+    }
+  }
+
+  private async connectOpenRouter(app: ChatLayout, tui: TUI): Promise<void> {
+    const busy = new BusyIndicator(app, tui, {
+      status: "connecting provider",
+      promptHint: "working...",
+      activities: ["Saving OpenRouter provider...", "Loading OpenRouter models...", "Updating local choices..."],
+    });
+
+    busy.start();
+    tui.requestRender();
+
+    try {
+      const providerResult = await configureOpenRouterGlobalProvider();
+      let starterChoices: string[];
+
+      try {
+        starterChoices = selectOpenRouterStarterChoices(await this.fetchOpenRouterChoices());
+      } catch {
+        starterChoices = fallbackOpenRouterStarterChoices();
+      }
+
+      await addGlobalModelChoices(starterChoices, { prioritize: true });
+
+      if (!this.context.config.models?.assignments?.["agent.primary"] && starterChoices[0]) {
+        await setGlobalDefaultModel(starterChoices[0]);
+      }
+
+      this.reloadModelConfig(app);
+      await this.refreshKnowledgeFooter(app);
+      app.addMessage(
+        systemMessage(
+          [
+            "OpenRouter is connected.",
+            `config: ${formatHomeRelativePath(providerResult.path)}`,
+            process.env.OPENROUTER_API_KEY
+              ? "OPENROUTER_API_KEY is set."
+              : "Set OPENROUTER_API_KEY before sending model requests.",
+            "Run /model to choose one of the saved choices.",
+          ].join("\n")
+        )
+      );
+      this.showModelPicker(app, tui);
+    } catch (error) {
+      app.addMessage(systemMessage(`OpenRouter setup failed: ${formatPlainError(error)}`));
+      app.setStatus("provider setup failed");
+    } finally {
+      busy.stop();
+      tui.requestRender();
+    }
+  }
+
+  private async selectModelChoice(app: ChatLayout, tui: TUI, modelRef: string): Promise<void> {
+    try {
+      const result = await setGlobalDefaultModel(modelRef);
+      this.reloadModelConfig(app);
+      await this.refreshKnowledgeFooter(app);
+      app.addMessage(systemMessage(`Model set to ${modelRef}.\nconfig: ${formatHomeRelativePath(result.path)}`));
+      app.setStatus("ready");
+    } catch (error) {
+      app.addMessage(systemMessage(`Model change failed: ${formatPlainError(error)}`));
+      app.setStatus("model change failed");
+    } finally {
+      tui.requestRender();
+    }
+  }
+
+  private reloadModelConfig(app: ChatLayout): void {
+    this.context.config = loadTopchesterConfig({ workspaceRoot: this.context.workspaceRoot });
+    this.context.modelGateway = createModelGatewayFromConfig(this.context.config);
+    app.setModelLabel(getModelLabel(this.context));
+  }
+
+  private async refreshKnowledgeFooter(app: ChatLayout): Promise<void> {
+    for (const event of await this.runtime.checkKnowledgeBase()) {
+      if (event.type === "knowledge_status") {
+        app.setKnowledgeStatus(event.status);
+      }
+    }
+  }
+
+  private async fetchOpenRouterChoices(): Promise<OpenRouterModelChoice[]> {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+
+    if (!apiKey) {
+      return fetchOpenRouterModelChoices();
+    }
+
+    try {
+      return await fetchOpenRouterModelChoices({ apiKey, userFiltered: true });
+    } catch {
+      return fetchOpenRouterModelChoices({ apiKey });
     }
   }
 
@@ -550,6 +829,14 @@ function formatPlainError(error: unknown): string {
   return firstLine ?? "Unknown error";
 }
 
+function formatAgentCheckSetupHint(message: string, context: AppContext): string | undefined {
+  if (!/No (model|provider) configured/u.test(message)) {
+    return undefined;
+  }
+
+  return getModelSetupHint(context);
+}
+
 export function printExitBanner(sessionId: string, durationMs: number): void {
   console.log("");
   console.log(`${ui.heading("session ended")} ${ui.label(`after ${formatDuration(durationMs)}`)}`);
@@ -598,6 +885,57 @@ function getSlashCommandActivities(command: string): string[] {
 
 function isNewSessionCommand(command: string): boolean {
   return command.trim() === "/new";
+}
+
+function isConnectCommand(command: string): boolean {
+  const name = getSlashCommandName(command);
+
+  return name === "connect" || name === "provider" || name === "providers";
+}
+
+function isModelCommand(command: string): boolean {
+  const name = getSlashCommandName(command);
+
+  return name === "model" || name === "models";
+}
+
+function getSlashCommandName(command: string): string | undefined {
+  return command.trim().slice(1).split(/\s+/u).filter(Boolean)[0]?.toLowerCase();
+}
+
+function getSlashCommandArgs(command: string): string[] {
+  return command.trim().slice(1).split(/\s+/u).filter(Boolean).slice(1);
+}
+
+function filterOpenRouterChoices(choices: readonly OpenRouterModelChoice[], query: string): OpenRouterModelChoice[] {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) {
+    return rankOpenRouterModelChoices(choices);
+  }
+
+  return choices.filter((choice) => {
+    return (
+      choice.ref.toLowerCase().includes(normalizedQuery) ||
+      choice.id.toLowerCase().includes(normalizedQuery) ||
+      choice.label.toLowerCase().includes(normalizedQuery)
+    );
+  });
+}
+
+export function formatModelPickerLabel(modelRef: string): string {
+  return modelRef.startsWith("openrouter/") ? modelRef.slice("openrouter/".length) : modelRef;
+}
+
+export function formatHomeRelativePath(path: string): string {
+  const home = homedir();
+  const homeRelativePath = relative(home, path);
+
+  if (!homeRelativePath || homeRelativePath.startsWith("..") || homeRelativePath.startsWith("/")) {
+    return path;
+  }
+
+  return `~/${homeRelativePath}`;
 }
 
 export interface ExitConfirmationOptions {

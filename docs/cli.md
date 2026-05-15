@@ -116,6 +116,7 @@ Current behavior:
 - Persists child `task` sessions separately under the same project-local session root and records parent-child links in session metadata.
 - Includes a per-run `runId` in structured logs when `TOPCHESTER_LOG_LEVEL` enables logging.
 - Routes slash-command prompts such as `/kb status` through the same command dispatcher used by the TUI.
+- Interactive picker commands such as `/model` and `/connect` are TUI-only. In `topchester run`, they print a short message that says to use the interactive TUI.
 - Does not open the interactive TUI.
 - Exits non-zero on runtime failure or timeout.
 
@@ -294,7 +295,7 @@ topchester kb sync
 ## Agent Experiment Flags
 
 - `TOPCHESTER_DISABLE_L1_CONTEXT=1` skips automatic L1 context-pack injection for normal agent prompts. The model receives only the retained user/assistant conversation for that turn. KB status checks, `/kb ...` commands, and manual KB search still work.
-- `TOPCHESTER_SHOW_TOKEN_USAGE=1` adds cumulative input and output token counts to the assistant metadata line after each agent turn, including model calls made before and after tool use.
+- `TOPCHESTER_SHOW_TOKEN_USAGE=1` adds cumulative input and output token counts to the assistant metadata line after each agent turn, including model calls made before and after tool use. If cost data is available in the model response, the line also shows total USD cost for the turn.
 - `TOPCHESTER_STREAM_REASONING=1` lets the interactive TUI show provider-exposed reasoning text as dim thinking text above the final answer. It is provider-dependent, not saved, and does not affect `topchester run`.
 
 ## Logging

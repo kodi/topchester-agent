@@ -30,6 +30,18 @@ describe("slash commands", () => {
   it("suggests slash commands by typed prefix", () => {
     expect(getSlashCommandSuggestions("/")).toEqual([
       {
+        value: "/model",
+        description: "choose from configured model choices",
+      },
+      {
+        value: "/model all",
+        description: "browse OpenRouter models",
+      },
+      {
+        value: "/connect",
+        description: "connect a model provider",
+      },
+      {
         value: "/kb status",
         description: "show non-clean knowledge files",
       },
@@ -52,6 +64,22 @@ describe("slash commands", () => {
       {
         value: "/new",
         description: "start a fresh session",
+      },
+    ]);
+    expect(getSlashCommandSuggestions("/m")).toEqual([
+      {
+        value: "/model",
+        description: "choose from configured model choices",
+      },
+      {
+        value: "/model all",
+        description: "browse OpenRouter models",
+      },
+    ]);
+    expect(getSlashCommandSuggestions("/c")).toEqual([
+      {
+        value: "/connect",
+        description: "connect a model provider",
       },
     ]);
     expect(getSlashCommandSuggestions("/k")).toEqual([
@@ -115,6 +143,15 @@ describe("slash commands", () => {
   it("reports that /new is an interactive TUI command outside the TUI", async () => {
     await expect(executeSlashCommand("/new", { workspaceRoot: "/repo" })).resolves.toEqual({
       messages: ["/new starts a fresh session in the interactive TUI."],
+    });
+  });
+
+  it("reports that model and connect commands are interactive TUI commands outside the TUI", async () => {
+    await expect(executeSlashCommand("/model", { workspaceRoot: "/repo" })).resolves.toEqual({
+      messages: ["/model is available in the interactive TUI."],
+    });
+    await expect(executeSlashCommand("/connect", { workspaceRoot: "/repo" })).resolves.toEqual({
+      messages: ["/connect is available in the interactive TUI."],
     });
   });
 
@@ -459,14 +496,14 @@ describe("slash commands", () => {
                   providerId: "fake",
                   modelId: "fake-agent",
                   purpose: "agent.primary" as const,
-                  usage: { inputTokens: 1_200, outputTokens: 30, totalTokens: 1_230 },
+                  usage: { inputTokens: 1_200, outputTokens: 30, totalTokens: 1_230, costUsd: 0.00014 },
                 }
               : {
                   text: "Read notes.txt.",
                   providerId: "fake",
                   modelId: "fake-agent",
                   purpose: "agent.primary" as const,
-                  usage: { inputTokens: 345, outputTokens: 67, totalTokens: 412 },
+                  usage: { inputTokens: 345, outputTokens: 67, totalTokens: 412, costUsd: 0.00042 },
                 };
           },
         } as unknown as AppContext["modelGateway"],
@@ -477,7 +514,7 @@ describe("slash commands", () => {
 
       expect(assistantMessage).toEqual(
         expect.objectContaining({
-          meta: expect.stringMatching(/fake-agent · .* · 1,545 input \/ 97 output tokens/u),
+          meta: expect.stringMatching(/fake-agent · .* · 1,545 input \/ 97 output tokens \/ \$0.00056/u),
         })
       );
     } finally {

@@ -47,10 +47,28 @@ export function getStartupThreadMessages(context: AppContext): ChatMessage[] {
     }
   }
 
+  const setupHint = getModelSetupHint(context);
+  if (setupHint) {
+    lines.push("", setupHint);
+  }
+
   lines.push("");
   lines.push("Ask Topchester what you want to change.");
 
   return [systemMessage(lines.join("\n"))];
+}
+
+export function getModelSetupHint(context: AppContext): string | undefined {
+  const assignments = context.config.models?.assignments ?? {};
+  const providers = context.config.models?.providers ?? {};
+  const hasAssignments = Object.keys(assignments).length > 0;
+  const hasProviders = Object.entries(providers).some(([providerId]) => providerId !== "default");
+
+  if (hasAssignments && hasProviders) {
+    return undefined;
+  }
+
+  return "Model setup: run /connect openrouter, then /model to choose a model. You can also edit topchester.jsonc for shared project choices or ~/.config/topchester/config.jsonc for your own defaults.";
 }
 
 export function renderStaticLayout(

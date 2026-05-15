@@ -43,6 +43,18 @@ export interface ParsedSlashCommand {
 
 export const slashCommandSuggestions: SlashCommandSuggestion[] = [
   {
+    value: "/model",
+    description: "choose from configured model choices",
+  },
+  {
+    value: "/model all",
+    description: "browse OpenRouter models",
+  },
+  {
+    value: "/connect",
+    description: "connect a model provider",
+  },
+  {
     value: "/kb status",
     description: "show non-clean knowledge files",
   },
@@ -73,6 +85,31 @@ export const slashCommands: SlashCommand[] = [
     name: "kb",
     description: "knowledge base commands",
     execute: executeKbCommand,
+  },
+  {
+    name: "model",
+    description: "choose from configured model choices",
+    execute: executeInteractiveOnlyCommand("/model"),
+  },
+  {
+    name: "models",
+    description: "choose from configured model choices",
+    execute: executeInteractiveOnlyCommand("/models"),
+  },
+  {
+    name: "connect",
+    description: "connect a model provider",
+    execute: executeInteractiveOnlyCommand("/connect"),
+  },
+  {
+    name: "provider",
+    description: "connect a model provider",
+    execute: executeInteractiveOnlyCommand("/provider"),
+  },
+  {
+    name: "providers",
+    description: "connect a model provider",
+    execute: executeInteractiveOnlyCommand("/providers"),
   },
   {
     name: "new",
@@ -183,6 +220,12 @@ function executeNewCommand(): SlashCommandResult {
   return {
     messages: ["/new starts a fresh session in the interactive TUI."],
   };
+}
+
+function executeInteractiveOnlyCommand(command: string): () => SlashCommandResult {
+  return () => ({
+    messages: [`${command} is available in the interactive TUI.`],
+  });
 }
 
 export function formatKnowledgeStatus(status: KnowledgeStatus): string[] {

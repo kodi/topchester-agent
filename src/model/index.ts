@@ -10,7 +10,7 @@ import {
   type ToolProtocolOverride,
 } from "../agent/tools/types.js";
 
-export type ModelPurpose = "agent.primary" | "agent.fast" | "kb.scan" | "kb.summarize" | "fallback";
+export type ModelPurpose = "agent.primary" | "agent.fast" | "kb.summarize" | "fallback";
 
 export interface OpenAICompatibleProviderConfig {
   type: "openai-compatible";

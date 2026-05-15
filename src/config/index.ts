@@ -5,9 +5,8 @@ import { isAbsolute, join, resolve, win32 } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
-const modelPurposeSchema = z.enum(["agent.primary", "agent.fast", "kb.scan", "kb.summarize", "fallback"]);
+const modelPurposeSchema = z.enum(["agent.primary", "agent.fast", "kb.summarize", "fallback"]);
 
-const modelPurposes = modelPurposeSchema.options;
 const toolProtocolSchema = z.enum(["auto", "native", "text-json", "text-xml"]);
 const openRouterAttributionHeaders = {
   "HTTP-Referer": "https://topchester.com",
@@ -32,6 +31,10 @@ const modelAssignmentSchema = z.object({
   toolProtocol: toolProtocolSchema.optional(),
 });
 
+const modelChoiceAssignmentSchema = modelAssignmentSchema.extend({
+  provider: z.string().min(1),
+});
+
 const modelRefSchema = z.union([z.string(), modelAssignmentSchema]);
 
 const providersSchema = z
@@ -45,6 +48,7 @@ const rawModelsSchema = z
     "default": modelRefSchema.optional(),
     "fast": modelRefSchema.optional(),
     "kb.summarize": modelRefSchema.optional(),
+    "choices": z.array(modelRefSchema).optional(),
     "providers": providersSchema.optional(),
   })
   .strict();
@@ -134,6 +138,7 @@ export const topchesterConfigSchema = z.object({
     .object({
       defaultPurpose: modelPurposeSchema.optional(),
       assignments: z.partialRecord(modelPurposeSchema, modelAssignmentSchema).optional(),
+      choices: z.array(modelChoiceAssignmentSchema).optional(),
       providers: providersSchema.optional(),
     })
     .strict()
@@ -167,6 +172,7 @@ const rawTopchesterConfigSchema = z.object({
 });
 
 export type TopchesterConfig = z.infer<typeof topchesterConfigSchema>;
+export type ModelChoiceConfig = z.infer<typeof modelChoiceAssignmentSchema>;
 
 export interface ConfigLoadOptions {
   workspaceRoot: string;
@@ -179,25 +185,29 @@ export interface ProjectCommandAllowRuleResult {
   allowExact: string[];
 }
 
+export interface ModelConfigUpdateResult {
+  path: string;
+  choices: string[];
+  defaultModel?: string;
+}
+
 export function getGlobalTopchesterConfigDir(): string {
   return join(homedir(), ".config", "topchester");
 }
 
 export function ensureGlobalTopchesterConfigDir(): string {
   const dir = getGlobalTopchesterConfigDir();
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
 }
 
 export function loadTopchesterConfig(options: ConfigLoadOptions): TopchesterConfig {
   const globalConfigDir = getGlobalTopchesterConfigDir();
   const paths = [
-    join(globalConfigDir, "config.yaml"),
-    join(globalConfigDir, "config.jsonc"),
     join(options.workspaceRoot, "topchester.yaml"),
     join(options.workspaceRoot, "topchester.jsonc"),
-    join(options.workspaceRoot, ".topchester/config.local.yaml"),
-    join(options.workspaceRoot, ".topchester/config.local.jsonc"),
+    join(globalConfigDir, "config.yaml"),
+    join(globalConfigDir, "config.jsonc"),
     process.env.TOPCHESTER_CONFIG,
     options.configPath,
   ].filter((path): path is string => Boolean(path));
@@ -216,6 +226,124 @@ export function loadTopchesterConfig(options: ConfigLoadOptions): TopchesterConf
   }
 
   return topchesterConfigSchema.parse(merged);
+}
+
+export const openRouterProviderDefaults = {
+  type: "openai-compatible" as const,
+  baseURL: "https://openrouter.ai/api/v1",
+  apiKeyEnv: "OPENROUTER_API_KEY",
+  supportsStructuredOutputs: true,
+  headers: { ...openRouterAttributionHeaders },
+};
+
+export async function configureOpenRouterGlobalProvider(): Promise<ModelConfigUpdateResult> {
+  const configPath = getGlobalTopchesterConfigPath();
+  const config = readConfigObject(configPath);
+  const models = ensurePlainObjectProperty(config, "models");
+  const providers = ensurePlainObjectProperty(models, "providers");
+
+  providers.default ??= "openrouter";
+  providers.openrouter = {
+    ...openRouterProviderDefaults,
+    ...(isPlainObject(providers.openrouter) ? providers.openrouter : {}),
+  };
+
+  await writeGlobalConfig(configPath, config);
+
+  return {
+    path: configPath,
+    choices: getRawModelChoices(models),
+    defaultModel: typeof models.default === "string" ? models.default : undefined,
+  };
+}
+
+export async function addGlobalModelChoices(
+  choices: string[],
+  options: { prioritize?: boolean } = {}
+): Promise<ModelConfigUpdateResult> {
+  const configPath = getGlobalTopchesterConfigPath();
+  const config = readConfigObject(configPath);
+  const models = ensurePlainObjectProperty(config, "models");
+  const existingChoices = ensureStringArrayProperty(models, "choices");
+  const normalizedChoices = choices.map((choice) => choice.trim()).filter((choice) => choice.length > 0);
+
+  if (options.prioritize) {
+    const prioritized = new Set(normalizedChoices);
+    models.choices = [
+      ...normalizedChoices.filter((choice, index) => normalizedChoices.indexOf(choice) === index),
+      ...existingChoices.filter((choice) => !prioritized.has(choice)),
+    ];
+  } else {
+    for (const normalizedChoice of normalizedChoices) {
+      if (!existingChoices.includes(normalizedChoice)) {
+        existingChoices.push(normalizedChoice);
+      }
+    }
+  }
+
+  const updatedChoices = ensureStringArrayProperty(models, "choices");
+
+  await writeGlobalConfig(configPath, config);
+
+  return {
+    path: configPath,
+    choices: updatedChoices,
+    defaultModel: typeof models.default === "string" ? models.default : undefined,
+  };
+}
+
+export async function setGlobalDefaultModel(modelRef: string): Promise<ModelConfigUpdateResult> {
+  const normalizedModelRef = modelRef.trim();
+  const configPath = getGlobalTopchesterConfigPath();
+  const config = readConfigObject(configPath);
+  const models = ensurePlainObjectProperty(config, "models");
+  const choices = ensureStringArrayProperty(models, "choices");
+
+  models.choices = [normalizedModelRef, ...choices.filter((choice) => choice !== normalizedModelRef)];
+
+  models.default = normalizedModelRef;
+  const updatedChoices = ensureStringArrayProperty(models, "choices");
+  await writeGlobalConfig(configPath, config);
+
+  return {
+    path: configPath,
+    choices: updatedChoices,
+    defaultModel: normalizedModelRef,
+  };
+}
+
+export function formatModelRef(model: { name: string; provider?: string }): string {
+  return model.provider ? `${model.provider}/${model.name}` : model.name;
+}
+
+export function getConfiguredModelChoices(config: TopchesterConfig): ModelChoiceConfig[] {
+  const choices = config.models?.choices ?? [];
+
+  if (choices.length > 0) {
+    return choices;
+  }
+
+  const assignments = Object.values(config.models?.assignments ?? {});
+  const seen = new Set<string>();
+  const fallbackChoices: ModelChoiceConfig[] = [];
+
+  for (const assignment of assignments) {
+    const provider = assignment.provider ?? config.models?.providers?.default;
+    if (typeof provider !== "string") {
+      continue;
+    }
+
+    const choice = { ...assignment, provider };
+    const ref = formatModelRef(choice);
+    if (seen.has(ref)) {
+      continue;
+    }
+
+    seen.add(ref);
+    fallbackChoices.push(choice);
+  }
+
+  return fallbackChoices;
 }
 
 export async function addProjectCommandAllowExactRule(
@@ -245,6 +373,10 @@ export async function addProjectCommandAllowExactRule(
 }
 
 function readProjectConfigObject(configPath: string): Record<string, unknown> {
+  return readConfigObject(configPath);
+}
+
+function readConfigObject(configPath: string): Record<string, unknown> {
   if (!existsSync(configPath)) {
     return { $schema: "https://topchester.com/schemas/config.v1.json" };
   }
@@ -256,6 +388,16 @@ function readProjectConfigObject(configPath: string): Record<string, unknown> {
   }
 
   return parsed;
+}
+
+function getGlobalTopchesterConfigPath(): string {
+  return join(getGlobalTopchesterConfigDir(), "config.jsonc");
+}
+
+async function writeGlobalConfig(configPath: string, config: Record<string, unknown>): Promise<void> {
+  ensureGlobalTopchesterConfigDir();
+  parseConfigFile(configPath, config);
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 function ensurePlainObjectProperty(parent: Record<string, unknown>, key: string): Record<string, unknown> {
@@ -329,13 +471,15 @@ function normalizeConfigInput(value: unknown): unknown {
   const defaultProvider = typeof providers.default === "string" ? providers.default : defaultModelRef?.provider;
   const fastModelRef = normalizeModelRef(models.fast, defaultProvider);
   const kbSummarizeModelRef = normalizeModelRef(models["kb.summarize"], defaultProvider);
+  const modelChoices = Array.isArray(models.choices)
+    ? models.choices.map((choice) => modelRefToAssignment(normalizeModelRef(choice, undefined) ?? { model: "" }))
+    : undefined;
 
   if (defaultModelRef) {
     const assignment = modelRefToAssignment(defaultModelRef);
 
-    for (const purpose of modelPurposes) {
-      assignments[purpose] ??= assignment;
-    }
+    assignments["agent.primary"] = assignment;
+    assignments.fallback = assignment;
 
     providers.default ??= defaultModelRef.provider;
     ensureKnownProvider(providers, defaultModelRef.provider);
@@ -354,6 +498,7 @@ function normalizeConfigInput(value: unknown): unknown {
     delete models["kb.summarize"];
   }
 
+  delete models.choices;
   applyKnownProviderDefaults(providers);
 
   return {
@@ -361,6 +506,7 @@ function normalizeConfigInput(value: unknown): unknown {
     models: {
       ...models,
       assignments,
+      ...(modelChoices ? { choices: modelChoices } : {}),
       providers,
     },
   };
@@ -426,13 +572,7 @@ function ensureKnownProvider(providers: Record<string, unknown>, provider: strin
     return;
   }
 
-  providers.openrouter = {
-    type: "openai-compatible",
-    baseURL: "https://openrouter.ai/api/v1",
-    apiKeyEnv: "OPENROUTER_API_KEY",
-    supportsStructuredOutputs: true,
-    headers: { ...openRouterAttributionHeaders },
-  };
+  providers.openrouter = { ...openRouterProviderDefaults };
 }
 
 function applyKnownProviderDefaults(providers: Record<string, unknown>) {
@@ -499,6 +639,12 @@ function deepMerge<T>(base: T, override: T, path: string[] = []): T {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getRawModelChoices(models: Record<string, unknown>): string[] {
+  const choices = models.choices;
+
+  return Array.isArray(choices) ? choices.filter((choice): choice is string => typeof choice === "string") : [];
 }
 
 function formatZodIssue(issue: z.ZodIssue): string {

@@ -21,7 +21,7 @@ export interface CreateAppContextOptions {
 export function createAppContext(options: CreateAppContextOptions): AppContext {
   ensureGlobalTopchesterConfigDir();
   const config = loadTopchesterConfig(options);
-  const modelGateway = new ModelGateway(normalizeModelGatewayConfig(config));
+  const modelGateway = createModelGatewayFromConfig(config);
   const loggerInfo = createTopchesterLogger(options.workspaceRoot);
 
   return {
@@ -34,7 +34,11 @@ export function createAppContext(options: CreateAppContextOptions): AppContext {
   };
 }
 
-function normalizeModelGatewayConfig(config: TopchesterConfig): ModelGatewayConfig {
+export function createModelGatewayFromConfig(config: TopchesterConfig): ModelGateway {
+  return new ModelGateway(normalizeModelGatewayConfig(config));
+}
+
+export function normalizeModelGatewayConfig(config: TopchesterConfig): ModelGatewayConfig {
   const providers = config.models?.providers ?? {};
   const { default: defaultProvider, ...namedProviders } = providers;
 

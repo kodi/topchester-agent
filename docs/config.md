@@ -1,18 +1,17 @@
 # Configuration
 
-Topchester config is YAML. Most projects only need a `models.default` entry and an API key in the environment.
+Topchester config is JSONC, with YAML accepted as a compatibility alias. Most users only need provider setup in their user config and project policy in `topchester.jsonc`.
 
 ## File Locations
 
 Topchester loads config in this order. Later files override earlier files.
 
-1. `~/.config/topchester/config.yaml`
-2. `topchester.yaml`
-3. `.topchester/config.local.yaml`
-4. `TOPCHESTER_CONFIG=/path/to/config.yaml`
-5. `--config <path>`
+1. `topchester.jsonc`
+2. `~/.config/topchester/config.jsonc`
+3. `TOPCHESTER_CONFIG=/path/to/config.jsonc`
+4. `--config <path>`
 
-Use `topchester.yaml` for team-shared project config. Use `.topchester/config.local.yaml` for personal local overrides and keep it out of git.
+Use `topchester.jsonc` for team-shared project policy. Use `~/.config/topchester/config.jsonc` for personal provider setup, model choices, and default model preferences. `.topchester/` is for state, sessions, and caches, not config.
 
 ## Model Slots
 

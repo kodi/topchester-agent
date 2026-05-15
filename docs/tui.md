@@ -28,7 +28,7 @@ The status line uses this shape:
 ready · my-project · qwen/qwen3-coder [openrouter] · ✅ kb: ready
 ```
 
-Assistant replies show a compact metadata line with the model and elapsed time. Set `TOPCHESTER_SHOW_TOKEN_USAGE=1` to also show cumulative input and output token counts for the full turn, including tool-loop model calls.
+Assistant replies show a compact metadata line with the model and elapsed time. Set `TOPCHESTER_SHOW_TOKEN_USAGE=1` to also show cumulative input and output token counts for the full turn, including tool-loop model calls. If the model response includes cost data, the same metadata also shows the total USD cost for the turn.
 
 KB status labels:
 
@@ -62,6 +62,9 @@ Slash commands run inside the TUI before a message is sent to the model.
 
 Most used commands:
 
+- `/model` — choose from configured model choices.
+- `/model all [search]` — browse OpenRouter models and add one to choices.
+- `/connect` — connect a model provider.
 - `/new` — clear the terminal and start a fresh project-local session.
 - `/kb status` — show files that are not current in the knowledge base.
 - `/kb sync` — process non-clean project files into L1 entries.
@@ -75,6 +78,12 @@ Example:
 /kb status
 ```
 
+`/connect` opens the provider picker. V0 includes OpenRouter. Choosing OpenRouter writes provider setup to `~/.config/topchester/config.jsonc` with `apiKeyEnv: OPENROUTER_API_KEY`; it does not write the API key itself. If `OPENROUTER_API_KEY` is set, Topchester asks OpenRouter for user-filtered text models. If that request is not available, it falls back to the public model list or a small starter shortlist.
+
+`/model` opens a picker from `models.choices`. Model refs use `<provider>/<provider-native-model-id>`, such as `openrouter/qwen/qwen3-coder`; OpenRouter picker labels omit the leading `openrouter/` for readability. Choosing a model saves it as the user `models.default` and refreshes the footer model label. `/models` is an alias for `/model`.
+
+`/model all [search]` asks OpenRouter for text models that support tool parameters, shows matching results in a scrollable picker, and saves the selected model to user choices before making it the default.
+
 `/new` keeps you in the same workspace but replaces the current thread with a normal startup screen, creates a new session folder, clears prompt history, and reruns startup checks.
 
 The TUI refreshes the KB status line after `/kb init`, `/kb reset`, `/kb sync`, `/kb sync --full`, and `/kb status`.
@@ -87,6 +96,8 @@ Interactive startup does two checks:
 2. It checks KB path health and updates the status line.
 
 If the model check takes too long, startup skips the check and prints a plain message.
+
+If model config is missing, startup shows a hint to run `/connect openrouter` and then `/model`, or to edit `topchester.jsonc` for shared project choices and `~/.config/topchester/config.jsonc` for personal defaults.
 
 If the KB is missing, empty, misconfigured, or not current, the startup KB status message includes a short next step. The footer stays visible so you can keep working while you decide whether to run `/kb init`, `/kb sync`, `/kb sync --full`, or `/kb status`.
 
