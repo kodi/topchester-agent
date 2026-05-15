@@ -12,6 +12,7 @@ topchester --resume latest
 topchester run "Edit greeting.txt and change Hello to Goodbye."
 topchester run /kb status
 topchester search "status bar"
+topchester update
 
 topchester kb init
 topchester kb sync
@@ -40,6 +41,7 @@ On startup, Topchester creates the user config folder `~/.config/topchester/` if
 | Command                 | Purpose                                                  |
 | ----------------------- | -------------------------------------------------------- |
 | `topchester`            | Start the interactive coding agent.                      |
+| `topchester update`     | Update Topchester with npm, pnpm, or bun.                |
 | `topchester run`        | Run one prompt or slash command without opening the TUI. |
 | `topchester search`     | Search compiled L1 file knowledge.                       |
 | `topchester dev`        | Print local development startup details.                 |
@@ -86,6 +88,28 @@ Current behavior:
 - `run_command` runs only validator-classified commands or project commands explicitly allowed by `tools.commands.allow` or `tools.commands.allowExact`. Deny rules win over allow rules. The model prompt still prefers `run_validator` for verification and dedicated tools for reads, edits, and Git.
 - `write_file` creates new UTF-8 files by default. It can create parent directories when explicitly requested, marks the file dirty-known and `needs_sync`, and fails if the target file already exists unless `overwrite: true` is paired with `expected_current_hash` from the latest `read_file` result for that file. The hash is a pre-write stale-read guard, not a predicted after-write hash.
 - `edit_file` remains the targeted edit tool for existing files; `inspect_command` remains read-only orientation and is not used for file creation.
+
+## `topchester update`
+
+Updates Topchester using the package manager that installed the current CLI.
+
+Common examples:
+
+```sh
+topchester update
+topchester update 0.15.0
+topchester upgrade latest
+```
+
+Current behavior:
+
+- Detects npm, pnpm, or bun from the package-manager user agent or installed package path.
+- Runs the matching global install command for `topchester-ai`.
+- `topchester update` installs `topchester-ai@latest`.
+- `topchester update <target>` installs `topchester-ai@<target>`. A leading `v` is stripped from semver targets such as `v0.15.0`.
+- If the install method cannot be detected, Topchester does not guess. It prints a manual package-manager command instead.
+- After a successful update, restart Topchester to use the new version.
+- `topchester upgrade` is an alias for `topchester update`.
 
 ## `topchester run`
 

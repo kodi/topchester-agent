@@ -59,6 +59,9 @@ describe("CLI integration", () => {
     expect(docs).toContain("append to the selected session log");
     expect(docs).toContain("fail before the TUI/static layout opens");
     expect(docs).toContain("V0 does not include a `topchester sessions list` command");
+    expect(docs).toContain("## `topchester update`");
+    expect(docs).toContain("Detects npm, pnpm, or bun");
+    expect(docs).toContain("After a successful update, restart Topchester");
     expect(docs).toContain("## `topchester run`");
     expect(docs).toContain("Routes slash-command prompts such as `/kb status`");
     expect(docs).toContain("Includes a per-run `runId` in structured logs");
@@ -79,6 +82,16 @@ describe("CLI integration", () => {
 
     expect(stdout).toContain("run");
     expect(stdout).toContain("run one prompt or slash command");
+  });
+
+  it("lists update as a top-level command", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout } = await runCli(["--help"], fixture.root);
+
+    expect(stdout).toContain("update");
+    expect(stdout).toContain("update Topchester with the package manager that");
+    expect(stdout).toContain("installed it");
   });
 
   it("prints the package version", async () => {
