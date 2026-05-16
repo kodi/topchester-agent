@@ -107,6 +107,7 @@ Topchester ships these read-only built-in skills:
 - `test-driven-development`
 - `plan`
 - `repo-orientation`
+- `topchester-config`
 
 To customize a built-in, copy it to a user or workspace skill path with the same name. The copied skill shadows the built-in.
 

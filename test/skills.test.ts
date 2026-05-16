@@ -328,6 +328,11 @@ describe("skills", () => {
           name: "repo-orientation",
           source: "builtin",
         }),
+        expect.objectContaining({
+          name: "topchester-config",
+          source: "builtin",
+          description: expect.stringContaining("Configure Topchester project and user settings."),
+        }),
       ])
     );
   });
