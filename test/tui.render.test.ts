@@ -727,6 +727,41 @@ describe("TUI rendering", () => {
     expect(output).toContain("│ > press Esc to stop");
   });
 
+  it("keeps the startup prompt hint visible while busy activity changes", () => {
+    const app = new ChatLayout(new FakeTerminal(), [systemMessage("Welcome")], "repo", "model [provider]");
+    app.setStartupHintLine("Prompt hint: Enter sends, Shift+Enter adds a line, / opens commands, ↑↓ browse history.");
+    app.setEphemeralLine("⠋ Calling agent.fast...");
+    app.setPromptHint("press Esc to stop");
+
+    let output = app.render(120).join("\n");
+
+    expect(output).toContain(
+      " Prompt hint: Enter sends, Shift+Enter adds a line, / opens commands, ↑↓ browse history."
+    );
+    expect(output).toContain(" ⠋ Calling agent.fast...");
+
+    app.setEphemeralLine(undefined);
+    output = app.render(120).join("\n");
+
+    expect(output).toContain(
+      " Prompt hint: Enter sends, Shift+Enter adds a line, / opens commands, ↑↓ browse history."
+    );
+    expect(output).not.toContain("Calling agent.fast");
+  });
+
+  it("clears the startup prompt hint on first user input", () => {
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    app.setStartupHintLine("Prompt hint: Enter sends, Shift+Enter adds a line, / opens commands, ↑↓ browse history.");
+    app.setSubmitMessage(() => {});
+    app.setInputValue("hello");
+
+    app.handleInput("\n");
+    const output = app.render(80).join("\n");
+
+    expect(output).not.toContain("Prompt hint:");
+    expect(output).toContain("▌ hello");
+  });
+
   it("wraps long ephemeral activity without truncating it", () => {
     const app = new ChatLayout(new FakeTerminal(), [systemMessage("Welcome")], "repo", "model [provider]");
     app.setEphemeralLine("⠋ Inspecting workspace files and considering next steps before editing source code");

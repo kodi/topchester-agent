@@ -111,6 +111,7 @@ describe("agent runtime project instructions", () => {
 
   it("reports compact startup project instruction status", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
+    await writeFile(join(workspace, "AGENTS.md"), "Project instruction.\n");
     await writeFile(join(workspace, "AGENTS.override.md"), "Local instruction.\n");
     const runtime = new TopchesterAgentRuntime(createTestContext(workspace));
 
@@ -120,7 +121,7 @@ describe("agent runtime project instructions", () => {
       {
         type: "message",
         role: "system",
-        text: "Project instructions: AGENTS.override.md",
+        text: "Project instructions: AGENTS.md, AGENTS.override.md",
       },
     ]);
   });

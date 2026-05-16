@@ -34,16 +34,19 @@ describe("project instruction resolver", () => {
     expect(context.formatted).toContain("<INSTRUCTIONS>\nUse plain language.\n\n</INSTRUCTIONS>");
   });
 
-  it("prefers AGENTS.override.md over AGENTS.md at the same scope", async () => {
+  it("loads AGENTS.md before AGENTS.override.md at the same scope", async () => {
     const workspace = await createWorkspace();
     await writeFile(join(workspace, "AGENTS.md"), "Root instruction.\n");
     await writeFile(join(workspace, "AGENTS.override.md"), "Override instruction.\n");
 
     const context = await resolveProjectInstructions(workspace);
 
-    expect(context.sourceKeys).toEqual(["AGENTS.override.md"]);
+    expect(context.sourceKeys).toEqual(["AGENTS.md", "AGENTS.override.md"]);
+    expect(context.formatted.indexOf("Root instruction.")).toBeLessThan(
+      context.formatted.indexOf("Override instruction.")
+    );
+    expect(context.formatted).toContain("Root instruction.");
     expect(context.formatted).toContain("Override instruction.");
-    expect(context.formatted).not.toContain("Root instruction.");
   });
 
   it("preserves root-to-target ordering for nested instructions", async () => {
@@ -140,10 +143,10 @@ describe("project instruction resolver", () => {
       fallbackFiles: ["CLAUDE.md"],
     });
 
-    expect(context.sourceKeys).toEqual(["CLAUDE.md", "src/AGENT.md"]);
+    expect(context.sourceKeys).toEqual(["CLAUDE.md", "src/AGENT.md", "src/CLAUDE.md"]);
     expect(context.formatted).toContain("Root fallback.");
     expect(context.formatted).toContain("Nested custom.");
-    expect(context.formatted).not.toContain("Nested fallback.");
+    expect(context.formatted).toContain("Nested fallback.");
   });
 
   it("can disable project instruction loading", async () => {

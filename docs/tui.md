@@ -43,6 +43,7 @@ KB status labels:
 
 - Type a message and press `Enter` to send it to the agent.
 - Press `Shift+Enter` to add a new prompt line in terminals that report it distinctly.
+- On a new session, Topchester shows a one-time prompt hint in the thread: `Prompt hint: Enter sends, Shift+Enter adds a line, / opens commands, ↑↓ browse history.` It stays visible through startup checks and disappears after your first message or slash command.
 - The prompt shows up to five input lines; longer drafts scroll inside the prompt box.
 - Large bracketed pastes are shown as a compact `[Pasted #N ...]` preview and expanded when submitted.
 - Type `/` to see slash command suggestions.
@@ -107,7 +108,7 @@ Interactive startup does two checks:
 1. It checks the configured `agent.fast` model. When the check succeeds, the thread shows `Agent: ready`.
 2. It checks KB path health and updates the status line.
 
-If root `AGENTS.md` or `AGENTS.override.md` instructions are present, startup shows a compact `Project instructions: ...` line. The footer does not add a separate instruction status.
+If root `AGENTS.md` or `AGENTS.override.md` instructions are present, startup shows a compact `Project instructions: ...` line. When both exist, the line lists both files. The footer does not add a separate instruction status.
 
 If the model check takes too long, startup skips the check and prints a plain message.
 

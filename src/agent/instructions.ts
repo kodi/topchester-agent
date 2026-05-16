@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { type Logger } from "pino";
 
-export const PROJECT_INSTRUCTION_FILENAMES = ["AGENTS.override.md", "AGENTS.md"] as const;
+export const PROJECT_INSTRUCTION_FILENAMES = ["AGENTS.md", "AGENTS.override.md"] as const;
 export const DEFAULT_PROJECT_INSTRUCTION_MAX_BYTES_PER_FILE = 32 * 1024;
 export const DEFAULT_PROJECT_INSTRUCTION_MAX_TOTAL_BYTES = 96 * 1024;
 
@@ -65,26 +65,28 @@ export async function resolveProjectInstructions(
   let remainingBytes = Math.max(0, maxTotalBytes);
 
   for (const directory of directories) {
-    const candidate = await readFirstInstructionCandidate(resolvedWorkspace, directory, filenames, options.logger);
+    const candidates = await readInstructionCandidates(resolvedWorkspace, directory, filenames, options.logger);
 
-    if (!candidate) {
+    if (candidates.length === 0) {
       continue;
     }
 
-    const scopedContentLimit = Math.min(Math.max(0, maxBytesPerFile), remainingBytes);
-    const content = truncateUtf8(candidate.content, scopedContentLimit);
-    const truncated = content !== candidate.content;
-    remainingBytes -= Buffer.byteLength(content, "utf8");
+    for (const candidate of candidates) {
+      const scopedContentLimit = Math.min(Math.max(0, maxBytesPerFile), remainingBytes);
+      const content = truncateUtf8(candidate.content, scopedContentLimit);
+      const truncated = content !== candidate.content;
+      remainingBytes -= Buffer.byteLength(content, "utf8");
 
-    sources.push({
-      path: candidate.absolutePath,
-      relativePath: candidate.relativePath,
-      scopePath: formatScopePath(relative(resolvedWorkspace, directory)),
-      depth: getScopeDepth(relative(resolvedWorkspace, directory)),
-      bytes: candidate.bytes,
-      truncated,
-      content,
-    });
+      sources.push({
+        path: candidate.absolutePath,
+        relativePath: candidate.relativePath,
+        scopePath: formatScopePath(relative(resolvedWorkspace, directory)),
+        depth: getScopeDepth(relative(resolvedWorkspace, directory)),
+        bytes: candidate.bytes,
+        truncated,
+        content,
+      });
+    }
   }
 
   options.logger?.debug(
@@ -238,12 +240,14 @@ function getInstructionDirectories(resolvedWorkspace: string, targetDirectory: s
   return directories;
 }
 
-async function readFirstInstructionCandidate(
+async function readInstructionCandidates(
   resolvedWorkspace: string,
   directory: string,
   filenames: readonly string[],
   logger?: Logger
-): Promise<CandidateReadResult | undefined> {
+): Promise<CandidateReadResult[]> {
+  const candidates: CandidateReadResult[] = [];
+
   for (const filename of filenames) {
     const absolutePath = resolve(directory, filename);
     const relativePath = formatRelativePath(relative(resolvedWorkspace, absolutePath));
@@ -270,12 +274,12 @@ async function readFirstInstructionCandidate(
         continue;
       }
 
-      return {
+      candidates.push({
         absolutePath,
         relativePath,
         content,
         bytes: bytes.byteLength,
-      };
+      });
     } catch (error) {
       const code = typeof error === "object" && error && "code" in error ? String(error.code) : undefined;
 
@@ -290,7 +294,7 @@ async function readFirstInstructionCandidate(
     }
   }
 
-  return undefined;
+  return candidates;
 }
 
 function truncateUtf8(content: string, maxBytes: number): string {

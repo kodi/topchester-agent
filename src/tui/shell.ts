@@ -63,7 +63,13 @@ import {
   SKILL_OVERLAY_CLOSE_VALUE,
   SKILL_OVERLAY_RELOAD_VALUE,
 } from "./skills-overlay.js";
-import { getFolderName, getModelLabel, getStartupThreadMessages, renderStaticLayout } from "./status.js";
+import {
+  getFolderName,
+  getModelLabel,
+  getStartupThreadMessages,
+  renderStaticLayout,
+  STARTUP_PROMPT_HINT,
+} from "./status.js";
 
 export { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
 export { createExitConfirmationInputListener, type ExitConfirmationOptions } from "./exit-confirmation.js";
@@ -155,6 +161,9 @@ export class TopchesterTuiShell implements TuiShell {
       },
     });
     app.setTaskPlan(this.options.initialTaskPlan);
+    if (!isResumed) {
+      app.setStartupHintLine(STARTUP_PROMPT_HINT);
+    }
     app.setSubmitMessage((message) => {
       this.startBackgroundTask(app, tui, "Chat", () => this.submitChatMessage(app, tui, message));
     });
@@ -903,6 +912,7 @@ export class TopchesterTuiShell implements TuiShell {
     );
     await this.appendStartupRuntimeEvents(session, messages, (await this.runtime.checkProjectInstructions?.()) ?? []);
     app.resetForNewSession(messages);
+    app.setStartupHintLine(STARTUP_PROMPT_HINT);
     tui.requestRender();
     await this.checkAgent(app, tui);
   }

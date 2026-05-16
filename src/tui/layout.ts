@@ -53,6 +53,7 @@ export class ChatLayout implements Component, Focusable {
   private promptCursor = 0;
   private status = "ready";
   private knowledgeStatus: string | undefined;
+  private startupHintLine: string | undefined;
   private ephemeralLine: string | undefined;
   private taskPlanNoticeLine: string | undefined;
   private noticeLine: string | undefined;
@@ -132,6 +133,10 @@ export class ChatLayout implements Component, Focusable {
     return this.status === "ready";
   }
 
+  setStartupHintLine(line: string | undefined): void {
+    this.startupHintLine = line;
+  }
+
   setEphemeralLine(line: string | undefined): void {
     this.ephemeralLine = line;
   }
@@ -173,6 +178,7 @@ export class ChatLayout implements Component, Focusable {
     this.promptCursor = 0;
     this.status = "ready";
     this.knowledgeStatus = undefined;
+    this.startupHintLine = undefined;
     this.ephemeralLine = undefined;
     this.taskPlanNoticeLine = undefined;
     this.noticeLine = undefined;
@@ -300,6 +306,10 @@ export class ChatLayout implements Component, Focusable {
       return [...this.renderThreadMessageLines(messageLines, innerWidth, width, message.kind === "user"), ...spacer];
     });
 
+    if (this.startupHintLine) {
+      lines.push(...this.renderThreadMessageLines([` ${ui.muted(this.startupHintLine)}`], innerWidth, width, false));
+    }
+
     if (this.ephemeralLine) {
       lines.push(...this.renderThreadMessageLines([` ${this.ephemeralLine}`], innerWidth, width, false));
     }
@@ -328,6 +338,7 @@ export class ChatLayout implements Component, Focusable {
   }
 
   private renderPrompt(width: number): string[] {
+    const slashSuggestions = this.getSlashSuggestions();
     const top = `┌${"─".repeat(Math.max(0, width - 2))}┐`;
     const bottom = `└${"─".repeat(Math.max(0, width - 2))}┘`;
     const prefix = "> ";
@@ -344,7 +355,7 @@ export class ChatLayout implements Component, Focusable {
     );
 
     return [
-      ...this.renderSlashSuggestions(width),
+      ...this.renderSlashSuggestions(width, slashSuggestions),
       ...this.renderTaskPlan(width),
       top,
       ...inputLines.map((line, index) => `│ ${index === 0 ? prefix : "  "}${padPromptInputLine(line, innerWidth)} │`),
@@ -416,9 +427,7 @@ export class ChatLayout implements Component, Focusable {
     return formatTaskPlanForTui(this.taskPlan, Math.max(1, width));
   }
 
-  private renderSlashSuggestions(width: number): string[] {
-    const suggestions = this.getSlashSuggestions();
-
+  private renderSlashSuggestions(width: number, suggestions = this.getSlashSuggestions()): string[] {
     if (suggestions.length === 0 || this.promptHint) {
       return [];
     }
@@ -898,6 +907,8 @@ export class ChatLayout implements Component, Focusable {
 
   private submitUserInput(message: string): void {
     this.setTaskPlanNotice(undefined);
+    this.setStartupHintLine(undefined);
+    this.setEphemeralLine(undefined);
     this.promptHistory.add(message);
     if (message.startsWith("/")) {
       this.submitCommand?.(message);

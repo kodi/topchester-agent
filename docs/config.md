@@ -240,7 +240,7 @@ Ignore paths are workspace-relative glob patterns. Absolute paths and `..` trave
 
 ## Project Instructions
 
-Topchester loads `AGENTS.override.md` or `AGENTS.md` from the workspace as live project instructions by default. Nested files apply inside their folders, and deeper folders win when instructions conflict.
+Topchester loads `AGENTS.md` and then `AGENTS.override.md` from the workspace as live project instructions by default. Nested files apply inside their folders, and later files at the same scope can override earlier guidance.
 
 You can change the instruction filenames in project config:
 
@@ -248,7 +248,7 @@ You can change the instruction filenames in project config:
 {
   "instructions": {
     "enabled": true,
-    "files": ["AGENTS.override.md", "AGENTS.md"],
+    "files": ["AGENTS.md", "AGENTS.override.md"],
     "fallbackFiles": ["CLAUDE.md"],
     "maxBytesPerFile": 32768,
     "maxTotalBytes": 98304,
@@ -256,7 +256,7 @@ You can change the instruction filenames in project config:
 }
 ```
 
-`files` are checked first at each directory level. `fallbackFiles` are opt-in compatibility names used after `files`. Set `enabled: false` to disable project instruction loading. Topchester does not load `CLAUDE.md`, `.clinerules`, `.cursor/rules`, remote URLs, or home-level instruction files by default.
+`files` are loaded first at each directory level, in order. `fallbackFiles` are opt-in compatibility names loaded after `files`. Set `enabled: false` to disable project instruction loading. Topchester does not load `CLAUDE.md`, `.clinerules`, `.cursor/rules`, remote URLs, or home-level instruction files by default.
 
 ## Command Policy
 

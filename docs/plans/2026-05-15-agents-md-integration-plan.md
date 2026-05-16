@@ -16,7 +16,7 @@ The target outcome is that Topchester automatically loads project instruction fi
 - Order instruction content from least specific to most specific: workspace root first, deeper folders later.
 - More deeply nested `AGENTS.md` content wins for conflicts inside its directory tree.
 - Direct system, developer, and user instructions still outrank all `AGENTS.md` content.
-- Support `AGENTS.override.md` as a local preferred file at the same directory level, matching this repo's current usage and Codex's local override behavior.
+- Support `AGENTS.override.md` as a local additive file at the same directory level, loaded after `AGENTS.md` so local guidance can refine the shared project guidance.
 - Do not load `CLAUDE.md`, `.clinerules`, `.cursor/rules`, remote URLs, or global home-level instruction files by default in V0.
 - Make compatibility fallbacks configurable later, not default behavior.
 - Cap instruction bytes so a large project guide cannot crowd out the whole turn.
@@ -189,8 +189,8 @@ interface ProjectInstructionContext {
 
 Discovery rules:
 
-- Candidate names per directory: `AGENTS.override.md`, then `AGENTS.md`.
-- For each directory, pick at most one candidate.
+- Candidate names per directory: `AGENTS.md`, then `AGENTS.override.md`.
+- For each directory, load every non-empty candidate in order.
 - For the session root, walk from `workspaceRoot` to the current logical directory. In V0 that is usually `workspaceRoot`.
 - For a tool target, walk from `workspaceRoot` to the target file's parent directory, or to the target directory for directory tools.
 - Never follow a target outside `workspaceRoot`.
@@ -301,8 +301,8 @@ Suggested future shape:
 instructions:
   enabled: true
   files:
-    - AGENTS.override.md
     - AGENTS.md
+    - AGENTS.override.md
   fallbackFiles: []
   maxBytesPerFile: 32768
   maxTotalBytes: 98304
@@ -538,7 +538,7 @@ Dependencies:
 Focused unit tests:
 
 - resolver root and nested discovery
-- `AGENTS.override.md` precedence over `AGENTS.md`
+- `AGENTS.override.md` additive precedence after `AGENTS.md`
 - root-to-child ordering
 - outside-workspace rejection
 - byte truncation
