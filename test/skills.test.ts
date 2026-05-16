@@ -81,6 +81,29 @@ describe("skills", () => {
     expect(roots.at(-1)).toMatchObject({ source: "session", root: "/tmp/session-skills" });
   });
 
+  it("includes skill roots from the nearest git workspace ancestor", async () => {
+    const repo = await mkdtemp(join(tmpdir(), "topchester-skills-repo-"));
+    const subdir = join(repo, "packages", "app");
+    await mkdir(join(repo, ".git"), { recursive: true });
+    await mkdir(subdir, { recursive: true });
+
+    const roots = buildSkillRoots({
+      workspaceRoot: subdir,
+      homeDir: join(repo, "home"),
+      packageRoot: join(repo, "package"),
+    });
+    const neutralRoots = roots.filter((root) => root.source === "workspace-neutral");
+
+    expect(neutralRoots.map((root) => root.root)).toEqual([
+      join(repo, ".agents", "skills"),
+      join(repo, "packages", ".agents", "skills"),
+      join(subdir, ".agents", "skills"),
+    ]);
+    expect(neutralRoots.map((root) => root.precedence)).toEqual(
+      [...neutralRoots.map((root) => root.precedence)].sort((left, right) => left - right)
+    );
+  });
+
   it("scans skill directories with SKILL.md and linked files", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-skills-root-"));
     await mkdir(join(root, "code-review", "references"), { recursive: true });
@@ -111,6 +134,34 @@ describe("skills", () => {
         scripts: [],
         assets: [],
       },
+    });
+  });
+
+  it("discovers repo-root skills when launched from a subdirectory", async () => {
+    const repo = await mkdtemp(join(tmpdir(), "topchester-skills-repo-"));
+    const subdir = join(repo, "src", "feature");
+    await mkdir(join(repo, ".git"), { recursive: true });
+    await mkdir(join(repo, ".agents", "skills", "repo-skill"), { recursive: true });
+    await mkdir(subdir, { recursive: true });
+    await writeFile(
+      join(repo, ".agents", "skills", "repo-skill", "SKILL.md"),
+      ["---", "name: repo-skill", "description: Repo skill.", "---", "", "# Repo Skill", ""].join("\n")
+    );
+
+    const service = createSkillsService({
+      workspaceRoot: subdir,
+      homeDir: join(repo, "home"),
+      packageRoot: join(repo, "package"),
+    });
+
+    await expect(service.listSkills()).resolves.toMatchObject({
+      active: [
+        expect.objectContaining({
+          name: "repo-skill",
+          source: "workspace-neutral",
+          root: join(repo, ".agents", "skills"),
+        }),
+      ],
     });
   });
 

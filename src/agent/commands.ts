@@ -12,6 +12,7 @@ import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
 import { formatKnowledgeResetResult, resetKnowledgeBase } from "../knowledge/reset.js";
 import { type KnowledgeStatus } from "../knowledge/status.js";
 import { type L1FileScanStatus } from "../knowledge/compiler/l1-entry.js";
+import { ui } from "../cli/ui.js";
 import {
   createSkillsService,
   formatSkillActivationPrompt,
@@ -295,7 +296,7 @@ function formatSkillsListCommand(skills: Awaited<ReturnType<SkillsService["listS
   }
 
   const lines = skills.active.flatMap((skill) => [
-    `${skill.name.padEnd(24)} ${formatSkillSource(skill)}`,
+    `${ui.model(skill.name.padEnd(24))} ${ui.muted(formatSkillSource(skill))}`,
     `  ${skill.description}`,
   ]);
 

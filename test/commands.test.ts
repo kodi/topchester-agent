@@ -248,6 +248,43 @@ describe("slash commands", () => {
     });
   });
 
+  it("colors skill names and sources in TUI-capable skill lists", async () => {
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-skills-"));
+    await mkdir(join(workspace, ".agents", "skills", "review"), { recursive: true });
+    await writeFile(
+      join(workspace, ".agents", "skills", "review", "SKILL.md"),
+      ["---", "name: review", "description: Review changes.", "---", "", "# Review", ""].join("\n")
+    );
+    const skillsService = createSkillsService({
+      workspaceRoot: workspace,
+      homeDir: join(workspace, "home"),
+      packageRoot: workspace,
+    });
+    process.env.FORCE_COLOR = "1";
+    delete process.env.NO_COLOR;
+
+    try {
+      const result = await executeSlashCommand("/skills list", { workspaceRoot: workspace, skillsService });
+
+      expect(result.messages[0]).toContain("\u001b[34mreview");
+      expect(result.messages[0]).toContain("\u001b[90mworkspace-neutral\u001b[0m");
+      expect(result.messages[1]).toBe("  Review changes.");
+    } finally {
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
+  });
+
   it("reports /kb usage for unknown KB subcommands", async () => {
     await expect(executeSlashCommand("/kb nope", { workspaceRoot: "/repo" })).resolves.toEqual({
       messages: ["Usage: /kb init, /kb sync [--full], /kb reset, or /kb status"],
