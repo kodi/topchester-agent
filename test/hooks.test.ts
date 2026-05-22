@@ -111,6 +111,61 @@ describe("agent hooks", () => {
     });
   });
 
+  it("adds active model metadata to runtime hook payloads when available", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-model-"));
+    const script = join(workspace, "capture-model.cjs");
+    const capture = join(workspace, "capture-model.json");
+
+    await writeFile(
+      script,
+      [
+        "const fs = require('node:fs');",
+        "let input = '';",
+        "process.stdin.setEncoding('utf8');",
+        "process.stdin.on('data', (chunk) => { input += chunk; });",
+        "process.stdin.on('end', () => {",
+        "  fs.writeFileSync(process.argv[2], input);",
+        "});",
+      ].join("\n")
+    );
+
+    const runtime = new TopchesterAgentRuntime({
+      ...createHookTestContext(workspace, {
+        hooks: {
+          SessionStart: [{ command: `node ${shellQuote(script)} ${shellQuote(capture)}` }],
+        },
+      }),
+      modelGateway: {
+        resolveModel() {
+          return {
+            providerId: "openrouter",
+            modelId: "anthropic/claude-sonnet-4.5",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as AppContext["modelGateway"],
+    });
+
+    await runtime.runSessionStartHooks();
+
+    const payload = JSON.parse(await readFile(capture, "utf8")) as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      hook_event_name: "SessionStart",
+      event: "SessionStart",
+      cwd: workspace,
+      model_purpose: "agent.primary",
+      model_provider: "openrouter",
+      model_id: "anthropic/claude-sonnet-4.5",
+      model_ref: "openrouter/anthropic/claude-sonnet-4.5",
+      model: {
+        purpose: "agent.primary",
+        providerId: "openrouter",
+        modelId: "anthropic/claude-sonnet-4.5",
+        ref: "openrouter/anthropic/claude-sonnet-4.5",
+      },
+    });
+  });
+
   it("applies PreToolUse blocks inside the runtime tool loop", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-runtime-"));
     const script = join(workspace, "block.cjs");

@@ -280,6 +280,8 @@ Deny rules win over allow rules. Command rules must be simple command prefixes, 
 
 Hooks let project or user config run small programs at agent lifecycle points. Topchester starts the hook command as a child shell process, writes one JSON payload to stdin, waits for it to finish, and reads an optional JSON response from stdout. Write logs to stderr.
 
+See [Hooks](./hooks.md) for the full event and payload reference.
+
 Supported events:
 
 - `SessionStart` / `TaskStart` — a Topchester session starts. `TaskStart` is an alias.
@@ -306,7 +308,7 @@ Command hook example:
 }
 ```
 
-Hook payloads include `hook_event_name`, `event`, `cwd`, `workspaceRoot`, `source: "topchester"`, session ids when available, and event-specific fields. Tool hooks include `tool.name`, `tool.input`, `tool.callId`, and `result` on `PostToolUse`.
+Hook payloads include `hook_event_name`, `event`, `cwd`, `workspaceRoot`, `source: "topchester"`, session ids when available, model metadata when the active model can be resolved, and event-specific fields. Model metadata is exposed as `model_purpose`, `model_provider`, `model_id`, `model_ref`, and a structured `model` object. Tool hooks include `tool.name`, `tool.input`, `tool.callId`, and `result` on `PostToolUse`.
 
 Command hooks may return:
 

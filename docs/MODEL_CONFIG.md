@@ -321,7 +321,7 @@ Lifecycle hooks live under `hooks` in the same layered config. Events are `Sessi
 }
 ```
 
-Command hooks receive JSON on stdin and may return JSON on stdout with `action: "continue" | "block" | "stop"`, optional `message`, and optional `context`. Integrations such as peon-ping are plain command hooks; redirect stdout for tools that print non-JSON status output. Hook arrays concatenate across config layers.
+Command hooks receive JSON on stdin and may return JSON on stdout with `action: "continue" | "block" | "stop"`, optional `message`, and optional `context`. Payloads include active model metadata when Topchester can resolve it: `model_purpose`, `model_provider`, `model_id`, `model_ref`, and `model`. Integrations such as peon-ping are plain command hooks; redirect stdout for tools that print non-JSON status output. Hook arrays concatenate across config layers.
 
 ## Security Rules
 

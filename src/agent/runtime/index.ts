@@ -27,7 +27,7 @@ import { getChatSystemPrompt } from "../prompts.js";
 import { SubagentManager } from "../subagents.js";
 import { createTaskPlanController, hasOpenTaskPlan } from "../task-plan.js";
 import { type SessionHandle } from "../../session/store.js";
-import { type ModelReasoningSink } from "../../model/index.js";
+import { type ModelPurpose, type ModelReasoningSink } from "../../model/index.js";
 import {
   createSkillsService,
   formatSkillActivationPrompt,
@@ -119,6 +119,19 @@ export interface TopchesterAgentRuntimeOptions {
   profile?: AgentProfile;
   parentPermissions?: ToolPermissionView;
   session?: SessionHandle;
+}
+
+interface HookModelPayload {
+  model_purpose: ModelPurpose;
+  model_provider: string;
+  model_id: string;
+  model_ref: string;
+  model: {
+    purpose: ModelPurpose;
+    providerId: string;
+    modelId: string;
+    ref: string;
+  };
 }
 
 export class TopchesterAgentRuntime implements AgentRuntime {
@@ -884,6 +897,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       cwd: this.context.workspaceRoot,
       workspaceRoot: this.context.workspaceRoot,
       source: "topchester",
+      ...this.createHookModelPayload("agent.primary"),
       ...(session
         ? {
             session_id: session.sessionId,
@@ -898,6 +912,43 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         : {}),
       ...extra,
     };
+  }
+
+  private createHookModelPayload(purpose: ModelPurpose): Partial<HookModelPayload> {
+    const resolveModel = this.context.modelGateway.resolveModel;
+
+    if (typeof resolveModel !== "function") {
+      return {};
+    }
+
+    try {
+      const resolved = resolveModel.call(this.context.modelGateway, purpose);
+      const modelRef = `${resolved.providerId}/${resolved.modelId}`;
+
+      return {
+        model_purpose: resolved.purpose,
+        model_provider: resolved.providerId,
+        model_id: resolved.modelId,
+        model_ref: modelRef,
+        model: {
+          purpose: resolved.purpose,
+          providerId: resolved.providerId,
+          modelId: resolved.modelId,
+          ref: modelRef,
+        },
+      };
+    } catch (error) {
+      this.context.logger.debug(
+        {
+          event: "hook_model_resolution_skipped",
+          purpose,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "hook model metadata unavailable"
+      );
+
+      return {};
+    }
   }
 
   private createToolHookPayload(
