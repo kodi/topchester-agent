@@ -617,7 +617,7 @@ describe("TUI rendering", () => {
 
     try {
       expect(renderChatMessage(hookStatusMessage("🪝 hook>stop: Sending ClankerLog clank"))).toContain(
-        "   \u001b[90m🪝 hook>stop: Sending ClankerLog clank\u001b[0m"
+        " \u001b[90m🪝 hook>stop: Sending ClankerLog clank\u001b[0m"
       );
     } finally {
       if (previousForceColor === undefined) {

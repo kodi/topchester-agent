@@ -215,7 +215,7 @@ function renderToolCallMessage(message: ToolCallChatMessage): string[] {
 }
 
 function renderHookStatusMessage(message: HookStatusChatMessage): string[] {
-  return [`   ${ui.muted(expandTabs(message.label))}`];
+  return [` ${ui.muted(expandTabs(message.label))}`];
 }
 
 function renderSubagentMessage(message: SubagentChatMessage): string[] {
