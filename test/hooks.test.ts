@@ -111,6 +111,37 @@ describe("agent hooks", () => {
     });
   });
 
+  it("reports configured hook status messages before running handlers", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-status-"));
+    const script = join(workspace, "status.cjs");
+    const order: string[] = [];
+
+    await writeFile(script, "process.stdout.write(JSON.stringify({ message: 'hook complete' }));\n");
+
+    const result = await runTopchesterHooks(
+      createHookTestContext(workspace, {
+        hooks: {
+          Stop: [
+            {
+              command: `node ${shellQuote(script)}`,
+              statusMessage: "Sending ClankerLog clank",
+            },
+          ],
+        },
+      }),
+      "Stop",
+      createPayload(workspace, "Stop", { finalMessage: "Done.", status: "completed" }),
+      {
+        onHookStart(status) {
+          order.push(`${status.event}: ${status.statusMessage}`);
+        },
+      }
+    );
+
+    expect(order).toEqual(["Stop: Sending ClankerLog clank"]);
+    expect(result.messages).toEqual(["hook complete"]);
+  });
+
   it("adds active model metadata to runtime hook payloads when available", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-model-"));
     const script = join(workspace, "capture-model.cjs");
@@ -219,6 +250,46 @@ describe("agent hooks", () => {
       role: "assistant",
       text: "Handled the blocked command.",
     });
+  });
+
+  it("streams Stop hook status before hook response messages", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-stop-status-"));
+    const script = join(workspace, "stop.cjs");
+
+    await writeFile(script, "process.stdout.write(JSON.stringify({ message: 'stop hook finished' }));\n");
+
+    const runtime = new TopchesterAgentRuntime({
+      ...createHookTestContext(workspace, {
+        hooks: {
+          Stop: [
+            {
+              command: `node ${shellQuote(script)}`,
+              statusMessage: "Sending ClankerLog clank",
+            },
+          ],
+        },
+      }),
+      modelGateway: {
+        async generateAgentStep() {
+          return fakeAgentStep("Done.");
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await collectRuntimeEvents(runtime.submitMessageStream([], "finish"));
+    const statusIndex = events.findIndex((event) => event.type === "hook_status");
+    const messageIndex = events.findIndex(
+      (event) => event.type === "message" && event.role === "system" && event.text === "stop hook finished"
+    );
+
+    expect(events[statusIndex]).toMatchObject({
+      type: "hook_status",
+      eventName: "Stop",
+      statusMessage: "Sending ClankerLog clank",
+      label: "🪝 hook>stop: Sending ClankerLog clank",
+    });
+    expect(statusIndex).toBeGreaterThan(-1);
+    expect(messageIndex).toBeGreaterThan(statusIndex);
   });
 
   it("runs PermissionRequest hooks before interactive command approval", async () => {

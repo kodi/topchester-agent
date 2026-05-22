@@ -49,6 +49,17 @@ export function chatMessageToSessionPayload(message: ChatMessage): SessionEventP
     return undefined;
   }
 
+  if (message.kind === "hook_status") {
+    return message.eventName && message.statusMessage
+      ? {
+          kind: "hook_status",
+          eventName: message.eventName,
+          statusMessage: message.statusMessage,
+          label: message.label,
+        }
+      : undefined;
+  }
+
   if (message.kind === "modal") {
     return {
       kind: "choice",

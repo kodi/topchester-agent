@@ -3,6 +3,7 @@ import { getKnowledgeStatusEvents } from "../agent/runtime/index.js";
 import { type KnowledgeStatus } from "../knowledge/status.js";
 import {
   agentMessage,
+  hookStatusMessage,
   modalMessage,
   subagentMessage,
   systemMessage,
@@ -25,6 +26,8 @@ export function renderRuntimeEvent(event: AgentRuntimeEvent): ChatMessage[] {
       return [event.role === "assistant" ? agentMessage(event.text, event.meta) : systemMessage(event.text)];
     case "tool_call":
       return [toolCallMessage(event.call, event.label)];
+    case "hook_status":
+      return [hookStatusMessage(event.label, event.eventName, event.statusMessage)];
     case "knowledge_status":
       return [
         systemMessage(
@@ -89,6 +92,16 @@ function formatForwardedSubagentEvent(sessionId: string, event: AgentRuntimeEven
   }
 
   if (event.type === "tool_call") {
+    return [
+      subagentMessage({
+        status: "event",
+        sessionId,
+        text: event.label,
+      }),
+    ];
+  }
+
+  if (event.type === "hook_status") {
     return [
       subagentMessage({
         status: "event",

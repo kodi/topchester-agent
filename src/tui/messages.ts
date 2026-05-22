@@ -1,8 +1,17 @@
 import { ui } from "../cli/ui.js";
 import { type ToolCall } from "../agent/tools.js";
+import { type HookEventName } from "../config/index.js";
 import { renderMarkdown } from "./markdown.js";
 
-export type ChatMessageKind = "system" | "user" | "agent" | "thinking" | "tool_call" | "modal" | "subagent";
+export type ChatMessageKind =
+  | "system"
+  | "user"
+  | "agent"
+  | "thinking"
+  | "tool_call"
+  | "hook_status"
+  | "modal"
+  | "subagent";
 
 export interface SystemChatMessage {
   kind: "system";
@@ -35,6 +44,13 @@ export interface ToolCallChatMessage {
   resultSummary?: string;
 }
 
+export interface HookStatusChatMessage {
+  kind: "hook_status";
+  eventName?: HookEventName;
+  statusMessage?: string;
+  label: string;
+}
+
 export interface SubagentChatMessage {
   kind: "subagent";
   status: "running" | "event" | "completed" | "failed";
@@ -62,6 +78,7 @@ export type ChatMessage =
   | AgentChatMessage
   | ThinkingChatMessage
   | ToolCallChatMessage
+  | HookStatusChatMessage
   | SubagentChatMessage
   | ChatModalMessage;
 
@@ -87,6 +104,15 @@ export function toolCallMessage(call: ToolCall, label: string, resultSummary?: s
     : { kind: "tool_call", call, label, resultSummary };
 }
 
+export function hookStatusMessage(label: string, eventName?: HookEventName, statusMessage?: string): ChatMessage {
+  return {
+    kind: "hook_status",
+    label,
+    ...(eventName === undefined ? {} : { eventName }),
+    ...(statusMessage === undefined ? {} : { statusMessage }),
+  };
+}
+
 export function subagentMessage(message: Omit<SubagentChatMessage, "kind">): ChatMessage {
   return { kind: "subagent", ...message };
 }
@@ -110,6 +136,10 @@ export function renderChatMessage(message: ChatMessage, options: RenderChatMessa
 
   if (message.kind === "tool_call") {
     return renderToolCallMessage(message);
+  }
+
+  if (message.kind === "hook_status") {
+    return renderHookStatusMessage(message);
   }
 
   if (message.kind === "subagent") {
@@ -182,6 +212,10 @@ function renderToolCallMessage(message: ToolCallChatMessage): string[] {
       : message.label;
 
   return [`   ${ui.muted(expandTabs(visibleLabel))}`];
+}
+
+function renderHookStatusMessage(message: HookStatusChatMessage): string[] {
+  return [`   ${ui.muted(expandTabs(message.label))}`];
 }
 
 function renderSubagentMessage(message: SubagentChatMessage): string[] {

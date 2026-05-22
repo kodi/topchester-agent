@@ -3,9 +3,10 @@ import { join } from "node:path";
 import { uuidv7 } from "uuidv7";
 import { ZodError } from "zod";
 import { getTopchesterSessionsPath } from "../app/paths.js";
+import { type HookEventName } from "../config/index.js";
 import { type TaskPlanState } from "../agent/task-plan.js";
 import { type ToolCall } from "../agent/tools.js";
-import { toolCallMessage, type ChatMessage } from "../tui/messages.js";
+import { hookStatusMessage, toolCallMessage, type ChatMessage } from "../tui/messages.js";
 import {
   SESSION_EVENT_VERSION,
   SESSION_METADATA_VERSION,
@@ -278,6 +279,9 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
         break;
       case "tool_call":
         messages.push(toolCallMessage(event.call as unknown as ToolCall, event.label));
+        break;
+      case "hook_status":
+        messages.push(hookStatusMessage(event.label, event.eventName as HookEventName, event.statusMessage));
         break;
       case "task_plan":
         taskPlan = {

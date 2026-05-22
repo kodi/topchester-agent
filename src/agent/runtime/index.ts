@@ -13,7 +13,13 @@ import {
   type AgentRuntimeEvent,
 } from "../events.js";
 import { checkAgentReady } from "../health.js";
-import { formatHookContextsForPrompt, runTopchesterHooks, type HookRunPayload, type HookRunResult } from "../hooks.js";
+import {
+  formatHookContextsForPrompt,
+  runTopchesterHooks,
+  type HookRunPayload,
+  type HookRunResult,
+  type RunTopchesterHooksOptions,
+} from "../hooks.js";
 import { resolveProjectInstructions, type ProjectInstructionContext } from "../instructions.js";
 import {
   createToolPermissionView,
@@ -206,31 +212,43 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
     this.startedHookSessionKeys.add(sessionKey);
 
+    const startedEvents: AgentRuntimeEvent[] = [];
     const result = await this.runHookEvent(
       "SessionStart",
       this.createBaseHookPayload("SessionStart", session, {
         isResumed: Boolean(options.isResumed),
         taskStartAlias: "TaskStart",
       }),
-      { abortSignal: options.abortSignal }
+      {
+        abortSignal: options.abortSignal,
+        onHookStart: (status) => {
+          startedEvents.push(agentEvent.hookStatus(status.event, status.statusMessage));
+        },
+      }
     );
 
-    return this.hookResultToEvents(result);
+    return [...startedEvents, ...this.hookResultToEvents(result)];
   }
 
   async runPreCompactHooks(
     session?: SessionHandle,
     options: { reason?: string; abortSignal?: AbortSignal } = {}
   ): Promise<AgentRuntimeEvent[]> {
+    const startedEvents: AgentRuntimeEvent[] = [];
     const result = await this.runHookEvent(
       "PreCompact",
       this.createBaseHookPayload("PreCompact", session, {
         reason: options.reason ?? "Compaction is about to start.",
       }),
-      { abortSignal: options.abortSignal }
+      {
+        abortSignal: options.abortSignal,
+        onHookStart: (status) => {
+          startedEvents.push(agentEvent.hookStatus(status.event, status.statusMessage));
+        },
+      }
     );
 
-    return this.hookResultToEvents(result);
+    return [...startedEvents, ...this.hookResultToEvents(result)];
   }
 
   /**
@@ -255,7 +273,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       yield event;
     }
 
-    const userPromptHook = await this.runHookEvent(
+    const userPromptHookRun = this.startHookEvent(
       "UserPromptSubmit",
       this.createBaseHookPayload("UserPromptSubmit", session, {
         prompt: { text: message },
@@ -264,6 +282,10 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       }),
       { abortSignal }
     );
+    for await (const event of userPromptHookRun.statusEvents) {
+      yield event;
+    }
+    const userPromptHook = await userPromptHookRun.result;
     for (const event of this.hookResultToEvents(userPromptHook)) {
       yield event;
     }
@@ -444,7 +466,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           finalMessage,
           formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
         );
-        for (const event of await this.runStopHookEvents(session, finalMessage, "completed", abortSignal)) {
+        for await (const event of this.streamStopHookEvents(session, finalMessage, "completed", abortSignal)) {
           yield event;
         }
         yield agentEvent.status("ready");
@@ -477,7 +499,11 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
             const call = batch[batchIndex]!;
             const resultIndex = index + batchIndex;
-            const preHook = await this.runPreToolUseHook(call, modelToolCalls[resultIndex]?.id, session, abortSignal);
+            const preHookRun = this.startPreToolUseHook(call, modelToolCalls[resultIndex]?.id, session, abortSignal);
+            for await (const event of preHookRun.statusEvents) {
+              yield event;
+            }
+            const preHook = await preHookRun.result;
             for (const event of this.hookResultToEvents(preHook)) {
               yield event;
             }
@@ -547,13 +573,17 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             yield event;
           }
           yield agentEvent.toolCall(call, formatToolCallMessage(call, toolResult));
-          const postHook = await this.runPostToolUseHook(
+          const postHookRun = this.startPostToolUseHook(
             call,
             modelToolCalls[index]?.id,
             toolResult,
             session,
             abortSignal
           );
+          for await (const event of postHookRun.statusEvents) {
+            yield event;
+          }
+          const postHook = await postHookRun.result;
           for (const event of this.hookResultToEvents(postHook)) {
             yield event;
           }
@@ -593,7 +623,11 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
         for (let index = 0; index < parallelCalls.length; index += 1) {
           const call = parallelCalls[index]!;
-          const preHook = await this.runPreToolUseHook(call, modelToolCalls[index]?.id, session, abortSignal);
+          const preHookRun = this.startPreToolUseHook(call, modelToolCalls[index]?.id, session, abortSignal);
+          for await (const event of preHookRun.statusEvents) {
+            yield event;
+          }
+          const preHook = await preHookRun.result;
           for (const event of this.hookResultToEvents(preHook)) {
             yield event;
           }
@@ -648,13 +682,17 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             yield event;
           }
           yield agentEvent.toolCall(call, formatToolCallMessage(call, toolResult));
-          const postHook = await this.runPostToolUseHook(
+          const postHookRun = this.startPostToolUseHook(
             call,
             modelToolCalls[index]?.id,
             toolResult,
             session,
             abortSignal
           );
+          for await (const event of postHookRun.statusEvents) {
+            yield event;
+          }
+          const postHook = await postHookRun.result;
           for (const event of this.hookResultToEvents(postHook)) {
             yield event;
           }
@@ -700,14 +738,18 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           finalMessage,
           formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
         );
-        for (const event of await this.runStopHookEvents(session, finalMessage, "completed", abortSignal)) {
+        for await (const event of this.streamStopHookEvents(session, finalMessage, "completed", abortSignal)) {
           yield event;
         }
         yield agentEvent.status("ready");
         return;
       }
 
-      const preHook = await this.runPreToolUseHook(executableToolCall, toolCall.id, session, abortSignal);
+      const preHookRun = this.startPreToolUseHook(executableToolCall, toolCall.id, session, abortSignal);
+      for await (const event of preHookRun.statusEvents) {
+        yield event;
+      }
+      const preHook = await preHookRun.result;
       for (const event of this.hookResultToEvents(preHook)) {
         yield event;
       }
@@ -774,7 +816,11 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         yield agentEvent.taskPlan(toolResult.plan);
       }
 
-      const postHook = await this.runPostToolUseHook(executableToolCall, toolCall.id, toolResult, session, abortSignal);
+      const postHookRun = this.startPostToolUseHook(executableToolCall, toolCall.id, toolResult, session, abortSignal);
+      for await (const event of postHookRun.statusEvents) {
+        yield event;
+      }
+      const postHook = await postHookRun.result;
       for (const event of this.hookResultToEvents(postHook)) {
         yield event;
       }
@@ -806,7 +852,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       finalMessage,
       formatAgentMessageMeta(lastModelId, totalDurationMs, tokenUsageTotals)
     );
-    for (const event of await this.runStopHookEvents(session, finalMessage, "failed", abortSignal)) {
+    for await (const event of this.streamStopHookEvents(session, finalMessage, "failed", abortSignal)) {
       yield event;
     }
     yield agentEvent.status("ready");
@@ -833,39 +879,39 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     return events;
   }
 
-  private async runPreToolUseHook(
+  private startPreToolUseHook(
     call: ToolCall,
     toolCallId: string | undefined,
     session: SessionHandle | undefined,
     abortSignal: AbortSignal | undefined
-  ): Promise<HookRunResult> {
-    return this.runHookEvent("PreToolUse", this.createToolHookPayload("PreToolUse", call, toolCallId, session), {
+  ): { statusEvents: AsyncIterable<AgentRuntimeEvent>; result: Promise<HookRunResult> } {
+    return this.startHookEvent("PreToolUse", this.createToolHookPayload("PreToolUse", call, toolCallId, session), {
       toolName: call.tool,
       abortSignal,
     });
   }
 
-  private async runPostToolUseHook(
+  private startPostToolUseHook(
     call: ToolCall,
     toolCallId: string | undefined,
     result: ToolExecutionResult<ToolResult>,
     session: SessionHandle | undefined,
     abortSignal: AbortSignal | undefined
-  ): Promise<HookRunResult> {
-    return this.runHookEvent(
+  ): { statusEvents: AsyncIterable<AgentRuntimeEvent>; result: Promise<HookRunResult> } {
+    return this.startHookEvent(
       "PostToolUse",
       this.createToolHookPayload("PostToolUse", call, toolCallId, session, { result }),
       { toolName: call.tool, abortSignal }
     );
   }
 
-  private async runStopHookEvents(
+  private async *streamStopHookEvents(
     session: SessionHandle | undefined,
     finalMessage: string,
     status: "completed" | "failed",
     abortSignal: AbortSignal | undefined
-  ): Promise<AgentRuntimeEvent[]> {
-    const result = await this.runHookEvent(
+  ): AsyncIterable<AgentRuntimeEvent> {
+    const hookRun = this.startHookEvent(
       "Stop",
       this.createBaseHookPayload("Stop", session, {
         taskCompleteAlias: "TaskComplete",
@@ -875,15 +921,41 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       { abortSignal }
     );
 
-    return this.hookResultToEvents(result);
+    for await (const event of hookRun.statusEvents) {
+      yield event;
+    }
+
+    const result = await hookRun.result;
+
+    for (const event of this.hookResultToEvents(result)) {
+      yield event;
+    }
   }
 
   private async runHookEvent(
     event: HookRunPayload["event"],
     payload: HookRunPayload,
-    options: { toolName?: string; abortSignal?: AbortSignal } = {}
+    options: RunTopchesterHooksOptions = {}
   ): Promise<HookRunResult> {
     return runTopchesterHooks(this.context, event, payload, options);
+  }
+
+  private startHookEvent(
+    event: HookRunPayload["event"],
+    payload: HookRunPayload,
+    options: Omit<RunTopchesterHooksOptions, "onHookStart"> = {}
+  ): { statusEvents: AsyncIterable<AgentRuntimeEvent>; result: Promise<HookRunResult> } {
+    const queue = createRuntimeEventQueue();
+    const result = this.runHookEvent(event, payload, {
+      ...options,
+      onHookStart: (status) => {
+        queue.push(agentEvent.hookStatus(status.event, status.statusMessage));
+      },
+    }).finally(() => {
+      queue.close();
+    });
+
+    return { statusEvents: queue, result };
   }
 
   private createBaseHookPayload(

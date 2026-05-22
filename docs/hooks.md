@@ -25,9 +25,10 @@ Topchester loads those sources in that order. Later files override scalar values
         "matcher": "run_command",
         "command": ".topchester/hooks/check-command.sh",
         "timeoutMs": 5000,
+        "statusMessage": "Checking command policy",
       },
     ],
-    "Stop": [{ "command": ".topchester/hooks/stop.sh" }],
+    "Stop": [{ "command": ".topchester/hooks/stop.sh", "statusMessage": "Sending final notification" }],
   },
 }
 ```
@@ -37,6 +38,7 @@ Each handler supports:
 - `command` - shell command to execute.
 - `matcher` - optional event or tool filter. For tool hooks, match against the tool name such as `run_command`; `*` matches everything.
 - `timeoutMs` - optional timeout. The default is 5000 ms.
+- `statusMessage` - optional visible status text shown when the hook starts, formatted like `🪝 hook>stop: Sending final notification`.
 
 If both a canonical event and its legacy alias are configured, both handler arrays run because aliases normalize into the canonical event.
 

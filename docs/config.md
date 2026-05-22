@@ -302,6 +302,7 @@ Command hook example:
         "matcher": "run_command",
         "command": ".topchester/hooks/check-command.sh",
         "timeoutMs": 5000,
+        "statusMessage": "Checking command policy",
       },
     ],
   },
@@ -309,6 +310,8 @@ Command hook example:
 ```
 
 Hook payloads include `hook_event_name`, `event`, `cwd`, `workspaceRoot`, `source: "topchester"`, session ids when available, model metadata when the active model can be resolved, and event-specific fields. Model metadata is exposed as `model_purpose`, `model_provider`, `model_id`, `model_ref`, and a structured `model` object. Tool hooks include `tool.name`, `tool.input`, `tool.callId`, and `result` on `PostToolUse`.
+
+Set `statusMessage` on a command hook to show a visible hook-start row such as `🪝 hook>pre-tool-use: Checking command policy` while the hook runs.
 
 Command hooks may return:
 

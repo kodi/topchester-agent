@@ -158,7 +158,12 @@ describe("Topchester config loading", () => {
       join(workspace, "topchester.jsonc"),
       JSON.stringify({
         hooks: {
-          SessionStart: [{ command: ".topchester/hooks/project-start.sh" }],
+          SessionStart: [
+            {
+              command: ".topchester/hooks/project-start.sh",
+              statusMessage: "Starting project hook",
+            },
+          ],
           TaskAcknowledge: [{ command: "peon >/dev/null" }],
           UserActionRequired: [{ command: "peon-required >/dev/null" }],
         },
@@ -184,7 +189,7 @@ describe("Topchester config loading", () => {
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
 
     expect(config.hooks?.SessionStart).toEqual([
-      { command: ".topchester/hooks/project-start.sh" },
+      { command: ".topchester/hooks/project-start.sh", statusMessage: "Starting project hook" },
       { command: "topchester-user-start" },
     ]);
     expect(config.hooks?.UserPromptSubmit).toEqual([{ command: "peon >/dev/null" }]);

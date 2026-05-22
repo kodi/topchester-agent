@@ -189,6 +189,7 @@ const commandHookHandlerSchema = z
     type: z.literal("command").optional(),
     command: z.string().min(1),
     timeoutMs: hookTimeoutMsSchema.optional(),
+    statusMessage: z.string().min(1).optional(),
     matcher: hookMatcherSchema,
   })
   .strict();

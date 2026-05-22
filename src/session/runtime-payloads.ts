@@ -16,6 +16,13 @@ export function runtimeEventToSessionPayload(event: AgentRuntimeEvent): SessionE
         label: event.label,
         call: event.call as unknown as Record<string, unknown>,
       };
+    case "hook_status":
+      return {
+        kind: "hook_status",
+        eventName: event.eventName,
+        statusMessage: event.statusMessage,
+        label: event.label,
+      };
     case "task_plan":
       return {
         kind: "task_plan",

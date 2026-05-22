@@ -1,11 +1,13 @@
 import { type KnowledgeStatus } from "../knowledge/status.js";
 import { type TaskPlanState } from "./task-plan.js";
 import { type ToolCall } from "./tools.js";
+import { type HookEventName } from "../config/index.js";
 
 export type AgentRuntimeEvent =
   | AgentStatusEvent
   | AgentMessageEvent
   | AgentToolCallEvent
+  | AgentHookStatusEvent
   | AgentTaskPlanEvent
   | AgentInstructionContextEvent
   | AgentKnowledgeStatusEvent
@@ -30,6 +32,13 @@ export interface AgentMessageEvent {
 export interface AgentToolCallEvent {
   type: "tool_call";
   call: ToolCall;
+  label: string;
+}
+
+export interface AgentHookStatusEvent {
+  type: "hook_status";
+  eventName: HookEventName;
+  statusMessage: string;
   label: string;
 }
 
@@ -149,6 +158,15 @@ export const agentEvent = {
     return { type: "tool_call", call, label };
   },
 
+  hookStatus(eventName: HookEventName, statusMessage: string): AgentHookStatusEvent {
+    return {
+      type: "hook_status",
+      eventName,
+      statusMessage,
+      label: `🪝 hook>${formatHookEventName(eventName)}: ${statusMessage}`,
+    };
+  },
+
   taskPlan(plan: TaskPlanState): AgentTaskPlanEvent {
     return { type: "task_plan", plan };
   },
@@ -186,6 +204,10 @@ export const agentEvent = {
 
 export function choiceAction(label: string, value?: string): AgentChoiceAction {
   return value === undefined ? { label } : { label, value };
+}
+
+function formatHookEventName(eventName: HookEventName): string {
+  return eventName.replace(/([a-z])([A-Z])/gu, "$1-$2").toLowerCase();
 }
 
 export function isSubagentRuntimeEvent(

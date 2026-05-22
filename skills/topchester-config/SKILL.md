@@ -123,8 +123,10 @@ Hooks live under `hooks` and use command handlers:
 ```jsonc
 {
   "hooks": {
-    "SessionStart": [{ "command": "scripts/topchester-start.sh" }],
-    "PostToolUse": [{ "command": "scripts/tool-hook.sh", "matcher": "edit_file" }],
+    "SessionStart": [{ "command": "scripts/topchester-start.sh", "statusMessage": "Starting session hook" }],
+    "PostToolUse": [
+      { "command": "scripts/tool-hook.sh", "matcher": "edit_file", "statusMessage": "Running edit hook" },
+    ],
   },
 }
 ```

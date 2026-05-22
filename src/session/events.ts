@@ -55,6 +55,13 @@ const toolCallPayloadSchema = z.object({
   call: z.record(z.string(), jsonValueSchema),
 });
 
+const hookStatusPayloadSchema = z.object({
+  kind: z.literal("hook_status"),
+  eventName: z.string(),
+  statusMessage: z.string(),
+  label: z.string(),
+});
+
 const taskPlanItemPayloadSchema = z.object({
   text: z.string(),
   status: z.enum(["pending", "in_progress", "completed"]),
@@ -131,6 +138,7 @@ const subagentFailedPayloadSchema = subagentLifecycleBasePayloadSchema.extend({
 export const sessionEventPayloadSchema = z.discriminatedUnion("kind", [
   messagePayloadSchema,
   toolCallPayloadSchema,
+  hookStatusPayloadSchema,
   taskPlanPayloadSchema,
   instructionContextPayloadSchema,
   statusPayloadSchema,

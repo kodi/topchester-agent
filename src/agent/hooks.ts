@@ -42,6 +42,7 @@ export interface HookRunPayload {
 export interface RunTopchesterHooksOptions {
   toolName?: string;
   abortSignal?: AbortSignal;
+  onHookStart?: (status: HookStartStatus) => void;
 }
 
 export interface HookRunResult {
@@ -54,6 +55,11 @@ export interface HookRunResult {
 
 export interface HookInterruption {
   message: string;
+}
+
+export interface HookStartStatus {
+  event: HookEventName;
+  statusMessage: string;
 }
 
 interface HookProcessResult {
@@ -80,6 +86,12 @@ export async function runTopchesterHooks(
 
   for (const handler of handlers) {
     result.handlerCount += 1;
+    const statusMessage = handler.statusMessage?.trim();
+
+    if (statusMessage) {
+      options.onHookStart?.({ event, statusMessage });
+    }
+
     const handlerResult = await runCommandHandler(context, event, payload, handler, options);
 
     result.contexts.push(...handlerResult.contexts);

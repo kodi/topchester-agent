@@ -185,6 +185,7 @@ async function loadConversation(workspaceRoot: string, resume: string): Promise<
       case "system":
       case "thinking":
       case "tool_call":
+      case "hook_status":
       case "subagent":
       case "modal":
         return [];
@@ -241,6 +242,11 @@ function printPlainEvent(event: AgentRuntimeEvent): void {
   }
 
   if (event.type === "tool_call") {
+    console.log(event.label);
+    return;
+  }
+
+  if (event.type === "hook_status") {
     console.log(event.label);
     return;
   }

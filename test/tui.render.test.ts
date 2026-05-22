@@ -43,6 +43,7 @@ import { stripAnsi } from "../src/tui/text.js";
 import {
   agentMessage,
   type ChatMessage,
+  hookStatusMessage,
   modalMessage,
   renderChatMessage,
   subagentMessage,
@@ -594,6 +595,30 @@ describe("TUI rendering", () => {
           )
         )
       ).toContain("   \u001b[90mgit_diff: all (2 files, truncated)\u001b[0m");
+    } finally {
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
+  });
+
+  it("renders hook status rows dark gray with the hook label", () => {
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+
+    try {
+      expect(renderChatMessage(hookStatusMessage("🪝 hook>stop: Sending ClankerLog clank"))).toContain(
+        "   \u001b[90m🪝 hook>stop: Sending ClankerLog clank\u001b[0m"
+      );
     } finally {
       if (previousForceColor === undefined) {
         delete process.env.FORCE_COLOR;
