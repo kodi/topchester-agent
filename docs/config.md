@@ -258,23 +258,23 @@ You can change the instruction filenames in project config:
 
 `files` are loaded first at each directory level, in order. `fallbackFiles` are opt-in compatibility names loaded after `files`. Set `enabled: false` to disable project instruction loading. Topchester does not load `CLAUDE.md`, `.clinerules`, `.cursor/rules`, remote URLs, or home-level instruction files by default.
 
-## Command Policy
+## Bash Permissions
 
-`run_command` is limited to validators and configured command prefixes. Add project-specific allow and deny rules under `tools.commands`:
+`bash` runs shell command strings inside the workspace. Unknown commands require interactive approval unless project or user config allows the exact command or a prefix under `tools.bash`:
 
 ```jsonc
 {
   "tools": {
-    "commands": {
+    "bash": {
       "allow": ["node scripts/check-fixtures.mjs"],
-      "allowExact": ["node --version"],
+      "allowExact": ["printf hi | wc -c"],
       "deny": ["pnpm publish", "npm publish"],
     },
   },
 }
 ```
 
-Deny rules win over allow rules. Command rules must be simple command prefixes, not shell syntax, paths, or glob patterns. `allowExact`, `allow`, and `deny` arrays concatenate across config layers.
+Deny rules win over allow rules. `allowExact` matches a complete command string, while `allow` matches a command prefix plus a following space. `allowExact`, `allow`, and `deny` arrays concatenate across config layers. Use `run_validator` for tests, lint, typecheck, build, check, format-check, and smoke whenever it fits.
 
 ## Hooks
 
@@ -299,7 +299,7 @@ Command hook example:
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "run_command",
+        "matcher": "bash",
         "command": ".topchester/hooks/check-command.sh",
         "timeoutMs": 5000,
         "statusMessage": "Checking command policy",
@@ -336,7 +336,7 @@ Use normal command hooks to integrate [peon-ping](https://github.com/PeonPing/pe
     "TaskAcknowledge": [{ "command": "peon >/dev/null" }],
     "UserActionRequired": [{ "command": "peon >/dev/null" }],
     "Stop": [{ "command": "peon >/dev/null" }],
-    "PostToolUse": [{ "matcher": "run_command", "command": "peon >/dev/null" }],
+    "PostToolUse": [{ "matcher": "bash", "command": "peon >/dev/null" }],
   },
 }
 ```

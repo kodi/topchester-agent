@@ -1680,7 +1680,7 @@ describe("slash commands", () => {
     expect(prompts[1]).toContain("Error:");
   });
 
-  it("asks for run_command approval and resumes the blocked tool call when allowed once", async () => {
+  it("asks for bash approval and resumes the blocked tool call when allowed once", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     const prompts: string[] = [];
     const approvalRequests: Array<{ command: string; reason: string }> = [];
@@ -1696,9 +1696,7 @@ describe("slash commands", () => {
               providerId: "fake",
               modelId: "fake-agent",
               purpose: "agent.primary" as const,
-              toolCalls: [
-                { id: "run-command-0", tool: "run_command", args: { command: "node --version" }, source: "text-json" },
-              ],
+              toolCalls: [{ id: "bash-0", tool: "bash", args: { command: "node --version" }, source: "text-json" }],
               toolProtocol: "text-json" as const,
               protocolAttempts: [],
               providerRejectedTools: false,
@@ -1724,7 +1722,7 @@ describe("slash commands", () => {
     });
 
     const events = await runtime.submitMessage([], "check node version", undefined, undefined, {
-      requestRunCommandApproval: async (request) => {
+      requestBashApproval: async (request) => {
         approvalRequests.push({ command: request.command, reason: request.reason });
 
         return "run_once";
@@ -1734,20 +1732,20 @@ describe("slash commands", () => {
     expect(approvalRequests).toEqual([
       {
         command: "node --version",
-        reason: "command policy rejected 'node --version' because it is not a validator or configured command.",
+        reason: "bash policy requires approval for 'node --version'.",
       },
     ]);
     expect(events).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ type: "tool_call", label: expect.stringContaining("run_command: node --version") }),
+        expect.objectContaining({ type: "tool_call", label: expect.stringContaining("bash: node --version") }),
         expect.objectContaining({ type: "message", role: "assistant", text: "Node version reported." }),
       ])
     );
-    expect(prompts[1]).toContain("Tool result from run_command via node --version:");
+    expect(prompts[1]).toContain("Tool result from bash via node --version:");
     expect(prompts[1]).toContain("stdout:");
   });
 
-  it("returns run_command cancellation to the model when approval is denied", async () => {
+  it("returns bash cancellation to the model when approval is denied", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     const prompts: string[] = [];
     const runtime = new TopchesterAgentRuntime({
@@ -1762,9 +1760,7 @@ describe("slash commands", () => {
               providerId: "fake",
               modelId: "fake-agent",
               purpose: "agent.primary" as const,
-              toolCalls: [
-                { id: "run-command-0", tool: "run_command", args: { command: "node --version" }, source: "text-json" },
-              ],
+              toolCalls: [{ id: "bash-0", tool: "bash", args: { command: "node --version" }, source: "text-json" }],
               toolProtocol: "text-json" as const,
               protocolAttempts: [],
               providerRejectedTools: false,
@@ -1790,20 +1786,20 @@ describe("slash commands", () => {
     });
 
     const events = await runtime.submitMessage([], "check node version", undefined, undefined, {
-      requestRunCommandApproval: async () => "cancel",
+      requestBashApproval: async () => "cancel",
     });
 
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "tool_call",
-          label: "run_command failed: run_command cancelled by user for 'node --version'.",
+          label: "bash failed: bash cancelled by user for 'node --version'.",
         }),
         expect.objectContaining({ type: "message", role: "assistant", text: "Skipped." }),
       ])
     );
     expect(prompts[1]).toContain("Error:");
-    expect(prompts[1]).toContain("run_command cancelled by user for 'node --version'.");
+    expect(prompts[1]).toContain("bash cancelled by user for 'node --version'.");
   });
 
   it("asks whether to continue or abort after the tool call limit", async () => {

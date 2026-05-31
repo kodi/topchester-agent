@@ -32,14 +32,14 @@ describe("agent hooks", () => {
     const result = await runTopchesterHooks(
       createHookTestContext(workspace, {
         hooks: {
-          PreToolUse: [{ command: `node ${shellQuote(script)} ${shellQuote(capture)}`, matcher: "run_command" }],
+          PreToolUse: [{ command: `node ${shellQuote(script)} ${shellQuote(capture)}`, matcher: "bash" }],
         },
       }),
       "PreToolUse",
       createPayload(workspace, "PreToolUse", {
-        tool: { name: "run_command", input: { command: "pnpm test" }, callId: "call-1" },
+        tool: { name: "bash", input: { command: "pnpm test" }, callId: "call-1" },
       }),
-      { toolName: "run_command" }
+      { toolName: "bash" }
     );
 
     expect(result.blocked?.message).toBe("blocked by hook");
@@ -51,7 +51,7 @@ describe("agent hooks", () => {
       event: "PreToolUse",
       cwd: workspace,
       source: "topchester",
-      tool: { name: "run_command", callId: "call-1" },
+      tool: { name: "bash", callId: "call-1" },
     });
   });
 
@@ -215,7 +215,7 @@ describe("agent hooks", () => {
     const runtime = new TopchesterAgentRuntime({
       ...createHookTestContext(workspace, {
         hooks: {
-          PreToolUse: [{ command: `node ${shellQuote(script)}`, matcher: "run_command" }],
+          PreToolUse: [{ command: `node ${shellQuote(script)}`, matcher: "bash" }],
         },
       }),
       modelGateway: {
@@ -228,9 +228,9 @@ describe("agent hooks", () => {
 
           return fakeAgentStep("", [
             {
-              id: "run-command-1",
+              id: "bash-1",
               source: "native" as const,
-              tool: "run_command",
+              tool: "bash",
               args: { command: "node --version", workdir: "." },
             },
           ]);
@@ -243,7 +243,7 @@ describe("agent hooks", () => {
     expect(prompts.some((prompt) => prompt.includes("blocked by hook"))).toBe(true);
     expect(events.find((event) => event.type === "tool_call")).toMatchObject({
       type: "tool_call",
-      call: { tool: "run_command" },
+      call: { tool: "bash" },
     });
     expect(events.at(-2)).toMatchObject({
       type: "message",
@@ -331,9 +331,9 @@ describe("agent hooks", () => {
 
           return fakeAgentStep("", [
             {
-              id: "run-command-approval-1",
+              id: "bash-approval-1",
               source: "native" as const,
-              tool: "run_command",
+              tool: "bash",
               args: { command: "node scripts/local-task.js", workdir: "." },
             },
           ]);
@@ -343,7 +343,7 @@ describe("agent hooks", () => {
 
     const events = await collectRuntimeEvents(
       runtime.submitMessageStream([], "run local task", undefined, {
-        async requestRunCommandApproval(request) {
+        async requestBashApproval(request) {
           approvalRequests.push(request);
           return "cancel";
         },
@@ -372,7 +372,7 @@ describe("agent hooks", () => {
       notification_type: "permission_prompt",
       source: "topchester",
       command: "node scripts/local-task.js",
-      tool: { name: "run_command", callId: "run-command-approval-1" },
+      tool: { name: "bash", callId: "bash-approval-1" },
     });
     expect(captureJson.env).toEqual({ TOPCHESTER_HOOK_EVENT: "PermissionRequest" });
   });

@@ -99,9 +99,8 @@ describe("skills", () => {
       join(repo, "packages", ".agents", "skills"),
       join(subdir, ".agents", "skills"),
     ]);
-    expect(neutralRoots.map((root) => root.precedence)).toEqual(
-      [...neutralRoots.map((root) => root.precedence)].sort((left, right) => left - right)
-    );
+    const neutralPrecedence = neutralRoots.map((root) => root.precedence);
+    expect(neutralPrecedence).toEqual([...neutralPrecedence].sort((left, right) => left - right));
   });
 
   it("scans skill directories with SKILL.md and linked files", async () => {

@@ -130,14 +130,16 @@ export function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult
       .join("\n");
   }
 
-  if (result.tool === "run_command") {
+  if (result.tool === "bash") {
     return [
       `Tool result from ${result.tool} via ${result.command}:`,
       `cwd: ${result.cwd}`,
       `exit_code: ${result.exitCode}`,
       `duration_ms: ${result.durationMs}`,
       `timed_out: ${result.timedOut}`,
+      `aborted: ${result.aborted}`,
       `truncated: ${result.truncated}`,
+      `shell: ${result.shell}`,
       `policy: ${result.policy.reason}`,
       `workspace_may_have_changed: ${result.workspaceMayHaveChanged}`,
       warning ? warning.trimStart() : "",
@@ -299,7 +301,7 @@ export function formatInvalidToolCallRepairInstruction(rejection: ToolCallParseR
     `Validation error: ${rejection.reason}`,
     "Do not answer with that JSON as chat text.",
     rejection.tool === "run_validator"
-      ? "If this command is not a strict validator shape but the user still needs command output, retry with run_command when project policy allows it."
+      ? "If this command is not a strict validator shape but the user still needs command output, retry with bash when approval or project policy allows it."
       : "",
     "Reply now with one valid tool call JSON object for the next action, or answer in plain text if no tool is needed.",
   ]
@@ -359,10 +361,10 @@ export function formatToolCallMessage(call: ToolCall, result?: ToolExecutionResu
       return result?.tool === "run_validator" && !isToolErrorResult(result)
         ? `run_validator: ${call.args.command} (${result.timedOut ? "timed out" : `exit ${result.exitCode}`}, ${formatSeconds(result.durationMs)})`
         : `run_validator: ${call.args.command}`;
-    case "run_command":
-      return result?.tool === "run_command" && !isToolErrorResult(result)
-        ? `run_command: ${call.args.command} (${result.timedOut ? "timed out" : `exit ${result.exitCode}`}, ${formatSeconds(result.durationMs)})`
-        : `run_command: ${call.args.command}`;
+    case "bash":
+      return result?.tool === "bash" && !isToolErrorResult(result)
+        ? `bash: ${call.args.command} (${result.timedOut ? "timed out" : `exit ${result.exitCode}`}, ${formatSeconds(result.durationMs)})`
+        : `bash: ${call.args.command}`;
     case "skills_list":
       return result?.tool === "skills_list" && !isToolErrorResult(result)
         ? `skills_list: ${result.skills.active.length} skills`

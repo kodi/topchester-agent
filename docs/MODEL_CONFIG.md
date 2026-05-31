@@ -284,27 +284,27 @@ Config ignores are applied after built-in safety exclusions and `.gitignore`. Ne
 
 `ignore.paths` arrays concatenate across config layers in load order: project config, user config, `TOPCHESTER_CONFIG`, then CLI `--config`. Later entries win inside the effective ignore rule list.
 
-## Command Policy
+## Bash Permissions
 
-`run_command` is limited to validators and configured command prefixes. Add project-specific allow and deny rules under `tools.commands`:
+`bash` runs shell command strings inside the workspace. Unknown commands require interactive approval unless project or user config allows the exact command or a prefix under `tools.bash`:
 
 ```jsonc
 {
   "tools": {
-    "commands": {
+    "bash": {
       "allow": ["node scripts/check-fixtures.mjs", "pnpm exec tsx scripts/dev/inspect-config.ts"],
-      "allowExact": ["node --version"],
+      "allowExact": ["printf hi | wc -c"],
       "deny": ["pnpm publish", "npm publish"],
     },
   },
 }
 ```
 
-Rules match normalized command display strings by exact command or prefix plus a following space. Deny rules win over allow rules. Command rules must be simple command prefixes, not shell syntax, paths, or glob patterns.
+Rules match command strings by exact command or prefix plus a following space. Deny rules win over allow rules. Use `run_validator` instead of `bash` for tests, lint, typecheck, build, check, format-check, and smoke whenever it fits.
 
-`tools.commands.allowExact` matches only the complete normalized command. `tools.commands.allow`, `tools.commands.allowExact`, and `tools.commands.deny` arrays concatenate across config layers in the same load order as `ignore.paths`.
+`tools.bash.allowExact` matches only the complete command. `tools.bash.allow`, `tools.bash.allowExact`, and `tools.bash.deny` arrays concatenate across config layers in the same load order as `ignore.paths`.
 
-When an interactive `run_command` request is rejected only because it is not configured, the TUI can approve the exact command once, allow it for the current session, or permanently add it to this repo's `topchester.jsonc` under `tools.commands.allowExact`.
+When an interactive `bash` request needs approval, the TUI can approve the exact command once, allow it for the current session, or permanently add it to this repo's `topchester.jsonc` under `tools.bash.allowExact`.
 
 ## Hooks
 
@@ -313,7 +313,7 @@ Lifecycle hooks live under `hooks` in the same layered config. Events are `Sessi
 ```jsonc
 {
   "hooks": {
-    "PreToolUse": [{ "matcher": "run_command", "command": ".topchester/hooks/check-command.sh" }],
+    "PreToolUse": [{ "matcher": "bash", "command": ".topchester/hooks/check-command.sh" }],
     "TaskAcknowledge": [{ "command": "peon >/dev/null" }],
     "UserActionRequired": [{ "command": "peon >/dev/null" }],
     "Stop": [{ "command": "peon >/dev/null" }],

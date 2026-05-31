@@ -64,7 +64,7 @@ export const SUBAGENT_PROFILES = [
     modelPurpose: "agent.fast",
     toolPermissionDefault: "deny",
     allowedTools: READ_ONLY_TOOLS,
-    deniedTools: ["task", "plan_todo"],
+    deniedTools: ["task", "plan_todo", "bash"],
   },
   {
     id: "general",
@@ -76,7 +76,7 @@ export const SUBAGENT_PROFILES = [
     modelPurpose: "agent.primary",
     toolPermissionDefault: "allow",
     allowedTools: [],
-    deniedTools: ["task", "plan_todo"],
+    deniedTools: ["task", "plan_todo", "bash"],
   },
 ] as const satisfies readonly AgentProfile[];
 

@@ -220,6 +220,23 @@ function chooseResponse(prompt: string): string {
     });
   }
 
+  if (prompt.includes("BASH_SMOKE") && prompt.includes("Tool result from bash")) {
+    return "BASH_SMOKE shell ok\nBASH_SMOKE passed";
+  }
+
+  if (prompt.includes("BASH_SMOKE")) {
+    if (prompt.includes("run_command:")) {
+      return "RUN_COMMAND_VISIBLE";
+    }
+
+    return toolCall("bash", {
+      command: "printf 'BASH_SMOKE shell ok\\n'",
+      workdir: ".",
+      timeout_ms: 15000,
+      description: "print bash smoke marker",
+    });
+  }
+
   if (
     prompt.includes("PROJECT_INSTRUCTIONS_NESTED_EDIT_SMOKE") &&
     prompt.includes("Tool result from edit_file") &&

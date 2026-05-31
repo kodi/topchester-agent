@@ -1,3 +1,4 @@
+import { bashTool } from "./bash.js";
 import { editFileTool } from "./edit-file.js";
 import { findFileTool } from "./find-file.js";
 import { gitAddTool, gitCommitTool, gitDiffTool, gitLogTool, gitStatusTool } from "./git.js";
@@ -6,7 +7,6 @@ import { inspectCommandTool } from "./inspect-command.js";
 import { listFilesTool } from "./list-files.js";
 import { planTodoTool } from "./plan-todo.js";
 import { readFileTool } from "./read-file.js";
-import { runCommandTool } from "./run-command.js";
 import { runValidatorTool } from "./run-validator.js";
 import { skillViewTool, skillsListTool } from "./skills.js";
 import { taskTool } from "./task.js";
@@ -29,7 +29,7 @@ export const toolRegistry = {
   [gitCommitTool.name]: gitCommitTool,
   [inspectCommandTool.name]: inspectCommandTool,
   [runValidatorTool.name]: runValidatorTool,
-  [runCommandTool.name]: runCommandTool,
+  [bashTool.name]: bashTool,
   [skillsListTool.name]: skillsListTool,
   [skillViewTool.name]: skillViewTool,
 } as const;

@@ -9,7 +9,7 @@ import { type ProjectInstructionSource } from "../instructions.js";
 export interface ToolContext {
   workspaceRoot: string;
   pathEnv?: string;
-  runCommandApprovals?: RunCommandApprovalContext;
+  bashApprovals?: BashApprovalContext;
   logger?: Logger;
   config?: TopchesterConfig;
   taskPlan?: TaskPlanController;
@@ -27,7 +27,7 @@ export interface ProjectInstructionToolState {
   shownSourceKeys: Set<string>;
 }
 
-export interface RunCommandApprovalContext {
+export interface BashApprovalContext {
   allowExactCommands?: readonly string[];
 }
 

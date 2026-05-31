@@ -96,13 +96,23 @@ export {
   type InspectCommandToolResult,
 } from "./tools/inspect-command.js";
 export {
-  runCommandArgsSchema,
-  runCommandTool,
-  runWorkspaceCommand,
-  type RunCommandArgs,
-  type RunCommandToolCall,
-  type RunCommandToolResult,
-} from "./tools/run-command.js";
+  bashArgsSchema,
+  bashTool,
+  runBashCommand,
+  type BashArgs,
+  type BashToolCall,
+  type BashToolResult,
+} from "./tools/bash.js";
+export {
+  bashPermissionConfigSchema,
+  bashPermissionRuleSchema,
+  getBashApprovalCandidates,
+  isBashApprovalRequired,
+  validateBashPolicy,
+  type BashApprovalCandidates,
+  type BashPermissionConfig,
+  type BashPermissionDecision,
+} from "./tools/bash-policy.js";
 export {
   runValidatorArgsSchema,
   runValidatorCommand,

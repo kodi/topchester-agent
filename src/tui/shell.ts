@@ -4,8 +4,8 @@ import { formatTaskPlanNotice, type TaskPlanState } from "../agent/task-plan.js"
 import {
   TopchesterAgentRuntime,
   type AgentRuntime,
-  type RunCommandApprovalDecision,
-  type RunCommandApprovalRequest,
+  type BashApprovalDecision,
+  type BashApprovalRequest,
 } from "../agent/runtime/index.js";
 import { createModelGatewayFromConfig, type AppContext } from "../app/context.js";
 import {
@@ -50,7 +50,7 @@ import {
   isModelCommand,
   isNewSessionCommand,
   isStreamReasoningEnabledByEnv,
-  persistRunCommandApproval,
+  persistBashApproval,
   printExitBanner,
 } from "./shell-helpers.js";
 import {
@@ -276,8 +276,7 @@ export class TopchesterTuiShell implements TuiShell {
       for await (const event of this.runtime.submitMessageStream(conversation, modelMessage, abortController.signal, {
         onReasoning: reasoningDisplay?.sink,
         session: this.session,
-        requestRunCommandApproval: (request) =>
-          this.requestRunCommandApproval(app, tui, busy, request, abortController.signal),
+        requestBashApproval: (request) => this.requestBashApproval(app, tui, busy, request, abortController.signal),
       })) {
         if (event.type === "message" && event.role === "assistant") {
           reasoningDisplay?.commit(app);
@@ -305,16 +304,16 @@ export class TopchesterTuiShell implements TuiShell {
     }
   }
 
-  private requestRunCommandApproval(
+  private requestBashApproval(
     app: ChatLayout,
     tui: TUI,
     busy: BusyIndicator,
-    request: RunCommandApprovalRequest,
+    request: BashApprovalRequest,
     abortSignal: AbortSignal
-  ): Promise<RunCommandApprovalDecision> {
+  ): Promise<BashApprovalDecision> {
     return new Promise((resolve) => {
       let settled = false;
-      const settle = (decision: RunCommandApprovalDecision) => {
+      const settle = (decision: BashApprovalDecision) => {
         if (settled) {
           return;
         }
@@ -336,10 +335,10 @@ export class TopchesterTuiShell implements TuiShell {
             settle(action.value);
             return;
           case "allow_repo":
-            void persistRunCommandApproval(this.context, request.command)
+            void persistBashApproval(this.context, request.command)
               .then(() => settle("allow_repo"))
               .catch((error: unknown) => {
-                app.addMessage(systemMessage(`Could not save command approval: ${formatPlainError(error)}`));
+                app.addMessage(systemMessage(`Could not save bash approval: ${formatPlainError(error)}`));
                 settle("cancel");
               });
             return;
@@ -350,7 +349,7 @@ export class TopchesterTuiShell implements TuiShell {
       app.addMessage({
         kind: "modal",
         tone: "warning",
-        title: "Run command?",
+        title: "Run bash command?",
         body: `${request.command}\n\n${request.reason}`,
         actions: [
           { label: "Run once", value: "run_once" },
@@ -365,7 +364,7 @@ export class TopchesterTuiShell implements TuiShell {
           { label: "Cancel", value: "cancel" },
         ],
       });
-      busy.setActivity("Waiting for command approval...");
+      busy.setActivity("Waiting for bash approval...");
       tui.requestRender();
     });
   }
@@ -475,8 +474,7 @@ export class TopchesterTuiShell implements TuiShell {
         {
           onReasoning: reasoningDisplay?.sink,
           session: this.session,
-          requestRunCommandApproval: (request) =>
-            this.requestRunCommandApproval(app, tui, busy, request, abortController.signal),
+          requestBashApproval: (request) => this.requestBashApproval(app, tui, busy, request, abortController.signal),
         }
       )) {
         if (event.type === "message" && event.role === "assistant") {

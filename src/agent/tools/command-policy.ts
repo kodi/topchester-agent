@@ -14,8 +14,6 @@ export interface CommandPolicyArgs {
 
 export interface CommandPolicyContext {
   workspaceRoot: string;
-  commands?: CommandPolicyConfig;
-  approvedCommands?: readonly string[];
 }
 
 export interface CommandSpawnPlan {
@@ -24,12 +22,6 @@ export interface CommandSpawnPlan {
   displayCommand: string;
   cwd: string;
   workspaceRelativeCwd: string;
-}
-
-export interface CommandPolicyConfig {
-  allow?: readonly string[];
-  allowExact?: readonly string[];
-  deny?: readonly string[];
 }
 
 type CommandPolicyRejectedDecision = {
@@ -55,43 +47,7 @@ export type ValidatorCommandPolicyDecision =
     }
   | CommandPolicyRejectedDecision;
 
-export type ConfiguredCommandPolicyDecision =
-  | {
-      allowed: true;
-      reason: string;
-      plan: CommandSpawnPlan;
-      policy: {
-        allowed: true;
-        reason: string;
-        kind: "configured_command";
-        commands: string[];
-        matchedRule: string;
-      };
-    }
-  | CommandPolicyRejectedDecision;
-
-export type ApprovedCommandPolicyDecision =
-  | {
-      allowed: true;
-      reason: string;
-      plan: CommandSpawnPlan;
-      policy: {
-        allowed: true;
-        reason: string;
-        kind: "approved_command";
-        commands: string[];
-        matchedRule: string;
-      };
-    }
-  | CommandPolicyRejectedDecision;
-
-export type RunCommandPolicyDecision =
-  | Exclude<ValidatorCommandPolicyDecision, CommandPolicyRejectedDecision>
-  | Exclude<ConfiguredCommandPolicyDecision, CommandPolicyRejectedDecision>
-  | Exclude<ApprovedCommandPolicyDecision, CommandPolicyRejectedDecision>
-  | CommandPolicyRejectedDecision;
-
-export type CommandPolicyDecision = ValidatorCommandPolicyDecision | ConfiguredCommandPolicyDecision;
+export type CommandPolicyDecision = ValidatorCommandPolicyDecision;
 
 type PackageManager = "pnpm" | "npm" | "yarn" | "bun";
 
@@ -203,120 +159,6 @@ export async function validateValidatorCommand(
         : {}),
     },
   };
-}
-
-export async function validateRunCommandPolicy(
-  args: CommandPolicyArgs,
-  context: CommandPolicyContext
-): Promise<RunCommandPolicyDecision> {
-  const prepared = await prepareCommandPolicy(args, context);
-
-  if (!prepared.allowed) {
-    return prepared;
-  }
-
-  const deniedRule = findMatchingCommandRule(prepared.plan.displayCommand, context.commands?.deny ?? []);
-
-  if (deniedRule) {
-    return {
-      allowed: false,
-      reason: `command policy rejected '${prepared.plan.displayCommand}' because it matches deny rule '${deniedRule}'.`,
-      commands: [prepared.plan.displayCommand],
-    };
-  }
-
-  const classified = classifyValidator(prepared.command, prepared.metadata);
-
-  if (classified.allowed) {
-    const policyReason = `validator ${classified.validator} command`;
-
-    return {
-      allowed: true,
-      reason: policyReason,
-      plan: prepared.plan,
-      policy: {
-        allowed: true,
-        reason: policyReason,
-        kind: "validator",
-        validator: classified.validator,
-        commands: [prepared.plan.displayCommand],
-        ...(classified.packageManager ? { packageManager: classified.packageManager } : {}),
-        ...(prepared.metadata
-          ? {
-              packageJsonPath:
-                relative(prepared.workspaceRoot, prepared.metadata.path) || basename(prepared.metadata.path),
-            }
-          : {}),
-      },
-    };
-  }
-
-  const allowedExactRule = findExactCommandRule(prepared.plan.displayCommand, context.commands?.allowExact ?? []);
-
-  if (allowedExactRule) {
-    const policyReason = `configured exact command allowed by '${allowedExactRule}'`;
-
-    return {
-      allowed: true,
-      reason: policyReason,
-      plan: prepared.plan,
-      policy: {
-        allowed: true,
-        reason: policyReason,
-        kind: "configured_command",
-        commands: [prepared.plan.displayCommand],
-        matchedRule: allowedExactRule,
-      },
-    };
-  }
-
-  const approvedRule = findExactCommandRule(prepared.plan.displayCommand, context.approvedCommands ?? []);
-
-  if (approvedRule) {
-    const policyReason = `approved exact command '${approvedRule}'`;
-
-    return {
-      allowed: true,
-      reason: policyReason,
-      plan: prepared.plan,
-      policy: {
-        allowed: true,
-        reason: policyReason,
-        kind: "approved_command",
-        commands: [prepared.plan.displayCommand],
-        matchedRule: approvedRule,
-      },
-    };
-  }
-
-  const allowedRule = findMatchingCommandRule(prepared.plan.displayCommand, context.commands?.allow ?? []);
-
-  if (!allowedRule) {
-    return {
-      allowed: false,
-      reason: `command policy rejected '${prepared.plan.displayCommand}' because it is not a validator or configured command.`,
-      commands: [prepared.plan.displayCommand],
-    };
-  }
-
-  const policyReason = `configured command allowed by '${allowedRule}'`;
-
-  return {
-    allowed: true,
-    reason: policyReason,
-    plan: prepared.plan,
-    policy: {
-      allowed: true,
-      reason: policyReason,
-      kind: "configured_command",
-      commands: [prepared.plan.displayCommand],
-      matchedRule: allowedRule,
-    },
-  };
-}
-
-function findExactCommandRule(command: string, rules: readonly string[]): string | undefined {
-  return rules.find((rule) => rule.trim() === command);
 }
 
 async function prepareCommandPolicy(
@@ -774,10 +616,6 @@ function classifyScriptName(scriptName: string): ValidatorKind | undefined {
 
 function isPackageManager(value: string | undefined): value is PackageManager {
   return PACKAGE_MANAGERS.has(value ?? "");
-}
-
-function findMatchingCommandRule(command: string, rules: readonly string[]): string | undefined {
-  return rules.find((rule) => command === rule || command.startsWith(`${rule} `));
 }
 
 function formatCommand(command: SimpleCommand): string {

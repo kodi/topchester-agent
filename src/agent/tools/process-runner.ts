@@ -34,9 +34,10 @@ export interface ProcessRunnerResult {
 export async function runProcess(options: ProcessRunnerOptions): Promise<ProcessRunnerResult> {
   const startedAt = Date.now();
   const pathEnv = options.pathEnv ?? process.env.PATH ?? "";
-  const executablePath = options.executable.includes("/")
-    ? options.executable
-    : await findExecutable(options.executable, pathEnv);
+  const executablePath =
+    options.executable.includes("/") || isAbsolute(options.executable)
+      ? await resolveExecutablePath(options.executable)
+      : await findExecutable(options.executable, pathEnv);
 
   if (!executablePath) {
     return {
@@ -67,6 +68,15 @@ export async function findExecutable(name: string, pathEnv: string): Promise<str
   }
 
   return undefined;
+}
+
+async function resolveExecutablePath(path: string): Promise<string | undefined> {
+  try {
+    await access(path, constants.X_OK);
+    return path;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function resolveWorkspaceCwd(workspaceRoot: string, workdir: string, toolName: string): Promise<string> {

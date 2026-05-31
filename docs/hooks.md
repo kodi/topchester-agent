@@ -22,7 +22,7 @@ Topchester loads those sources in that order. Later files override scalar values
     "UserPromptSubmit": [{ "command": ".topchester/hooks/user-prompt.sh" }],
     "PreToolUse": [
       {
-        "matcher": "run_command",
+        "matcher": "bash",
         "command": ".topchester/hooks/check-command.sh",
         "timeoutMs": 5000,
         "statusMessage": "Checking command policy",
@@ -36,7 +36,7 @@ Topchester loads those sources in that order. Later files override scalar values
 Each handler supports:
 
 - `command` - shell command to execute.
-- `matcher` - optional event or tool filter. For tool hooks, match against the tool name such as `run_command`; `*` matches everything.
+- `matcher` - optional event or tool filter. For tool hooks, match against the tool name such as `bash`; `*` matches everything.
 - `timeoutMs` - optional timeout. The default is 5000 ms.
 - `statusMessage` - optional visible status text shown when the hook starts, formatted like `🪝 hook>stop: Sending final notification`.
 
@@ -158,13 +158,13 @@ Adds tool metadata:
 
 ```json
 {
-  "tool_name": "run_command",
+  "tool_name": "bash",
   "tool_input": {
     "command": "pnpm test",
     "workdir": "."
   },
   "tool": {
-    "name": "run_command",
+    "name": "bash",
     "input": {
       "command": "pnpm test",
       "workdir": "."
@@ -182,13 +182,13 @@ Includes the same tool metadata as `PreToolUse` plus `result`:
 
 ```json
 {
-  "tool_name": "run_command",
+  "tool_name": "bash",
   "tool_input": {
     "command": "pnpm test",
     "workdir": "."
   },
   "tool": {
-    "name": "run_command",
+    "name": "bash",
     "input": {
       "command": "pnpm test",
       "workdir": "."
@@ -210,13 +210,13 @@ Includes tool metadata and approval details:
 
 ```json
 {
-  "tool_name": "run_command",
+  "tool_name": "bash",
   "tool_input": {
     "command": "node scripts/local-task.js",
     "workdir": "."
   },
   "tool": {
-    "name": "run_command",
+    "name": "bash",
     "input": {
       "command": "node scripts/local-task.js",
       "workdir": "."

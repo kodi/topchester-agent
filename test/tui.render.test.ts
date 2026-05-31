@@ -580,13 +580,13 @@ describe("TUI rendering", () => {
         renderChatMessage(
           toolCallMessage(
             {
-              tool: "run_command",
-              args: { command: "node scripts/check-fixtures.mjs", workdir: ".", timeout_ms: 30000 },
+              tool: "bash",
+              args: { command: "node scripts/check-fixtures.mjs", workdir: ".", timeout_ms: 120000 },
             },
-            "run_command: node scripts/check-fixtures.mjs (exit 0, 0.7s)"
+            "bash: node scripts/check-fixtures.mjs (exit 0, 0.7s)"
           )
         )
-      ).toContain("   \u001b[90mrun_command: node scripts/check-fixtures.mjs (exit 0, 0.7s)\u001b[0m");
+      ).toContain("   \u001b[90mbash: node scripts/check-fixtures.mjs (exit 0, 0.7s)\u001b[0m");
       expect(
         renderChatMessage(
           toolCallMessage(

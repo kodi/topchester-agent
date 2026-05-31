@@ -1,6 +1,6 @@
 import { type AppContext } from "../app/context.js";
 import { ui } from "../cli/ui.js";
-import { addProjectCommandAllowExactRule } from "../config/index.js";
+import { addProjectBashAllowExactRule } from "../config/index.js";
 import { type ModelReasoningEvent, type ModelReasoningSink } from "../model/index.js";
 import { BusyIndicator, ReasoningTailBuffer } from "./busy.js";
 import { type ChatLayout } from "./layout.js";
@@ -56,18 +56,18 @@ export function formatAgentCheckSetupHint(message: string, context: AppContext):
   return getModelSetupHint(context);
 }
 
-export async function persistRunCommandApproval(context: AppContext, command: string): Promise<void> {
-  await addProjectCommandAllowExactRule(context.workspaceRoot, command);
+export async function persistBashApproval(context: AppContext, command: string): Promise<void> {
+  await addProjectBashAllowExactRule(context.workspaceRoot, command);
   context.config.tools ??= {};
-  const commands = (context.config.tools.commands ??= {
+  const bash = (context.config.tools.bash ??= {
     allow: [],
     allowExact: [],
     deny: [],
   });
-  commands.allowExact ??= [];
+  bash.allowExact ??= [];
 
-  if (!commands.allowExact.includes(command)) {
-    commands.allowExact.push(command);
+  if (!bash.allowExact.includes(command)) {
+    bash.allowExact.push(command);
   }
 }
 

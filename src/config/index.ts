@@ -89,7 +89,7 @@ const ignorePathSchema = z
     }
   });
 
-const commandPatternSchema = z
+const bashPermissionRuleSchema = z
   .string()
   .min(1)
   .superRefine((value, context) => {
@@ -98,38 +98,32 @@ const commandPatternSchema = z
     if (trimmed !== value) {
       context.addIssue({
         code: "custom",
-        message: "Command policy rule must not have leading or trailing whitespace.",
+        message: "Bash permission rule must not have leading or trailing whitespace.",
       });
     }
 
     if (!trimmed) {
       context.addIssue({
         code: "custom",
-        message: "Command policy rule must name a command prefix.",
+        message: "Bash permission rule must name a command.",
       });
       return;
     }
 
-    if (trimmed.startsWith("/") || isAbsolute(trimmed) || win32.isAbsolute(trimmed)) {
+    if (/[\r\n]/u.test(trimmed)) {
       context.addIssue({
         code: "custom",
-        message: "Command policy rule must start with an executable name, not a path.",
-      });
-    }
-
-    if (/[<>|&;$`(){}*?[\]\r\n]/u.test(trimmed)) {
-      context.addIssue({
-        code: "custom",
-        message: "Command policy rule must be a simple command prefix, not shell syntax or a glob.",
+        message: "Bash permission rule must be a single line.",
       });
     }
   });
 
-const commandPolicySchema = z
+const bashPermissionPolicySchema = z
   .object({
-    allow: z.array(commandPatternSchema).optional().default([]),
-    allowExact: z.array(commandPatternSchema).optional().default([]),
-    deny: z.array(commandPatternSchema).optional().default([]),
+    shell: z.string().min(1).optional(),
+    allow: z.array(bashPermissionRuleSchema).optional().default([]),
+    allowExact: z.array(bashPermissionRuleSchema).optional().default([]),
+    deny: z.array(bashPermissionRuleSchema).optional().default([]),
   })
   .strict();
 
@@ -238,7 +232,7 @@ export const topchesterConfigSchema = z.object({
     .optional(),
   tools: z
     .object({
-      commands: commandPolicySchema.optional(),
+      bash: bashPermissionPolicySchema.optional(),
     })
     .strict()
     .optional(),
@@ -255,7 +249,7 @@ const rawTopchesterConfigSchema = z.object({
     .optional(),
   tools: z
     .object({
-      commands: commandPolicySchema.optional(),
+      bash: bashPermissionPolicySchema.optional(),
     })
     .strict()
     .optional(),
@@ -271,7 +265,7 @@ export interface ConfigLoadOptions {
   configPath?: string;
 }
 
-export interface ProjectCommandAllowRuleResult {
+export interface ProjectBashAllowRuleResult {
   path: string;
   added: boolean;
   allowExact: string[];
@@ -438,15 +432,15 @@ export function getConfiguredModelChoices(config: TopchesterConfig): ModelChoice
   return fallbackChoices;
 }
 
-export async function addProjectCommandAllowExactRule(
+export async function addProjectBashAllowExactRule(
   workspaceRoot: string,
   command: string
-): Promise<ProjectCommandAllowRuleResult> {
+): Promise<ProjectBashAllowRuleResult> {
   const configPath = join(workspaceRoot, "topchester.jsonc");
   const config = readProjectConfigObject(configPath);
   const tools = ensurePlainObjectProperty(config, "tools");
-  const commands = ensurePlainObjectProperty(tools, "commands");
-  const allowExact = ensureStringArrayProperty(commands, "allowExact");
+  const bash = ensurePlainObjectProperty(tools, "bash");
+  const allowExact = ensureStringArrayProperty(bash, "allowExact");
   const normalizedCommand = command.trim();
   const added = !allowExact.includes(normalizedCommand);
 
@@ -741,9 +735,9 @@ function deepMerge<T>(base: T, override: T, path: string[] = []): T {
     const joinedPath = path.join(".");
     return (
       joinedPath === "ignore.paths" ||
-      joinedPath === "tools.commands.allow" ||
-      joinedPath === "tools.commands.allowExact" ||
-      joinedPath === "tools.commands.deny" ||
+      joinedPath === "tools.bash.allow" ||
+      joinedPath === "tools.bash.allowExact" ||
+      joinedPath === "tools.bash.deny" ||
       (path.length === 2 && path[0] === "hooks" && hookEventNames.includes(path[1] as HookEventName))
         ? [...base, ...override]
         : override

@@ -77,7 +77,7 @@ Current behavior:
 - V0 does not include a `topchester sessions list` command.
 - In an interactive terminal, the command opens the TUI. See [TUI Guide](./tui.md).
 - In non-interactive output, the command prints a static version of the layout.
-- The coding loop can use workspace-scoped file and command tools: `read_file`, `list_files`, `grep`, `find_file`, `edit_file`, `write_file`, `inspect_command`, `run_validator`, and `run_command`.
+- The coding loop can use workspace-scoped file and command tools: `read_file`, `list_files`, `grep`, `find_file`, `edit_file`, `write_file`, `inspect_command`, `run_validator`, and `bash`.
 - The coding loop can use read-only skill tools: `skills_list` lists compact skill metadata, and `skill_view` loads one full `SKILL.md` on demand.
 - If `AGENTS.md` or `AGENTS.override.md` exists in the workspace, Topchester loads matching files as live project instructions. `AGENTS.md` is loaded before `AGENTS.override.md` at the same scope. Nested instruction files are loaded when a tool works inside their folder. Config can opt into other filenames.
 - The coding loop can use structured Git tools: `git_status`, `git_diff`, `git_log`, `git_add`, and `git_commit`.
@@ -88,7 +88,7 @@ Current behavior:
 - `git_add` stages only explicit paths whose current status was acknowledged. It rejects broad pathspecs such as `.` and does not stage unrelated files by default.
 - `git_commit` commits only when staged paths exactly match `expected_staged_paths`. The model prompt still tells the agent not to stage or commit unless the user explicitly asks.
 - `run_validator` runs strict verification commands such as tests, lint, typecheck, build, check, format-check, and smoke scripts. Non-zero exits are returned to the model as evidence so it can fix and retry. It rejects installs, deploys, network commands, shell wrappers, command chains, redirects, globs, and unknown commands.
-- `run_command` runs only validator-classified commands or project commands explicitly allowed by `tools.commands.allow` or `tools.commands.allowExact`. Deny rules win over allow rules. The model prompt still prefers `run_validator` for verification and dedicated tools for reads, edits, and Git.
+- `bash` runs approval-gated shell commands inside the workspace. Project config can pre-allow exact commands or prefixes under `tools.bash`; deny rules win. The model prompt still prefers `run_validator` for verification and dedicated tools for reads, edits, and Git.
 - `write_file` creates new UTF-8 files by default. It can create parent directories when explicitly requested, marks the file dirty-known and `needs_sync`, and fails if the target file already exists unless `overwrite: true` is paired with `expected_current_hash` from the latest `read_file` result for that file. The hash is a pre-write stale-read guard, not a predicted after-write hash.
 - `edit_file` remains the targeted edit tool for existing files; `inspect_command` remains read-only orientation and is not used for file creation.
 - `AGENTS.md` and `AGENTS.override.md` control future agent behavior. Topchester edits or writes them only when your current request explicitly asks to update project instructions or names the instruction file.

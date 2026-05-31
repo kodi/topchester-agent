@@ -73,8 +73,8 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
       ? [
           "- Use inspect_command only for quick read-only repo orientation when the user did not ask to run a specific command and a short familiar command chain is clearer than several dedicated tool calls.",
           "- inspect_command is not a shell. Unsafe commands, shell expansion, scripts, installs, builds, tests, network access, and file mutation are not available through it.",
-          canUseTool("run_command")
-            ? "- Do not use inspect_command when the user asks to run a specific command such as node --version, which node, or pnpm --version; use run_command or run_validator instead."
+          canUseTool("bash")
+            ? "- Do not use inspect_command when the user asks to run a specific command such as node --version, which node, or pnpm --version; use bash or run_validator instead."
             : "",
         ].filter(Boolean)
       : []),
@@ -82,19 +82,19 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
       ? [
           "- After code edits, use run_validator when there is a relevant test, lint, typecheck, build, check, format-check, or smoke command that can prove the change.",
           "- Failed run_validator exits are evidence. Read stdout and stderr, fix the issue when it is in scope, and rerun the narrowest useful validator.",
-          canUseTool("run_command")
-            ? "- If run_validator is rejected because the command is not a strict validator shape but the user still needs command output, retry with run_command when project policy allows it."
+          canUseTool("bash")
+            ? "- If run_validator is rejected because the command is not a strict validator shape but the user still needs command output, retry with bash when approval or project policy allows it."
             : "",
           "- Do not use inspect_command for tests, builds, lint, typecheck, format checks, or smoke checks. Use run_validator for verification.",
         ].filter(Boolean)
       : []),
-    ...(canUseTool("run_command")
+    ...(canUseTool("bash")
       ? [
-          "- When the user explicitly asks to run a command or asks for command output, use run_command unless a more specific tool is clearly the right fit.",
-          "- run_command is the general policy-gated command runner. Do not avoid it because a command might be disallowed; call run_command and let command policy return the allowed, rejected, or approval result.",
+          "- When the user explicitly asks to run a command or asks for command output, use bash unless a more specific tool is clearly the right fit.",
+          "- bash is the approval-gated shell runner. Do not avoid it because a command might need approval; call bash and let permission policy return the allowed, rejected, or approval result.",
           "- Prefer dedicated tools for file reads, file writes, edits, Git inspection, and searches.",
-          "- Use run_command only for commands allowed by project command policy. Prefer dedicated read, edit, Git, and validator tools when they fit.",
-          "- Do not use run_command for installs, deploys, network commands, destructive commands, interactive commands, file reads, file writes, Git inspection, or validation when run_validator can do it.",
+          "- Use bash for arbitrary shell syntax, package manager commands, scripts, pipelines, redirects, and command chaining.",
+          "- Do not use bash for file reads, file writes, Git inspection, or validation when a dedicated tool can do it.",
         ]
       : []),
     ...(canUseTool("edit_file") && canUseTool("read_file")

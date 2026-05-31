@@ -61,15 +61,16 @@ import {
 } from "./model.js";
 import {
   executeToolCall,
+  bashArgsSchema,
+  isBashApprovalRequired,
   isParallelSafeToolName,
   isToolErrorResult,
   parseToolCallRejection,
-  runCommandArgsSchema,
   type ToolCall,
   type ToolExecutionResult,
   type ToolResult,
 } from "../tools.js";
-import { validateRunCommandPolicy } from "../tools/command-policy.js";
+import { validateBashPolicy, type BashApprovalCandidates } from "../tools/bash-policy.js";
 
 export { getKnowledgeStatusEvents } from "./knowledge.js";
 
@@ -109,16 +110,17 @@ export type AgentRuntimeEventSink = (event: AgentRuntimeEvent) => void | Promise
 export interface AgentRuntimeSubmitMessageOptions {
   onReasoning?: ModelReasoningSink;
   session?: SessionHandle;
-  requestRunCommandApproval?: (request: RunCommandApprovalRequest) => Promise<RunCommandApprovalDecision>;
+  requestBashApproval?: (request: BashApprovalRequest) => Promise<BashApprovalDecision>;
 }
 
-export interface RunCommandApprovalRequest {
+export interface BashApprovalRequest {
   command: string;
   workdir: string;
   reason: string;
+  candidates: BashApprovalCandidates;
 }
 
-export type RunCommandApprovalDecision = "run_once" | "allow_session" | "allow_repo" | "cancel";
+export type BashApprovalDecision = "run_once" | "allow_session" | "allow_repo" | "cancel";
 
 export interface TopchesterAgentRuntimeOptions {
   disableL1Context?: boolean;
@@ -142,7 +144,7 @@ interface HookModelPayload {
 
 export class TopchesterAgentRuntime implements AgentRuntime {
   private readonly taskPlan = createTaskPlanController();
-  private readonly approvedRunCommands = new Set<string>();
+  private readonly approvedBashCommands = new Set<string>();
   private readonly startedHookSessionKeys = new Set<string>();
 
   /**
@@ -768,13 +770,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       if (preHook.blocked) {
         toolResult = createToolErrorResult(executableToolCall.tool, preHook.blocked.message);
       } else {
-        const approval = await this.resolveRunCommandApproval(
-          executableToolCall,
-          toolCall.id,
-          options,
-          session,
-          abortSignal
-        );
+        const approval = await this.resolveBashApproval(executableToolCall, toolCall.id, options, session, abortSignal);
         for (const event of approval.events) {
           yield event;
         }
@@ -786,7 +782,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           const toolResultPromise = executeToolCall(this.context.workspaceRoot, executableToolCall, {
             logger: this.context.logger,
             config: this.context.config,
-            runCommandApprovals: { allowExactCommands: approval.approvedCommands },
+            bashApprovals: { allowExactCommands: approval.approvedCommands },
             taskPlan: this.taskPlan,
             profile,
             permissions,
@@ -1068,7 +1064,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     return instructions.formatted ? `${system}\n\n${instructions.formatted}` : system;
   }
 
-  private async resolveRunCommandApproval(
+  private async resolveBashApproval(
     call: ToolCall,
     toolCallId: string | undefined,
     options: AgentRuntimeSubmitMessageOptions,
@@ -1078,21 +1074,21 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     | { cancelled: false; approvedCommands: string[]; events: AgentRuntimeEvent[] }
     | { cancelled: true; reason: string; events: AgentRuntimeEvent[] }
   > {
-    const approvedCommands = [...this.approvedRunCommands];
+    const approvedCommands = [...this.approvedBashCommands];
 
-    if (call.tool !== "run_command") {
+    if (call.tool !== "bash") {
       return { cancelled: false, approvedCommands, events: [] };
     }
 
-    const parsed = runCommandArgsSchema.safeParse(call.args);
+    const parsed = bashArgsSchema.safeParse(call.args);
 
     if (!parsed.success) {
       return { cancelled: false, approvedCommands, events: [] };
     }
 
-    const decision = await validateRunCommandPolicy(parsed.data, {
+    const decision = await validateBashPolicy(parsed.data, {
       workspaceRoot: this.context.workspaceRoot,
-      commands: this.context.config.tools?.commands,
+      permissions: this.context.config.tools?.bash,
       approvedCommands,
     });
 
@@ -1100,7 +1096,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       return { cancelled: false, approvedCommands, events: [] };
     }
 
-    if (!isRunCommandApprovalEligible(decision.reason) || !options.requestRunCommandApproval) {
+    if (!isBashApprovalRequired(decision) || !options.requestBashApproval) {
       return { cancelled: false, approvedCommands, events: [] };
     }
 
@@ -1109,7 +1105,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       "PermissionRequest",
       this.createToolHookPayload("PermissionRequest", call, toolCallId, session, {
         notification_type: "permission_prompt",
-        permission_mode: "",
+        permission_mode: "bash",
         command,
         workdir: parsed.data.workdir,
         reason: decision.reason,
@@ -1128,23 +1124,24 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       };
     }
 
-    const approval = await options.requestRunCommandApproval({
+    const approval = await options.requestBashApproval({
       command,
       workdir: parsed.data.workdir,
       reason: decision.reason,
+      candidates: decision.candidates ?? { exact: [command], prefix: [] },
     });
 
     if (approval === "cancel") {
       return {
         cancelled: true,
-        reason: `run_command cancelled by user for '${command}'.`,
+        reason: `bash cancelled by user for '${command}'.`,
         events,
       };
     }
 
     if (approval === "allow_session" || approval === "allow_repo") {
-      this.approvedRunCommands.add(command);
-      return { cancelled: false, approvedCommands: [...this.approvedRunCommands], events };
+      this.approvedBashCommands.add(command);
+      return { cancelled: false, approvedCommands: [...this.approvedBashCommands], events };
     }
 
     return { cancelled: false, approvedCommands: [...approvedCommands, command], events };
@@ -1259,10 +1256,6 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       return prompt;
     }
   }
-}
-
-function isRunCommandApprovalEligible(reason: string): boolean {
-  return reason.endsWith("because it is not a validator or configured command.");
 }
 
 function createToolErrorResult(tool: ToolCall["tool"], message: string): ToolExecutionResult<ToolResult> {

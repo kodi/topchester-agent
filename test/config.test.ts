@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAppContext } from "../src/app/context.js";
 import {
   addGlobalModelChoices,
-  addProjectCommandAllowExactRule,
+  addProjectBashAllowExactRule,
   configureOpenRouterGlobalProvider,
   loadTopchesterConfig,
   setGlobalDefaultModel,
@@ -65,7 +65,7 @@ describe("Topchester config loading", () => {
         "{",
         '  "models": { "default": "openrouter/openai/gpt-4.1-mini" },',
         '  "ignore": { "paths": ["user/**"] },',
-        '  "tools": { "commands": { "allow": ["node scripts/user-check.mjs"], "allowExact": ["node --user"], "deny": ["pnpm publish"] } }',
+        '  "tools": { "bash": { "allow": ["node scripts/user-check.mjs"], "allowExact": ["node --user"], "deny": ["pnpm publish"] } }',
         "}",
       ].join("\n")
     );
@@ -75,7 +75,7 @@ describe("Topchester config loading", () => {
         "{",
         '  "models": { "default": "openrouter/qwen/qwen3-coder:free", "fast": "openrouter/google/project-fast" },',
         '  "ignore": { "paths": ["project/**"] },',
-        '  "tools": { "commands": { "allow": ["node scripts/project-check.mjs"], "allowExact": ["node --project"], "deny": ["npm publish"] } }',
+        '  "tools": { "bash": { "allow": ["node scripts/project-check.mjs"], "allowExact": ["node --project"], "deny": ["npm publish"] } }',
         "}",
       ].join("\n")
     );
@@ -85,17 +85,17 @@ describe("Topchester config loading", () => {
         "{",
         '  "models": { "fast": "openrouter/google/gemini-3.1-flash-lite" },',
         '  "ignore": { "paths": ["local/**"] },',
-        '  "tools": { "commands": { "allow": ["node scripts/local-check.mjs"] } }',
+        '  "tools": { "bash": { "allow": ["node scripts/local-check.mjs"] } }',
         "}",
       ].join("\n")
     );
     await writeFile(
       envConfig,
-      '{ "models": { "kb.summarize": "openrouter/google/gemini-3.1-pro" }, "ignore": { "paths": ["env/**"] }, "tools": { "commands": { "deny": ["yarn publish"] } } }\n'
+      '{ "models": { "kb.summarize": "openrouter/google/gemini-3.1-pro" }, "ignore": { "paths": ["env/**"] }, "tools": { "bash": { "deny": ["yarn publish"] } } }\n'
     );
     await writeFile(
       cliConfig,
-      '{ "ignore": { "paths": ["cli/**", "!cli/keep/**"] }, "tools": { "commands": { "allow": ["node scripts/cli-check.mjs"] } } }\n'
+      '{ "ignore": { "paths": ["cli/**", "!cli/keep/**"] }, "tools": { "bash": { "allow": ["node scripts/cli-check.mjs"] } } }\n'
     );
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace, configPath: cliConfig });
@@ -113,13 +113,13 @@ describe("Topchester config loading", () => {
       provider: "openrouter",
     });
     expect(config.ignore?.paths).toEqual(["project/**", "user/**", "env/**", "cli/**", "!cli/keep/**"]);
-    expect(config.tools?.commands?.allow).toEqual([
+    expect(config.tools?.bash?.allow).toEqual([
       "node scripts/project-check.mjs",
       "node scripts/user-check.mjs",
       "node scripts/cli-check.mjs",
     ]);
-    expect(config.tools?.commands?.allowExact).toEqual(["node --project", "node --user"]);
-    expect(config.tools?.commands?.deny).toEqual(["npm publish", "pnpm publish", "yarn publish"]);
+    expect(config.tools?.bash?.allowExact).toEqual(["node --project", "node --user"]);
+    expect(config.tools?.bash?.deny).toEqual(["npm publish", "pnpm publish", "yarn publish"]);
   });
 
   it("normalizes provider-qualified model choices", async () => {
@@ -301,7 +301,7 @@ describe("Topchester config loading", () => {
     ]);
   });
 
-  it("adds repo-scoped command approvals to topchester.jsonc", async () => {
+  it("adds repo-scoped bash approvals to topchester.jsonc", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const workspace = join(root, "workspace");
     const configPath = join(workspace, "topchester.jsonc");
@@ -310,11 +310,11 @@ describe("Topchester config loading", () => {
       configPath,
       JSON.stringify({
         ignore: { paths: ["generated/**"] },
-        tools: { commands: { allow: ["node scripts/check-fixtures.mjs"], deny: ["pnpm publish"] } },
+        tools: { bash: { allow: ["node scripts/check-fixtures.mjs"], deny: ["pnpm publish"] } },
       })
     );
 
-    await expect(addProjectCommandAllowExactRule(workspace, "node --version")).resolves.toMatchObject({
+    await expect(addProjectBashAllowExactRule(workspace, "node --version")).resolves.toMatchObject({
       path: configPath,
       added: true,
       allowExact: ["node --version"],
@@ -323,18 +323,18 @@ describe("Topchester config loading", () => {
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
     const written = await readFile(configPath, "utf8");
 
-    expect(config.tools?.commands?.allow).toEqual(["node scripts/check-fixtures.mjs"]);
-    expect(config.tools?.commands?.allowExact).toEqual(["node --version"]);
-    expect(config.tools?.commands?.deny).toEqual(["pnpm publish"]);
+    expect(config.tools?.bash?.allow).toEqual(["node scripts/check-fixtures.mjs"]);
+    expect(config.tools?.bash?.allowExact).toEqual(["node --version"]);
+    expect(config.tools?.bash?.deny).toEqual(["pnpm publish"]);
     expect(written).toContain('"node --version"');
   });
 
-  it("creates topchester.jsonc for repo-scoped command approvals when none exists", async () => {
+  it("creates topchester.jsonc for repo-scoped bash approvals when none exists", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
 
-    await expect(addProjectCommandAllowExactRule(workspace, "node --version")).resolves.toMatchObject({
+    await expect(addProjectBashAllowExactRule(workspace, "node --version")).resolves.toMatchObject({
       path: join(workspace, "topchester.jsonc"),
       added: true,
       allowExact: ["node --version"],
@@ -342,20 +342,24 @@ describe("Topchester config loading", () => {
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
 
-    expect(config.tools?.commands?.allowExact).toEqual(["node --version"]);
+    expect(config.tools?.bash?.allowExact).toEqual(["node --version"]);
   });
 
-  it("rejects command policy rules that look like shell syntax or globs", async () => {
+  it("allows shell syntax in exact bash permission rules but rejects multiline rules", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
     await writeFile(
       join(workspace, "topchester.jsonc"),
-      '{ "tools": { "commands": { "allow": ["node scripts/*.mjs"] } } }\n'
+      '{ "tools": { "bash": { "allowExact": ["printf hi | wc -c"] } } }\n'
     );
 
+    expect(loadTopchesterConfig({ workspaceRoot: workspace }).tools?.bash?.allowExact).toEqual(["printf hi | wc -c"]);
+
+    await writeFile(join(workspace, "topchester.jsonc"), '{ "tools": { "bash": { "allow": ["node\\nwhoami"] } } }\n');
+
     expect(() => loadTopchesterConfig({ workspaceRoot: workspace })).toThrow(
-      "Command policy rule must be a simple command prefix"
+      "Bash permission rule must be a single line"
     );
   });
 

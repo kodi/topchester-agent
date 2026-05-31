@@ -9,7 +9,7 @@ import { type TopchesterConfig } from "../../config/index.js";
 
 export interface ExecuteToolCallOptions {
   pathEnv?: string;
-  runCommandApprovals?: ToolContext["runCommandApprovals"];
+  bashApprovals?: ToolContext["bashApprovals"];
   logger?: Logger;
   config?: TopchesterConfig;
   taskPlan?: TaskPlanController;
@@ -34,7 +34,7 @@ export async function executeToolCall(
   const context: ToolContext = {
     workspaceRoot,
     pathEnv: options.pathEnv,
-    runCommandApprovals: options.runCommandApprovals,
+    bashApprovals: options.bashApprovals,
     logger: options.logger,
     config: options.config,
     taskPlan: options.taskPlan,
@@ -141,7 +141,7 @@ function summarizeToolArgs(call: ToolCall): unknown {
   }
 
   if (call.tool !== "edit_file") {
-    if (call.tool === "run_command") {
+    if (call.tool === "bash") {
       return {
         command: call.args.command,
         workdir: call.args.workdir,
@@ -206,14 +206,16 @@ function summarizeToolResult(result: ToolResult): Record<string, unknown> {
     };
   }
 
-  if (result.tool === "run_command") {
+  if (result.tool === "bash") {
     return {
       cwd: result.cwd,
       command: result.command,
       exitCode: result.exitCode,
       durationMs: result.durationMs,
       timedOut: result.timedOut,
+      aborted: result.aborted,
       truncated: result.truncated,
+      shell: result.shell,
       policy: result.policy,
       stdoutLength: result.stdout.length,
       stderrLength: result.stderr.length,
