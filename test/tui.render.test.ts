@@ -1344,6 +1344,37 @@ describe("TUI rendering", () => {
     expect(output).not.toContain("└");
   });
 
+  it("keeps long chat modal bodies within narrow terminal width", () => {
+    const app = new ChatLayout(
+      new FakeTerminal(),
+      [
+        modalMessage({
+          tone: "warning",
+          title: "Run bash command?",
+          body: [
+            "Command:",
+            'node -e \'const pkg = JSON.parse(require("fs").readFileSync("package.json", "utf8")); console.log(JSON.stringify(pkg.scripts, null, 2))\'',
+            "",
+            "This bash command is not allowed yet.",
+          ].join("\n"),
+          actions: [
+            { label: "Run once" },
+            { label: "Always allow exact command this session" },
+            { label: "Always allow exact command for this repo" },
+            { label: "Cancel" },
+          ],
+        }),
+      ],
+      "repo",
+      "model [provider]"
+    );
+
+    const lines = app.render(50).map(stripAnsi);
+
+    expect(lines.every((line) => visibleWidth(line) <= 50)).toBe(true);
+    expect(lines.join("\n")).toContain("This bash command is not allowed yet.");
+  });
+
   it("moves the active chat modal action with arrow keys", () => {
     const app = new ChatLayout(
       new FakeTerminal(),

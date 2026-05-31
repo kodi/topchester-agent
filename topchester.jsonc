@@ -4,8 +4,18 @@
     "paths": ["docs/**/*.md", "pnpm-lock.yaml", ".agents/**/*.md"],
   },
   "tools": {
-    "commands": {
-      "allowExact": ["node --version", "mise run local-ci", "oxfmt topchester.jsonc", "mise local-ci", "pnpm format"],
+    "bash": {
+      "allowExact": [
+        "node --version",
+        "mise run local-ci",
+        "oxfmt topchester.jsonc",
+        "mise local-ci",
+        "pnpm format",
+        "pwd && node --version",
+        "node -e 'const pkg = JSON.parse(require(\"fs\").readFileSync(\"package.json\", \"utf8\")); console.log(JSON.stringify(pkg.scripts, null, 2))'",
+        "wc -l src/agent/tools/bash.ts src/agent/tools/bash-policy.ts",
+        "find src -type f -exec du -h {} + | sort -rh | head -n 10",
+      ],
     },
   },
 }

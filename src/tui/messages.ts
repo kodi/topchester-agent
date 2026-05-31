@@ -1,3 +1,4 @@
+import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { ui } from "../cli/ui.js";
 import { type ToolCall } from "../agent/tools.js";
 import { type HookEventName } from "../config/index.js";
@@ -131,7 +132,7 @@ const DEFAULT_MODAL_VISIBLE_ACTION_LIMIT = 16;
 
 export function renderChatMessage(message: ChatMessage, options: RenderChatMessageOptions = {}): string[] {
   if (message.kind === "modal") {
-    return renderChatModal(message, options.selectedActionIndex, options.maxModalHeight);
+    return renderChatModal(message, options.selectedActionIndex, options.maxModalHeight, options.width);
   }
 
   if (message.kind === "tool_call") {
@@ -267,10 +268,16 @@ function getPrefix(kind: UserChatMessage["kind"] | AgentChatMessage["kind"] | Sy
   }
 }
 
-function renderChatModal(message: ChatModalMessage, selectedActionIndex?: number, maxModalHeight?: number): string[] {
+function renderChatModal(
+  message: ChatModalMessage,
+  selectedActionIndex?: number,
+  maxModalHeight?: number,
+  width?: number
+): string[] {
   const icon = message.tone === "warning" ? "⚠️" : "ℹ️";
   const title = message.tone === "warning" ? ui.warn(message.title) : ui.label(message.title);
-  const bodyLines = message.body ? ["", ...message.body.split("\n")] : [];
+  const maxContentWidth = width === undefined ? Number.POSITIVE_INFINITY : Math.max(1, width - 4);
+  const bodyLines = message.body ? ["", ...wrapModalBody(message.body, maxContentWidth)] : [];
   const baseContentLineCount = 2 + bodyLines.length;
   const maxScrollableActionRows =
     maxModalHeight === undefined
@@ -283,17 +290,22 @@ function renderChatModal(message: ChatModalMessage, selectedActionIndex?: number
     const index = visibleActions.startIndex + offset;
     const prefix = selectedIndex === index ? ">" : " ";
 
-    return `${prefix} ${index + 1}) ${action.label}`;
+    return truncateModalLine(`${prefix} ${index + 1}) ${action.label}`, maxContentWidth);
   });
   const scrollHintLines = [
-    ...(visibleActions.startIndex > 0 ? [`  ↑ ${visibleActions.startIndex} more`] : []),
+    ...(visibleActions.startIndex > 0
+      ? [truncateModalLine(`  ↑ ${visibleActions.startIndex} more`, maxContentWidth)]
+      : []),
     ...actionLines,
     ...(visibleActions.endIndex < message.actions.length
-      ? [`  ↓ ${message.actions.length - visibleActions.endIndex} more`]
+      ? [truncateModalLine(`  ↓ ${message.actions.length - visibleActions.endIndex} more`, maxContentWidth)]
       : []),
   ];
-  const contentLines = [`${icon}  ${title}:`, ...bodyLines, "", ...scrollHintLines];
-  const contentWidth = Math.max(...contentLines.map(stripAnsi).map((line) => line.length), 1);
+  const contentLines = [truncateModalLine(`${icon}  ${title}:`, maxContentWidth), ...bodyLines, "", ...scrollHintLines];
+  const contentWidth = Math.min(
+    Math.max(...contentLines.map(stripAnsi).map((line) => line.length), 1),
+    maxContentWidth
+  );
   const top = `╭${"─".repeat(contentWidth + 2)}╮`;
   const bottom = `╰${"─".repeat(contentWidth + 2)}╯`;
 
@@ -302,6 +314,30 @@ function renderChatModal(message: ChatModalMessage, selectedActionIndex?: number
     ...contentLines.map((line) => `│ ${line}${" ".repeat(contentWidth - stripAnsi(line).length)} │`),
     bottom,
   ];
+}
+
+function wrapModalBody(body: string, maxContentWidth: number): string[] {
+  if (!Number.isFinite(maxContentWidth)) {
+    return body.split("\n");
+  }
+
+  return body.split("\n").flatMap((line) => {
+    if (line.length === 0) {
+      return [""];
+    }
+
+    return wrapTextWithAnsi(line, maxContentWidth).map((wrappedLine) =>
+      truncateModalLine(wrappedLine, maxContentWidth)
+    );
+  });
+}
+
+function truncateModalLine(line: string, maxContentWidth: number): string {
+  if (!Number.isFinite(maxContentWidth)) {
+    return line;
+  }
+
+  return truncateToWidth(line, maxContentWidth, "…", true);
 }
 
 function getVisibleModalActions(

@@ -91,6 +91,12 @@ export interface TuiShellOptions {
   initialTaskPlan?: TaskPlanState;
 }
 
+function formatBashApprovalBody(request: BashApprovalRequest): string {
+  const reason = request.reason.includes(request.command) ? "This bash command is not allowed yet." : request.reason;
+
+  return ["Command:", request.command, "", reason].join("\n");
+}
+
 export class TopchesterTuiShell implements TuiShell {
   private readonly runtime: AgentRuntime;
   private session: SessionHandle | undefined;
@@ -350,7 +356,7 @@ export class TopchesterTuiShell implements TuiShell {
         kind: "modal",
         tone: "warning",
         title: "Run bash command?",
-        body: `${request.command}\n\n${request.reason}`,
+        body: formatBashApprovalBody(request),
         actions: [
           { label: "Run once", value: "run_once" },
           {
