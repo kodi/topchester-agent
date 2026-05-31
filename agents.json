@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "agents": {
+    "topchester": {
+      "display_name": "Topchester",
+      "description": "Terminal-native coding agent with a project knowledge base as part of the runtime contract.",
+      "logo_image": "assets/agents/topchester.svg",
+      "external_url": "https://github.com/kodi/topchester-agent",
+      "source_url": "https://github.com/kodi/topchester-agent",
+      "tags": ["terminal", "coding-agent", "knowledge-base"],
+      "capabilities": ["terminal-ui", "project-knowledge-base", "tool-calling", "subagents", "hooks"],
+      "model_support": {
+        "providers": ["openrouter", "openai", "ollama"],
+        "requirements": {
+          "tool_calling": true,
+          "streaming": true
+        }
+      }
+    },
+    "codex": {
+      "display_name": "Codex",
+      "description": "OpenAI coding agent for working on software projects from a terminal or agent interface.",
+      "logo_image": "assets/agents/codex.svg",
+      "external_url": "https://openai.com/codex",
+      "source_url": "https://github.com/openai/codex",
+      "tags": ["terminal", "coding-agent"],
+      "capabilities": ["tool-calling", "hooks", "mcp", "sessions"],
+      "model_support": {
+        "providers": ["openai"],
+        "requirements": {
+          "tool_calling": true,
+          "streaming": true,
+          "reasoning": true
+        }
+      }
+    }
+  }
+}

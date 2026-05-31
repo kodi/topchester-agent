@@ -154,6 +154,18 @@ export {
   type ToolPermissionView,
 } from "./profiles.js";
 export {
+  agentMetadataSchema,
+  agentModelRequirementsSchema,
+  agentModelSupportSchema,
+  agentRecommendedModelSchema,
+  agentsMetadata,
+  agentsMetadataFileSchema,
+  getAgentMetadata,
+  listAgentMetadata,
+  type AgentMetadata,
+  type AgentsMetadataFile,
+} from "./metadata.js";
+export {
   getToolDefinition,
   getToolDefinitionsForPermissions,
   getToolPromptLines,

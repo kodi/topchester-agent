@@ -3,7 +3,7 @@
   "name": "Nested project instruction edit guard",
   "description": "Checks nested AGENTS.md instructions are returned before a scoped edit can change a file.",
   "timeoutMs": 10000,
-  "prompt": "PROJECT_INSTRUCTIONS_NESTED_EDIT_SMOKE update src/value.txt so marker is nested-ok.",
+  "prompt": "PROJECT_INSTRUCTIONS_NESTED_EDIT_SMOKE update src/value.txt so marker is nested-ok. After the edit succeeds, answer exactly: Nested project instructions were applied.",
   "requiredToolCalls": ["edit_file"],
   "expectedContent": [{ "file": "src/value.txt", "contains": "marker=nested-ok", "notContains": "marker=old" }],
   "expectedOutputContains": ["Nested project instructions were applied."]

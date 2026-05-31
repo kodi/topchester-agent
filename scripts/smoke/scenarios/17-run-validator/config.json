@@ -3,7 +3,7 @@
   "name": "Run validator",
   "description": "Checks run_validator through topchester run and the fake model tool loop.",
   "timeoutMs": 15000,
-  "prompt": "RUN_VALIDATOR_SMOKE run the package test script with run_validator, then answer with the validator output.",
+  "prompt": "RUN_VALIDATOR_SMOKE run the package test script with run_validator. After it succeeds, answer with exactly these two lines from the validator output:\nValidator smoke passed\nRUN_VALIDATOR_SMOKE passed",
   "requiredToolCalls": ["run_validator"],
   "forbiddenToolCalls": ["inspect_command", "edit_file", "write_file"],
   "expectedOutputContains": ["Validator smoke passed", "RUN_VALIDATOR_SMOKE passed"]

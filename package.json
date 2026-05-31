@@ -13,7 +13,8 @@
   },
   "files": [
     "dist",
-    "skills"
+    "skills",
+    "agents.json"
   ],
   "type": "module",
   "scripts": {
