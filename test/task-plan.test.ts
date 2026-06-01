@@ -94,9 +94,9 @@ describe("task plan", () => {
     expect(formatTaskPlanForPrompt(state)).toContain("pending: 1");
     expect(formatTaskPlanForPrompt(state)).toContain("current: Render the visible task plan in the TUI");
     expect(formatTaskPlanForTui(state, 32)).toEqual([
-      "  [x] Inspect runtime event flow",
-      "  [>] Render the visible task...",
-      "  [ ] Run verification",
+      "  ● Inspect runtime event flow",
+      "  ◐ Render the visible task p...",
+      "  ○ Run verification",
     ]);
   });
 
@@ -116,9 +116,9 @@ describe("task plan", () => {
       });
 
       expect(formatTaskPlanForTui(state, 40)).toEqual([
-        "  \u001b[32m[x]\u001b[0m \u001b[90mDone\u001b[0m",
-        "  \u001b[32m[>]\u001b[0m \u001b[32mActive\u001b[0m",
-        "  \u001b[90m[ ]\u001b[0m Later",
+        "  \u001b[32m●\u001b[0m \u001b[90mDone\u001b[0m",
+        "  \u001b[32m◐\u001b[0m \u001b[32mActive\u001b[0m",
+        "  \u001b[90m○\u001b[0m Later",
       ]);
     } finally {
       if (previousForceColor === undefined) {

@@ -204,7 +204,7 @@ export function formatTaskPlanForTui(state: TaskPlanState, width: number, visibl
   }
 
   const safeWidth = Math.max(12, width);
-  const itemWidth = Math.max(1, safeWidth - 6);
+  const itemWidth = Math.max(1, safeWidth - 4);
   const visibleItems = state.items.slice(0, visibleLimit);
   const lines = visibleItems.map((item) => formatTaskPlanTuiLine(item, truncateText(item.text, itemWidth)));
   const remaining = state.items.length - visibleItems.length;
@@ -219,11 +219,11 @@ export function formatTaskPlanForTui(state: TaskPlanState, width: number, visibl
 function formatTaskPlanTuiLine(item: TaskPlanItem, text: string): string {
   switch (item.status) {
     case "completed":
-      return `  ${ui.ok("[x]")} ${ui.muted(text)}`;
+      return `  ${ui.ok("●")} ${ui.muted(text)}`;
     case "in_progress":
-      return `  ${ui.ok("[>]")} ${ui.ok(text)}`;
+      return `  ${ui.ok("◐")} ${ui.ok(text)}`;
     case "pending":
-      return `  ${ui.muted("[ ]")} ${text}`;
+      return `  ${ui.muted("○")} ${text}`;
   }
 }
 

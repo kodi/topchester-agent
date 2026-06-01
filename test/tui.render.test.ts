@@ -459,7 +459,7 @@ describe("TUI rendering", () => {
 
     app.setTaskPlan({ items: [], updatedAt: "2026-05-14T00:00:00.000Z" });
 
-    expect(app.render(60).join("\n")).not.toContain("[>]");
+    expect(app.render(60).join("\n")).not.toContain("◐");
   });
 
   it("renders the current task plan above the prompt", () => {
@@ -477,7 +477,7 @@ describe("TUI rendering", () => {
     });
     const output = app.render(80).join("\n");
 
-    expect(output).toContain("  [x] Inspect runtime flow\n  [>] Render visible plan\n  [ ] Run checks\n┌");
+    expect(output).toContain("  ● Inspect runtime flow\n  ◐ Render visible plan\n  ○ Run checks\n┌");
   });
 
   it("truncates long plan items and caps visible plan rows", () => {
@@ -497,7 +497,7 @@ describe("TUI rendering", () => {
     });
     const output = app.render(34).join("\n");
 
-    expect(output).toContain("  [x] Inspect a very long runti...");
+    expect(output).toContain("  ● Inspect a very long runtime...");
     expect(output).toContain("  +1 more");
   });
 
@@ -526,7 +526,7 @@ describe("TUI rendering", () => {
       items: [{ text: "Inspect restored state", status: "in_progress" }],
     });
 
-    expect(output).toContain("  [>] Inspect restored state\n\n┌");
+    expect(output).toContain("  ◐ Inspect restored state\n\n┌");
     expect(output.match(/Inspect restored state/gu)).toHaveLength(1);
   });
 
@@ -2665,7 +2665,7 @@ describe("TUI rendering", () => {
     const output = app.render(60).join("\n");
 
     expect(output).toContain("todo plan created: Inspect");
-    expect(output).toContain("  [>] Inspect\n┌");
+    expect(output).toContain("  ◐ Inspect\n┌");
     expect(app.getConversationTurns()).toEqual([]);
     expect(appended).toEqual([
       {
@@ -2705,7 +2705,7 @@ describe("TUI rendering", () => {
     const output = app.render(60).join("\n");
 
     expect(output).toContain("todo plan cleared");
-    expect(output).not.toContain("  [>] Inspect");
+    expect(output).not.toContain("  ◐ Inspect");
     expect(app.getConversationTurns()).toEqual([]);
   });
 
@@ -2752,7 +2752,7 @@ describe("TUI rendering", () => {
         { text: "Write notes", status: "in_progress" },
       ],
     });
-    expect(app.render(60).join("\n")).toContain("  [x] Read package.json");
+    expect(app.render(60).join("\n")).toContain("  ● Read package.json");
 
     await (
       shell as unknown as {
