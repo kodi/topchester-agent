@@ -6,10 +6,10 @@
   "bootstrapFiles": [
     {
       "path": "topchester.jsonc",
-      "content": "{\n  \"tools\": {\n    \"bash\": {\n      \"allowExact\": [\"printf 'BASH_SMOKE shell ok\\\\n'\"]\n    }\n  }\n}\n"
+      "content": "{\n  \"tools\": {\n    \"bash\": {\n      \"allowExact\": [\"echo BASH_SMOKE shell ok && echo BASH_SMOKE passed\"]\n    }\n  }\n}\n"
     }
   ],
-  "prompt": "BASH_SMOKE run the approved shell command with bash. After it succeeds, answer with exactly these two lines from the bash output:\nBASH_SMOKE shell ok\nBASH_SMOKE passed",
+  "prompt": "BASH_SMOKE use bash to run exactly this approved shell command: echo BASH_SMOKE shell ok && echo BASH_SMOKE passed\nAfter it succeeds, answer with exactly these two lines from the bash output:\nBASH_SMOKE shell ok\nBASH_SMOKE passed",
   "requiredToolCalls": ["bash"],
   "forbiddenToolCalls": ["run_command", "run_validator", "inspect_command"],
   "expectedOutputContains": ["BASH_SMOKE shell ok", "BASH_SMOKE passed"]

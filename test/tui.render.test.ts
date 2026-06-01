@@ -1279,6 +1279,22 @@ describe("TUI rendering", () => {
     expect(output).not.toContain("/\u001b[7mkb status");
   });
 
+  it("scrolls slash command suggestions to keep the selected command visible", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 14;
+    const app = new ChatLayout(terminal, [], "repo", "model [provider]");
+    app.setInputValue("/");
+
+    for (let index = 0; index < 6; index += 1) {
+      app.handleInput("\u001b[B");
+    }
+
+    const output = stripAnsi(app.render(80).join("\n"));
+
+    expect(output).toContain("> /kb init — start project knowledge base setup");
+    expect(output).not.toContain("/model — choose from configured model choices");
+  });
+
   it("renders user messages with top and bottom padding", () => {
     const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
     app.setInputValue("hello");

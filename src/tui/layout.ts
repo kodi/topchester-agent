@@ -37,6 +37,7 @@ import { formatKnowledgeFooterStatus, formatStatusLine } from "./status.js";
 import { padLines, padThreadLine, stripAnsi } from "./text.js";
 
 const PROMPT_VISIBLE_CONTENT_LINES = 5;
+const SLASH_SUGGESTION_VISIBLE_ROWS = 6;
 const PASTE_PREVIEW_MIN_LINES = 6;
 const PASTE_PREVIEW_MIN_CHARS = 500;
 const BRACKETED_PASTE_START = "\u001b[200~";
@@ -436,11 +437,16 @@ export class ChatLayout implements Component, Focusable {
     this.activeSlashSuggestionIndex = Math.min(this.activeSlashSuggestionIndex, suggestions.length - 1);
 
     const innerWidth = Math.max(1, width - 4);
-    const visibleSuggestions = suggestions.slice(0, 6);
+    const windowStart = getVisibleSuggestionWindowStart(
+      suggestions.length,
+      this.activeSlashSuggestionIndex,
+      SLASH_SUGGESTION_VISIBLE_ROWS
+    );
+    const visibleSuggestions = suggestions.slice(windowStart, windowStart + SLASH_SUGGESTION_VISIBLE_ROWS);
     const lines = [
       ui.label("slash commands"),
       ...visibleSuggestions.map((suggestion, index) => {
-        const marker = index === this.activeSlashSuggestionIndex ? ">" : " ";
+        const marker = windowStart + index === this.activeSlashSuggestionIndex ? ">" : " ";
         const text = `${marker} ${suggestion.value} — ${suggestion.description}`;
 
         return truncateToWidth(text, innerWidth, "…", true);
@@ -917,6 +923,14 @@ export class ChatLayout implements Component, Focusable {
       this.submitMessage?.(message);
     }
   }
+}
+
+function getVisibleSuggestionWindowStart(total: number, activeIndex: number, visibleRows: number): number {
+  if (total <= visibleRows) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(activeIndex - visibleRows + 1, total - visibleRows));
 }
 
 function colorUserMessageBorder(line: string): string {

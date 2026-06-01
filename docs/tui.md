@@ -47,7 +47,7 @@ KB status labels:
 - The prompt shows up to five input lines; longer drafts scroll inside the prompt box.
 - Large bracketed pastes are shown as a compact `[Pasted #N ...]` preview and expanded when submitted.
 - Type `/` to see slash command suggestions.
-- Use `Up` and `Down` in slash command suggestions to choose an item.
+- Use `Up` and `Down` in slash command suggestions to choose an item; the suggestion panel scrolls to keep the selected command visible.
 - Press `Tab` while a slash command suggestion is selected to complete it.
 - Type `/new` to clear the terminal and start a fresh session in the same workspace.
 - Type `/skills` to open the Skills overlay.

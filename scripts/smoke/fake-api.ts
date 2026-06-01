@@ -230,7 +230,7 @@ function chooseResponse(prompt: string): string {
     }
 
     return toolCall("bash", {
-      command: "printf 'BASH_SMOKE shell ok\\n'",
+      command: "echo BASH_SMOKE shell ok && echo BASH_SMOKE passed",
       workdir: ".",
       timeout_ms: 15000,
       description: "print bash smoke marker",
