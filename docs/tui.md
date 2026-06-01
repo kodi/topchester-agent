@@ -135,7 +135,7 @@ The agent can use these workspace-scoped tools from the TUI:
 
 Tool activity appears as compact rows in the thread. These rows come from tool events, so regular system messages are still rendered as system messages even if their text mentions a tool name.
 
-Configured lifecycle hooks run during the same agent loop. Hook feedback appears as normal system messages. A `PreToolUse` hook can block a tool before it runs; the blocked result is shown as the tool row and sent back to the model so it can continue safely. `UserActionRequired` hooks run before interactive approval prompts. External integrations such as peon-ping can play sounds by running through normal command hooks.
+Configured lifecycle hooks run during the same agent loop. Hook `statusMessage` feedback appears as a temporary thread line and disappears after 2 seconds. A `PreToolUse` hook can block a tool before it runs; the blocked result is shown as the tool row and sent back to the model so it can continue safely. `UserActionRequired` hooks run before interactive approval prompts. External integrations such as peon-ping can play sounds by running through normal command hooks.
 
 `AGENTS.md` and `AGENTS.override.md` are protected because they change future agent behavior. Ask directly to update project instructions, or name the instruction file, when you want the agent to edit one.
 
@@ -162,6 +162,7 @@ The TUI shows temporary progress while work is running:
 - KB commands show progress text in the thread area.
 - Long L1 processing work shows counts and percent progress.
 - The prompt may show `press Esc to stop` while startup or runtime work is active.
+- Temporary thread lines can be set with an optional `expireAfterMs` timeout. Hook `statusMessage` feedback uses this path so busy spinner updates and model completion rows do not clear it before the timeout.
 
 Set `TOPCHESTER_STREAM_REASONING=1` before starting the interactive TUI to show provider-exposed reasoning text while the agent works. This is provider-dependent: models that stream reasoning show dim wrapped thinking text, models that only expose a final reasoning summary may show that summary, and unsupported providers keep the normal spinner text. When the answer arrives, the thinking text stays visible above the final answer for that turn. It is not saved in session history, JSON run output, model conversation history, or KB data.
 

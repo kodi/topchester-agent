@@ -45,7 +45,12 @@ const BRACKETED_PASTE_END = "\u001b[201~";
 
 export interface ChatLayoutOptions {
   exitAgent?: () => void;
+  requestRender?: () => void;
   transcriptMode?: "viewport" | "inline";
+}
+
+export interface TemporaryLineOptions {
+  expireAfterMs?: number;
 }
 
 export class ChatLayout implements Component, Focusable {
@@ -56,6 +61,7 @@ export class ChatLayout implements Component, Focusable {
   private knowledgeStatus: string | undefined;
   private startupHintLine: string | undefined;
   private ephemeralLine: string | undefined;
+  private temporaryLine: string | undefined;
   private taskPlanNoticeLine: string | undefined;
   private noticeLine: string | undefined;
   private promptHint: string | undefined;
@@ -72,7 +78,9 @@ export class ChatLayout implements Component, Focusable {
   private readonly pastedContent = new Map<string, string>();
   private readonly promptHistory = new PromptHistory();
   private readonly exitAgent: () => void;
+  private readonly requestRender: () => void;
   private readonly transcriptMode: "viewport" | "inline";
+  private temporaryLineExpireTimer: NodeJS.Timeout | undefined;
 
   constructor(
     private readonly terminal: Terminal,
@@ -82,6 +90,7 @@ export class ChatLayout implements Component, Focusable {
     options: (() => void) | ChatLayoutOptions = {}
   ) {
     this.exitAgent = typeof options === "function" ? options : (options.exitAgent ?? (() => {}));
+    this.requestRender = typeof options === "function" ? () => {} : (options.requestRender ?? (() => {}));
     this.transcriptMode = typeof options === "function" ? "viewport" : (options.transcriptMode ?? "viewport");
   }
 
@@ -142,6 +151,22 @@ export class ChatLayout implements Component, Focusable {
     this.ephemeralLine = line;
   }
 
+  setTemporaryLine(line: string | undefined, options: TemporaryLineOptions = {}): void {
+    this.clearTemporaryLineExpireTimer();
+    this.temporaryLine = line;
+
+    const expireAfterMs = options.expireAfterMs;
+    if (line && expireAfterMs !== undefined && expireAfterMs > 0) {
+      this.temporaryLineExpireTimer = setTimeout(() => {
+        this.temporaryLineExpireTimer = undefined;
+        if (this.temporaryLine === line) {
+          this.temporaryLine = undefined;
+          this.requestRender();
+        }
+      }, expireAfterMs);
+    }
+  }
+
   setNoticeLine(line: string | undefined): void {
     this.noticeLine = line;
   }
@@ -180,7 +205,9 @@ export class ChatLayout implements Component, Focusable {
     this.status = "ready";
     this.knowledgeStatus = undefined;
     this.startupHintLine = undefined;
+    this.clearTemporaryLineExpireTimer();
     this.ephemeralLine = undefined;
+    this.temporaryLine = undefined;
     this.taskPlanNoticeLine = undefined;
     this.noticeLine = undefined;
     this.promptHint = undefined;
@@ -293,6 +320,13 @@ export class ChatLayout implements Component, Focusable {
     return [...padLines(threadLines, threadHeight, safeWidth), ...footerLines];
   }
 
+  private clearTemporaryLineExpireTimer(): void {
+    if (this.temporaryLineExpireTimer) {
+      clearTimeout(this.temporaryLineExpireTimer);
+      this.temporaryLineExpireTimer = undefined;
+    }
+  }
+
   private renderThread(width: number, threadHeight: number): string[] {
     const innerWidth = Math.max(1, width);
 
@@ -314,6 +348,10 @@ export class ChatLayout implements Component, Focusable {
 
     if (this.ephemeralLine) {
       lines.push(...this.renderThreadMessageLines([` ${this.ephemeralLine}`], innerWidth, width, false));
+    }
+
+    if (this.temporaryLine) {
+      lines.push(...this.renderThreadMessageLines([` ${ui.muted(this.temporaryLine)}`], innerWidth, width, false));
     }
 
     if (this.taskPlanNoticeLine) {

@@ -91,6 +91,8 @@ export interface TuiShellOptions {
   initialTaskPlan?: TaskPlanState;
 }
 
+const HOOK_STATUS_EXPIRE_AFTER_MS = 2000;
+
 function formatBashApprovalBody(request: BashApprovalRequest): string {
   const reason = request.reason.includes(request.command) ? "This bash command is not allowed yet." : request.reason;
 
@@ -161,6 +163,9 @@ export class TopchesterTuiShell implements TuiShell {
     };
     const app = new ChatLayout(terminal, messages, folderName, modelLabel, {
       transcriptMode: "inline",
+      requestRender: () => {
+        tui.requestRender();
+      },
       exitAgent: () => {
         exit();
         process.exit(0);
@@ -963,8 +968,12 @@ export class TopchesterTuiShell implements TuiShell {
         this.scheduleTaskPlanNoticeClear(app, renderRequester);
       }
 
-      for (const message of renderRuntimeEvent(event)) {
-        app.addMessage(message);
+      if (event.type === "hook_status") {
+        app.setTemporaryLine(event.label, { expireAfterMs: HOOK_STATUS_EXPIRE_AFTER_MS });
+      } else {
+        for (const message of renderRuntimeEvent(event)) {
+          app.addMessage(message);
+        }
       }
 
       await this.persistPayloadWithWarning(app, runtimeEventToSessionPayload(event));

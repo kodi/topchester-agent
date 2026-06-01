@@ -2567,6 +2567,78 @@ describe("TUI rendering", () => {
     expect(output).not.toContain("Thinking...");
   });
 
+  it("shows hook status runtime events as expiring ephemeral lines", async () => {
+    vi.useFakeTimers();
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hook-ephemeral-"));
+    const context = createTestContext(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]", { requestRender() {} });
+    const shell = new TopchesterTuiShell(context);
+
+    try {
+      await (
+        shell as unknown as { applyRuntimeEvents(app: ChatLayout, events: unknown[]): Promise<void> }
+      ).applyRuntimeEvents(app, [agentEvent.hookStatus("Stop", "Sending ClankerLog clank")]);
+
+      expect(app.render(80).join("\n")).toContain("\u001b[90m🪝 hook>stop: Sending ClankerLog clank\u001b[0m");
+      expect(app.getConversationTurns()).toEqual([]);
+
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(stripAnsi(app.render(80).join("\n"))).not.toContain("Sending ClankerLog clank");
+    } finally {
+      vi.useRealTimers();
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
+  });
+
+  it("keeps expiring hook status visible when busy activity clears", async () => {
+    vi.useFakeTimers();
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hook-temporary-"));
+    const context = createTestContext(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]", { requestRender() {} });
+    const shell = new TopchesterTuiShell(context);
+
+    try {
+      app.setEphemeralLine("⠋ Calling model...");
+      await (
+        shell as unknown as { applyRuntimeEvents(app: ChatLayout, events: unknown[]): Promise<void> }
+      ).applyRuntimeEvents(app, [agentEvent.hookStatus("Stop", "Sending ClankerLog clank")]);
+
+      await (
+        shell as unknown as { applyRuntimeEvents(app: ChatLayout, events: unknown[]): Promise<void> }
+      ).applyRuntimeEvents(app, [agentEvent.assistantMessage("Done")]);
+      app.setEphemeralLine(undefined);
+
+      let output = stripAnsi(app.render(80).join("\n"));
+      expect(output).toContain("Done");
+      expect(output).toContain("🪝 hook>stop: Sending ClankerLog clank");
+      expect(output).not.toContain("Calling model");
+
+      await vi.advanceTimersByTimeAsync(1999);
+      output = stripAnsi(app.render(80).join("\n"));
+      expect(output).toContain("Sending ClankerLog clank");
+
+      await vi.advanceTimersByTimeAsync(1);
+      output = stripAnsi(app.render(80).join("\n"));
+      expect(output).not.toContain("Sending ClankerLog clank");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("applies task-plan runtime events as pinned UI state", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-task-plan-"));
     const context = createTestContext(workspace);
