@@ -9,7 +9,7 @@ import { colorAsciiBanner, getRandomAsciiBanner } from "./banner.js";
 import { renderChatMessage, systemMessage, type ChatMessage } from "./messages.js";
 
 export const STARTUP_PROMPT_HINT =
-  "Prompt hint: Enter sends, Shift+Enter adds a line, / opens commands, ↑↓ browse history.";
+  "Prompt hints: Enter sends, Shift+Enter adds a line, / opens commands, ↑↓ browse history.";
 
 export function getStartupThreadMessages(context: AppContext): ChatMessage[] {
   const assignments = context.config.models?.assignments ?? {};
