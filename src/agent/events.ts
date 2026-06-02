@@ -33,6 +33,7 @@ export interface AgentToolCallEvent {
   type: "tool_call";
   call: ToolCall;
   label: string;
+  diff?: string;
 }
 
 export interface AgentHookStatusEvent {
@@ -154,8 +155,8 @@ export const agentEvent = {
       : { type: "message", role: "assistant", text, meta };
   },
 
-  toolCall(call: ToolCall, label: string): AgentToolCallEvent {
-    return { type: "tool_call", call, label };
+  toolCall(call: ToolCall, label: string, diff?: string): AgentToolCallEvent {
+    return diff === undefined ? { type: "tool_call", call, label } : { type: "tool_call", call, label, diff };
   },
 
   hookStatus(eventName: HookEventName, statusMessage: string): AgentHookStatusEvent {

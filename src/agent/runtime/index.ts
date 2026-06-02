@@ -574,7 +574,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           )) {
             yield event;
           }
-          yield agentEvent.toolCall(call, formatToolCallMessage(call, toolResult));
+          yield agentEvent.toolCall(call, formatToolCallMessage(call, toolResult), getToolCallDisplayDiff(toolResult));
           const postHookRun = this.startPostToolUseHook(
             call,
             modelToolCalls[index]?.id,
@@ -683,7 +683,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           )) {
             yield event;
           }
-          yield agentEvent.toolCall(call, formatToolCallMessage(call, toolResult));
+          yield agentEvent.toolCall(call, formatToolCallMessage(call, toolResult), getToolCallDisplayDiff(toolResult));
           const postHookRun = this.startPostToolUseHook(
             call,
             modelToolCalls[index]?.id,
@@ -807,7 +807,11 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       for (const event of createInstructionContextEventsFromToolResult(toolResult, persistedProjectInstructionKeys)) {
         yield event;
       }
-      yield agentEvent.toolCall(executableToolCall, formatToolCallMessage(executableToolCall, toolResult));
+      yield agentEvent.toolCall(
+        executableToolCall,
+        formatToolCallMessage(executableToolCall, toolResult),
+        getToolCallDisplayDiff(toolResult)
+      );
       if (!isToolErrorResult(toolResult) && toolResult.tool === "plan_todo") {
         yield agentEvent.taskPlan(toolResult.plan);
       }
@@ -1265,6 +1269,14 @@ function createToolErrorResult(tool: ToolCall["tool"], message: string): ToolExe
     error: message,
     warning: message,
   };
+}
+
+function getToolCallDisplayDiff(result: ToolExecutionResult<ToolResult>): string | undefined {
+  if (result.tool === "edit_file" && !isToolErrorResult(result) && "diff" in result) {
+    return result.diff;
+  }
+
+  return undefined;
 }
 
 function isL1ContextDisabledByEnv(): boolean {

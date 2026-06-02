@@ -609,6 +609,50 @@ describe("TUI rendering", () => {
     }
   });
 
+  it("renders edit_file diffs with colored unified diff lines", () => {
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+
+    try {
+      const diff = [
+        "--- a/src/example.ts",
+        "+++ b/src/example.ts",
+        "@@ -1,3 +1,3 @@",
+        " const a = 1;",
+        '-const mode = "old";',
+        '+const mode = "new";',
+      ].join("\n");
+      const output = renderChatMessage(
+        toolCallMessage(
+          { tool: "edit_file", args: { path: "src/example.ts", edits: [] } },
+          "edit_file: src/example.ts (changed +1/-1)",
+          undefined,
+          diff
+        ),
+        { width: 80 }
+      ).join("\n");
+
+      expect(output).toContain("   \u001b[90medit_file: src/example.ts (changed +1/-1)\u001b[0m");
+      expect(output).toContain("     \u001b[90m--- a/src/example.ts\u001b[0m");
+      expect(output).toContain("     \u001b[34m@@ -1,3 +1,3 @@\u001b[0m");
+      expect(output).toContain('     \u001b[31m-const mode = "\u001b[7mold\u001b[27m";\u001b[0m');
+      expect(output).toContain('     \u001b[32m+const mode = "\u001b[7mnew\u001b[27m";\u001b[0m');
+    } finally {
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
+  });
+
   it("renders hook status rows dark gray with the hook label", () => {
     const previousForceColor = process.env.FORCE_COLOR;
     const previousNoColor = process.env.NO_COLOR;
@@ -1863,6 +1907,20 @@ describe("TUI rendering", () => {
       call: { tool: "read_file", args: { path: "README.md" } },
     });
     expect(
+      runtimeEventToSessionPayload(
+        agentEvent.toolCall(
+          { tool: "edit_file", args: { path: "src/example.ts", edits: [] } },
+          "edit_file: src/example.ts (changed +1/-1)",
+          "--- a/src/example.ts\n+++ b/src/example.ts\n@@ -1,1 +1,1 @@\n-old\n+new"
+        )
+      )
+    ).toEqual({
+      kind: "tool_call",
+      label: "edit_file: src/example.ts (changed +1/-1)",
+      call: { tool: "edit_file", args: { path: "src/example.ts", edits: [] } },
+      diff: "--- a/src/example.ts\n+++ b/src/example.ts\n@@ -1,1 +1,1 @@\n-old\n+new",
+    });
+    expect(
       chatMessageToSessionPayload(
         toolCallMessage({ tool: "read_file", args: { path: "README.md" } }, "read_file: README.md")
       )
@@ -1876,6 +1934,22 @@ describe("TUI rendering", () => {
         agentEvent.toolCall({ tool: "read_file", args: { path: "README.md" } }, "read_file: README.md")
       )
     ).toEqual([toolCallMessage({ tool: "read_file", args: { path: "README.md" } }, "read_file: README.md")]);
+    expect(
+      renderRuntimeEvent(
+        agentEvent.toolCall(
+          { tool: "edit_file", args: { path: "src/example.ts", edits: [] } },
+          "edit_file: src/example.ts (changed +1/-1)",
+          "--- a/src/example.ts\n+++ b/src/example.ts\n@@ -1,1 +1,1 @@\n-old\n+new"
+        )
+      )
+    ).toEqual([
+      toolCallMessage(
+        { tool: "edit_file", args: { path: "src/example.ts", edits: [] } },
+        "edit_file: src/example.ts (changed +1/-1)",
+        undefined,
+        "--- a/src/example.ts\n+++ b/src/example.ts\n@@ -1,1 +1,1 @@\n-old\n+new"
+      ),
+    ]);
     expect(
       runtimeEventToSessionPayload(
         agentEvent.taskPlan({

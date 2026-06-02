@@ -15,6 +15,7 @@ export function runtimeEventToSessionPayload(event: AgentRuntimeEvent): SessionE
         kind: "tool_call",
         label: event.label,
         call: event.call as unknown as Record<string, unknown>,
+        ...(event.diff === undefined ? {} : { diff: event.diff }),
       };
     case "hook_status":
       return {

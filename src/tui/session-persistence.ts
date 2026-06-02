@@ -75,6 +75,7 @@ export function chatMessageToSessionPayload(message: ChatMessage): SessionEventP
       kind: "tool_call",
       label: message.label,
       call: message.call as unknown as Record<string, unknown>,
+      ...(message.diff === undefined ? {} : { diff: message.diff }),
     };
   }
 

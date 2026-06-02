@@ -46,6 +46,13 @@ export const ui = {
   error(text: string): string {
     return color(text, "red");
   },
+  inverse(text: string): string {
+    if (!shouldUseColor()) {
+      return text;
+    }
+
+    return `\u001b[7m${text}\u001b[27m`;
+  },
   softBackground(text: string): string {
     return color(text, "bgSoftGray");
   },

@@ -25,7 +25,7 @@ export function renderRuntimeEvent(event: AgentRuntimeEvent): ChatMessage[] {
     case "message":
       return [event.role === "assistant" ? agentMessage(event.text, event.meta) : systemMessage(event.text)];
     case "tool_call":
-      return [toolCallMessage(event.call, event.label)];
+      return [toolCallMessage(event.call, event.label, undefined, event.diff)];
     case "hook_status":
       return [hookStatusMessage(event.label, event.eventName, event.statusMessage)];
     case "knowledge_status":

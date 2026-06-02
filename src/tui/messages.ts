@@ -2,6 +2,7 @@ import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { ui } from "../cli/ui.js";
 import { type ToolCall } from "../agent/tools.js";
 import { type HookEventName } from "../config/index.js";
+import { renderUnifiedDiff } from "./diff.js";
 import { renderMarkdown } from "./markdown.js";
 
 export type ChatMessageKind =
@@ -43,6 +44,7 @@ export interface ToolCallChatMessage {
   call: ToolCall;
   label: string;
   resultSummary?: string;
+  diff?: string;
 }
 
 export interface HookStatusChatMessage {
@@ -99,10 +101,14 @@ export function thinkingMessage(text: string): ChatMessage {
   return { kind: "thinking", text };
 }
 
-export function toolCallMessage(call: ToolCall, label: string, resultSummary?: string): ChatMessage {
-  return resultSummary === undefined
-    ? { kind: "tool_call", call, label }
-    : { kind: "tool_call", call, label, resultSummary };
+export function toolCallMessage(call: ToolCall, label: string, resultSummary?: string, diff?: string): ChatMessage {
+  return {
+    kind: "tool_call",
+    call,
+    label,
+    ...(resultSummary === undefined ? {} : { resultSummary }),
+    ...(diff === undefined ? {} : { diff }),
+  };
 }
 
 export function hookStatusMessage(label: string, eventName?: HookEventName, statusMessage?: string): ChatMessage {
@@ -136,7 +142,7 @@ export function renderChatMessage(message: ChatMessage, options: RenderChatMessa
   }
 
   if (message.kind === "tool_call") {
-    return renderToolCallMessage(message);
+    return renderToolCallMessage(message, options.width);
   }
 
   if (message.kind === "hook_status") {
@@ -206,13 +212,19 @@ function formatSystemBodyLine(line: string): string {
     .replace(/\(created \+\d+\)$/u, (summary) => ui.muted(summary));
 }
 
-function renderToolCallMessage(message: ToolCallChatMessage): string[] {
+function renderToolCallMessage(message: ToolCallChatMessage, width: number | undefined): string[] {
   const visibleLabel =
     message.resultSummary && !message.label.includes(message.resultSummary)
       ? `${message.label} ${message.resultSummary}`
       : message.label;
 
-  return [`   ${ui.muted(expandTabs(visibleLabel))}`];
+  const label = `   ${ui.muted(expandTabs(visibleLabel))}`;
+
+  if (!message.diff) {
+    return [label];
+  }
+
+  return [label, ...renderUnifiedDiff(message.diff, { indent: "     ", width })];
 }
 
 function renderHookStatusMessage(message: HookStatusChatMessage): string[] {

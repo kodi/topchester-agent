@@ -53,6 +53,7 @@ const toolCallPayloadSchema = z.object({
   kind: z.literal("tool_call"),
   label: z.string(),
   call: z.record(z.string(), jsonValueSchema),
+  diff: z.string().optional(),
 });
 
 const hookStatusPayloadSchema = z.object({

@@ -278,7 +278,7 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
         }
         break;
       case "tool_call":
-        messages.push(toolCallMessage(event.call as unknown as ToolCall, event.label));
+        messages.push(toolCallMessage(event.call as unknown as ToolCall, event.label, undefined, event.diff));
         break;
       case "hook_status":
         messages.push(hookStatusMessage(event.label, event.eventName as HookEventName, event.statusMessage));
