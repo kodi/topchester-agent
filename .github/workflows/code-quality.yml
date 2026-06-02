@@ -6,7 +6,7 @@ on:
 
 jobs:
   code-quality:
-    name: oxfmt and oxlint
+    name: Check code quality
     runs-on: ubuntu-latest
 
     steps:
