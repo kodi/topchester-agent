@@ -15,6 +15,7 @@
         "node -e 'const pkg = JSON.parse(require(\"fs\").readFileSync(\"package.json\", \"utf8\")); console.log(JSON.stringify(pkg.scripts, null, 2))'",
         "wc -l src/agent/tools/bash.ts src/agent/tools/bash-policy.ts",
         "find src -type f -exec du -h {} + | sort -rh | head -n 10",
+        "wc -l src/tui/layout.ts src/tui/*.ts src/agent/*.ts | sort -rn",
       ],
     },
   },
