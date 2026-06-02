@@ -428,7 +428,7 @@ function createUnifiedDiff(path: string, oldContent: string, newContent: string)
 }
 
 function formatDiffLine(prefix: " " | "-" | "+", lineNumber: number, width: number, content: string): string {
-  return `${prefix}${String(lineNumber).padStart(width, " ")} | ${content}`;
+  return `${prefix}${String(lineNumber).padStart(width, " ")} │ ${content}`;
 }
 
 function formatHunkRange(startIndex: number, endIndex: number): string {

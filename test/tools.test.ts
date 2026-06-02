@@ -1075,8 +1075,8 @@ describe("agent tools", () => {
       bytesChanged: -1,
     });
     expect(result.content).toContain("after_hash: sha256:");
-    expect(result.content).toContain("-1 | enabled=false");
-    expect(result.content).toContain("+1 | enabled=true");
+    expect(result.content).toContain("-1 │ enabled=false");
+    expect(result.content).toContain("+1 │ enabled=true");
   });
 
   it("creates new workspace files through the tool executor", async () => {
@@ -1365,8 +1365,8 @@ describe("agent tools", () => {
 
     expect(result.beforeHash).toBe(beforeHash);
     expect(result.afterHash).toBe(hashContent("new\n"));
-    expect(result.diff).toContain("-1 | old");
-    expect(result.diff).toContain("+1 | new");
+    expect(result.diff).toContain("-1 │ old");
+    expect(result.diff).toContain("+1 │ new");
     expect(result.kbState).toBe("needs_sync");
     expect(result.editEvent).toMatchObject({
       kind: "file_edit",
@@ -1465,10 +1465,10 @@ describe("edit_file pure edit engine", () => {
     expect(result.newContent).toBe("alpha\nbravo\ngamma\n");
     expect(result.firstChangedLine).toBe(2);
     expect(result.diff).toContain("--- a/example.txt\n+++ b/example.txt");
-    expect(result.diff).toContain(" 1 | alpha");
-    expect(result.diff).toContain("-2 | beta");
-    expect(result.diff).toContain("+2 | bravo");
-    expect(result.diff).toContain(" 3 | gamma");
+    expect(result.diff).toContain(" 1 │ alpha");
+    expect(result.diff).toContain("-2 │ beta");
+    expect(result.diff).toContain("+2 │ bravo");
+    expect(result.diff).toContain(" 3 │ gamma");
   });
 
   it("applies multiple blocks against the original content", () => {
