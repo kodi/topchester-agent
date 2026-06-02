@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  checkSelfUpdate,
   createSelfUpdateCommand,
   detectSelfUpdateManager,
+  formatSelfUpdateCheckResult,
   formatSelfUpdateSuccess,
   runSelfUpdate,
 } from "../src/cli/self-update.js";
@@ -77,6 +79,44 @@ describe("self update", () => {
     expect(formatSelfUpdateSuccess(command)).toEqual([
       "Updated Topchester with npm install -g topchester-ai@latest.",
       "Restart Topchester to use the new version.",
+    ]);
+  });
+
+  it("checks the available version without running the update command", async () => {
+    const calls: Array<{ command: string; args: string[] }> = [];
+    const result = await checkSelfUpdate({
+      currentVersion: "0.30.0",
+      env: { npm_config_user_agent: "pnpm/11.0.8" },
+      runner: async (command, args) => {
+        calls.push({ command, args });
+        return { code: 0, stdout: "0.31.0\n" };
+      },
+    });
+
+    expect(calls).toEqual([{ command: "pnpm", args: ["view", "topchester-ai@latest", "version"] }]);
+    expect(result).toMatchObject({
+      currentVersion: "0.30.0",
+      availableVersion: "0.31.0",
+      updateAvailable: true,
+    });
+    expect(formatSelfUpdateCheckResult(result)).toEqual([
+      "Current Topchester version: 0.30.0",
+      "Available Topchester version: 0.31.0",
+      "Update available. Run pnpm install -g topchester-ai@latest to install it.",
+    ]);
+  });
+
+  it("reports when the current version is already available", async () => {
+    const result = await checkSelfUpdate({
+      currentVersion: "v0.30.0",
+      env: { npm_config_user_agent: "bun/1.3.0" },
+      runner: async () => ({ code: 0, stdout: "0.30.0\n" }),
+    });
+
+    expect(formatSelfUpdateCheckResult(result)).toEqual([
+      "Current Topchester version: 0.30.0",
+      "Available Topchester version: 0.30.0",
+      "Topchester is already up to date.",
     ]);
   });
 

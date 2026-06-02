@@ -103,6 +103,7 @@ Common examples:
 topchester update
 topchester update 0.15.0
 topchester upgrade latest
+topchester update --check
 ```
 
 Current behavior:
@@ -111,6 +112,8 @@ Current behavior:
 - Runs the matching global install command for `topchester-ai`.
 - `topchester update` installs `topchester-ai@latest`.
 - `topchester update <target>` installs `topchester-ai@<target>`. A leading `v` is stripped from semver targets such as `v0.15.0`.
+- `topchester update --check` checks the installed version against the available package version without installing anything.
+- `topchester update --check <target>` checks against `topchester-ai@<target>` without installing anything.
 - If the install method cannot be detected, Topchester does not guess. It prints a manual package-manager command instead.
 - After a successful update, restart Topchester to use the new version.
 - `topchester upgrade` is an alias for `topchester update`.

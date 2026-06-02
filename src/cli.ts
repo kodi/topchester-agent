@@ -26,7 +26,12 @@ import { loadSession, loadSessionForAppend, rehydrateSession } from "./session/s
 import { TopchesterTuiShell } from "./tui/index.js";
 import { getTopchesterVersion } from "./version.js";
 import { executeRunCommand } from "./cli/run.js";
-import { formatSelfUpdateSuccess, runSelfUpdate } from "./cli/self-update.js";
+import {
+  checkSelfUpdate,
+  formatSelfUpdateCheckResult,
+  formatSelfUpdateSuccess,
+  runSelfUpdate,
+} from "./cli/self-update.js";
 
 export async function runTopchesterCli(argv = process.argv, options: { exitOverride?: boolean } = {}): Promise<void> {
   const program = createTopchesterProgram();
@@ -228,8 +233,15 @@ function createTopchesterProgram(): Command {
     .alias("upgrade")
     .description("update Topchester with the package manager that installed it")
     .argument("[target]", "version or npm dist tag to install", "latest")
-    .action(async (target: string) => {
+    .option("--check", "check the available version without updating")
+    .action(async (target: string, options: { check?: boolean }) => {
       try {
+        if (options.check) {
+          const result = await checkSelfUpdate({ target, currentVersion: getTopchesterVersion() });
+          console.log(formatSelfUpdateCheckResult(result).join("\n"));
+          return;
+        }
+
         const command = await runSelfUpdate({ target });
         console.log(formatSelfUpdateSuccess(command).join("\n"));
       } catch (error) {

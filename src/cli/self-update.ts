@@ -24,7 +24,24 @@ export interface RunSelfUpdateOptions extends DetectSelfUpdateManagerOptions {
   runner?: SelfUpdateRunner;
 }
 
+export interface CheckSelfUpdateOptions extends DetectSelfUpdateManagerOptions {
+  currentVersion: string;
+  target?: string;
+  runner?: SelfUpdateCheckRunner;
+}
+
+export interface SelfUpdateCheckResult {
+  command: SelfUpdateCommand;
+  currentVersion: string;
+  availableVersion: string;
+  updateAvailable: boolean;
+}
+
 export type SelfUpdateRunner = (command: string, args: string[]) => Promise<number | null>;
+export type SelfUpdateCheckRunner = (
+  command: string,
+  args: string[]
+) => Promise<{ code: number | null; stdout: string }>;
 
 export function detectSelfUpdateManager(options: DetectSelfUpdateManagerOptions = {}): SelfUpdateManager | undefined {
   const env = options.env ?? process.env;
@@ -104,6 +121,36 @@ export async function runSelfUpdate(options: RunSelfUpdateOptions = {}): Promise
   return updateCommand;
 }
 
+export async function checkSelfUpdate(options: CheckSelfUpdateOptions): Promise<SelfUpdateCheckResult> {
+  const updateCommand = createSelfUpdateCommand(options);
+
+  if (!updateCommand) {
+    throw new Error(formatSelfUpdateUnsupportedMessage());
+  }
+
+  const args = ["view", `${TOPCHESTER_PACKAGE_NAME}@${updateCommand.target}`, "version"];
+  const runner = options.runner ?? defaultSelfUpdateCheckRunner;
+  const result = await runner(updateCommand.command, args);
+
+  if (result.code !== 0) {
+    throw new Error(
+      `Update check failed with exit code ${result.code ?? "unknown"}: ${[updateCommand.command, ...args].map(quoteDisplayArg).join(" ")}`
+    );
+  }
+
+  const availableVersion = result.stdout.trim().split(/\s+/).at(-1) ?? "";
+  if (!availableVersion) {
+    throw new Error("Update check did not return an available version.");
+  }
+
+  return {
+    command: updateCommand,
+    currentVersion: normalizeTarget(options.currentVersion),
+    availableVersion: normalizeTarget(availableVersion),
+    updateAvailable: normalizeTarget(options.currentVersion) !== normalizeTarget(availableVersion),
+  };
+}
+
 export function formatSelfUpdateUnsupportedMessage(): string {
   return [
     "Could not detect whether Topchester was installed with npm, pnpm, or bun.",
@@ -113,6 +160,21 @@ export function formatSelfUpdateUnsupportedMessage(): string {
 
 export function formatSelfUpdateSuccess(command: SelfUpdateCommand): string[] {
   return [`Updated Topchester with ${command.display}.`, "Restart Topchester to use the new version."];
+}
+
+export function formatSelfUpdateCheckResult(result: SelfUpdateCheckResult): string[] {
+  const lines = [
+    `Current Topchester version: ${result.currentVersion}`,
+    `Available Topchester version: ${result.availableVersion}`,
+  ];
+
+  if (result.updateAvailable) {
+    lines.push(`Update available. Run ${result.command.display} to install it.`);
+  } else {
+    lines.push("Topchester is already up to date.");
+  }
+
+  return lines;
 }
 
 function normalizeTarget(target = "latest"): string {
@@ -142,5 +204,25 @@ function defaultSelfUpdateRunner(command: string, args: string[]): Promise<numbe
 
     child.on("error", reject);
     child.on("close", resolve);
+  });
+}
+
+function defaultSelfUpdateCheckRunner(
+  command: string,
+  args: string[]
+): Promise<{ code: number | null; stdout: string }> {
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "inherit"],
+      shell: process.platform === "win32",
+    });
+
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, stdout }));
   });
 }
