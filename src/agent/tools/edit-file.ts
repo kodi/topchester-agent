@@ -269,9 +269,9 @@ function summarizeDiff(diff: string): string {
       continue;
     }
 
-    if (line.startsWith("+")) {
+    if (line.startsWith("+") || /^\+\s*\d+ \|/.test(line)) {
       added += 1;
-    } else if (line.startsWith("-")) {
+    } else if (line.startsWith("-") || /^-\s*\d+ \|/.test(line)) {
       removed += 1;
     }
   }
@@ -405,23 +405,30 @@ function createUnifiedDiff(path: string, oldContent: string, newContent: string)
     `@@ -${formatHunkRange(hunkOldStart, hunkOldEnd)} +${formatHunkRange(hunkNewStart, hunkNewEnd)} @@`,
   ];
 
+  const oldLineNumberWidth = String(Math.max(1, hunkOldEnd)).length;
+  const newLineNumberWidth = String(Math.max(1, hunkNewEnd)).length;
+
   for (let index = hunkOldStart; index < prefixLength; index += 1) {
-    lines.push(` ${oldLines[index]}`);
+    lines.push(formatDiffLine(" ", index + 1, oldLineNumberWidth, oldLines[index]));
   }
 
   for (let index = prefixLength; index < oldChangedEnd; index += 1) {
-    lines.push(`-${oldLines[index]}`);
+    lines.push(formatDiffLine("-", index + 1, oldLineNumberWidth, oldLines[index]));
   }
 
   for (let index = prefixLength; index < newChangedEnd; index += 1) {
-    lines.push(`+${newLines[index]}`);
+    lines.push(formatDiffLine("+", index + 1, newLineNumberWidth, newLines[index]));
   }
 
   for (let index = newChangedEnd; index < hunkNewEnd; index += 1) {
-    lines.push(` ${newLines[index]}`);
+    lines.push(formatDiffLine(" ", index + 1, newLineNumberWidth, newLines[index]));
   }
 
   return lines.join("\n");
+}
+
+function formatDiffLine(prefix: " " | "-" | "+", lineNumber: number, width: number, content: string): string {
+  return `${prefix}${String(lineNumber).padStart(width, " ")} | ${content}`;
 }
 
 function formatHunkRange(startIndex: number, endIndex: number): string {
