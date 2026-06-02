@@ -44,7 +44,11 @@ export async function runTopchesterCli(argv = process.argv, options: { exitOverr
 function createTopchesterProgram(): Command {
   const program = new Command();
 
-  program.name("topchester").description("KB-first terminal coding agent").version(getTopchesterVersion());
+  program
+    .name("topchester")
+    .description("KB-first terminal coding agent")
+    .version(getTopchesterVersion())
+    .configureHelp({ helpWidth: 120 });
 
   program
     .option("-c, --config <path>", "explicit config file path")

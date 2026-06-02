@@ -72,7 +72,7 @@ export function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult
       `bytes_changed: ${result.bytesChanged}`,
       `first_changed_line: ${result.firstChangedLine}`,
       "```diff",
-      result.diff,
+      formatDiffForPrompt(result.diff),
       "```",
     ].join("\n");
   }
@@ -448,6 +448,13 @@ function formatWriteFileChangeSummary(result: ToolExecutionResult<ToolResult> | 
   }
 
   return ` (${result.writeEvent.writeSummary})`;
+}
+
+function formatDiffForPrompt(diff: string): string {
+  return diff
+    .split("\n")
+    .map((line) => line.replace(/^([ +-])\s*\d+\s+│\s?/u, "$1"))
+    .join("\n");
 }
 
 function isProjectInstructionRetryResult(

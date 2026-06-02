@@ -346,9 +346,6 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     for (let toolCalls = 0; toolCalls <= MAX_TOOL_CALLS_PER_TURN; toolCalls += 1) {
       const startedAt = Date.now();
       const projectInstructions = await this.resolveBaseProjectInstructions();
-      for (const sourceKey of projectInstructions.sourceKeys) {
-        projectInstructionToolState.shownSourceKeys.add(sourceKey);
-      }
       for (const event of createInstructionContextEventsFromProjectInstructions(
         projectInstructions,
         persistedProjectInstructionKeys
