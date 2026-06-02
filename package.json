@@ -19,7 +19,7 @@
   "type": "module",
   "scripts": {
     "build": "tsdown src/bin.ts src/cli.ts --format esm --dts --out-dir dist --clean --sourcemap",
-    "dev": "tsx src/cli.ts dev --config config/example.yaml",
+    "dev": "tsx src/bin.ts dev --config config/example.yaml",
     "format": "oxfmt .",
     "format-check": "oxfmt . --check",
     "hooks:install": "lefthook install",

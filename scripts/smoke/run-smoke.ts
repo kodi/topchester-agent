@@ -9,7 +9,7 @@ import { startFakeApi } from "./fake-api.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, "..", "..");
-const cliPath = join(repoRoot, "src/cli.ts");
+const cliPath = join(repoRoot, "src/bin.ts");
 const tsxPath = join(repoRoot, "node_modules/.bin/tsx");
 const scenariosRoot = join(import.meta.dirname, "scenarios");
 
