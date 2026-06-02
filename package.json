@@ -9,7 +9,7 @@
     "url": "https://github.com/kodi/topchester-agent"
   },
   "bin": {
-    "topchester": "dist/cli.mjs"
+    "topchester": "dist/bin.mjs"
   },
   "files": [
     "dist",
@@ -18,7 +18,7 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "tsdown src/cli.ts --format esm --dts --out-dir dist --clean --sourcemap",
+    "build": "tsdown src/bin.ts src/cli.ts --format esm --dts --out-dir dist --clean --sourcemap",
     "dev": "tsx src/cli.ts dev --config config/example.yaml",
     "format": "oxfmt .",
     "format-check": "oxfmt . --check",

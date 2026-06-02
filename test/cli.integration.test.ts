@@ -184,6 +184,19 @@ describe("CLI integration", () => {
     expect(stdout.trim()).toBe(packageJson.version);
   });
 
+  it("publishes topchester as a dedicated bin shim", async () => {
+    const packageJson = JSON.parse(await readFile(join(process.cwd(), "package.json"), "utf8")) as {
+      bin: { topchester: string };
+      version: string;
+    };
+    const binSource = await readFile(join(process.cwd(), "src", "bin.ts"), "utf8");
+
+    expect(packageJson.bin.topchester).toBe("dist/bin.mjs");
+    expect(binSource).toContain("#!/usr/bin/env node");
+    expect(binSource).toContain('import { runTopchesterCli } from "./cli.js";');
+    expect(binSource).toContain("await runTopchesterCli();");
+  });
+
   it("uses the current directory as the default workspace", async () => {
     const fixture = await makeFixture();
     await writeFile(join(fixture.root, "marker.txt"), "");

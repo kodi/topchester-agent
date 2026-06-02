@@ -1,7 +1,5 @@
-#!/usr/bin/env node
 import { cwd } from "node:process";
 import { isAbsolute, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { Command } from "commander";
 import { createAppContext } from "./app/context.js";
 import { ui } from "./cli/ui.js";
@@ -241,10 +239,6 @@ function createTopchesterProgram(): Command {
     });
 
   return program;
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  await runTopchesterCli();
 }
 
 function printStartupSummary(context: ReturnType<typeof createAppContext>) {
