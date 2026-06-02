@@ -4,24 +4,103 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { runTopchesterCli } from "../src/cli.js";
 import { createSession, type SessionHandle } from "../src/session/store.js";
 
 const execFileAsync = promisify(execFile);
-const cliPath = join(process.cwd(), "src/cli.ts");
-const tsxPath = join(process.cwd(), "node_modules/.bin/tsx");
+
+interface CliResult {
+  stdout: string;
+  stderr: string;
+}
+
+class CliError extends Error {
+  readonly code: number;
+  readonly stdout: string;
+  readonly stderr: string;
+
+  constructor(args: string[], code: number, stdout: string, stderr: string) {
+    super(`Command failed: topchester ${args.join(" ")}${stderr ? `\n${stderr}` : ""}`);
+    this.code = code;
+    this.stdout = stdout;
+    this.stderr = stderr;
+  }
+}
 
 async function runCli(args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) {
-  return execFileAsync(tsxPath, [cliPath, ...args], {
-    cwd,
-    env: {
-      ...process.env,
-      HOME: cwd,
-      TOPCHESTER_CONFIG: "",
-      TOPCHESTER_LOG_FILE: "",
-      TOPCHESTER_LOG_LEVEL: "",
-      ...env,
-    },
-  });
+  const originalCwd = process.cwd();
+  const originalEnv = { ...process.env };
+  const originalExitCode = process.exitCode;
+  const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  const originalConsoleLog = console.log;
+  const originalConsoleError = console.error;
+  const stdoutChunks: string[] = [];
+  const stderrChunks: string[] = [];
+
+  process.chdir(cwd);
+  process.env = {
+    ...originalEnv,
+    HOME: cwd,
+    TOPCHESTER_CONFIG: "",
+    TOPCHESTER_LOG_FILE: "",
+    TOPCHESTER_LOG_LEVEL: "",
+    ...env,
+  };
+  process.exitCode = undefined;
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    stdoutChunks.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    stderrChunks.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  console.log = (...values: unknown[]) => {
+    stdoutChunks.push(`${values.map(String).join(" ")}\n`);
+  };
+  console.error = (...values: unknown[]) => {
+    stderrChunks.push(`${values.map(String).join(" ")}\n`);
+  };
+
+  try {
+    try {
+      await runTopchesterCli(["topchester", "topchester", ...args], { exitOverride: true });
+    } catch (error) {
+      if (!isCommanderExit(error)) {
+        const stdout = stdoutChunks.join("");
+        const stderr = stderrChunks.join("") || (error instanceof Error ? `${error.message}\n` : `${String(error)}\n`);
+        throw new CliError(args, 1, stdout, stderr);
+      }
+    }
+
+    const stdout = stdoutChunks.join("");
+    const stderr = stderrChunks.join("");
+    const code = typeof process.exitCode === "number" ? process.exitCode : 0;
+    if (code !== 0) {
+      throw new CliError(args, code, stdout, stderr);
+    }
+
+    return { stdout, stderr } satisfies CliResult;
+  } finally {
+    process.chdir(originalCwd);
+    process.env = originalEnv;
+    process.exitCode = originalExitCode;
+    process.stdout.write = originalStdoutWrite;
+    process.stderr.write = originalStderrWrite;
+    console.log = originalConsoleLog;
+    console.error = originalConsoleError;
+  }
+}
+
+function isCommanderExit(error: unknown): error is { code: string; exitCode: number } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof (error as { code?: unknown }).code === "string" &&
+    "exitCode" in error
+  );
 }
 
 async function makeFixture() {
@@ -736,7 +815,10 @@ describe("CLI integration", () => {
   it("fails full sync clearly when no kb.summarize model or fallback is configured", async () => {
     const fixture = await makeFixture();
     const badConfig = join(fixture.root, "bad-config.yaml");
-    await writeFile(badConfig, ["models:", "  fast:", "    name: fake-model"].join("\n"));
+    await writeFile(
+      badConfig,
+      ["models:", "  kb.summarize:", "    name: fake-model", "    provider: missing-provider"].join("\n")
+    );
     await mkdir(fixture.workspace, { recursive: true });
     await writeFile(join(fixture.workspace, "index.ts"), "export const value = 1;\n");
     await runCli(["--workspace", fixture.workspace, "kb", "init"], fixture.root);
@@ -744,7 +826,7 @@ describe("CLI integration", () => {
     await expect(
       runCli(["--config", badConfig, "--workspace", fixture.workspace, "kb", "sync", "--full"], fixture.root)
     ).rejects.toMatchObject({
-      message: expect.stringContaining('No model configured for purpose "kb.summarize".'),
+      message: expect.stringContaining('No provider configured for model provider "missing-provider".'),
     });
     await expect(readdir(join(fixture.workspace, "topchester-kb/l1-files"))).resolves.toEqual([]);
   });

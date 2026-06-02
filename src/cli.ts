@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { cwd } from "node:process";
 import { isAbsolute, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { Command } from "commander";
 import { createAppContext } from "./app/context.js";
 import { ui } from "./cli/ui.js";
@@ -29,208 +30,222 @@ import { getTopchesterVersion } from "./version.js";
 import { executeRunCommand } from "./cli/run.js";
 import { formatSelfUpdateSuccess, runSelfUpdate } from "./cli/self-update.js";
 
-const program = new Command();
-
-program.name("topchester").description("KB-first terminal coding agent").version(getTopchesterVersion());
-
-program
-  .option("-c, --config <path>", "explicit config file path")
-  .option("--workspace <path>", "workspace root", cwd())
-  .option("--resume <session>", "resume a project session: latest or an exact session id")
-  .option("--dev <flag>", "enable a development flag", collectDevFlag, []);
-
-program.action(async () => {
-  const context = createContextFromOptions();
-  const options = program.opts<{ resume?: string }>();
-
-  try {
-    if (options.resume) {
-      const loaded = await loadSession(context.workspaceRoot, options.resume);
-      const session = await loadSessionForAppend(context.workspaceRoot, loaded.sessionId);
-      const rehydrated = rehydrateSession(loaded.events);
-
-      await new TopchesterTuiShell(context, undefined, {
-        session,
-        initialMessages: rehydrated.messages,
-        initialTaskPlan: rehydrated.taskPlan,
-      }).render();
-      return;
-    }
-
-    await new TopchesterTuiShell(context).render();
-  } catch (error) {
-    console.error(formatStartupError(error));
-    process.exitCode = 1;
+export async function runTopchesterCli(argv = process.argv, options: { exitOverride?: boolean } = {}): Promise<void> {
+  const program = createTopchesterProgram();
+  if (options.exitOverride) {
+    program.exitOverride();
   }
-});
+  await program.parseAsync(argv);
+}
 
-program
-  .command("dev")
-  .description("start local development mode")
-  .action(() => {
-    const context = createContextFromOptions();
+function createTopchesterProgram(): Command {
+  const program = new Command();
 
-    console.log("Topchester local dev mode");
-    printStartupSummary(context);
-  });
+  program.name("topchester").description("KB-first terminal coding agent").version(getTopchesterVersion());
 
-program
-  .command("run")
-  .description("run one prompt or slash command without opening the TUI")
-  .argument("<prompt...>", "prompt text or slash command")
-  .option("--model <model>", "override the agent.primary model for this run")
-  .option("--timeout <ms>", "timeout for the run in milliseconds", parsePositiveInteger)
-  .option("--json", "write JSONL run events to stdout")
-  .option("--output-json <path>", "write JSONL run events to a file")
-  .action(
-    async (
-      promptParts: string[],
-      options: { model?: string; timeout?: number; json?: boolean; outputJson?: string }
-    ) => {
-      const context = createContextFromOptions();
-      const globalOptions = program.opts<{ resume?: string }>();
+  program
+    .option("-c, --config <path>", "explicit config file path")
+    .option("--workspace <path>", "workspace root", cwd())
+    .option("--resume <session>", "resume a project session: latest or an exact session id")
+    .option("--dev <flag>", "enable a development flag", collectDevFlag, []);
 
-      try {
-        await executeRunCommand(context, {
-          prompt: promptParts.join(" "),
-          model: options.model,
-          timeoutMs: options.timeout,
-          json: options.json,
-          outputJson: options.outputJson,
-          resume: globalOptions.resume,
-        });
-      } catch (error) {
-        console.error(formatStartupError(error));
-        process.exitCode = 1;
-      }
-    }
-  );
+  program.action(async () => {
+    const context = createContextFromOptions(program);
+    const options = program.opts<{ resume?: string }>();
 
-program
-  .command("search")
-  .description("search compiled L1 knowledge entries")
-  .argument("<query...>", "search query")
-  .option("--limit <count>", "maximum number of matches", parsePositiveInteger)
-  .option("--json", "write full JSON search result to stdout")
-  .action(async (queryParts: string[], options: KbSearchCommandOptions) => {
-    await executeKbSearchCommand(queryParts, options);
-  });
-
-const kbCommand = program.command("kb").description("knowledge base commands");
-
-kbCommand
-  .command("init")
-  .description("initialize a project knowledge base")
-  .action(async () => {
-    const context = createContextFromOptions();
-    const result = await ui.progress("Preparing project knowledge folders...", (report) =>
-      initializeKnowledgeBase(context.workspaceRoot, { onProgress: (event) => report(event.message) })
-    );
-
-    console.log(formatKnowledgeInitResult(result).join("\n"));
-  });
-
-kbCommand
-  .command("dry-run")
-  .description("list project files that would be synced into the knowledge base")
-  .action(async () => {
-    const context = createContextFromOptions();
-    const result = await ui.spinner("Listing project files for KB sync...", () =>
-      dryRunKnowledgeCompile(context.workspaceRoot, { config: context.config })
-    );
-
-    console.log(formatKnowledgeCompileDryRunResult(result, { formatSyncStatus: formatDryRunSyncStatus }).join("\n"));
-  });
-
-kbCommand
-  .command("sync")
-  .description("sync project files into the knowledge base")
-  .option("--full", "sync all in-scope files and remove orphaned L1 entries")
-  .action(async (options: { full?: boolean }) => {
-    const context = createContextFromOptions();
-    const result = await ui.progress(
-      options.full ? "Syncing all L1 file entries..." : "Syncing non-clean L1 file entries...",
-      (report) =>
-        syncKnowledgeBase(context.workspaceRoot, {
-          model: context.modelGateway,
-          requireModel: true,
-          config: context.config,
-          full: options.full,
-          onProgress: (event) => report(event.message),
-        })
-    );
-
-    console.log(formatKnowledgeSyncResult(result, { title: options.full ? "KB sync --full" : "KB sync" }).join("\n"));
-    if (isPartialKnowledgeCompileResult(result)) {
-      process.exitCode = 2;
-    }
-  });
-
-kbCommand
-  .command("search")
-  .alias("query")
-  .description("search compiled L1 knowledge entries")
-  .argument("<query...>", "search query")
-  .option("--limit <count>", "maximum number of matches", parsePositiveInteger)
-  .option("--json", "write full JSON search result to stdout")
-  .action(async (queryParts: string[], options: KbSearchCommandOptions) => {
-    await executeKbSearchCommand(queryParts, options);
-  });
-
-kbCommand
-  .command("context")
-  .description("create an L1 context pack for a query")
-  .argument("<query...>", "context query")
-  .option("--limit <count>", "maximum number of relevant files", parsePositiveInteger)
-  .option("--min-score <score>", "minimum match score", parseNonNegativeNumber)
-  .option("--json", "write JSON context pack to stdout")
-  .option("--full-l1", "include full raw L1 entries in JSON output")
-  .action(async (queryParts: string[], options: KbContextCommandOptions) => {
-    await executeKbContextCommand(queryParts, options);
-  });
-
-kbCommand
-  .command("reset")
-  .description("delete the local project knowledge base and cache")
-  .action(async () => {
-    const context = createContextFromOptions();
-    const result = await ui.progress("Resetting project knowledge base...", (report) =>
-      resetKnowledgeBase(context.workspaceRoot, { onProgress: (event) => report(event.message) })
-    );
-
-    console.log(formatKnowledgeResetResult(result).join("\n"));
-  });
-
-kbCommand
-  .command("status")
-  .description("show project files that are not current in the knowledge base")
-  .action(async () => {
-    const context = createContextFromOptions();
-    const result = await ui.spinner("Checking KB file status...", async () =>
-      filterNonCleanKnowledgeCompileResult(
-        await dryRunKnowledgeCompile(context.workspaceRoot, { config: context.config })
-      )
-    );
-
-    console.log(formatKnowledgeCompileStatusResult(result, { formatSyncStatus: formatDryRunSyncStatus }).join("\n"));
-  });
-
-program
-  .command("update")
-  .alias("upgrade")
-  .description("update Topchester with the package manager that installed it")
-  .argument("[target]", "version or npm dist tag to install", "latest")
-  .action(async (target: string) => {
     try {
-      const command = await runSelfUpdate({ target });
-      console.log(formatSelfUpdateSuccess(command).join("\n"));
+      if (options.resume) {
+        const loaded = await loadSession(context.workspaceRoot, options.resume);
+        const session = await loadSessionForAppend(context.workspaceRoot, loaded.sessionId);
+        const rehydrated = rehydrateSession(loaded.events);
+
+        await new TopchesterTuiShell(context, undefined, {
+          session,
+          initialMessages: rehydrated.messages,
+          initialTaskPlan: rehydrated.taskPlan,
+        }).render();
+        return;
+      }
+
+      await new TopchesterTuiShell(context).render();
     } catch (error) {
       console.error(formatStartupError(error));
       process.exitCode = 1;
     }
   });
 
-await program.parseAsync();
+  program
+    .command("dev")
+    .description("start local development mode")
+    .action(() => {
+      const context = createContextFromOptions(program);
+
+      console.log("Topchester local dev mode");
+      printStartupSummary(context);
+    });
+
+  program
+    .command("run")
+    .description("run one prompt or slash command without opening the TUI")
+    .argument("<prompt...>", "prompt text or slash command")
+    .option("--model <model>", "override the agent.primary model for this run")
+    .option("--timeout <ms>", "timeout for the run in milliseconds", parsePositiveInteger)
+    .option("--json", "write JSONL run events to stdout")
+    .option("--output-json <path>", "write JSONL run events to a file")
+    .action(
+      async (
+        promptParts: string[],
+        options: { model?: string; timeout?: number; json?: boolean; outputJson?: string }
+      ) => {
+        const context = createContextFromOptions(program);
+        const globalOptions = program.opts<{ resume?: string }>();
+
+        try {
+          await executeRunCommand(context, {
+            prompt: promptParts.join(" "),
+            model: options.model,
+            timeoutMs: options.timeout,
+            json: options.json,
+            outputJson: options.outputJson,
+            resume: globalOptions.resume,
+          });
+        } catch (error) {
+          console.error(formatStartupError(error));
+          process.exitCode = 1;
+        }
+      }
+    );
+
+  program
+    .command("search")
+    .description("search compiled L1 knowledge entries")
+    .argument("<query...>", "search query")
+    .option("--limit <count>", "maximum number of matches", parsePositiveInteger)
+    .option("--json", "write full JSON search result to stdout")
+    .action(async (queryParts: string[], options: KbSearchCommandOptions) => {
+      await executeKbSearchCommand(program, queryParts, options);
+    });
+
+  const kbCommand = program.command("kb").description("knowledge base commands");
+
+  kbCommand
+    .command("init")
+    .description("initialize a project knowledge base")
+    .action(async () => {
+      const context = createContextFromOptions(program);
+      const result = await ui.progress("Preparing project knowledge folders...", (report) =>
+        initializeKnowledgeBase(context.workspaceRoot, { onProgress: (event) => report(event.message) })
+      );
+
+      console.log(formatKnowledgeInitResult(result).join("\n"));
+    });
+
+  kbCommand
+    .command("dry-run")
+    .description("list project files that would be synced into the knowledge base")
+    .action(async () => {
+      const context = createContextFromOptions(program);
+      const result = await ui.spinner("Listing project files for KB sync...", () =>
+        dryRunKnowledgeCompile(context.workspaceRoot, { config: context.config })
+      );
+
+      console.log(formatKnowledgeCompileDryRunResult(result, { formatSyncStatus: formatDryRunSyncStatus }).join("\n"));
+    });
+
+  kbCommand
+    .command("sync")
+    .description("sync project files into the knowledge base")
+    .option("--full", "sync all in-scope files and remove orphaned L1 entries")
+    .action(async (options: { full?: boolean }) => {
+      const context = createContextFromOptions(program);
+      const result = await ui.progress(
+        options.full ? "Syncing all L1 file entries..." : "Syncing non-clean L1 file entries...",
+        (report) =>
+          syncKnowledgeBase(context.workspaceRoot, {
+            model: context.modelGateway,
+            requireModel: true,
+            config: context.config,
+            full: options.full,
+            onProgress: (event) => report(event.message),
+          })
+      );
+
+      console.log(formatKnowledgeSyncResult(result, { title: options.full ? "KB sync --full" : "KB sync" }).join("\n"));
+      if (isPartialKnowledgeCompileResult(result)) {
+        process.exitCode = 2;
+      }
+    });
+
+  kbCommand
+    .command("search")
+    .alias("query")
+    .description("search compiled L1 knowledge entries")
+    .argument("<query...>", "search query")
+    .option("--limit <count>", "maximum number of matches", parsePositiveInteger)
+    .option("--json", "write full JSON search result to stdout")
+    .action(async (queryParts: string[], options: KbSearchCommandOptions) => {
+      await executeKbSearchCommand(program, queryParts, options);
+    });
+
+  kbCommand
+    .command("context")
+    .description("create an L1 context pack for a query")
+    .argument("<query...>", "context query")
+    .option("--limit <count>", "maximum number of relevant files", parsePositiveInteger)
+    .option("--min-score <score>", "minimum match score", parseNonNegativeNumber)
+    .option("--json", "write JSON context pack to stdout")
+    .option("--full-l1", "include full raw L1 entries in JSON output")
+    .action(async (queryParts: string[], options: KbContextCommandOptions) => {
+      await executeKbContextCommand(program, queryParts, options);
+    });
+
+  kbCommand
+    .command("reset")
+    .description("delete the local project knowledge base and cache")
+    .action(async () => {
+      const context = createContextFromOptions(program);
+      const result = await ui.progress("Resetting project knowledge base...", (report) =>
+        resetKnowledgeBase(context.workspaceRoot, { onProgress: (event) => report(event.message) })
+      );
+
+      console.log(formatKnowledgeResetResult(result).join("\n"));
+    });
+
+  kbCommand
+    .command("status")
+    .description("show project files that are not current in the knowledge base")
+    .action(async () => {
+      const context = createContextFromOptions(program);
+      const result = await ui.spinner("Checking KB file status...", async () =>
+        filterNonCleanKnowledgeCompileResult(
+          await dryRunKnowledgeCompile(context.workspaceRoot, { config: context.config })
+        )
+      );
+
+      console.log(formatKnowledgeCompileStatusResult(result, { formatSyncStatus: formatDryRunSyncStatus }).join("\n"));
+    });
+
+  program
+    .command("update")
+    .alias("upgrade")
+    .description("update Topchester with the package manager that installed it")
+    .argument("[target]", "version or npm dist tag to install", "latest")
+    .action(async (target: string) => {
+      try {
+        const command = await runSelfUpdate({ target });
+        console.log(formatSelfUpdateSuccess(command).join("\n"));
+      } catch (error) {
+        console.error(formatStartupError(error));
+        process.exitCode = 1;
+      }
+    });
+
+  return program;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await runTopchesterCli();
+}
 
 function printStartupSummary(context: ReturnType<typeof createAppContext>) {
   const assignments = context.config.models?.assignments ?? {};
@@ -274,7 +289,7 @@ function printStartupSummary(context: ReturnType<typeof createAppContext>) {
   }
 }
 
-function createContextFromOptions() {
+function createContextFromOptions(program: Command) {
   const options = program.opts<{ config?: string; workspace: string; dev: string[] }>();
 
   return createAppContext({
@@ -296,8 +311,8 @@ interface KbContextCommandOptions {
   fullL1?: boolean;
 }
 
-async function executeKbSearchCommand(queryParts: string[], options: KbSearchCommandOptions) {
-  const context = createContextFromOptions();
+async function executeKbSearchCommand(program: Command, queryParts: string[], options: KbSearchCommandOptions) {
+  const context = createContextFromOptions(program);
   const query = queryParts.join(" ");
   const result = options.json
     ? await searchL1Knowledge(context.workspaceRoot, query, { limit: options.limit })
@@ -313,8 +328,8 @@ async function executeKbSearchCommand(queryParts: string[], options: KbSearchCom
   console.log(formatL1KnowledgeSearchResult(result).join("\n"));
 }
 
-async function executeKbContextCommand(queryParts: string[], options: KbContextCommandOptions) {
-  const context = createContextFromOptions();
+async function executeKbContextCommand(program: Command, queryParts: string[], options: KbContextCommandOptions) {
+  const context = createContextFromOptions(program);
   const query = queryParts.join(" ");
   const contextPackOptions = {
     limit: options.limit,
