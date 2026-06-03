@@ -81,6 +81,7 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
     ...(canUseTool("run_validator")
       ? [
           "- After code edits, use run_validator when there is a relevant test, lint, typecheck, build, check, format-check, or smoke command that can prove the change.",
+          "- Use run_validator for format-check only. Use bash for mutating formatter commands such as pnpm format when the user asks to format or project policy allows it.",
           "- Failed run_validator exits are evidence. Read stdout and stderr, fix the issue when it is in scope, and rerun the narrowest useful validator.",
           canUseTool("bash")
             ? "- If run_validator is rejected because the command is not a strict validator shape but the user still needs command output, retry with bash when approval or project policy allows it."

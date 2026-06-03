@@ -93,7 +93,7 @@ export async function executeToolCall(
 
     return result;
   } catch (error) {
-    const message = formatErrorMessage(error);
+    const message = formatToolExecutionErrorMessage(call, formatErrorMessage(error));
 
     const logPayload = {
       event: "tool_result",
@@ -116,6 +116,17 @@ export async function executeToolCall(
       warning: message,
     };
   }
+}
+
+function formatToolExecutionErrorMessage(call: ToolCall, message: string): string {
+  if (
+    call.tool === "run_validator" &&
+    (message.includes("not a validator script") || message.includes("format validators must use --check"))
+  ) {
+    return `${message} Use run_validator with a check-only command such as pnpm format-check for verification, or use bash for mutating formatter commands such as pnpm format when policy allows it.`;
+  }
+
+  return message;
 }
 
 function summarizeToolArgs(call: ToolCall): unknown {

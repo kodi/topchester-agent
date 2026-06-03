@@ -591,6 +591,28 @@ describe("agent tools", () => {
     expect(result.content).toContain('Tool "edit_file" is not allowed for agent profile "explore"');
   });
 
+  it("explains how to recover when run_validator receives a mutating formatter command", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await writeFile(
+      join(workspace, "package.json"),
+      JSON.stringify({ scripts: { "format": "oxfmt .", "format-check": "oxfmt . --check" } })
+    );
+    const call = parseToolCall(
+      '{"tool":"run_validator","args":{"command":"pnpm format","validator":"format_check","timeout_ms":10000}}'
+    );
+
+    if (!call) {
+      throw new Error("Expected run_validator tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call);
+
+    expect(isToolErrorResult(result)).toBe(true);
+    expect(result.content).toContain("command policy rejected 'format' because it is not a validator script");
+    expect(result.content).toContain("Use run_validator with a check-only command such as pnpm format-check");
+    expect(result.content).toContain("use bash for mutating formatter commands such as pnpm format");
+  });
+
   it("inherits parent denied tools when building child profile permissions", () => {
     const profile = resolveAgentProfile("explore");
     const permissions = createToolPermissionView(profile, { deniedTools: ["read_file"] });
@@ -615,7 +637,7 @@ describe("agent tools", () => {
       'git_add: stage only explicit paths the user asked to stage; first inspect git_status, reject broad paths, and pass expected_status for each path. To use it, reply with only JSON: {"tool":"git_add","args":{"paths":["src/example.ts"],"expected_status":[{"path":"src/example.ts","status":"modified"}]}}',
       'git_commit: commit only after the user explicitly asks and staged paths exactly match expected_staged_paths. To use it, reply with only JSON: {"tool":"git_commit","args":{"message":"Add feature","expected_staged_paths":["src/example.ts"]}}',
       'inspect_command: run a safe read-only discovery command inside the workspace for quick repo orientation; prefer read_file, list_files, grep, and find_file for exact file tasks, and do not use it for builds, tests, installs, network, shell scripts, edits, or user-requested specific commands such as node --version, which node, or pnpm --version. To use it, reply with only JSON: {"tool":"inspect_command","args":{"command":"pwd && rg --files docs/plans | head -20","workdir":".","timeout_ms":10000}}',
-      'run_validator: run a strict verification command after edits, such as tests, lint, typecheck, build, check, format-check, or smoke; failed exits are useful evidence and should be inspected before retrying. To use it, reply with only JSON: {"tool":"run_validator","args":{"command":"pnpm test test/tools.test.ts","validator":"test","workdir":".","timeout_ms":120000}}',
+      'run_validator: run a strict verification command after edits, such as tests, lint, typecheck, build, check, format-check, or smoke; format means check-only commands such as pnpm format-check, not mutating formatter commands such as pnpm format; failed exits are useful evidence and should be inspected before retrying. To use it, reply with only JSON: {"tool":"run_validator","args":{"command":"pnpm test test/tools.test.ts","validator":"test","workdir":".","timeout_ms":120000}}',
       'bash: run an approval-gated shell command for terminal work that needs shell syntax, one-off user-requested commands, package manager commands, scripts, pipelines, redirects, or chaining. Prefer run_validator for tests, lint, typecheck, build, check, format-check, and smoke. To use it, reply with only JSON: {"tool":"bash","args":{"command":"printf hi | wc -c","workdir":".","timeout_ms":120000,"description":"count bytes"}}',
       'skills_list: List available on-demand skills without loading full skill bodies. Args: {}. Example: {"tool":"skills_list","args":{}}',
       'skill_view: Load full SKILL.md content for one skill by name. Args: {"name":"skill-name"}. Example: {"tool":"skill_view","args":{"name":"code-review"}}',
@@ -665,6 +687,8 @@ describe("agent tools", () => {
     const prompt = getChatSystemPrompt();
 
     expect(prompt).toContain("After code edits, use run_validator when there is a relevant test");
+    expect(prompt).toContain("Use run_validator for format-check only");
+    expect(prompt).toContain("Use bash for mutating formatter commands such as pnpm format");
     expect(prompt).toContain("Failed run_validator exits are evidence");
     expect(prompt).toContain("retry with bash when approval or project policy allows it");
     expect(prompt).toContain("Do not use inspect_command for tests, builds, lint, typecheck");
