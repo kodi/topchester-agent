@@ -626,14 +626,27 @@ describe("slash commands", () => {
                   providerId: "fake",
                   modelId: "fake-agent",
                   purpose: "agent.primary" as const,
-                  usage: { inputTokens: 1_200, outputTokens: 30, totalTokens: 1_230, costUsd: 0.00014 },
+                  usage: {
+                    inputTokens: 1_200,
+                    outputTokens: 30,
+                    totalTokens: 1_230,
+                    cacheReadTokens: 1_000,
+                    costUsd: 0.00014,
+                  },
                 }
               : {
                   text: "Read notes.txt.",
                   providerId: "fake",
                   modelId: "fake-agent",
                   purpose: "agent.primary" as const,
-                  usage: { inputTokens: 345, outputTokens: 67, totalTokens: 412, costUsd: 0.00042 },
+                  usage: {
+                    inputTokens: 345,
+                    outputTokens: 67,
+                    totalTokens: 412,
+                    cacheReadTokens: 234,
+                    cacheWriteTokens: 20,
+                    costUsd: 0.00042,
+                  },
                 };
           },
         } as unknown as AppContext["modelGateway"],
@@ -644,7 +657,9 @@ describe("slash commands", () => {
 
       expect(assistantMessage).toEqual(
         expect.objectContaining({
-          meta: expect.stringMatching(/fake-agent · .* · 1,545 input \/ 97 output tokens \/ \$0.00056/u),
+          meta: expect.stringMatching(
+            /fake-agent · .* · 1,545 input \/ 97 output tokens \/ 1,234 cache read \/ 20 cache write \/ \$0.00056/u
+          ),
         })
       );
     } finally {

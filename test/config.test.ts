@@ -952,6 +952,7 @@ describe("Topchester config loading", () => {
               apiKey: "test",
               toolProtocol: "text-json",
               openRouterToolRouting: "force",
+              promptCaching: false,
             },
           },
         },
@@ -964,6 +965,7 @@ describe("Topchester config loading", () => {
     expect(config.models?.providers?.openrouter).toMatchObject({
       toolProtocol: "text-json",
       openRouterToolRouting: "force",
+      promptCaching: false,
     });
   });
 });

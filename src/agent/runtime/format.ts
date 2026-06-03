@@ -12,6 +12,8 @@ import {
 export interface TurnTokenUsageTotals {
   inputTokens?: number;
   outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
   costUsd?: number;
 }
 
@@ -398,6 +400,14 @@ export function addTokenUsageTotals(totals: TurnTokenUsageTotals, usage: ModelAg
     totals.outputTokens = (totals.outputTokens ?? 0) + usage.outputTokens;
   }
 
+  if (typeof usage.cacheReadTokens === "number") {
+    totals.cacheReadTokens = (totals.cacheReadTokens ?? 0) + usage.cacheReadTokens;
+  }
+
+  if (typeof usage.cacheWriteTokens === "number") {
+    totals.cacheWriteTokens = (totals.cacheWriteTokens ?? 0) + usage.cacheWriteTokens;
+  }
+
   if (typeof usage.costUsd === "number") {
     totals.costUsd = (totals.costUsd ?? 0) + usage.costUsd;
   }
@@ -477,7 +487,13 @@ function shouldShowTokenUsageByEnv(): boolean {
 }
 
 function formatTokenUsage(usage: TurnTokenUsageTotals | undefined): string | undefined {
-  if (usage?.inputTokens === undefined && usage?.outputTokens === undefined && usage?.costUsd === undefined) {
+  if (
+    usage?.inputTokens === undefined &&
+    usage?.outputTokens === undefined &&
+    usage?.cacheReadTokens === undefined &&
+    usage?.cacheWriteTokens === undefined &&
+    usage?.costUsd === undefined
+  ) {
     return undefined;
   }
 
@@ -485,9 +501,13 @@ function formatTokenUsage(usage: TurnTokenUsageTotals | undefined): string | und
     usage.inputTokens === undefined && usage.outputTokens === undefined
       ? undefined
       : `${formatInteger(usage.inputTokens ?? 0)} input / ${formatInteger(usage.outputTokens ?? 0)} output tokens`;
+  const cacheUsage =
+    usage.cacheReadTokens === undefined && usage.cacheWriteTokens === undefined
+      ? undefined
+      : `${formatInteger(usage.cacheReadTokens ?? 0)} cache read / ${formatInteger(usage.cacheWriteTokens ?? 0)} cache write`;
   const cost = usage.costUsd === undefined ? undefined : formatUsdCost(usage.costUsd);
 
-  return [tokenUsage, cost].filter(Boolean).join(" / ");
+  return [tokenUsage, cacheUsage, cost].filter(Boolean).join(" / ");
 }
 
 /**

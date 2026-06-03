@@ -332,7 +332,7 @@ topchester kb sync
 ## Agent Experiment Flags
 
 - `TOPCHESTER_DISABLE_L1_CONTEXT=1` skips automatic L1 context-pack injection for normal agent prompts. The model receives only the retained user/assistant conversation for that turn. KB status checks, `/kb ...` commands, and manual KB search still work.
-- `TOPCHESTER_SHOW_TOKEN_USAGE=1` adds cumulative input and output token counts to the assistant metadata line after each agent turn, including model calls made before and after tool use. If cost data is available in the model response, the line also shows total USD cost for the turn.
+- `TOPCHESTER_SHOW_TOKEN_USAGE=1` adds cumulative input, output, cache-read, and cache-write token counts to the assistant metadata line after each agent turn, including model calls made before and after tool use. If cost data is available in the model response, the line also shows total USD cost for the turn.
 - `TOPCHESTER_STREAM_REASONING=1` lets the interactive TUI show provider-exposed reasoning text as dim thinking text above the final answer. It is provider-dependent, not saved, and does not affect `topchester run`.
 
 ## Logging

@@ -158,6 +158,124 @@ describe("ModelGateway agent tool protocol", () => {
     });
   });
 
+  it("sends prompt cache key and message markers by default", async () => {
+    const api = await startChatApi((body) => {
+      expect(body.prompt_cache_key).toBe("018f0000-0000-7000-8000-000000000001");
+      expect(body.messages).toEqual([
+        expect.objectContaining({
+          role: "system",
+          content: "system",
+          cache_control: { type: "ephemeral" },
+        }),
+        expect.objectContaining({
+          role: "user",
+          content: "hello",
+          cache_control: { type: "ephemeral" },
+        }),
+      ]);
+
+      return {
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            message: { role: "assistant", content: "Hello." },
+          },
+        ],
+      };
+    });
+    const gateway = createGateway(api.baseURL, "openrouter");
+
+    await gateway.generateText({
+      purpose: "agent.primary",
+      system: "system",
+      prompt: "hello",
+      sessionId: "018f0000-0000-7000-8000-000000000001",
+    });
+  });
+
+  it("omits prompt cache fields when provider prompt caching is disabled", async () => {
+    const api = await startChatApi((body) => {
+      expect(body.prompt_cache_key).toBeUndefined();
+      expect(
+        (body.messages as Array<{ cache_control?: unknown; content?: unknown }>).some((message) => {
+          if (message.cache_control) {
+            return true;
+          }
+
+          return Array.isArray(message.content)
+            ? message.content.some((part) => typeof part === "object" && part !== null && "cache_control" in part)
+            : false;
+        })
+      ).toBe(false);
+
+      return {
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            message: { role: "assistant", content: "Hello." },
+          },
+        ],
+      };
+    });
+    const gateway = new ModelGateway({
+      defaultPurpose: "agent.primary",
+      defaultProvider: "proxy",
+      models: {
+        "agent.primary": { name: "test-model" },
+      },
+      providers: {
+        proxy: {
+          type: "openai-compatible",
+          baseURL: api.baseURL,
+          apiKey: "test",
+          promptCaching: false,
+        },
+      },
+    });
+
+    await gateway.generateText({
+      purpose: "agent.primary",
+      system: "system",
+      prompt: "hello",
+      sessionId: "018f0000-0000-7000-8000-000000000001",
+    });
+  });
+
+  it("returns cache usage from provider responses", async () => {
+    const api = await startChatApi(() => ({
+      choices: [
+        {
+          index: 0,
+          finish_reason: "stop",
+          message: { role: "assistant", content: "Hello." },
+        },
+      ],
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 10,
+        total_tokens: 110,
+        prompt_tokens_details: { cached_tokens: 80, cache_write_tokens: 20 },
+      },
+    }));
+    const gateway = createGateway(api.baseURL, "openrouter");
+
+    const result = await gateway.generateText({
+      purpose: "agent.primary",
+      system: "system",
+      prompt: "hello",
+    });
+
+    expect(result.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 10,
+      totalTokens: 110,
+      cacheReadTokens: 80,
+      cacheWriteTokens: 20,
+    });
+  });
+
   it("sends native OpenAI-compatible tools and normalizes structured tool calls", async () => {
     const api = await startChatApi((body) => {
       expect(body.tools).toEqual([

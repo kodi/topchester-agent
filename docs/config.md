@@ -184,6 +184,7 @@ models:
       apiKey: optional-inline-key
       supportsStructuredOutputs: true
       service_tier: flex
+      promptCaching: true
       toolProtocol: auto
       openRouterToolRouting: auto
       headers:
@@ -195,6 +196,8 @@ Prefer `apiKeyEnv` over `apiKey` so secrets stay out of config files.
 Topchester adds default `HTTP-Referer` and `X-Title` headers for OpenRouter providers unless the config sets those header names explicitly.
 
 `service_tier` is passed through to compatible OpenRouter requests. Use `flex` for lower cost with higher latency, or `priority` for faster service at higher cost.
+
+`promptCaching` defaults to `true` for OpenAI-compatible providers. When enabled, Topchester sends the current session id as `prompt_cache_key` and adds conservative `cache_control: { type: "ephemeral" }` markers to the system and current user message. Set `promptCaching: false` for providers or proxies that reject those fields.
 
 `toolProtocol` can be:
 

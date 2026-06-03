@@ -26,6 +26,7 @@ export async function generateAgentStep(
     purpose: "agent.primary";
     system: string;
     prompt: string;
+    sessionId?: string;
     abortSignal?: AbortSignal;
     toolProtocol?: ToolProtocolOverride;
     onReasoning?: ModelReasoningSink;

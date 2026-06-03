@@ -1,6 +1,7 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import {
   generateText,
+  type ModelMessage,
   stepCountIs,
   streamText,
   type LanguageModel,
@@ -27,6 +28,7 @@ export interface OpenAICompatibleProviderConfig {
   headers?: Record<string, string>;
   supportsStructuredOutputs?: boolean;
   service_tier?: "flex" | "priority";
+  promptCaching?: boolean;
   toolProtocol?: ToolProtocolOverride;
   openRouterToolRouting?: "auto" | "force" | "off";
 }
@@ -48,6 +50,7 @@ export interface ModelRequest {
   purpose?: ModelPurpose;
   system?: string;
   prompt: string;
+  sessionId?: string;
   abortSignal?: AbortSignal;
 }
 
@@ -63,6 +66,8 @@ export interface ModelTokenUsage {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
   costUsd?: number;
 }
 
@@ -161,11 +166,11 @@ export class ModelGateway {
 
   async generateText(request: ModelRequest): Promise<ModelTextResult> {
     const resolved = this.resolveModel(request.purpose);
+    const providerOptions = buildProviderOptions(resolved.providerId, resolved.providerConfig, request);
     const result = await generateText({
       model: resolved.model,
-      system: request.system,
-      prompt: request.prompt,
-      providerOptions: buildProviderOptions(resolved.providerId, resolved.providerConfig),
+      ...buildPromptInput(request, resolved.providerConfig),
+      providerOptions,
       abortSignal: request.abortSignal,
     });
     const usage = normalizeUsage(result.usage, {
@@ -241,9 +246,8 @@ export class ModelGateway {
     const resolved = this.resolveModel(request.purpose);
     const result = streamText({
       model: resolved.model,
-      system: request.system,
-      prompt: request.prompt,
-      providerOptions: buildProviderOptions(resolved.providerId, resolved.providerConfig),
+      ...buildPromptInput(request, resolved.providerConfig),
+      providerOptions: buildProviderOptions(resolved.providerId, resolved.providerConfig, request),
       abortSignal: request.abortSignal,
       onError: noopStreamErrorHandler,
     });
@@ -256,7 +260,7 @@ export class ModelGateway {
     resolved: ReturnType<ModelGateway["resolveModel"]>,
     attempts: ToolProtocolAttempt[]
   ): Promise<ModelAgentResult> {
-    const providerOptions = buildNativeProviderOptions(resolved.providerId, resolved.providerConfig);
+    const providerOptions = buildNativeProviderOptions(resolved.providerId, resolved.providerConfig, request);
     const openRouterRoutingApplied = hasOpenRouterRoutingOptions(providerOptions, resolved.providerId);
     const tools = toAiSdkToolSet(request.tools);
     const experimental_repairToolCall = createNativeToolCallRepair(tools);
@@ -264,8 +268,7 @@ export class ModelGateway {
       ? await this.streamNativeAgentStep(request, resolved, providerOptions, tools, experimental_repairToolCall)
       : await generateText({
           model: resolved.model,
-          system: request.system,
-          prompt: request.prompt,
+          ...buildPromptInput(request, resolved.providerConfig),
           tools,
           toolChoice: "auto",
           stopWhen: stepCountIs(1),
@@ -329,9 +332,8 @@ export class ModelGateway {
       ? await this.streamTextAgentStep(request, resolved)
       : await generateText({
           model: resolved.model,
-          system: request.system,
-          prompt: request.prompt,
-          providerOptions: buildProviderOptions(resolved.providerId, resolved.providerConfig),
+          ...buildPromptInput(request, resolved.providerConfig),
+          providerOptions: buildProviderOptions(resolved.providerId, resolved.providerConfig, request),
           abortSignal: request.abortSignal,
         });
     const usage = normalizeUsage(result.usage, {
@@ -382,8 +384,7 @@ export class ModelGateway {
   ) {
     const result = streamText({
       model: resolved.model,
-      system: request.system,
-      prompt: request.prompt,
+      ...buildPromptInput(request, resolved.providerConfig),
       tools,
       toolChoice: "auto",
       stopWhen: stepCountIs(1),
@@ -432,9 +433,8 @@ export class ModelGateway {
   private async streamTextAgentStep(request: ModelAgentRequest, resolved: ReturnType<ModelGateway["resolveModel"]>) {
     const result = streamText({
       model: resolved.model,
-      system: request.system,
-      prompt: request.prompt,
-      providerOptions: buildProviderOptions(resolved.providerId, resolved.providerConfig),
+      ...buildPromptInput(request, resolved.providerConfig),
+      providerOptions: buildProviderOptions(resolved.providerId, resolved.providerConfig, request),
       abortSignal: request.abortSignal,
       includeRawChunks: true,
       onError: noopStreamErrorHandler,
@@ -623,12 +623,21 @@ function resolveApiKey(config: OpenAICompatibleProviderConfig): string | undefin
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type ProviderOptions = Record<string, { [key: string]: JsonValue }>;
+type PromptInput = { system?: string; prompt: string } | { messages: ModelMessage[] };
 
-function buildProviderOptions(providerId: string, config: OpenAICompatibleProviderConfig): ProviderOptions {
+function buildProviderOptions(
+  providerId: string,
+  config: OpenAICompatibleProviderConfig,
+  request?: Pick<ModelRequest, "sessionId">
+): ProviderOptions {
   const options: { [key: string]: JsonValue } = {};
 
   if (config.service_tier !== undefined) {
     options.service_tier = config.service_tier;
+  }
+
+  if (shouldUsePromptCaching(config) && request?.sessionId) {
+    options.prompt_cache_key = request.sessionId;
   }
 
   return {
@@ -636,9 +645,13 @@ function buildProviderOptions(providerId: string, config: OpenAICompatibleProvid
   };
 }
 
-function buildNativeProviderOptions(providerId: string, config: OpenAICompatibleProviderConfig): ProviderOptions {
+function buildNativeProviderOptions(
+  providerId: string,
+  config: OpenAICompatibleProviderConfig,
+  request?: Pick<ModelRequest, "sessionId">
+): ProviderOptions {
   const options: { [key: string]: JsonValue } = {
-    ...buildProviderOptions(providerId, config)[providerId],
+    ...buildProviderOptions(providerId, config, request)[providerId],
     parallel_tool_calls: false,
   };
 
@@ -649,6 +662,52 @@ function buildNativeProviderOptions(providerId: string, config: OpenAICompatible
   return {
     [providerId]: options,
   };
+}
+
+function buildPromptInput(request: ModelRequest, config: OpenAICompatibleProviderConfig): PromptInput {
+  if (!shouldUsePromptCaching(config)) {
+    return {
+      ...(request.system === undefined ? {} : { system: request.system }),
+      prompt: request.prompt,
+    };
+  }
+
+  const providerOptions = buildPromptCacheProviderOptions();
+  const messages: ModelMessage[] = [
+    ...(request.system
+      ? [
+          {
+            role: "system" as const,
+            content: request.system,
+            providerOptions,
+          },
+        ]
+      : []),
+    {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: request.prompt,
+          providerOptions,
+        },
+      ],
+    },
+  ];
+
+  return { messages };
+}
+
+function buildPromptCacheProviderOptions(): NonNullable<ModelMessage["providerOptions"]> {
+  return {
+    openaiCompatible: {
+      cache_control: { type: "ephemeral" },
+    },
+  };
+}
+
+function shouldUsePromptCaching(config: OpenAICompatibleProviderConfig): boolean {
+  return config.promptCaching !== false;
 }
 
 function shouldApplyOpenRouterRoutingOptions(providerId: string, config: OpenAICompatibleProviderConfig): boolean {
@@ -713,19 +772,96 @@ function normalizeUsage(
   }
 ): ModelTokenUsage | undefined {
   const costUsd = extractResponseCostUsd(context?.responseBody, context?.responseHeaders);
+  const cacheUsage = extractCacheTokenUsage(usage, context?.responseBody);
 
   if (!usage) {
-    return costUsd === undefined ? undefined : { costUsd };
+    const normalizedWithoutUsage: ModelTokenUsage = {
+      ...(cacheUsage.cacheReadTokens === undefined ? {} : { cacheReadTokens: cacheUsage.cacheReadTokens }),
+      ...(cacheUsage.cacheWriteTokens === undefined ? {} : { cacheWriteTokens: cacheUsage.cacheWriteTokens }),
+      ...(costUsd === undefined ? {} : { costUsd }),
+    };
+
+    return Object.keys(normalizedWithoutUsage).length > 0 ? normalizedWithoutUsage : undefined;
   }
 
   const normalized: ModelTokenUsage = {
     ...(typeof usage.inputTokens === "number" ? { inputTokens: usage.inputTokens } : {}),
     ...(typeof usage.outputTokens === "number" ? { outputTokens: usage.outputTokens } : {}),
     ...(typeof usage.totalTokens === "number" ? { totalTokens: usage.totalTokens } : {}),
+    ...(cacheUsage.cacheReadTokens === undefined ? {} : { cacheReadTokens: cacheUsage.cacheReadTokens }),
+    ...(cacheUsage.cacheWriteTokens === undefined ? {} : { cacheWriteTokens: cacheUsage.cacheWriteTokens }),
     ...(costUsd === undefined ? {} : { costUsd }),
   };
 
   return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function extractCacheTokenUsage(
+  usage: LanguageModelUsage | undefined,
+  responseBody: unknown
+): Pick<ModelTokenUsage, "cacheReadTokens" | "cacheWriteTokens"> {
+  const usageDetails = usage as
+    | (LanguageModelUsage & {
+        cachedInputTokens?: number;
+        inputTokenDetails?: {
+          cacheReadTokens?: number;
+          cacheWriteTokens?: number;
+        };
+        raw?: unknown;
+      })
+    | undefined;
+
+  return {
+    cacheReadTokens: firstPositiveNumber(
+      usageDetails?.inputTokenDetails?.cacheReadTokens,
+      usageDetails?.cachedInputTokens,
+      extractResponseBodyCacheReadTokens(responseBody),
+      extractResponseBodyCacheReadTokens(usageDetails?.raw)
+    ),
+    cacheWriteTokens: firstPositiveNumber(
+      usageDetails?.inputTokenDetails?.cacheWriteTokens,
+      extractResponseBodyCacheWriteTokens(responseBody),
+      extractResponseBodyCacheWriteTokens(usageDetails?.raw)
+    ),
+  };
+}
+
+function extractResponseBodyCacheReadTokens(responseBody: unknown): number | undefined {
+  if (!responseBody || typeof responseBody !== "object") {
+    return undefined;
+  }
+
+  const usage = (responseBody as { usage?: unknown }).usage ?? responseBody;
+  const promptTokenDetails = getObjectValue(usage, "prompt_tokens_details");
+  const inputTokenDetails = getObjectValue(usage, "input_tokens_details");
+
+  return firstFiniteNumber(
+    getObjectNumber(promptTokenDetails, "cached_tokens"),
+    getObjectNumber(inputTokenDetails, "cached_tokens"),
+    getObjectNumber(usage, "cache_read_input_tokens"),
+    getObjectNumber(usage, "cache_read_tokens"),
+    getObjectNumber(usage, "prompt_cache_hit_tokens"),
+    getObjectNumber(responseBody, "native_tokens_cached")
+  );
+}
+
+function extractResponseBodyCacheWriteTokens(responseBody: unknown): number | undefined {
+  if (!responseBody || typeof responseBody !== "object") {
+    return undefined;
+  }
+
+  const usage = (responseBody as { usage?: unknown }).usage ?? responseBody;
+  const promptTokenDetails = getObjectValue(usage, "prompt_tokens_details");
+  const inputTokenDetails = getObjectValue(usage, "input_tokens_details");
+
+  return firstFiniteNumber(
+    getObjectNumber(promptTokenDetails, "cache_write_tokens"),
+    getObjectNumber(inputTokenDetails, "cache_write_tokens"),
+    getObjectNumber(usage, "cache_creation_input_tokens"),
+    getObjectNumber(usage, "cache_write_input_tokens"),
+    getObjectNumber(usage, "cache_write_tokens"),
+    getObjectNumber(responseBody, "native_tokens_cache_write")
+  );
 }
 
 function extractResponseCostUsd(responseBody: unknown, responseHeaders?: Record<string, string>): number | undefined {
@@ -791,6 +927,14 @@ function getObjectNumber(value: unknown, key: string): number | undefined {
   return undefined;
 }
 
+function getObjectValue(value: unknown, key: string): unknown {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  return (value as Record<string, unknown>)[key];
+}
+
 function parseFiniteNumber(value: string): number | undefined {
   const parsed = Number(value.trim());
 
@@ -799,6 +943,10 @@ function parseFiniteNumber(value: string): number | undefined {
 
 function firstFiniteNumber(...values: Array<number | undefined>): number | undefined {
   return values.find((value): value is number => value !== undefined);
+}
+
+function firstPositiveNumber(...values: Array<number | undefined>): number | undefined {
+  return values.find((value): value is number => value !== undefined && value > 0);
 }
 
 function formatErrorMessage(error: unknown): string {
