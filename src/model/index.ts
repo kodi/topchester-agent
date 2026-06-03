@@ -9,6 +9,7 @@ import {
   type ToolCallRepairFunction,
 } from "ai";
 import { toAiSdkToolSet } from "../agent/tools/ai-sdk-tools.js";
+import { createToolCatalog } from "../agent/tools/catalog.js";
 import { parseNativeToolCall, parseToolCallWithSource } from "../agent/tools/parser.js";
 import {
   type ModelToolCall,
@@ -265,6 +266,7 @@ export class ModelGateway {
     const providerOptions = buildNativeProviderOptions(resolved.providerId, resolved.providerConfig, request);
     const openRouterRoutingApplied = hasOpenRouterRoutingOptions(providerOptions, resolved.providerId);
     const tools = toAiSdkToolSet(request.tools);
+    const toolCatalog = createToolCatalog(request.tools);
     const experimental_repairToolCall = createNativeToolCallRepair(tools);
     const result = request.onReasoning
       ? await this.streamNativeAgentStep(request, resolved, providerOptions, tools, experimental_repairToolCall)
@@ -289,7 +291,7 @@ export class ModelGateway {
         return [];
       }
 
-      const parsed = parseNativeToolCall(call.toolName, call.input);
+      const parsed = parseNativeToolCall(call.toolName, call.input, toolCatalog);
 
       if (!parsed) {
         throw new Error(`Native tool call for ${call.toolName} did not match the registered schema.`);
@@ -344,7 +346,7 @@ export class ModelGateway {
       responseBody: result.response.body,
       responseHeaders: result.response.headers,
     });
-    const parsed = parseToolCallWithSource(result.text, allowedSources);
+    const parsed = parseToolCallWithSource(result.text, allowedSources, createToolCatalog(request.tools));
     const defaultProtocol: ToolProtocol =
       allowedSources.length === 1 && allowedSources[0] === "text-xml" ? "text-xml" : "text-json";
     const toolProtocol: ToolProtocol =

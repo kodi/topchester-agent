@@ -374,6 +374,10 @@ export function formatToolCallMessage(call: ToolCall, result?: ToolExecutionResu
     case "skill_view":
       return `skill_view: ${call.args.name}`;
   }
+
+  const runtimeCall = call as { tool: string; args: unknown };
+
+  return `${runtimeCall.tool}: ${formatUnknownToolArgs(runtimeCall.args)}`;
 }
 
 /**
@@ -554,6 +558,20 @@ function formatInteger(value: number): string {
   return value.toLocaleString("en", {
     maximumFractionDigits: 0,
   });
+}
+
+function formatUnknownToolArgs(args: unknown): string {
+  if (args === undefined || args === null) {
+    return "{}";
+  }
+
+  try {
+    const formatted = JSON.stringify(args);
+
+    return formatted && formatted.length <= 120 ? formatted : `${formatted?.slice(0, 117) ?? ""}...`;
+  } catch {
+    return String(args);
+  }
 }
 
 function formatUsdCost(value: number): string | undefined {

@@ -1,6 +1,7 @@
-import { getToolDefinition, isToolName, type ToolCall } from "./registry.js";
+import { getStaticOrCatalogToolDefinition, type ToolCatalog } from "./catalog.js";
 import { parseXmlToolCall } from "./xml-parser.js";
-import { type ToolCallSource } from "./types.js";
+import { type ToolCall as StaticToolCall } from "./registry.js";
+import { type ToolCall, type ToolCallSource } from "./types.js";
 
 export interface ToolCallParseRejection {
   source: ToolCallSource;
@@ -8,16 +9,28 @@ export interface ToolCallParseRejection {
   reason: string;
 }
 
-export function parseToolCall(text: string): ToolCall | undefined {
-  return parseJsonToolCall(text)?.call;
+export function parseToolCall(text: string): StaticToolCall | undefined;
+export function parseToolCall(text: string, catalog: ToolCatalog): ToolCall | undefined;
+export function parseToolCall(text: string, catalog?: ToolCatalog): ToolCall | undefined {
+  return parseJsonToolCall(text, catalog)?.call;
 }
 
 export function parseToolCallWithSource(
   text: string,
-  allowedSources: readonly ToolCallSource[] = ["text-json", "text-xml"]
+  allowedSources?: readonly ToolCallSource[]
+): { call: StaticToolCall; source: ToolCallSource; remainder: string } | undefined;
+export function parseToolCallWithSource(
+  text: string,
+  allowedSources: readonly ToolCallSource[],
+  catalog: ToolCatalog
+): { call: ToolCall; source: ToolCallSource; remainder: string } | undefined;
+export function parseToolCallWithSource(
+  text: string,
+  allowedSources: readonly ToolCallSource[] = ["text-json", "text-xml"],
+  catalog?: ToolCatalog
 ): { call: ToolCall; source: ToolCallSource; remainder: string } | undefined {
   if (allowedSources.includes("text-json")) {
-    const json = parseJsonToolCall(text);
+    const json = parseJsonToolCall(text, catalog);
 
     if (json) {
       return { ...json, source: "text-json" };
@@ -25,7 +38,7 @@ export function parseToolCallWithSource(
   }
 
   if (allowedSources.includes("text-xml")) {
-    const xml = parseXmlToolCall(text);
+    const xml = parseXmlToolCall(text, catalog);
 
     if (xml) {
       return { call: xml, source: "text-xml", remainder: "" };
@@ -37,7 +50,8 @@ export function parseToolCallWithSource(
 
 export function parseToolCallRejection(
   text: string,
-  allowedSources: readonly ToolCallSource[] = ["text-json", "text-xml"]
+  allowedSources: readonly ToolCallSource[] = ["text-json", "text-xml"],
+  catalog?: ToolCatalog
 ): ToolCallParseRejection | undefined {
   if (!allowedSources.includes("text-json")) {
     return undefined;
@@ -56,11 +70,16 @@ export function parseToolCallRejection(
     }
   }
 
-  if (!isRecord(value) || typeof value.tool !== "string" || !isToolName(value.tool)) {
+  if (!isRecord(value) || typeof value.tool !== "string") {
     return undefined;
   }
 
-  const definition = getToolDefinition(value.tool);
+  const definition = getStaticOrCatalogToolDefinition(catalog, value.tool);
+
+  if (!definition) {
+    return undefined;
+  }
+
   const parsed = definition.argsSchema.safeParse(value.args);
 
   if (parsed.success) {
@@ -74,12 +93,15 @@ export function parseToolCallRejection(
   };
 }
 
-export function parseNativeToolCall(toolName: string, args: unknown): ToolCall | undefined {
-  if (!isToolName(toolName)) {
+export function parseNativeToolCall(toolName: string, args: unknown): StaticToolCall | undefined;
+export function parseNativeToolCall(toolName: string, args: unknown, catalog: ToolCatalog): ToolCall | undefined;
+export function parseNativeToolCall(toolName: string, args: unknown, catalog?: ToolCatalog): ToolCall | undefined {
+  const definition = getStaticOrCatalogToolDefinition(catalog, toolName);
+
+  if (!definition) {
     return undefined;
   }
 
-  const definition = getToolDefinition(toolName);
   const parsed = definition.argsSchema.safeParse(args);
 
   if (!parsed.success) {
@@ -92,7 +114,10 @@ export function parseNativeToolCall(toolName: string, args: unknown): ToolCall |
   } as ToolCall;
 }
 
-function parseJsonToolCall(text: string): { call: ToolCall; remainder: string } | undefined {
+function parseJsonToolCall(
+  text: string,
+  catalog: ToolCatalog | undefined
+): { call: ToolCall; remainder: string } | undefined {
   const candidate = extractToolJsonCandidate(stripJsonFence(text.trim()));
   const { json } = candidate;
   let value: unknown;
@@ -111,11 +136,12 @@ function parseJsonToolCall(text: string): { call: ToolCall; remainder: string } 
     return undefined;
   }
 
-  if (!isToolName(value.tool)) {
+  const definition = getStaticOrCatalogToolDefinition(catalog, value.tool);
+
+  if (!definition) {
     return undefined;
   }
 
-  const definition = getToolDefinition(value.tool);
   const parsed = definition.argsSchema.safeParse(value.args);
 
   if (!parsed.success) {

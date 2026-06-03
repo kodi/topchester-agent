@@ -36,7 +36,7 @@ Topchester loads those sources in that order. Later files override scalar values
 Each handler supports:
 
 - `command` - shell command to execute.
-- `matcher` - optional event or tool filter. For tool hooks, match against the tool name such as `bash`; `*` matches everything.
+- `matcher` - optional event or tool filter. For tool hooks, match against the tool name such as `bash`; `*` matches everything. MCP tools use their model-facing Topchester name, such as `mcp_everything_echo`.
 - `timeoutMs` - optional timeout. The default is 5000 ms.
 - `statusMessage` - optional visible status text shown when the hook starts, formatted like `🪝 hook>stop: Sending final notification`.
 
@@ -175,6 +175,21 @@ Adds tool metadata:
 ```
 
 `callId` is present when the model/tool protocol provided one.
+
+Configured MCP tools use the same payload shape. Match them by their sanitized model-facing tool name:
+
+```jsonc
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp_everything_echo",
+        "command": ".topchester/hooks/check-mcp-tool.sh",
+      },
+    ],
+  },
+}
+```
 
 ### PostToolUse
 

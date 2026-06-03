@@ -1,17 +1,19 @@
 import { type AppContext } from "../../app/context.js";
 import { type ModelAgentResult, type ModelReasoningSink } from "../../model/index.js";
 import { hasOpenTaskPlan, type TaskPlanState } from "../task-plan.js";
-import { getProfileToolDefinitions } from "../profiles.js";
 import {
+  createToolCatalog,
   parseToolCallWithSource,
   type ModelToolCall,
+  type RuntimeToolDefinition,
   type ToolCall,
+  type ToolCatalog,
   type ToolProtocol,
   type ToolProtocolAttempt,
   type ToolProtocolOverride,
 } from "../tools.js";
 
-type AgentStepTools = ReturnType<typeof getProfileToolDefinitions>;
+type AgentStepTools = readonly RuntimeToolDefinition[];
 
 /**
  * Calls the configured model gateway for a single agent step and normalizes
@@ -31,6 +33,7 @@ export async function generateAgentStep(
     toolProtocol?: ToolProtocolOverride;
     onReasoning?: ModelReasoningSink;
     tools: AgentStepTools;
+    toolCatalog?: ToolCatalog;
   }
 ): Promise<ModelAgentResult> {
   if ("generateAgentStep" in context.modelGateway && typeof context.modelGateway.generateAgentStep === "function") {
@@ -40,7 +43,8 @@ export async function generateAgentStep(
   }
 
   const result = await context.modelGateway.generateText(request);
-  const parsed = parseToolCallWithSource(result.text);
+  const catalog = request.toolCatalog ?? createToolCatalog(request.tools);
+  const parsed = parseToolCallWithSource(result.text, ["text-json", "text-xml"], catalog);
   const toolProtocol: ToolProtocol = parsed?.source === "text-xml" ? "text-xml" : "text-json";
   const attempts: ToolProtocolAttempt[] = [{ protocol: toolProtocol, status: "used", reason: "legacy gateway" }];
 
@@ -64,7 +68,7 @@ export async function generateAgentStep(
   };
 }
 
-export function getExecutableModelToolCalls(result: ModelAgentResult): ModelToolCall[] {
+export function getExecutableModelToolCalls(result: ModelAgentResult, toolCatalog?: ToolCatalog): ModelToolCall[] {
   if (result.toolCalls.length > 0) {
     return result.toolCalls;
   }
@@ -75,7 +79,9 @@ export function getExecutableModelToolCalls(result: ModelAgentResult): ModelTool
       : result.toolProtocol === "text-json"
         ? (["text-json"] as const)
         : (["text-json", "text-xml"] as const);
-  const parsed = parseToolCallWithSource(result.text, allowedSources);
+  const parsed = toolCatalog
+    ? parseToolCallWithSource(result.text, allowedSources, toolCatalog)
+    : parseToolCallWithSource(result.text, allowedSources);
 
   if (!parsed) {
     return [];

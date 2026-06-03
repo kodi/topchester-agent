@@ -21,9 +21,10 @@ import {
   type RunTopchesterHooksOptions,
 } from "../hooks.js";
 import { resolveProjectInstructions, type ProjectInstructionContext } from "../instructions.js";
+import { McpManager } from "../mcp/manager.js";
+import { createMcpToolDefinitions } from "../mcp/tools.js";
 import {
   createToolPermissionView,
-  getProfileToolDefinitions,
   isToolAllowed,
   PRIMARY_AGENT_PROFILE,
   type AgentProfile,
@@ -63,12 +64,13 @@ import {
   executeToolCall,
   bashArgsSchema,
   isBashApprovalRequired,
-  isParallelSafeToolName,
   isToolErrorResult,
   parseToolCallRejection,
   type ToolCall,
   type ToolExecutionResult,
+  type RuntimeToolDefinition,
   type ToolResult,
+  createProfileToolCatalog,
 } from "../tools.js";
 import { validateBashPolicy, type BashApprovalCandidates } from "../tools/bash-policy.js";
 
@@ -321,7 +323,10 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     const permissions = createToolPermissionView(profile, {
       deniedTools: this.options.parentPermissions?.deniedTools,
     });
-    const tools = getProfileToolDefinitions(permissions);
+    const mcpManager = await this.createMcpManager(profile, abortSignal);
+    const mcpDefinitions = this.createMcpDefinitions(mcpManager);
+    const toolCatalog = createProfileToolCatalog(permissions, mcpDefinitions);
+    const tools = toolCatalog.definitions();
     const subagents = new SubagentManager({
       context: this.context,
       parentSession: session,
@@ -343,165 +348,300 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     const projectInstructionToolState = { shownSourceKeys: new Set<string>() };
     const persistedProjectInstructionKeys = new Set<string>();
 
-    for (let toolCalls = 0; toolCalls <= MAX_TOOL_CALLS_PER_TURN; toolCalls += 1) {
-      const startedAt = Date.now();
-      const projectInstructions = await this.resolveBaseProjectInstructions();
-      for (const event of createInstructionContextEventsFromProjectInstructions(
-        projectInstructions,
-        persistedProjectInstructionKeys
-      )) {
-        yield event;
-      }
-      const system = this.buildSystemPromptWithProjectInstructions({ profile, permissions }, projectInstructions);
-      this.context.logger.debug(
-        {
-          event: "model_prompt",
+    try {
+      for (let toolCalls = 0; toolCalls <= MAX_TOOL_CALLS_PER_TURN; toolCalls += 1) {
+        const startedAt = Date.now();
+        const projectInstructions = await this.resolveBaseProjectInstructions();
+        for (const event of createInstructionContextEventsFromProjectInstructions(
+          projectInstructions,
+          persistedProjectInstructionKeys
+        )) {
+          yield event;
+        }
+        const system = this.buildSystemPromptWithProjectInstructions({ profile, permissions }, projectInstructions);
+        this.context.logger.debug(
+          {
+            event: "model_prompt",
+            purpose: "agent.primary",
+            afterTool,
+            toolProtocol: toolProtocolOverride,
+            promptLength: nextPrompt.length,
+            systemLength: system.length,
+            projectInstructionSources: summarizeProjectInstructionSources(projectInstructions),
+            projectInstructionsTruncated: projectInstructions.truncated,
+            prompt: nextPrompt,
+            system,
+          },
+          afterTool ? "model prompt after tool" : "model prompt"
+        );
+        const result = await generateAgentStep(this.context, {
           purpose: "agent.primary",
-          afterTool,
-          toolProtocol: toolProtocolOverride,
-          promptLength: nextPrompt.length,
-          systemLength: system.length,
-          projectInstructionSources: summarizeProjectInstructionSources(projectInstructions),
-          projectInstructionsTruncated: projectInstructions.truncated,
-          prompt: nextPrompt,
           system,
-        },
-        afterTool ? "model prompt after tool" : "model prompt"
-      );
-      const result = await generateAgentStep(this.context, {
-        purpose: "agent.primary",
-        system,
-        prompt: nextPrompt,
-        sessionId: session?.metadata.rootSessionId ?? session?.sessionId,
-        abortSignal,
-        toolProtocol: toolProtocolOverride,
-        onReasoning: options.onReasoning,
-        tools,
-      });
-      const durationMs = Date.now() - startedAt;
-      const modelToolCalls = getExecutableModelToolCalls(result);
-      const toolCall = modelToolCalls[0];
-      totalDurationMs += durationMs;
-      lastModelId = result.modelId;
-      addTokenUsageTotals(tokenUsageTotals, result.usage);
+          prompt: nextPrompt,
+          sessionId: session?.metadata.rootSessionId ?? session?.sessionId,
+          abortSignal,
+          toolProtocol: toolProtocolOverride,
+          onReasoning: options.onReasoning,
+          tools,
+          toolCatalog,
+        });
+        const durationMs = Date.now() - startedAt;
+        const modelToolCalls = getExecutableModelToolCalls(result, toolCatalog);
+        const toolCall = modelToolCalls[0];
+        totalDurationMs += durationMs;
+        lastModelId = result.modelId;
+        addTokenUsageTotals(tokenUsageTotals, result.usage);
 
-      this.context.logger.debug(
-        {
-          event: "model_response",
-          purpose: "agent.primary",
-          modelId: result.modelId,
-          durationMs,
-          totalDurationMs,
-          textLength: result.text.length,
-          usage: result.usage,
-          inputTokens: result.usage?.inputTokens,
-          outputTokens: result.usage?.outputTokens,
-          totalTokens: result.usage?.totalTokens,
-          cacheReadTokens: result.usage?.cacheReadTokens,
-          cacheWriteTokens: result.usage?.cacheWriteTokens,
-          costUsd: result.usage?.costUsd,
-          hasToolCall: Boolean(toolCall),
-          toolProtocol: result.toolProtocol,
-          protocolAttempts: result.protocolAttempts,
-          toolCallSource: toolCall?.source,
-          fallbackReason: result.fallbackReason,
-          providerRejectedTools: result.providerRejectedTools,
-          openRouterRoutingApplied: result.openRouterRoutingApplied,
-          afterTool,
-        },
-        afterTool ? "model response after tool" : "model response"
-      );
-      this.context.logger.trace(
-        {
-          event: "model_response_text",
-          purpose: "agent.primary",
-          modelId: result.modelId,
-          afterTool,
-          toolProtocol: result.toolProtocol,
-          text: result.text,
-        },
-        afterTool ? "model response text after tool" : "model response text"
-      );
+        this.context.logger.debug(
+          {
+            event: "model_response",
+            purpose: "agent.primary",
+            modelId: result.modelId,
+            durationMs,
+            totalDurationMs,
+            textLength: result.text.length,
+            usage: result.usage,
+            inputTokens: result.usage?.inputTokens,
+            outputTokens: result.usage?.outputTokens,
+            totalTokens: result.usage?.totalTokens,
+            cacheReadTokens: result.usage?.cacheReadTokens,
+            cacheWriteTokens: result.usage?.cacheWriteTokens,
+            costUsd: result.usage?.costUsd,
+            hasToolCall: Boolean(toolCall),
+            toolProtocol: result.toolProtocol,
+            protocolAttempts: result.protocolAttempts,
+            toolCallSource: toolCall?.source,
+            fallbackReason: result.fallbackReason,
+            providerRejectedTools: result.providerRejectedTools,
+            openRouterRoutingApplied: result.openRouterRoutingApplied,
+            afterTool,
+          },
+          afterTool ? "model response after tool" : "model response"
+        );
+        this.context.logger.trace(
+          {
+            event: "model_response_text",
+            purpose: "agent.primary",
+            modelId: result.modelId,
+            afterTool,
+            toolProtocol: result.toolProtocol,
+            text: result.text,
+          },
+          afterTool ? "model response text after tool" : "model response text"
+        );
 
-      if (result.providerRejectedTools && result.toolProtocol === "text-json") {
-        toolProtocolOverride = "text-json";
-      } else if (result.providerRejectedTools && result.toolProtocol === "text-xml") {
-        toolProtocolOverride = "text-xml";
-      }
-
-      if (!toolCall) {
-        const rejectedToolCall = parseToolCallRejection(result.text, getTextToolCallSources(result.toolProtocol));
-
-        if (rejectedToolCall && invalidToolCallRepairs < 2) {
-          invalidToolCallRepairs += 1;
-          this.context.logger.debug(
-            {
-              event: "invalid_text_tool_call",
-              purpose: "agent.primary",
-              tool: rejectedToolCall.tool,
-              reason: rejectedToolCall.reason,
-              source: rejectedToolCall.source,
-              afterTool,
-            },
-            "invalid text tool call"
-          );
-          nextPrompt = `${nextPrompt}\n\n${formatInvalidToolCallRepairInstruction(rejectedToolCall)}`;
-          continue;
+        if (result.providerRejectedTools && result.toolProtocol === "text-json") {
+          toolProtocolOverride = "text-json";
+        } else if (result.providerRejectedTools && result.toolProtocol === "text-xml") {
+          toolProtocolOverride = "text-xml";
         }
 
-        const plan = this.taskPlan.get();
-        const finalText = stripSuppressiblePlanTodoPrefix(result.text, plan) ?? result.text;
+        if (!toolCall) {
+          const rejectedToolCall = parseToolCallRejection(
+            result.text,
+            getTextToolCallSources(result.toolProtocol),
+            toolCatalog
+          );
 
-        if (hasOpenTaskPlan(plan)) {
-          if (!requestedPlanClosure) {
-            requestedPlanClosure = true;
-            nextPrompt = `${nextPrompt}\n\n${formatOpenPlanClosureInstruction(finalText, result.toolProtocol)}`;
+          if (rejectedToolCall && invalidToolCallRepairs < 2) {
+            invalidToolCallRepairs += 1;
+            this.context.logger.debug(
+              {
+                event: "invalid_text_tool_call",
+                purpose: "agent.primary",
+                tool: rejectedToolCall.tool,
+                reason: rejectedToolCall.reason,
+                source: rejectedToolCall.source,
+                afterTool,
+              },
+              "invalid text tool call"
+            );
+            nextPrompt = `${nextPrompt}\n\n${formatInvalidToolCallRepairInstruction(rejectedToolCall)}`;
             continue;
           }
 
-          yield agentEvent.taskPlan(this.taskPlan.update({ items: [] }));
+          const plan = this.taskPlan.get();
+          const finalText = stripSuppressiblePlanTodoPrefix(result.text, plan) ?? result.text;
+
+          if (hasOpenTaskPlan(plan)) {
+            if (!requestedPlanClosure) {
+              requestedPlanClosure = true;
+              nextPrompt = `${nextPrompt}\n\n${formatOpenPlanClosureInstruction(finalText, result.toolProtocol)}`;
+              continue;
+            }
+
+            yield agentEvent.taskPlan(this.taskPlan.update({ items: [] }));
+          }
+
+          const finalMessage = finalText.trim() || "I got an empty response from the model.";
+
+          yield agentEvent.assistantMessage(
+            finalMessage,
+            formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
+          );
+          for await (const event of this.streamStopHookEvents(session, finalMessage, "completed", abortSignal)) {
+            yield event;
+          }
+          yield agentEvent.status("ready");
+          return;
         }
 
-        const finalMessage = finalText.trim() || "I got an empty response from the model.";
-
-        yield agentEvent.assistantMessage(
-          finalMessage,
-          formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
-        );
-        for await (const event of this.streamStopHookEvents(session, finalMessage, "completed", abortSignal)) {
-          yield event;
+        if (toolCalls === MAX_TOOL_CALLS_PER_TURN) {
+          yield agentEvent.choice({
+            tone: "warning",
+            title: "Tool call limit reached",
+            body: `Stopped after ${MAX_TOOL_CALLS_PER_TURN} tool calls in one turn. Continue starts another turn; abort leaves the call stopped.`,
+            actions: [
+              choiceAction("Continue", "Continue the previous task from where you stopped."),
+              choiceAction("Abort", ABORT_CHOICE_VALUE),
+            ],
+          });
+          yield agentEvent.status("ready");
+          return;
         }
-        yield agentEvent.status("ready");
-        return;
-      }
 
-      if (toolCalls === MAX_TOOL_CALLS_PER_TURN) {
-        yield agentEvent.choice({
-          tone: "warning",
-          title: "Tool call limit reached",
-          body: `Stopped after ${MAX_TOOL_CALLS_PER_TURN} tool calls in one turn. Continue starts another turn; abort leaves the call stopped.`,
-          actions: [
-            choiceAction("Continue", "Continue the previous task from where you stopped."),
-            choiceAction("Abort", ABORT_CHOICE_VALUE),
-          ],
-        });
-        yield agentEvent.status("ready");
-        return;
-      }
+        if (modelToolCalls.length > 1 && modelToolCalls.every((call) => call.tool === "task")) {
+          const taskCalls = modelToolCalls.map((call) => call as ToolCall);
+          const taskResults: Array<ToolExecutionResult<ToolResult> | undefined> = [];
+          const postHookContexts: string[] = [];
 
-      if (modelToolCalls.length > 1 && modelToolCalls.every((call) => call.tool === "task")) {
-        const taskCalls = modelToolCalls.map((call) => call as ToolCall);
-        const taskResults: Array<ToolExecutionResult<ToolResult> | undefined> = [];
-        const postHookContexts: string[] = [];
+          for (let index = 0; index < taskCalls.length; index += DEFAULT_TASK_CONCURRENCY) {
+            const batch = taskCalls.slice(index, index + DEFAULT_TASK_CONCURRENCY);
+            const executableBatch: Array<{ call: ToolCall; resultIndex: number; toolCallId?: string }> = [];
 
-        for (let index = 0; index < taskCalls.length; index += DEFAULT_TASK_CONCURRENCY) {
-          const batch = taskCalls.slice(index, index + DEFAULT_TASK_CONCURRENCY);
-          const executableBatch: Array<{ call: ToolCall; resultIndex: number; toolCallId?: string }> = [];
+            for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
+              const call = batch[batchIndex]!;
+              const resultIndex = index + batchIndex;
+              const preHookRun = this.startPreToolUseHook(call, modelToolCalls[resultIndex]?.id, session, abortSignal);
+              for await (const event of preHookRun.statusEvents) {
+                yield event;
+              }
+              const preHook = await preHookRun.result;
+              for (const event of this.hookResultToEvents(preHook)) {
+                yield event;
+              }
 
-          for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
-            const call = batch[batchIndex]!;
-            const resultIndex = index + batchIndex;
-            const preHookRun = this.startPreToolUseHook(call, modelToolCalls[resultIndex]?.id, session, abortSignal);
+              if (preHook.stopped) {
+                if (preHook.messages.length === 0) {
+                  yield agentEvent.systemMessage(preHook.stopped.message);
+                }
+
+                yield agentEvent.status("ready");
+                return;
+              }
+
+              if (preHook.blocked) {
+                taskResults[resultIndex] = createToolErrorResult(call.tool, preHook.blocked.message);
+                continue;
+              }
+
+              executableBatch.push({ call, resultIndex, toolCallId: modelToolCalls[resultIndex]?.id });
+            }
+
+            if (executableBatch.length === 0) {
+              continue;
+            }
+
+            const taskEventQueue = createRuntimeEventQueue();
+            const batchResultPromise = Promise.all(
+              executableBatch.map((entry) =>
+                executeToolCall(this.context.workspaceRoot, entry.call, {
+                  logger: this.context.logger,
+                  config: this.context.config,
+                  taskPlan: this.taskPlan,
+                  profile,
+                  permissions,
+                  subagents,
+                  projectInstructions: projectInstructionToolState,
+                  currentUserMessage: message,
+                  abortSignal,
+                  toolCallId: entry.toolCallId,
+                  toolCatalog,
+                  eventSink: (event) => taskEventQueue.push(event),
+                })
+              )
+            ).finally(() => {
+              taskEventQueue.close();
+            });
+
+            for await (const event of taskEventQueue) {
+              yield event;
+            }
+
+            const batchResults = await batchResultPromise;
+
+            for (let batchIndex = 0; batchIndex < executableBatch.length; batchIndex += 1) {
+              const entry = executableBatch[batchIndex]!;
+              taskResults[entry.resultIndex] = batchResults[batchIndex]!;
+            }
+          }
+
+          for (let index = 0; index < taskCalls.length; index += 1) {
+            const call = taskCalls[index]!;
+            const toolResult = taskResults[index]!;
+
+            for (const event of createInstructionContextEventsFromToolResult(
+              toolResult,
+              persistedProjectInstructionKeys
+            )) {
+              yield event;
+            }
+            yield agentEvent.toolCall(
+              call,
+              formatToolCallMessage(call, toolResult),
+              getToolCallDisplayDiff(toolResult)
+            );
+            const postHookRun = this.startPostToolUseHook(
+              call,
+              modelToolCalls[index]?.id,
+              toolResult,
+              session,
+              abortSignal
+            );
+            for await (const event of postHookRun.statusEvents) {
+              yield event;
+            }
+            const postHook = await postHookRun.result;
+            for (const event of this.hookResultToEvents(postHook)) {
+              yield event;
+            }
+
+            postHookContexts.push(...postHook.contexts);
+
+            if (postHook.stopped) {
+              if (postHook.messages.length === 0) {
+                yield agentEvent.systemMessage(postHook.stopped.message);
+              }
+
+              yield agentEvent.status("ready");
+              return;
+            }
+          }
+
+          afterTool = "task";
+          nextPrompt = this.appendHookContextsToPrompt(
+            `${nextPrompt}\n\n${taskResults
+              .map((toolResult) => formatToolResultForPrompt(toolResult!))
+              .join("\n\n")}\n\n${formatContinuationInstruction(
+              result.toolProtocol,
+              taskResults.at(-1)!,
+              isToolAllowed(permissions, "plan_todo")
+            )}`,
+            "PostToolUse",
+            postHookContexts
+          );
+          continue;
+        }
+
+        if (modelToolCalls.length > 1 && modelToolCalls.every((call) => toolCatalog.isParallelSafe(call.tool))) {
+          const parallelCalls = modelToolCalls.map((call) => call as ToolCall);
+          const parallelResults: Array<ToolExecutionResult<ToolResult> | undefined> = [];
+          const executableCalls: Array<{ call: ToolCall; resultIndex: number; toolCallId?: string }> = [];
+          const postHookContexts: string[] = [];
+
+          for (let index = 0; index < parallelCalls.length; index += 1) {
+            const call = parallelCalls[index]!;
+            const preHookRun = this.startPreToolUseHook(call, modelToolCalls[index]?.id, session, abortSignal);
             for await (const event of preHookRun.statusEvents) {
               yield event;
             }
@@ -520,20 +660,15 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             }
 
             if (preHook.blocked) {
-              taskResults[resultIndex] = createToolErrorResult(call.tool, preHook.blocked.message);
+              parallelResults[index] = createToolErrorResult(call.tool, preHook.blocked.message);
               continue;
             }
 
-            executableBatch.push({ call, resultIndex, toolCallId: modelToolCalls[resultIndex]?.id });
+            executableCalls.push({ call, resultIndex: index, toolCallId: modelToolCalls[index]?.id });
           }
 
-          if (executableBatch.length === 0) {
-            continue;
-          }
-
-          const taskEventQueue = createRuntimeEventQueue();
-          const batchResultPromise = Promise.all(
-            executableBatch.map((entry) =>
+          const executedResults = await Promise.all(
+            executableCalls.map((entry) =>
               executeToolCall(this.context.workspaceRoot, entry.call, {
                 logger: this.context.logger,
                 config: this.context.config,
@@ -545,117 +680,136 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 currentUserMessage: message,
                 abortSignal,
                 toolCallId: entry.toolCallId,
-                eventSink: (event) => taskEventQueue.push(event),
+                toolCatalog,
               })
             )
-          ).finally(() => {
-            taskEventQueue.close();
-          });
+          );
 
-          for await (const event of taskEventQueue) {
-            yield event;
+          for (let index = 0; index < executableCalls.length; index += 1) {
+            const entry = executableCalls[index]!;
+            parallelResults[entry.resultIndex] = executedResults[index]!;
           }
 
-          const batchResults = await batchResultPromise;
+          for (let index = 0; index < parallelCalls.length; index += 1) {
+            const call = parallelCalls[index]!;
+            const toolResult = parallelResults[index]!;
 
-          for (let batchIndex = 0; batchIndex < executableBatch.length; batchIndex += 1) {
-            const entry = executableBatch[batchIndex]!;
-            taskResults[entry.resultIndex] = batchResults[batchIndex]!;
+            for (const event of createInstructionContextEventsFromToolResult(
+              toolResult,
+              persistedProjectInstructionKeys
+            )) {
+              yield event;
+            }
+            yield agentEvent.toolCall(
+              call,
+              formatToolCallMessage(call, toolResult),
+              getToolCallDisplayDiff(toolResult)
+            );
+            const postHookRun = this.startPostToolUseHook(
+              call,
+              modelToolCalls[index]?.id,
+              toolResult,
+              session,
+              abortSignal
+            );
+            for await (const event of postHookRun.statusEvents) {
+              yield event;
+            }
+            const postHook = await postHookRun.result;
+            for (const event of this.hookResultToEvents(postHook)) {
+              yield event;
+            }
+
+            postHookContexts.push(...postHook.contexts);
+
+            if (postHook.stopped) {
+              if (postHook.messages.length === 0) {
+                yield agentEvent.systemMessage(postHook.stopped.message);
+              }
+
+              yield agentEvent.status("ready");
+              return;
+            }
           }
+
+          afterTool = parallelCalls.at(-1)?.tool;
+          nextPrompt = this.appendHookContextsToPrompt(
+            `${nextPrompt}\n\n${parallelResults
+              .map((toolResult) => formatToolResultForPrompt(toolResult!))
+              .join("\n\n")}\n\n${formatContinuationInstruction(
+              result.toolProtocol,
+              parallelResults.at(-1)!,
+              isToolAllowed(permissions, "plan_todo")
+            )}`,
+            "PostToolUse",
+            postHookContexts
+          );
+          continue;
         }
 
-        for (let index = 0; index < taskCalls.length; index += 1) {
-          const call = taskCalls[index]!;
-          const toolResult = taskResults[index]!;
+        const executableToolCall = toolCall as ToolCall;
+        const suppressiblePlanTodoAnswer = getSuppressiblePlanTodoAnswer(
+          executableToolCall,
+          result.text,
+          this.taskPlan.get()
+        );
 
-          for (const event of createInstructionContextEventsFromToolResult(
-            toolResult,
-            persistedProjectInstructionKeys
-          )) {
+        if (suppressiblePlanTodoAnswer !== undefined) {
+          const finalMessage = suppressiblePlanTodoAnswer || "I got an empty response from the model.";
+
+          yield agentEvent.assistantMessage(
+            finalMessage,
+            formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
+          );
+          for await (const event of this.streamStopHookEvents(session, finalMessage, "completed", abortSignal)) {
             yield event;
           }
-          yield agentEvent.toolCall(call, formatToolCallMessage(call, toolResult), getToolCallDisplayDiff(toolResult));
-          const postHookRun = this.startPostToolUseHook(
-            call,
-            modelToolCalls[index]?.id,
-            toolResult,
+          yield agentEvent.status("ready");
+          return;
+        }
+
+        const preHookRun = this.startPreToolUseHook(executableToolCall, toolCall.id, session, abortSignal);
+        for await (const event of preHookRun.statusEvents) {
+          yield event;
+        }
+        const preHook = await preHookRun.result;
+        for (const event of this.hookResultToEvents(preHook)) {
+          yield event;
+        }
+
+        let toolResult: ToolExecutionResult<ToolResult>;
+
+        if (preHook.stopped) {
+          if (preHook.messages.length === 0) {
+            yield agentEvent.systemMessage(preHook.stopped.message);
+          }
+
+          yield agentEvent.status("ready");
+          return;
+        }
+
+        if (preHook.blocked) {
+          toolResult = createToolErrorResult(executableToolCall.tool, preHook.blocked.message);
+        } else {
+          const approval = await this.resolveBashApproval(
+            executableToolCall,
+            toolCall.id,
+            options,
             session,
             abortSignal
           );
-          for await (const event of postHookRun.statusEvents) {
-            yield event;
-          }
-          const postHook = await postHookRun.result;
-          for (const event of this.hookResultToEvents(postHook)) {
+          for (const event of approval.events) {
             yield event;
           }
 
-          postHookContexts.push(...postHook.contexts);
-
-          if (postHook.stopped) {
-            if (postHook.messages.length === 0) {
-              yield agentEvent.systemMessage(postHook.stopped.message);
-            }
-
-            yield agentEvent.status("ready");
-            return;
-          }
-        }
-
-        afterTool = "task";
-        nextPrompt = this.appendHookContextsToPrompt(
-          `${nextPrompt}\n\n${taskResults
-            .map((toolResult) => formatToolResultForPrompt(toolResult!))
-            .join("\n\n")}\n\n${formatContinuationInstruction(
-            result.toolProtocol,
-            taskResults.at(-1)!,
-            isToolAllowed(permissions, "plan_todo")
-          )}`,
-          "PostToolUse",
-          postHookContexts
-        );
-        continue;
-      }
-
-      if (modelToolCalls.length > 1 && modelToolCalls.every((call) => isParallelSafeToolName(call.tool))) {
-        const parallelCalls = modelToolCalls.map((call) => call as ToolCall);
-        const parallelResults: Array<ToolExecutionResult<ToolResult> | undefined> = [];
-        const executableCalls: Array<{ call: ToolCall; resultIndex: number; toolCallId?: string }> = [];
-        const postHookContexts: string[] = [];
-
-        for (let index = 0; index < parallelCalls.length; index += 1) {
-          const call = parallelCalls[index]!;
-          const preHookRun = this.startPreToolUseHook(call, modelToolCalls[index]?.id, session, abortSignal);
-          for await (const event of preHookRun.statusEvents) {
-            yield event;
-          }
-          const preHook = await preHookRun.result;
-          for (const event of this.hookResultToEvents(preHook)) {
-            yield event;
-          }
-
-          if (preHook.stopped) {
-            if (preHook.messages.length === 0) {
-              yield agentEvent.systemMessage(preHook.stopped.message);
-            }
-
-            yield agentEvent.status("ready");
-            return;
-          }
-
-          if (preHook.blocked) {
-            parallelResults[index] = createToolErrorResult(call.tool, preHook.blocked.message);
-            continue;
-          }
-
-          executableCalls.push({ call, resultIndex: index, toolCallId: modelToolCalls[index]?.id });
-        }
-
-        const executedResults = await Promise.all(
-          executableCalls.map((entry) =>
-            executeToolCall(this.context.workspaceRoot, entry.call, {
+          if (approval.cancelled) {
+            toolResult = createToolErrorResult(executableToolCall.tool, approval.reason);
+          } else {
+            const toolEventQueue = createRuntimeEventQueue();
+            const toolResultPromise = executeToolCall(this.context.workspaceRoot, executableToolCall, {
               logger: this.context.logger,
               config: this.context.config,
+              bashApprovals: { allowExactCommands: approval.approvedCommands },
               taskPlan: this.taskPlan,
               profile,
               permissions,
@@ -663,199 +817,82 @@ export class TopchesterAgentRuntime implements AgentRuntime {
               projectInstructions: projectInstructionToolState,
               currentUserMessage: message,
               abortSignal,
-              toolCallId: entry.toolCallId,
-            })
-          )
-        );
+              toolCallId: toolCall.id,
+              toolCatalog,
+              eventSink: (event) => toolEventQueue.push(event),
+            }).finally(() => {
+              toolEventQueue.close();
+            });
 
-        for (let index = 0; index < executableCalls.length; index += 1) {
-          const entry = executableCalls[index]!;
-          parallelResults[entry.resultIndex] = executedResults[index]!;
-        }
-
-        for (let index = 0; index < parallelCalls.length; index += 1) {
-          const call = parallelCalls[index]!;
-          const toolResult = parallelResults[index]!;
-
-          for (const event of createInstructionContextEventsFromToolResult(
-            toolResult,
-            persistedProjectInstructionKeys
-          )) {
-            yield event;
-          }
-          yield agentEvent.toolCall(call, formatToolCallMessage(call, toolResult), getToolCallDisplayDiff(toolResult));
-          const postHookRun = this.startPostToolUseHook(
-            call,
-            modelToolCalls[index]?.id,
-            toolResult,
-            session,
-            abortSignal
-          );
-          for await (const event of postHookRun.statusEvents) {
-            yield event;
-          }
-          const postHook = await postHookRun.result;
-          for (const event of this.hookResultToEvents(postHook)) {
-            yield event;
-          }
-
-          postHookContexts.push(...postHook.contexts);
-
-          if (postHook.stopped) {
-            if (postHook.messages.length === 0) {
-              yield agentEvent.systemMessage(postHook.stopped.message);
+            for await (const event of toolEventQueue) {
+              yield event;
             }
 
-            yield agentEvent.status("ready");
-            return;
+            toolResult = await toolResultPromise;
           }
         }
 
-        afterTool = parallelCalls.at(-1)?.tool;
+        for (const event of createInstructionContextEventsFromToolResult(toolResult, persistedProjectInstructionKeys)) {
+          yield event;
+        }
+        yield agentEvent.toolCall(
+          executableToolCall,
+          formatToolCallMessage(executableToolCall, toolResult),
+          getToolCallDisplayDiff(toolResult)
+        );
+        if (!isToolErrorResult(toolResult) && toolResult.tool === "plan_todo") {
+          yield agentEvent.taskPlan(toolResult.plan);
+        }
+
+        const postHookRun = this.startPostToolUseHook(
+          executableToolCall,
+          toolCall.id,
+          toolResult,
+          session,
+          abortSignal
+        );
+        for await (const event of postHookRun.statusEvents) {
+          yield event;
+        }
+        const postHook = await postHookRun.result;
+        for (const event of this.hookResultToEvents(postHook)) {
+          yield event;
+        }
+
+        if (postHook.stopped) {
+          if (postHook.messages.length === 0) {
+            yield agentEvent.systemMessage(postHook.stopped.message);
+          }
+
+          yield agentEvent.status("ready");
+          return;
+        }
+
+        afterTool = executableToolCall.tool;
         nextPrompt = this.appendHookContextsToPrompt(
-          `${nextPrompt}\n\n${parallelResults
-            .map((toolResult) => formatToolResultForPrompt(toolResult!))
-            .join("\n\n")}\n\n${formatContinuationInstruction(
+          `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(
             result.toolProtocol,
-            parallelResults.at(-1)!,
+            toolResult,
             isToolAllowed(permissions, "plan_todo")
           )}`,
           "PostToolUse",
-          postHookContexts
+          postHook.contexts
         );
-        continue;
       }
 
-      const executableToolCall = toolCall as ToolCall;
-      const suppressiblePlanTodoAnswer = getSuppressiblePlanTodoAnswer(
-        executableToolCall,
-        result.text,
-        this.taskPlan.get()
+      const finalMessage = "I stopped because the tool loop ended unexpectedly.";
+
+      yield agentEvent.assistantMessage(
+        finalMessage,
+        formatAgentMessageMeta(lastModelId, totalDurationMs, tokenUsageTotals)
       );
-
-      if (suppressiblePlanTodoAnswer !== undefined) {
-        const finalMessage = suppressiblePlanTodoAnswer || "I got an empty response from the model.";
-
-        yield agentEvent.assistantMessage(
-          finalMessage,
-          formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
-        );
-        for await (const event of this.streamStopHookEvents(session, finalMessage, "completed", abortSignal)) {
-          yield event;
-        }
-        yield agentEvent.status("ready");
-        return;
-      }
-
-      const preHookRun = this.startPreToolUseHook(executableToolCall, toolCall.id, session, abortSignal);
-      for await (const event of preHookRun.statusEvents) {
+      for await (const event of this.streamStopHookEvents(session, finalMessage, "failed", abortSignal)) {
         yield event;
       }
-      const preHook = await preHookRun.result;
-      for (const event of this.hookResultToEvents(preHook)) {
-        yield event;
-      }
-
-      let toolResult: ToolExecutionResult<ToolResult>;
-
-      if (preHook.stopped) {
-        if (preHook.messages.length === 0) {
-          yield agentEvent.systemMessage(preHook.stopped.message);
-        }
-
-        yield agentEvent.status("ready");
-        return;
-      }
-
-      if (preHook.blocked) {
-        toolResult = createToolErrorResult(executableToolCall.tool, preHook.blocked.message);
-      } else {
-        const approval = await this.resolveBashApproval(executableToolCall, toolCall.id, options, session, abortSignal);
-        for (const event of approval.events) {
-          yield event;
-        }
-
-        if (approval.cancelled) {
-          toolResult = createToolErrorResult(executableToolCall.tool, approval.reason);
-        } else {
-          const toolEventQueue = createRuntimeEventQueue();
-          const toolResultPromise = executeToolCall(this.context.workspaceRoot, executableToolCall, {
-            logger: this.context.logger,
-            config: this.context.config,
-            bashApprovals: { allowExactCommands: approval.approvedCommands },
-            taskPlan: this.taskPlan,
-            profile,
-            permissions,
-            subagents,
-            projectInstructions: projectInstructionToolState,
-            currentUserMessage: message,
-            abortSignal,
-            toolCallId: toolCall.id,
-            eventSink: (event) => toolEventQueue.push(event),
-          }).finally(() => {
-            toolEventQueue.close();
-          });
-
-          for await (const event of toolEventQueue) {
-            yield event;
-          }
-
-          toolResult = await toolResultPromise;
-        }
-      }
-
-      for (const event of createInstructionContextEventsFromToolResult(toolResult, persistedProjectInstructionKeys)) {
-        yield event;
-      }
-      yield agentEvent.toolCall(
-        executableToolCall,
-        formatToolCallMessage(executableToolCall, toolResult),
-        getToolCallDisplayDiff(toolResult)
-      );
-      if (!isToolErrorResult(toolResult) && toolResult.tool === "plan_todo") {
-        yield agentEvent.taskPlan(toolResult.plan);
-      }
-
-      const postHookRun = this.startPostToolUseHook(executableToolCall, toolCall.id, toolResult, session, abortSignal);
-      for await (const event of postHookRun.statusEvents) {
-        yield event;
-      }
-      const postHook = await postHookRun.result;
-      for (const event of this.hookResultToEvents(postHook)) {
-        yield event;
-      }
-
-      if (postHook.stopped) {
-        if (postHook.messages.length === 0) {
-          yield agentEvent.systemMessage(postHook.stopped.message);
-        }
-
-        yield agentEvent.status("ready");
-        return;
-      }
-
-      afterTool = executableToolCall.tool;
-      nextPrompt = this.appendHookContextsToPrompt(
-        `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(
-          result.toolProtocol,
-          toolResult,
-          isToolAllowed(permissions, "plan_todo")
-        )}`,
-        "PostToolUse",
-        postHook.contexts
-      );
+      yield agentEvent.status("ready");
+    } finally {
+      await mcpManager?.close();
     }
-
-    const finalMessage = "I stopped because the tool loop ended unexpectedly.";
-
-    yield agentEvent.assistantMessage(
-      finalMessage,
-      formatAgentMessageMeta(lastModelId, totalDurationMs, tokenUsageTotals)
-    );
-    for await (const event of this.streamStopHookEvents(session, finalMessage, "failed", abortSignal)) {
-      yield event;
-    }
-    yield agentEvent.status("ready");
   }
 
   /**
@@ -877,6 +914,49 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     }
 
     return events;
+  }
+
+  private async createMcpManager(
+    profile: AgentProfile,
+    abortSignal: AbortSignal | undefined
+  ): Promise<McpManager | undefined> {
+    if (profile.id !== PRIMARY_AGENT_PROFILE.id || !this.context.config.mcp) {
+      return undefined;
+    }
+
+    const manager = new McpManager({
+      workspaceRoot: this.context.workspaceRoot,
+      config: this.context.config.mcp,
+      logger: this.context.logger,
+      signal: abortSignal,
+    });
+
+    await manager.connectAll();
+
+    for (const status of manager.statuses()) {
+      this.context.logger.debug({ event: "mcp_server_status", ...status }, "MCP server status");
+    }
+
+    return manager;
+  }
+
+  private createMcpDefinitions(manager: McpManager | undefined): RuntimeToolDefinition[] {
+    if (!manager) {
+      return [];
+    }
+
+    const converted = createMcpToolDefinitions(manager.connectedServers());
+
+    for (const error of converted.errors) {
+      this.context.logger.warn({ event: "mcp_tool_conversion_failed", error }, "MCP tool conversion failed");
+    }
+
+    this.context.logger.debug(
+      { event: "mcp_tools_exposed", toolCount: converted.definitions.length },
+      "MCP tools exposed"
+    );
+
+    return converted.definitions;
   }
 
   private startPreToolUseHook(

@@ -158,6 +158,55 @@ const instructionsConfigSchema = z
   })
   .strict();
 
+const mcpCommandSchema = z
+  .string()
+  .min(1)
+  .superRefine((value, context) => {
+    const trimmed = value.trim();
+
+    if (trimmed !== value) {
+      context.addIssue({
+        code: "custom",
+        message: "MCP stdio command must not have leading or trailing whitespace.",
+      });
+    }
+
+    if (/[\r\n]/u.test(trimmed)) {
+      context.addIssue({
+        code: "custom",
+        message: "MCP stdio command must be a single line.",
+      });
+    }
+  });
+
+const mcpStdioServerConfigSchema = z
+  .object({
+    type: z.literal("stdio"),
+    command: mcpCommandSchema,
+    args: z.array(z.string()).optional().default([]),
+    env: z.record(z.string(), z.string()).optional().default({}),
+    enabled: z.boolean().optional().default(true),
+    timeoutMs: z.number().int().positive().optional(),
+    enabledTools: z.array(z.string().min(1)).optional(),
+  })
+  .strict();
+
+const mcpConfigSchema = z.record(z.string().min(1), mcpStdioServerConfigSchema);
+
+const rawMcpStdioServerConfigSchema = z
+  .object({
+    type: z.literal("stdio"),
+    command: mcpCommandSchema,
+    args: z.array(z.string()).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    enabled: z.boolean().optional(),
+    timeoutMs: z.number().int().positive().optional(),
+    enabledTools: z.array(z.string().min(1)).optional(),
+  })
+  .strict();
+
+const rawMcpConfigSchema = z.record(z.string().min(1), rawMcpStdioServerConfigSchema);
+
 export const hookEventNames = [
   "SessionStart",
   "UserPromptSubmit",
@@ -238,6 +287,7 @@ export const topchesterConfigSchema = z.object({
     })
     .strict()
     .optional(),
+  mcp: mcpConfigSchema.optional(),
   hooks: canonicalHooksConfigSchema.optional(),
   instructions: instructionsConfigSchema.optional(),
 });
@@ -255,11 +305,17 @@ const rawTopchesterConfigSchema = z.object({
     })
     .strict()
     .optional(),
+  mcp: rawMcpConfigSchema.optional(),
   hooks: rawHooksConfigSchema.optional(),
   instructions: instructionsConfigSchema.optional(),
 });
 
+const topchesterConfigFileSchema = topchesterConfigSchema.extend({
+  mcp: rawMcpConfigSchema.optional(),
+});
+
 export type TopchesterConfig = z.infer<typeof topchesterConfigSchema>;
+type TopchesterConfigFile = z.infer<typeof topchesterConfigFileSchema>;
 export type ModelChoiceConfig = z.infer<typeof modelChoiceAssignmentSchema>;
 
 export interface ConfigLoadOptions {
@@ -300,7 +356,7 @@ export function loadTopchesterConfig(options: ConfigLoadOptions): TopchesterConf
     options.configPath,
   ].filter((path): path is string => Boolean(path));
 
-  let merged: TopchesterConfig = {};
+  let merged: TopchesterConfigFile = {};
 
   for (const path of paths) {
     const resolvedPath = isAbsolute(path) ? path : resolve(options.workspaceRoot, path);
@@ -528,14 +584,14 @@ function readConfigFile(path: string): unknown {
   }
 }
 
-function parseConfigFile(path: string, value: unknown): TopchesterConfig {
+function parseConfigFile(path: string, value: unknown): TopchesterConfigFile {
   const raw = rawTopchesterConfigSchema.safeParse(value ?? {});
 
   if (!raw.success) {
     throw new Error(`Invalid Topchester config at ${path}: ${raw.error.issues.map(formatZodIssue).join("; ")}`);
   }
 
-  const parsed = topchesterConfigSchema.safeParse(normalizeConfigInput(raw.data));
+  const parsed = topchesterConfigFileSchema.safeParse(normalizeConfigInput(raw.data));
 
   if (!parsed.success) {
     throw new Error(`Invalid Topchester config at ${path}: ${parsed.error.issues.map(formatZodIssue).join("; ")}`);

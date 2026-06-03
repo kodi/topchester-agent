@@ -282,6 +282,38 @@ You can change the instruction filenames in project config:
 
 Deny rules win over allow rules. `allowExact` matches a complete command string, while `allow` matches a command prefix plus a following space. `allowExact`, `allow`, and `deny` arrays concatenate across config layers. Use `run_validator` for tests, lint, typecheck, build, check, format-check, and smoke whenever it fits.
 
+## MCP Stdio Servers
+
+Topchester can expose tools from configured local stdio MCP servers to the primary agent runtime. V0 starts enabled stdio servers before the first model call in a turn, lists their tools, exposes them as model-facing Topchester tools, and calls the already-connected MCP server when the model selects one.
+
+```jsonc
+{
+  "mcp": {
+    "everything": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-everything"],
+      "env": {
+        "EXAMPLE": "value",
+      },
+      "enabled": true,
+      "timeoutMs": 30000,
+      "enabledTools": ["echo"],
+    },
+  },
+}
+```
+
+Only `type: "stdio"` is accepted. `command` is a single executable name or path, and `args` is the argv list passed without a shell. `env` adds string environment variables for the server process. `enabled` defaults to `true`; `args` and `env` default to empty values. `timeoutMs` applies to MCP connect, list, and call requests.
+
+MCP tools are exposed with stable Topchester tool names in the form `mcp_<server>_<tool>`, after sanitizing punctuation and casing. For example, server `everything` tool `echo` becomes `mcp_everything_echo`. These names are visible in tool events, logs, text fallback parsing, and hook matchers.
+
+MCP servers are external programs. They may read files, make network calls, mutate state, or perform other side effects according to the server implementation. Review server commands before adding them to shared config, and prefer `enabledTools` so broad servers do not expose every available tool to the model. If `enabledTools` is omitted, Topchester applies a V0 exposure cap and omits servers that exceed it.
+
+MCP server entries merge by server name across config layers. Object fields merge recursively, but arrays such as `enabledTools` are replaced by later config instead of concatenated. This lets a user config tighten a project-level MCP allowlist instead of broadening it accidentally.
+
+V0 intentionally does not support remote MCP transports, OAuth, MCP resources, resource templates, prompts, marketplace install, hot reload, reconnect loops, or rich rendering for binary/image/audio results. Text result parts are included in the normal tool result prompt. Unsupported result parts are summarized instead of rendered.
+
 ## Hooks
 
 Hooks let project or user config run small programs at agent lifecycle points. Topchester starts the hook command as a child shell process, writes one JSON payload to stdin, waits for it to finish, and reads an optional JSON response from stdout. Write logs to stderr.

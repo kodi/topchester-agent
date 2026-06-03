@@ -78,6 +78,8 @@ The interactive `/model` command uses a separate shortlist:
 For OpenRouter, Topchester expands the `openrouter/...` shorthand into the OpenRouter-compatible provider
 defaults and reads the token from `OPENROUTER_API_KEY`.
 
+MCP stdio server config lives alongside model config in the same layered Topchester config files, but MCP servers are tool providers rather than model providers. See [Configuration](./config.md#mcp-stdio-servers) for the V0 stdio-only MCP shape, limitations, and `enabledTools` guidance.
+
 ```yaml
 models:
   default: openrouter/google/gemini-3.1-flash-lite

@@ -81,6 +81,7 @@ Current behavior:
 - The coding loop can use read-only skill tools: `skills_list` lists compact skill metadata, and `skill_view` loads one full `SKILL.md` on demand.
 - If `AGENTS.md` or `AGENTS.override.md` exists in the workspace, Topchester loads matching files as live project instructions. `AGENTS.md` is loaded before `AGENTS.override.md` at the same scope. Nested instruction files are loaded when a tool works inside their folder. Config can opt into other filenames.
 - The coding loop can use structured Git tools: `git_status`, `git_diff`, `git_log`, `git_add`, and `git_commit`.
+- The primary coding loop can use tools from configured local stdio MCP servers. MCP tools are named `mcp_<server>_<tool>` after sanitization, such as `mcp_everything_echo`.
 - The coding loop runs configured lifecycle hooks from `hooks` config. Command hooks receive JSON on stdin and can add context, block a prompt or tool, or stop a turn. External integrations such as peon-ping are wired as normal command hooks.
 - The coding loop can use `plan_todo` to keep a visible session-only task plan during non-trivial multi-step work. Completed-only `plan_todo` text emitted with a final answer is ignored when no visible plan is open, so accidental closed-plan updates do not render as raw chat text.
 - The coding loop can use `task` to delegate focused read-only exploration or isolated analysis to a child agent session. The parent receives a bounded task result while child events are persisted in the child session log and forwarded as runtime events.
@@ -89,6 +90,7 @@ Current behavior:
 - `git_commit` commits only when staged paths exactly match `expected_staged_paths`. The model prompt still tells the agent not to stage or commit unless the user explicitly asks.
 - `run_validator` runs strict verification commands such as tests, lint, typecheck, build, check, format-check, and smoke scripts. Non-zero exits are returned to the model as evidence so it can fix and retry. It rejects installs, deploys, network commands, shell wrappers, command chains, redirects, globs, and unknown commands.
 - `bash` runs approval-gated shell commands inside the workspace. Project config can pre-allow exact commands or prefixes under `tools.bash`; deny rules win. The model prompt still prefers `run_validator` for verification and dedicated tools for reads, edits, and Git.
+- MCP V0 supports stdio tools only. It does not expose MCP resources, prompts, remote transports, OAuth, marketplace install, hot reload, or rich binary/image/audio rendering. MCP servers are external programs; review their command and use `enabledTools` for broad servers.
 - `write_file` creates new UTF-8 files by default. It can create parent directories when explicitly requested, marks the file dirty-known and `needs_sync`, and fails if the target file already exists unless `overwrite: true` is paired with `expected_current_hash` from the latest `read_file` result for that file. The hash is a pre-write stale-read guard, not a predicted after-write hash.
 - `edit_file` remains the targeted edit tool for existing files; `inspect_command` remains read-only orientation and is not used for file creation.
 - `AGENTS.md` and `AGENTS.override.md` control future agent behavior. Topchester edits or writes them only when your current request explicitly asks to update project instructions or names the instruction file.
@@ -144,6 +146,7 @@ Current behavior:
 
 - Creates a project-local session under `.agents/topchester/sessions/`.
 - Runs configured `SessionStart`, `UserPromptSubmit`/`TaskAcknowledge`, tool, `PermissionRequest`/`UserActionRequired`, and `Stop` hooks during the run.
+- Connects configured stdio MCP servers for the primary agent turn before the first model request that should see their tools. Startup failures are logged and the failed server's tools are omitted from that turn.
 - Emits startup KB status before the prompt runs.
 - Emits a short project-instruction startup line when root `AGENTS.md` or `AGENTS.override.md` is loaded.
 - Persists user messages and runtime events to the session log.

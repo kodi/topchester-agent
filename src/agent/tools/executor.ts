@@ -1,8 +1,9 @@
 import { isToolAllowed, type AgentProfile, type ToolPermissionView } from "../profiles.js";
 import { type AgentRuntimeEvent } from "../events.js";
 import { type SubagentManager } from "../subagents.js";
-import { getToolDefinition, isToolName, type ToolCall, type ToolResult } from "./registry.js";
-import { type ToolDefinition, type ToolContext, type ToolExecutionResult } from "./types.js";
+import { isToolName, type ToolCall as StaticToolCall, type ToolResult as StaticToolResult } from "./registry.js";
+import { getStaticOrCatalogToolDefinition, isCatalogToolAllowed, type ToolCatalog } from "./catalog.js";
+import { type ToolCall, type ToolContext, type ToolExecutionResult, type ToolResult } from "./types.js";
 import { type Logger } from "pino";
 import { type TaskPlanController } from "../task-plan.js";
 import { type TopchesterConfig } from "../../config/index.js";
@@ -21,15 +22,24 @@ export interface ExecuteToolCallOptions {
   eventSink?: (event: AgentRuntimeEvent) => void | Promise<void>;
   abortSignal?: AbortSignal;
   toolCallId?: string;
+  toolCatalog?: ToolCatalog;
 }
 
-type RuntimeToolDefinition = ToolDefinition<string, unknown, ToolResult>;
-
+export function executeToolCall(
+  workspaceRoot: string,
+  call: StaticToolCall,
+  options?: ExecuteToolCallOptions
+): Promise<ToolExecutionResult<StaticToolResult>>;
+export function executeToolCall(
+  workspaceRoot: string,
+  call: ToolCall,
+  options: ExecuteToolCallOptions & { toolCatalog: ToolCatalog }
+): Promise<ToolExecutionResult<ToolResult>>;
 export async function executeToolCall(
   workspaceRoot: string,
   call: ToolCall,
   options: ExecuteToolCallOptions = {}
-): Promise<ToolExecutionResult<ToolResult>> {
+): Promise<ToolExecutionResult> {
   const startedAt = Date.now();
   const context: ToolContext = {
     workspaceRoot,
@@ -49,15 +59,16 @@ export async function executeToolCall(
   };
 
   try {
-    if (!isToolName(call.tool)) {
+    const definition = getStaticOrCatalogToolDefinition(options.toolCatalog, call.tool);
+
+    if (!definition) {
       throw new Error(`Unknown tool "${call.tool}".`);
     }
 
-    if (options.permissions && !isToolAllowed(options.permissions, call.tool)) {
+    if (options.permissions && !isToolExecutionAllowed(options.toolCatalog, options.permissions, call.tool)) {
       throw new Error(`Tool "${call.tool}" is not allowed for agent profile "${options.permissions.profileId}".`);
     }
 
-    const definition = getToolDefinition(call.tool) as RuntimeToolDefinition;
     const parsedCall = { ...call, args: definition.argsSchema.parse(call.args) } as ToolCall;
 
     options.logger?.debug(
@@ -118,6 +129,16 @@ export async function executeToolCall(
   }
 }
 
+function isToolExecutionAllowed(
+  catalog: ToolCatalog | undefined,
+  permissionView: ToolPermissionView,
+  toolName: string
+): boolean {
+  return catalog
+    ? isCatalogToolAllowed(catalog, permissionView, toolName)
+    : isToolName(toolName) && isToolAllowed(permissionView, toolName);
+}
+
 function formatToolExecutionErrorMessage(call: ToolCall, message: string): string {
   if (
     call.tool === "run_validator" &&
@@ -129,14 +150,16 @@ function formatToolExecutionErrorMessage(call: ToolCall, message: string): strin
   return message;
 }
 
-function summarizeToolArgs(call: ToolCall): unknown {
+function summarizeToolArgs(call: ToolCall<string, any>): unknown {
   if (call.tool === "plan_todo") {
-    const activeItem = call.args.items.find((item) => item.status === "in_progress")?.text;
+    const activeItem = call.args.items.find(
+      (item: { status?: string; text?: string }) => item.status === "in_progress"
+    )?.text;
 
     return {
       itemCount: call.args.items.length,
       activeItem,
-      completedCount: call.args.items.filter((item) => item.status === "completed").length,
+      completedCount: call.args.items.filter((item: { status?: string }) => item.status === "completed").length,
     };
   }
 
@@ -175,13 +198,13 @@ function summarizeToolArgs(call: ToolCall): unknown {
   return {
     path: call.args.path,
     editCount: call.args.edits.length,
-    oldTextLengths: call.args.edits.map((edit) => edit.old_text.length),
-    newTextLengths: call.args.edits.map((edit) => edit.new_text.length),
+    oldTextLengths: call.args.edits.map((edit: { old_text: string }) => edit.old_text.length),
+    newTextLengths: call.args.edits.map((edit: { new_text: string }) => edit.new_text.length),
     expectedCurrentHashProvided: Boolean(call.args.expected_current_hash),
   };
 }
 
-function summarizeToolResult(result: ToolResult): Record<string, unknown> {
+function summarizeToolResult(result: any): Record<string, unknown> {
   if (result.tool === "plan_todo") {
     return {
       itemCount: result.plan.items.length,

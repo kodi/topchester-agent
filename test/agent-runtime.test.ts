@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 import { type AppContext } from "../src/app/context.js";
 import { TopchesterAgentRuntime } from "../src/agent/runtime/index.js";
 
+const mcpFixtureServerPath = join(process.cwd(), "test/fixtures/mcp/stdio-server.js");
+
 describe("agent runtime project instructions", () => {
   it("injects root project instructions into the system prompt", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
@@ -189,6 +191,197 @@ describe("agent runtime project instructions", () => {
     expect(prompts[2]).toContain("+enabled=true");
     expect(await readFile(join(workspace, "src", "value.txt"), "utf8")).toBe("enabled=true\n");
   });
+
+  it("exposes configured stdio MCP tools to the runtime loop and feeds results back to the model", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
+    const prompts: string[] = [];
+    const toolNames: string[][] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      config: {
+        mcp: {
+          fixture: {
+            type: "stdio",
+            command: process.execPath,
+            args: [mcpFixtureServerPath],
+            env: {},
+            enabled: true,
+            timeoutMs: 5000,
+            enabledTools: ["echo"],
+          },
+        },
+      },
+      modelGateway: {
+        async generateText(request: { prompt: string; tools?: Array<{ name: string }> }) {
+          prompts.push(request.prompt);
+          toolNames.push(request.tools?.map((tool) => tool.name) ?? []);
+
+          if (prompts.length === 1) {
+            return {
+              text: JSON.stringify({
+                tool: "mcp_fixture_echo",
+                args: { message: "hello from runtime" },
+              }),
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          return {
+            text: "MCP result handled.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "call mcp echo");
+
+    expect(toolNames[0]).toContain("mcp_fixture_echo");
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool_call",
+        call: expect.objectContaining({
+          tool: "mcp_fixture_echo",
+          args: { message: "hello from runtime" },
+        }),
+        label: 'mcp_fixture_echo: {"message":"hello from runtime"}',
+      })
+    );
+    expect(prompts[1]).toContain("Tool result from mcp_fixture_echo:");
+    expect(prompts[1]).toContain("hello from runtime");
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "message",
+        role: "assistant",
+        text: "MCP result handled.",
+      })
+    );
+  });
+
+  it("runs tool hooks for MCP tool names", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
+    const hookScript = join(workspace, "capture-hook.mjs");
+    const capturePath = join(workspace, "hook-events.jsonl");
+    await writeFile(
+      hookScript,
+      [
+        "import { appendFileSync } from 'node:fs';",
+        "const chunks = [];",
+        "process.stdin.on('data', (chunk) => chunks.push(chunk));",
+        "process.stdin.on('end', () => {",
+        "  const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));",
+        "  appendFileSync(process.argv[2], JSON.stringify({ event: payload.event, tool: payload.tool?.name }) + '\\n');",
+        "});",
+      ].join("\n")
+    );
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      config: {
+        mcp: {
+          fixture: {
+            type: "stdio",
+            command: process.execPath,
+            args: [mcpFixtureServerPath],
+            env: {},
+            enabled: true,
+            timeoutMs: 5000,
+            enabledTools: ["echo"],
+          },
+        },
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "mcp_fixture_echo",
+              command: `${process.execPath} ${shellQuote(hookScript)} ${shellQuote(capturePath)}`,
+            },
+          ],
+          PostToolUse: [
+            {
+              matcher: "mcp_fixture_echo",
+              command: `${process.execPath} ${shellQuote(hookScript)} ${shellQuote(capturePath)}`,
+            },
+          ],
+        },
+      },
+      modelGateway: {
+        async generateText(request: { prompt: string }) {
+          if (!request.prompt.includes("Tool result from mcp_fixture_echo")) {
+            return {
+              text: JSON.stringify({ tool: "mcp_fixture_echo", args: { message: "hook me" } }),
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          return {
+            text: "Done.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    await runtime.submitMessage([], "call mcp echo");
+
+    const captured = (await readFile(capturePath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as unknown);
+    expect(captured).toEqual([
+      { event: "PreToolUse", tool: "mcp_fixture_echo" },
+      { event: "PostToolUse", tool: "mcp_fixture_echo" },
+    ]);
+  });
+
+  it("omits tools from failed MCP servers without crashing the turn", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
+    const toolNames: string[][] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      config: {
+        mcp: {
+          fixture: {
+            type: "stdio",
+            command: process.execPath,
+            args: [mcpFixtureServerPath, "--fail"],
+            env: {},
+            enabled: true,
+            timeoutMs: 5000,
+          },
+        },
+      },
+      modelGateway: {
+        async generateText(request: { tools?: Array<{ name: string }> }) {
+          toolNames.push(request.tools?.map((tool) => tool.name) ?? []);
+
+          return {
+            text: "Done despite failed MCP.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "hello");
+
+    expect(toolNames[0]).not.toContain("mcp_fixture_echo");
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "message",
+        role: "assistant",
+        text: "Done despite failed MCP.",
+      })
+    );
+  });
 });
 
 function createTestContext(workspaceRoot: string): AppContext {
@@ -204,7 +397,12 @@ function createTestContext(workspaceRoot: string): AppContext {
     logger: {
       debug() {},
       trace() {},
+      warn() {},
       error() {},
     } as unknown as AppContext["logger"],
   };
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }

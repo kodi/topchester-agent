@@ -3,8 +3,11 @@ import { chmod, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   applyExactEdits,
+  createProfileToolCatalog,
+  createToolCatalog,
   createToolPermissionView,
   editWorkspaceFile,
   executeToolCall,
@@ -18,11 +21,13 @@ import {
   parseToolCall,
   parseToolCallRejection,
   parseToolCallWithSource,
+  parseNativeToolCall,
   resolveAgentProfile,
   readWorkspaceFile,
   toAiSdkToolSet,
   writeWorkspaceFile,
   createTaskPlanController,
+  defineTool,
 } from "../src/agent/tools.js";
 import { toolRegistry } from "../src/agent/tools/registry.js";
 import { editFileArgsSchema } from "../src/agent/tools/edit-file.js";
@@ -294,6 +299,83 @@ describe("agent tools", () => {
     expect(readFileTool.inputSchema).toBe(toolRegistry.read_file.argsSchema);
     expect(toolRegistry.read_file.argsSchema.safeParse({ path: "package.json" }).success).toBe(true);
     expect(toolRegistry.read_file.argsSchema.safeParse({ path: 123 }).success).toBe(false);
+  });
+
+  it("uses an active tool catalog for dynamic JSON, XML, native, and AI SDK tool paths", async () => {
+    const dynamicTool = defineTool({
+      name: "mcp_fixture_echo",
+      description: "Echo a dynamic MCP fixture value.",
+      prompt: "mcp_fixture_echo: echo a dynamic MCP fixture value.",
+      argsSchema: z.object({ message: z.string() }),
+      parallelSafe: true,
+      async execute(_context, args) {
+        return {
+          tool: "mcp_fixture_echo",
+          content: `echo:${args.message}`,
+        };
+      },
+    });
+    const catalog = createToolCatalog([dynamicTool]);
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+
+    expect(parseToolCall('{"tool":"mcp_fixture_echo","args":{"message":"json"}}', catalog)).toEqual({
+      tool: "mcp_fixture_echo",
+      args: { message: "json" },
+    });
+    expect(
+      parseToolCallWithSource(
+        "<mcp_fixture_echo><message>xml</message></mcp_fixture_echo>",
+        ["text-json", "text-xml"],
+        catalog
+      )
+    ).toEqual({
+      source: "text-xml",
+      remainder: "",
+      call: {
+        tool: "mcp_fixture_echo",
+        args: { message: "xml" },
+      },
+    });
+    expect(parseToolCallWithSource("<mcp_fixture_echo><message>xml</message></mcp_fixture_echo>")).toBeUndefined();
+    expect(toAiSdkToolSet(catalog.definitions()).mcp_fixture_echo).toMatchObject({
+      description: "Echo a dynamic MCP fixture value.",
+      inputSchema: dynamicTool.argsSchema,
+    });
+    expect(parseNativeToolCall("mcp_fixture_echo", { message: "native" }, catalog)).toEqual({
+      tool: "mcp_fixture_echo",
+      args: { message: "native" },
+    });
+
+    await expect(
+      executeToolCall(workspace, { tool: "mcp_fixture_echo", args: { message: "run" } }, { toolCatalog: catalog })
+    ).resolves.toEqual({
+      tool: "mcp_fixture_echo",
+      content: "echo:run",
+    });
+  });
+
+  it("keeps dynamic catalog tools on the primary profile only", () => {
+    const dynamicTool = defineTool({
+      name: "mcp_fixture_echo",
+      description: "Echo a dynamic MCP fixture value.",
+      prompt: "mcp_fixture_echo: echo a dynamic MCP fixture value.",
+      argsSchema: z.object({ message: z.string() }),
+      async execute(_context, args) {
+        return {
+          tool: "mcp_fixture_echo",
+          content: args.message,
+        };
+      },
+    });
+    const primaryCatalog = createProfileToolCatalog(createToolPermissionView(resolveAgentProfile("primary")), [
+      dynamicTool,
+    ]);
+    const subagentCatalog = createProfileToolCatalog(createToolPermissionView(resolveAgentProfile("general")), [
+      dynamicTool,
+    ]);
+
+    expect(primaryCatalog.has("mcp_fixture_echo")).toBe(true);
+    expect(subagentCatalog.has("mcp_fixture_echo")).toBe(false);
   });
 
   it("parses conservative XML tool calls after JSON", () => {

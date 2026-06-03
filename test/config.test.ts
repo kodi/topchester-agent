@@ -363,6 +363,117 @@ describe("Topchester config loading", () => {
     );
   });
 
+  it("loads stdio MCP server config and merges per-server objects across layers", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const home = join(root, "home");
+    const workspace = join(root, "workspace");
+    process.env.HOME = home;
+    await mkdir(join(home, ".config", "topchester"), { recursive: true });
+    await mkdir(workspace, { recursive: true });
+
+    await writeFile(
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        mcp: {
+          fixture: {
+            type: "stdio",
+            command: "node",
+            args: ["test/fixtures/mcp/stdio-server.js"],
+            env: { FIXTURE_MODE: "project" },
+            timeoutMs: 1000,
+            enabledTools: ["echo", "sum"],
+          },
+        },
+      })
+    );
+    await writeFile(
+      join(home, ".config", "topchester", "config.jsonc"),
+      JSON.stringify({
+        mcp: {
+          fixture: {
+            type: "stdio",
+            command: "tsx",
+            env: { USER_ONLY: "1" },
+            enabled: false,
+            enabledTools: ["echo"],
+          },
+        },
+      })
+    );
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(config.mcp?.fixture).toEqual({
+      type: "stdio",
+      command: "tsx",
+      args: ["test/fixtures/mcp/stdio-server.js"],
+      env: { FIXTURE_MODE: "project", USER_ONLY: "1" },
+      enabled: false,
+      timeoutMs: 1000,
+      enabledTools: ["echo"],
+    });
+  });
+
+  it("applies stdio MCP server defaults for explicit entries", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        mcp: {
+          fixture: {
+            type: "stdio",
+            command: "node",
+          },
+        },
+      })
+    );
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(config.mcp?.fixture).toEqual({
+      type: "stdio",
+      command: "node",
+      args: [],
+      env: {},
+      enabled: true,
+    });
+  });
+
+  it("rejects invalid MCP stdio config", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+    const invalidTransport = join(workspace, "invalid-mcp-transport.jsonc");
+    const invalidCommand = join(workspace, "invalid-mcp-command.jsonc");
+    const invalidTimeout = join(workspace, "invalid-mcp-timeout.jsonc");
+    const invalidEnabledTools = join(workspace, "invalid-mcp-enabled-tools.jsonc");
+    await writeFile(invalidTransport, '{ "mcp": { "fixture": { "type": "http", "command": "node" } } }\n');
+    await writeFile(invalidCommand, '{ "mcp": { "fixture": { "type": "stdio", "command": " node" } } }\n');
+    await writeFile(
+      invalidTimeout,
+      '{ "mcp": { "fixture": { "type": "stdio", "command": "node", "timeoutMs": 0 } } }\n'
+    );
+    await writeFile(
+      invalidEnabledTools,
+      '{ "mcp": { "fixture": { "type": "stdio", "command": "node", "enabledTools": [""] } } }\n'
+    );
+
+    expect(() => loadTopchesterConfig({ workspaceRoot: workspace, configPath: invalidTransport })).toThrow(
+      `Invalid Topchester config at ${invalidTransport}: mcp.fixture.type: Invalid input: expected "stdio"`
+    );
+    expect(() => loadTopchesterConfig({ workspaceRoot: workspace, configPath: invalidCommand })).toThrow(
+      "mcp.fixture.command: MCP stdio command must not have leading or trailing whitespace."
+    );
+    expect(() => loadTopchesterConfig({ workspaceRoot: workspace, configPath: invalidTimeout })).toThrow(
+      "mcp.fixture.timeoutMs: Too small: expected number to be >0"
+    );
+    expect(() => loadTopchesterConfig({ workspaceRoot: workspace, configPath: invalidEnabledTools })).toThrow(
+      "mcp.fixture.enabledTools.0: Too small: expected string to have >=1 characters"
+    );
+  });
+
   it("keeps YAML config files as compatibility aliases while preferring JSONC in the same layer", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const home = join(root, "home");

@@ -147,6 +147,18 @@ export {
   type ToolCallParseRejection,
 } from "./tools/parser.js";
 export { toAiSdkToolSet } from "./tools/ai-sdk-tools.js";
+export {
+  createProfileToolCatalog,
+  createStaticToolCatalog,
+  createToolCatalog,
+  getCatalogToolDefinition,
+  getStaticOrCatalogToolDefinition,
+  isCatalogToolAllowed,
+  isStaticOrCatalogParallelSafe,
+  staticToolCatalog,
+  type RuntimeToolDefinition,
+  type ToolCatalog,
+} from "./tools/catalog.js";
 export { readFileTool, readWorkspaceFile, type ReadFileToolArgs, type ReadFileToolCall } from "./tools/read-file.js";
 export {
   AGENT_PROFILES,

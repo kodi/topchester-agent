@@ -1,16 +1,17 @@
-import { getToolDefinition, isToolName, type ToolCall } from "./registry.js";
+import { getStaticOrCatalogToolDefinition, type ToolCatalog } from "./catalog.js";
+import { type ToolCall } from "./types.js";
 
-export function parseXmlToolCall(text: string): ToolCall | undefined {
+export function parseXmlToolCall(text: string, catalog?: ToolCatalog): ToolCall | undefined {
   const trimmed = text.trim();
 
   if (!trimmed.startsWith("<")) {
     return undefined;
   }
 
-  return parseWrappedToolCall(trimmed) ?? parseNamedToolCall(trimmed);
+  return parseWrappedToolCall(trimmed, catalog) ?? parseNamedToolCall(trimmed, catalog);
 }
 
-function parseWrappedToolCall(text: string): ToolCall | undefined {
+function parseWrappedToolCall(text: string, catalog: ToolCatalog | undefined): ToolCall | undefined {
   const match = text.match(/^<tool_call>\s*([\s\S]*?)\s*<\/tool_call>$/u);
 
   if (!match) {
@@ -24,20 +25,20 @@ function parseWrappedToolCall(text: string): ToolCall | undefined {
   const body = match[1]?.trim() ?? "";
   const toolMatch = body.match(/^([a-z_][a-z0-9_]*)\b\s*([\s\S]*)$/u);
 
-  if (!toolMatch || !isToolName(toolMatch[1]!)) {
+  if (!toolMatch || !getStaticOrCatalogToolDefinition(catalog, toolMatch[1]!)) {
     return undefined;
   }
 
   const argsText = toolMatch[2]?.trim() ?? "";
   const args = parseWrappedArgs(argsText);
 
-  return parseKnownToolCall(toolMatch[1]!, args);
+  return parseKnownToolCall(toolMatch[1]!, args, catalog);
 }
 
-function parseNamedToolCall(text: string): ToolCall | undefined {
+function parseNamedToolCall(text: string, catalog: ToolCatalog | undefined): ToolCall | undefined {
   const root = text.match(/^<([a-z_][a-z0-9_]*)>\s*([\s\S]*?)\s*<\/\1>$/u);
 
-  if (!root || !isToolName(root[1]!)) {
+  if (!root || !getStaticOrCatalogToolDefinition(catalog, root[1]!)) {
     return undefined;
   }
 
@@ -49,7 +50,7 @@ function parseNamedToolCall(text: string): ToolCall | undefined {
 
   const args = parseChildTagArgs(root[2] ?? "");
 
-  return args === undefined ? undefined : parseKnownToolCall(toolName, args);
+  return args === undefined ? undefined : parseKnownToolCall(toolName, args, catalog);
 }
 
 function parseWrappedArgs(text: string): unknown {
@@ -127,12 +128,13 @@ function parseKeyValueArgs(text: string): Record<string, unknown> | undefined {
   return args;
 }
 
-function parseKnownToolCall(toolName: string, args: unknown): ToolCall | undefined {
-  if (!isToolName(toolName)) {
+function parseKnownToolCall(toolName: string, args: unknown, catalog: ToolCatalog | undefined): ToolCall | undefined {
+  const definition = getStaticOrCatalogToolDefinition(catalog, toolName);
+
+  if (!definition) {
     return undefined;
   }
 
-  const definition = getToolDefinition(toolName);
   const parsed = definition.argsSchema.safeParse(args);
 
   if (!parsed.success) {
