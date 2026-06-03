@@ -240,10 +240,58 @@ function renderSubagentMessage(message: SubagentChatMessage): string[] {
     case "event":
       return message.text ? [`   ${ui.muted(`↳ task: ${label}: ${message.text}`)}`] : [];
     case "completed":
-      return [`   ${ui.muted(`↳ task: ${label} (completed)`)}`, ...(message.text ? [`     ${message.text}`] : [])];
+      return [
+        `   ${ui.muted(`↳ task: ${label} (completed)`)}`,
+        ...formatSubagentPreview(message.text).map((line) => `     ${line}`),
+      ];
     case "failed":
-      return [`   ${ui.warn(`↳ task: ${label} (failed)`)}`, ...(message.text ? [`     ${message.text}`] : [])];
+      return [
+        `   ${ui.warn(`↳ task: ${label} (failed)`)}`,
+        ...formatSubagentPreview(message.text).map((line) => `     ${line}`),
+      ];
   }
+}
+
+const SUBAGENT_PREVIEW_MAX_LINES = 8;
+const SUBAGENT_PREVIEW_MAX_CHARS = 1000;
+
+function formatSubagentPreview(text?: string): string[] {
+  if (!text) {
+    return [];
+  }
+
+  const lines = text.split("\n");
+  const previewLines: string[] = [];
+  let chars = 0;
+  let truncated = false;
+
+  for (const line of lines) {
+    if (previewLines.length >= SUBAGENT_PREVIEW_MAX_LINES) {
+      truncated = true;
+      break;
+    }
+
+    const remainingChars = SUBAGENT_PREVIEW_MAX_CHARS - chars;
+    if (remainingChars <= 0) {
+      truncated = true;
+      break;
+    }
+
+    if (line.length > remainingChars) {
+      previewLines.push(`${line.slice(0, Math.max(0, remainingChars - 1))}…`);
+      truncated = true;
+      break;
+    }
+
+    previewLines.push(line);
+    chars += line.length + 1;
+  }
+
+  if (!truncated && previewLines.length < lines.length) {
+    truncated = true;
+  }
+
+  return truncated ? [...previewLines, ui.muted("… full result saved in child session log")] : previewLines;
 }
 
 function shortSessionId(sessionId: string): string {

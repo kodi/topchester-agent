@@ -2029,6 +2029,18 @@ describe("TUI rendering", () => {
     ).toEqual([subagentMessage({ status: "running", sessionId: "child-session", title: "Inspect runtime" })]);
     expect(
       renderRuntimeEvent(
+        agentEvent.subagentEvent(
+          {
+            sessionId: "child-session",
+            parentSessionId: "parent-session",
+            parentToolCallId: "task-call-1",
+          },
+          agentEvent.assistantMessage("Done")
+        )
+      )
+    ).toEqual([]);
+    expect(
+      renderRuntimeEvent(
         agentEvent.subagentCompleted({
           sessionId: "child-session",
           parentSessionId: "parent-session",
@@ -2037,6 +2049,22 @@ describe("TUI rendering", () => {
         })
       )
     ).toEqual([subagentMessage({ status: "completed", sessionId: "child-session", text: "Done" })]);
+  });
+
+  it("bounds rendered subagent completion previews", () => {
+    const output = renderChatMessage(
+      subagentMessage({
+        status: "completed",
+        sessionId: "child-session",
+        text: Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n"),
+      })
+    ).map(stripAnsi);
+
+    expect(output).toHaveLength(10);
+    expect(output.at(0)).toContain("task: child-se (completed)");
+    expect(output).toContain("     line 8");
+    expect(output.at(-1)).toContain("full result saved in child session log");
+    expect(output.join("\n")).not.toContain("line 9");
   });
 
   it("does not turn successful startup checks into visible ready messages", async () => {

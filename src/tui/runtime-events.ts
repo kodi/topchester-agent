@@ -82,13 +82,7 @@ export function renderRuntimeEvent(event: AgentRuntimeEvent): ChatMessage[] {
 
 function formatForwardedSubagentEvent(sessionId: string, event: AgentRuntimeEvent): ChatMessage[] {
   if (event.type === "message" && event.role === "assistant") {
-    return [
-      subagentMessage({
-        status: "event",
-        sessionId,
-        text: event.text,
-      }),
-    ];
+    return [];
   }
 
   if (event.type === "tool_call") {
