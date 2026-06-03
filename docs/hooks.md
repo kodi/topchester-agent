@@ -77,7 +77,14 @@ Response fields:
 - `cancel: true` - treated as `block`, except on `Stop` where it is treated as `stop`.
 - `decision` - compatibility field; `block`, `deny`, or `denied` blocks, and `stop` or `halt` stops.
 
-`block` prevents the current prompt, permission request, or tool use from continuing. `stop` ends the turn.
+`block` rejects only the current item that triggered the hook. `stop` ends the whole current turn.
+
+In practice:
+
+- `UserPromptSubmit`: `block` and `stop` both prevent the prompt from reaching the model and return Topchester to ready state.
+- `PreToolUse`: `block` skips that tool call and returns the hook message to the model as a tool error, so the model can continue or choose another action. `stop` ends the turn immediately.
+- `PermissionRequest`: `block` cancels the pending approval request. Topchester does not show an approval modal, and the rejected command is returned to the model as a tool error. `stop` also cancels it, then ends the turn.
+- `PostToolUse`: the tool has already run, so use `stop` if the hook must end the turn after seeing the result.
 
 ## Supported Events
 

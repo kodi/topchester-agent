@@ -55,6 +55,38 @@ describe("agent hooks", () => {
     });
   });
 
+  it("runs command hooks with JSON stdin and stops from JSON stdout", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-stop-"));
+    const script = join(workspace, "stop.cjs");
+
+    await writeFile(
+      script,
+      [
+        "process.stdin.resume();",
+        "process.stdin.on('end', () => {",
+        "  process.stdout.write(JSON.stringify({ action: 'stop', message: 'stopped by hook', context: 'stop context' }));",
+        "});",
+      ].join("\n")
+    );
+
+    const result = await runTopchesterHooks(
+      createHookTestContext(workspace, {
+        hooks: {
+          PreToolUse: [{ command: `node ${shellQuote(script)}`, matcher: "bash" }],
+        },
+      }),
+      "PreToolUse",
+      createPayload(workspace, "PreToolUse", {
+        tool: { name: "bash", input: { command: "pnpm test" }, callId: "call-1" },
+      }),
+      { toolName: "bash" }
+    );
+
+    expect(result.stopped?.message).toBe("stopped by hook");
+    expect(result.blocked).toBeUndefined();
+    expect(result.contexts).toEqual(["stop context"]);
+  });
+
   it("can integrate peon-ping through a normal command hook", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-"));
     const script = join(workspace, "peon.cjs");
@@ -174,7 +206,7 @@ describe("agent hooks", () => {
             purpose: "agent.primary" as const,
           };
         },
-      } as AppContext["modelGateway"],
+      } as unknown as AppContext["modelGateway"],
     });
 
     await runtime.runSessionStartHooks();
@@ -250,6 +282,140 @@ describe("agent hooks", () => {
       role: "assistant",
       text: "Handled the blocked command.",
     });
+  });
+
+  it("stops before model work when UserPromptSubmit returns stop", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-user-stop-"));
+    const script = join(workspace, "stop.cjs");
+    let modelCalls = 0;
+
+    await writeFile(
+      script,
+      [
+        "process.stdin.resume();",
+        "process.stdin.on('end', () => {",
+        "  process.stdout.write(JSON.stringify({ action: 'stop', message: 'prompt stopped by hook' }));",
+        "});",
+      ].join("\n")
+    );
+
+    const runtime = new TopchesterAgentRuntime({
+      ...createHookTestContext(workspace, {
+        hooks: {
+          UserPromptSubmit: [{ command: `node ${shellQuote(script)}` }],
+        },
+      }),
+      modelGateway: {
+        async generateAgentStep() {
+          modelCalls += 1;
+          return fakeAgentStep("This should not run.");
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await collectRuntimeEvents(runtime.submitMessageStream([], "do work"));
+
+    expect(modelCalls).toBe(0);
+    expect(events).toContainEqual({ type: "message", role: "system", text: "prompt stopped by hook" });
+    expect(events.at(-1)).toEqual({ type: "status", status: "ready" });
+  });
+
+  it("stops the turn when PreToolUse returns stop", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-pre-stop-"));
+    const script = join(workspace, "stop.cjs");
+    const prompts: string[] = [];
+
+    await writeFile(
+      script,
+      [
+        "process.stdin.resume();",
+        "process.stdin.on('end', () => {",
+        "  process.stdout.write(JSON.stringify({ action: 'stop', message: 'tool stopped by hook' }));",
+        "});",
+      ].join("\n")
+    );
+
+    const runtime = new TopchesterAgentRuntime({
+      ...createHookTestContext(workspace, {
+        hooks: {
+          PreToolUse: [{ command: `node ${shellQuote(script)}`, matcher: "read_file" }],
+        },
+      }),
+      modelGateway: {
+        async generateAgentStep(request: { prompt: string }) {
+          prompts.push(request.prompt);
+          return fakeAgentStep("", [
+            {
+              id: "read-1",
+              source: "native" as const,
+              tool: "read_file",
+              args: { path: "data.txt" },
+            },
+          ]);
+        },
+      } as AppContext["modelGateway"],
+    });
+
+    const events = await collectRuntimeEvents(runtime.submitMessageStream([], "read data"));
+
+    expect(prompts).toHaveLength(1);
+    expect(events.some((event) => event.type === "tool_call")).toBe(false);
+    expect(events).toContainEqual({ type: "message", role: "system", text: "tool stopped by hook" });
+    expect(events.at(-1)).toEqual({ type: "status", status: "ready" });
+  });
+
+  it("stops the turn after a tool result when PostToolUse returns stop", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-post-stop-"));
+    const script = join(workspace, "stop.cjs");
+    const prompts: string[] = [];
+
+    await writeFile(join(workspace, "data.txt"), "value\n");
+    await writeFile(
+      script,
+      [
+        "process.stdin.resume();",
+        "process.stdin.on('end', () => {",
+        "  process.stdout.write(JSON.stringify({ action: 'stop', message: 'post-tool stopped by hook' }));",
+        "});",
+      ].join("\n")
+    );
+
+    const runtime = new TopchesterAgentRuntime({
+      ...createHookTestContext(workspace, {
+        hooks: {
+          PostToolUse: [{ command: `node ${shellQuote(script)}`, matcher: "read_file" }],
+        },
+      }),
+      modelGateway: {
+        async generateAgentStep(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (prompts.length > 1) {
+            return fakeAgentStep("This should not continue.");
+          }
+
+          return fakeAgentStep("", [
+            {
+              id: "read-1",
+              source: "native" as const,
+              tool: "read_file",
+              args: { path: "data.txt" },
+            },
+          ]);
+        },
+      } as AppContext["modelGateway"],
+    });
+
+    const events = await collectRuntimeEvents(runtime.submitMessageStream([], "read data"));
+
+    expect(prompts).toHaveLength(1);
+    expect(events.find((event) => event.type === "tool_call")).toMatchObject({
+      type: "tool_call",
+      call: { tool: "read_file", args: { path: "data.txt" } },
+    });
+    expect(events).toContainEqual({ type: "message", role: "system", text: "post-tool stopped by hook" });
+    expect(events.some((event) => event.type === "message" && event.role === "assistant")).toBe(false);
+    expect(events.at(-1)).toEqual({ type: "status", status: "ready" });
   });
 
   it("streams Stop hook status before hook response messages", async () => {
@@ -375,6 +541,59 @@ describe("agent hooks", () => {
       tool: { name: "bash", callId: "bash-approval-1" },
     });
     expect(captureJson.env).toEqual({ TOPCHESTER_HOOK_EVENT: "PermissionRequest" });
+  });
+
+  it("stops the turn before interactive command approval when PermissionRequest returns stop", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-approval-stop-"));
+    const script = join(workspace, "stop.cjs");
+    const prompts: string[] = [];
+    const approvalRequests: Array<{ command: string; workdir: string; reason: string }> = [];
+
+    await writeFile(
+      script,
+      [
+        "process.stdin.resume();",
+        "process.stdin.on('end', () => {",
+        "  process.stdout.write(JSON.stringify({ action: 'stop', message: 'approval stopped by hook' }));",
+        "});",
+      ].join("\n")
+    );
+
+    const runtime = new TopchesterAgentRuntime({
+      ...createHookTestContext(workspace, {
+        hooks: {
+          PermissionRequest: [{ command: `node ${shellQuote(script)}` }],
+        },
+      }),
+      modelGateway: {
+        async generateAgentStep(request: { prompt: string }) {
+          prompts.push(request.prompt);
+          return fakeAgentStep("", [
+            {
+              id: "bash-approval-1",
+              source: "native" as const,
+              tool: "bash",
+              args: { command: "node scripts/local-task.js", workdir: "." },
+            },
+          ]);
+        },
+      } as AppContext["modelGateway"],
+    });
+
+    const events = await collectRuntimeEvents(
+      runtime.submitMessageStream([], "run local task", undefined, {
+        async requestBashApproval(request) {
+          approvalRequests.push(request);
+          return "run_once";
+        },
+      })
+    );
+
+    expect(prompts).toHaveLength(1);
+    expect(approvalRequests).toEqual([]);
+    expect(events.some((event) => event.type === "tool_call")).toBe(false);
+    expect(events).toContainEqual({ type: "message", role: "system", text: "approval stopped by hook" });
+    expect(events.at(-1)).toEqual({ type: "status", status: "ready" });
   });
 });
 

@@ -63,4 +63,6 @@ Empty stdout means continue. A hook may write JSON to stdout:
 { "action": "stop", "message": "Stop after this hook." }
 ```
 
-`block` prevents the current prompt, permission request, or tool use from continuing. `stop` ends the turn.
+`block` rejects only the current item that triggered the hook. `stop` ends the whole current turn.
+
+For `PreToolUse`, `block` skips the tool call and returns the hook message to the model as a tool error, so the model can continue. For `PermissionRequest`, `block` cancels the pending approval request before any approval modal is shown. For `UserPromptSubmit`, both `block` and `stop` prevent the prompt from reaching the model. For `PostToolUse`, the tool has already run, so use `stop` if the hook must end the turn after seeing the result.

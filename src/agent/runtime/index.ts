@@ -802,6 +802,15 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             yield event;
           }
 
+          if (approval.cancelled && approval.stopped) {
+            if (!approval.events.some((event) => event.type === "message" && event.text === approval.reason)) {
+              yield agentEvent.systemMessage(approval.reason);
+            }
+
+            yield agentEvent.status("ready");
+            return;
+          }
+
           if (approval.cancelled) {
             toolResult = createToolErrorResult(executableToolCall.tool, approval.reason);
           } else {
@@ -1156,7 +1165,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     abortSignal: AbortSignal | undefined
   ): Promise<
     | { cancelled: false; approvedCommands: string[]; events: AgentRuntimeEvent[] }
-    | { cancelled: true; reason: string; events: AgentRuntimeEvent[] }
+    | { cancelled: true; stopped?: false; reason: string; events: AgentRuntimeEvent[] }
+    | { cancelled: true; stopped: true; reason: string; events: AgentRuntimeEvent[] }
   > {
     const approvedCommands = [...this.approvedBashCommands];
 
@@ -1198,8 +1208,17 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     );
     const events = this.hookResultToEvents(actionRequiredHook);
 
-    if (actionRequiredHook.blocked || actionRequiredHook.stopped) {
-      const interruption = actionRequiredHook.blocked ?? actionRequiredHook.stopped!;
+    if (actionRequiredHook.stopped) {
+      return {
+        cancelled: true,
+        stopped: true,
+        reason: actionRequiredHook.stopped.message,
+        events,
+      };
+    }
+
+    if (actionRequiredHook.blocked) {
+      const interruption = actionRequiredHook.blocked;
 
       return {
         cancelled: true,
