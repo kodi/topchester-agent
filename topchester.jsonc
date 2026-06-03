@@ -16,6 +16,8 @@
         "wc -l src/agent/tools/bash.ts src/agent/tools/bash-policy.ts",
         "find src -type f -exec du -h {} + | sort -rh | head -n 10",
         "wc -l src/tui/layout.ts src/tui/*.ts src/agent/*.ts | sort -rn",
+        "mcp_everything_echo \"mcp works\"",
+        "echo \"mcp works\"",
       ],
     },
   },

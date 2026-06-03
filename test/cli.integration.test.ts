@@ -144,6 +144,9 @@ describe("CLI integration", () => {
     expect(docs).toContain("## `topchester update`");
     expect(docs).toContain("Detects npm, pnpm, or bun");
     expect(docs).toContain("After a successful update, restart Topchester");
+    expect(docs).toContain("## `topchester info`");
+    expect(docs).toContain("lite doctor");
+    expect(docs).toContain("Reports config layers");
     expect(docs).toContain("## `topchester run`");
     expect(docs).toContain("Routes slash-command prompts such as `/kb status`");
     expect(docs).toContain("Includes a per-run `runId` in structured logs");
@@ -174,6 +177,15 @@ describe("CLI integration", () => {
     expect(stdout).toContain("update");
     expect(stdout).toContain("update Topchester with the package manager that");
     expect(stdout).toContain("installed it");
+  });
+
+  it("lists info as a top-level command", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout } = await runCli(["--help"], fixture.root);
+
+    expect(stdout).toContain("info");
+    expect(stdout).toContain("show config and local runtime hints");
   });
 
   it("prints the package version", async () => {
@@ -430,6 +442,81 @@ describe("CLI integration", () => {
     );
 
     expect(stdout).toContain("dev flags: alpha, beta");
+  });
+
+  it("reports config and local runtime hints", async () => {
+    const fixture = await makeFixture();
+    await writeFile(
+      fixture.config,
+      JSON.stringify({
+        models: {
+          default: "openrouter/qwen/qwen3-coder:free",
+          providers: {
+            default: "openrouter",
+            openrouter: {
+              type: "openai-compatible",
+              baseURL: "https://openrouter.ai/api/v1",
+              apiKeyEnv: "OPENROUTER_API_KEY",
+            },
+          },
+        },
+        mcp: {
+          everything: {
+            type: "stdio",
+            command: "node",
+            enabledTools: ["echo"],
+          },
+        },
+        hooks: {
+          Stop: [{ command: "true" }],
+        },
+      })
+    );
+
+    const { stdout, stderr } = await runCli(
+      ["--config", fixture.config, "--workspace", fixture.workspace, "info"],
+      fixture.root,
+      {
+        OPENROUTER_API_KEY: "",
+      }
+    );
+
+    expect(stderr).toBe("");
+    expect(stdout).toContain("Topchester info");
+    expect(stdout).toContain("config:");
+    expect(stdout).toContain(`workspace: ${fixture.workspace}`);
+    expect(stdout).toContain(`cli --config: ${fixture.config} [ok]`);
+    expect(stdout).toContain("status: valid");
+    expect(stdout).toContain("agent.primary: openrouter/qwen/qwen3-coder:free");
+    expect(stdout).toContain("fallback: openrouter/qwen/qwen3-coder:free");
+    expect(stdout).toContain(
+      "openrouter: openai-compatible https://openrouter.ai/api/v1 auth=env:OPENROUTER_API_KEY [missing]"
+    );
+    expect(stdout).toContain("everything: enabled command=node [found] tools=echo");
+    expect(stdout).toContain("hooks:");
+    expect(stdout).toContain("commands:");
+    expect(stdout).toContain(`sessions: ${join(fixture.workspace, ".agents", "topchester", "sessions")}`);
+    expect(stdout).toContain(`knowledge: ${join(fixture.workspace, "topchester-kb")} [missing]`);
+  });
+
+  it("reports invalid config without opening the TUI", async () => {
+    const fixture = await makeFixture();
+    const badConfig = join(fixture.root, "bad-info-config.jsonc");
+    await writeFile(badConfig, '{ "models": { "defaultPurpose": "old" } }\n');
+
+    await expect(
+      runCli(["--config", badConfig, "--workspace", fixture.workspace, "info"], fixture.root)
+    ).rejects.toMatchObject({
+      stdout: expect.stringContaining("status: invalid"),
+      stderr: "",
+    });
+    await expect(
+      runCli(["--config", badConfig, "--workspace", fixture.workspace, "info"], fixture.root)
+    ).rejects.toMatchObject({
+      stdout: expect.stringContaining(
+        `Invalid Topchester config at ${badConfig}: models: Unrecognized key: "defaultPurpose"`
+      ),
+    });
   });
 
   it("reports missing KB status with explicit workspace", async () => {

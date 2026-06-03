@@ -32,6 +32,7 @@ import {
   formatSelfUpdateSuccess,
   runSelfUpdate,
 } from "./cli/self-update.js";
+import { collectTopchesterInfo } from "./cli/info.js";
 
 export async function runTopchesterCli(argv = process.argv, options: { exitOverride?: boolean } = {}): Promise<void> {
   const program = createTopchesterProgram();
@@ -89,6 +90,19 @@ function createTopchesterProgram(): Command {
 
       console.log("Topchester local dev mode");
       printStartupSummary(context);
+    });
+
+  program
+    .command("info")
+    .description("show config and local runtime hints")
+    .action(async () => {
+      const contextOptions = getContextOptionsFromProgram(program);
+      const result = await collectTopchesterInfo(contextOptions);
+
+      console.log(result.lines.join("\n"));
+      if (!result.ok) {
+        process.exitCode = 1;
+      }
     });
 
   program
@@ -300,13 +314,17 @@ function printStartupSummary(context: ReturnType<typeof createAppContext>) {
 }
 
 function createContextFromOptions(program: Command) {
+  return createAppContext(getContextOptionsFromProgram(program));
+}
+
+function getContextOptionsFromProgram(program: Command) {
   const options = program.opts<{ config?: string; workspace: string; dev: string[] }>();
 
-  return createAppContext({
+  return {
     workspaceRoot: options.workspace,
     configPath: options.config && (isAbsolute(options.config) ? options.config : resolve(cwd(), options.config)),
     devFlags: options.dev,
-  });
+  };
 }
 
 interface KbSearchCommandOptions {

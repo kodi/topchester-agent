@@ -322,6 +322,12 @@ export interface ConfigLoadOptions {
   configPath?: string;
 }
 
+export interface ConfigSource {
+  label: "workspace" | "user" | "env" | "cli";
+  path?: string;
+  exists: boolean;
+}
+
 export interface ProjectBashAllowRuleResult {
   path: string;
   added: boolean;
@@ -356,13 +362,9 @@ export function ensureGlobalTopchesterConfigFile(): string {
 }
 
 export function loadTopchesterConfig(options: ConfigLoadOptions): TopchesterConfig {
-  const globalConfigDir = getGlobalTopchesterConfigDir();
-  const paths = [
-    join(options.workspaceRoot, "topchester.jsonc"),
-    join(globalConfigDir, "config.jsonc"),
-    process.env.TOPCHESTER_CONFIG,
-    options.configPath,
-  ].filter((path): path is string => Boolean(path));
+  const paths = getTopchesterConfigSources(options)
+    .map((source) => source.path)
+    .filter((path): path is string => Boolean(path));
 
   let merged: TopchesterConfigFile = {};
 
@@ -378,6 +380,30 @@ export function loadTopchesterConfig(options: ConfigLoadOptions): TopchesterConf
   }
 
   return topchesterConfigSchema.parse(merged);
+}
+
+export function getTopchesterConfigSources(options: ConfigLoadOptions): ConfigSource[] {
+  const sources: Array<{ label: ConfigSource["label"]; path?: string }> = [
+    { label: "workspace", path: join(options.workspaceRoot, "topchester.jsonc") },
+    { label: "user", path: getGlobalTopchesterConfigPath() },
+    { label: "env", path: process.env.TOPCHESTER_CONFIG || undefined },
+    { label: "cli", path: options.configPath },
+  ];
+
+  return sources.map((source) => {
+    const resolvedPath =
+      source.path === undefined
+        ? undefined
+        : isAbsolute(source.path)
+          ? source.path
+          : resolve(options.workspaceRoot, source.path);
+
+    return {
+      label: source.label,
+      ...(resolvedPath === undefined ? {} : { path: resolvedPath }),
+      exists: resolvedPath === undefined ? false : existsSync(resolvedPath),
+    };
+  });
 }
 
 export const openRouterProviderDefaults = {
@@ -542,7 +568,7 @@ function readConfigObject(configPath: string): Record<string, unknown> {
   return parsed;
 }
 
-function getGlobalTopchesterConfigPath(): string {
+export function getGlobalTopchesterConfigPath(): string {
   return join(getGlobalTopchesterConfigDir(), "config.jsonc");
 }
 

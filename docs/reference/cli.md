@@ -12,6 +12,7 @@ Common commands:
 
 ```sh
 topchester
+topchester info
 topchester --resume latest
 topchester run "Edit greeting.txt and change Hello to Goodbye."
 topchester run /kb status
@@ -41,6 +42,7 @@ topchester kb reset
 | Command                 | Purpose                                                  |
 | ----------------------- | -------------------------------------------------------- |
 | `topchester`            | Start the interactive coding agent.                      |
+| `topchester info`       | Show config validity and local runtime hints.            |
 | `topchester run`        | Run one prompt or slash command without opening the TUI. |
 | `topchester search`     | Search compiled L1 file knowledge.                       |
 | `topchester kb init`    | Create the project knowledge folders.                    |
@@ -51,3 +53,11 @@ topchester kb reset
 | `topchester kb reset`   | Delete the local knowledge base and cache.               |
 | `topchester kb status`  | Show files that are not current in the knowledge base.   |
 | `topchester update`     | Update Topchester with npm, pnpm, or bun.                |
+
+## `topchester info`
+
+`topchester info` is a lite doctor command. It does not open the TUI, contact model providers, start MCP servers, or create project state folders.
+
+Reports config layers, whether the effective config is valid, configured model/provider hints, provider API key env presence, MCP server command presence, hook counts, and local session/log/knowledge paths.
+
+If config is invalid, it prints the config error and exits nonzero.

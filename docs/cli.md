@@ -8,6 +8,7 @@ For the interactive terminal UI, keyboard controls, slash commands, and status l
 
 ```sh
 topchester
+topchester info
 topchester --resume latest
 topchester run "Edit greeting.txt and change Hello to Goodbye."
 topchester run /kb status
@@ -41,6 +42,7 @@ On startup, Topchester creates the user config folder `~/.config/topchester/` if
 | Command                 | Purpose                                                  |
 | ----------------------- | -------------------------------------------------------- |
 | `topchester`            | Start the interactive coding agent.                      |
+| `topchester info`       | Show config validity and local runtime hints.            |
 | `topchester run`        | Run one prompt or slash command without opening the TUI. |
 | `topchester search`     | Search compiled L1 file knowledge.                       |
 | `topchester dev`        | Print local development startup details.                 |
@@ -119,6 +121,19 @@ Current behavior:
 - If the install method cannot be detected, Topchester does not guess. It prints a manual package-manager command instead.
 - After a successful update, restart Topchester to use the new version.
 - `topchester upgrade` is an alias for `topchester update`.
+
+## `topchester info`
+
+Shows a local lite doctor report without opening the TUI.
+
+Current behavior:
+
+- Reports config layers and whether each configured path exists.
+- Validates the effective merged config and exits nonzero when it is invalid.
+- Shows configured model slots, providers, provider API key env presence, MCP server command presence, hook counts, and local session/log/knowledge paths.
+- Does not contact model providers.
+- Does not start MCP servers.
+- Does not create project state folders.
 
 ## `topchester run`
 
