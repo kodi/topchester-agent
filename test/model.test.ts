@@ -211,7 +211,7 @@ describe("ModelGateway agent tool protocol", () => {
     ]);
   });
 
-  it("recovers text JSON tool calls from native responses even when native protocol is forced", async () => {
+  it("does not parse text JSON tool calls from accepted native responses", async () => {
     const api = await startChatApi((body) => {
       expect(body.tools).toBeDefined();
 
@@ -250,11 +250,95 @@ describe("ModelGateway agent tool protocol", () => {
       tools: [readFileTool],
     });
 
-    expect(result.toolProtocol).toBe("text-json");
-    expect(result.fallbackReason).toBe("native response contained a text tool call");
+    expect(result.toolProtocol).toBe("native-openai-compatible");
+    expect(result.fallbackReason).toBeUndefined();
+    expect(result.text).toBe(
+      `${JSON.stringify({ tool: "read_file", args: { path: "README.md" } })}This text should wait.`
+    );
+    expect(result.toolCalls).toEqual([]);
+  });
+
+  it("repairs native tool name casing through AI SDK", async () => {
+    const api = await startChatApi((body) => {
+      expect(body.tools).toBeDefined();
+
+      return {
+        choices: [
+          {
+            index: 0,
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "call_upper",
+                  type: "function",
+                  function: {
+                    name: "READ_FILE",
+                    arguments: JSON.stringify({ path: "README.md" }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      };
+    });
+    const gateway = createGateway(api.baseURL, "fake");
+
+    const result = await gateway.generateAgentStep({
+      purpose: "agent.primary",
+      system: "system",
+      prompt: "read readme",
+      tools: [readFileTool],
+    });
+
+    expect(result.toolProtocol).toBe("native-openai-compatible");
     expect(result.toolCalls).toEqual([
-      { id: "text-json-0", tool: "read_file", args: { path: "README.md" }, source: "text-json" },
+      { id: "call_upper", tool: "read_file", args: { path: "README.md" }, source: "native" },
     ]);
+  });
+
+  it("keeps invalid native tool inputs out of the text fallback path", async () => {
+    const api = await startChatApi((body) => {
+      expect(body.tools).toBeDefined();
+
+      return {
+        choices: [
+          {
+            index: 0,
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "call_bad_args",
+                  type: "function",
+                  function: {
+                    name: "read_file",
+                    arguments: JSON.stringify({ path: 123 }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      };
+    });
+    const gateway = createGateway(api.baseURL, "fake");
+
+    const result = await gateway.generateAgentStep({
+      purpose: "agent.primary",
+      system: "system",
+      prompt: "read readme",
+      tools: [readFileTool],
+    });
+
+    expect(result.toolProtocol).toBe("native-openai-compatible");
+    expect(result.fallbackReason).toBeUndefined();
+    expect(result.toolCalls).toEqual([]);
   });
 
   it("adds OpenRouter native-tool routing options internally", async () => {

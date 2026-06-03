@@ -247,6 +247,24 @@ describe("agent tools", () => {
     });
   });
 
+  it("parses a tool call that starts on its own line after prose", () => {
+    expect(
+      parseToolCall(
+        [
+          "I notice my write_file call was cut off mid-content. Let me write the complete plan file.",
+          "",
+          '{"tool":"write_file","args":{"path":"docs/plans/apply-plan.md","content":"# Apply Plan\\n\\n## Summary\\n\\nWrite the plan.\\n"}}',
+        ].join("\n")
+      )
+    ).toEqual({
+      tool: "write_file",
+      args: {
+        path: "docs/plans/apply-plan.md",
+        content: "# Apply Plan\n\n## Summary\n\nWrite the plan.\n",
+      },
+    });
+  });
+
   it("rejects unknown tools and invalid tool args", () => {
     expect(parseToolCall('{"tool":"unknown","args":{}}')).toBeUndefined();
     expect(

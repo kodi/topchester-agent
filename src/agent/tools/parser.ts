@@ -93,7 +93,8 @@ export function parseNativeToolCall(toolName: string, args: unknown): ToolCall |
 }
 
 function parseJsonToolCall(text: string): { call: ToolCall; remainder: string } | undefined {
-  const { json, remainder } = extractToolJsonCandidate(stripJsonFence(text.trim()));
+  const candidate = extractToolJsonCandidate(stripJsonFence(text.trim()));
+  const { json } = candidate;
   let value: unknown;
 
   try {
@@ -126,7 +127,7 @@ function parseJsonToolCall(text: string): { call: ToolCall; remainder: string } 
       tool: definition.name,
       args: parsed.data,
     } as ToolCall,
-    remainder: remainder.trim(),
+    remainder: candidate.remainder.trim(),
   };
 }
 
@@ -137,15 +138,51 @@ function stripJsonFence(text: string): string {
 }
 
 function extractToolJsonCandidate(text: string): { json: string; remainder: string } {
-  if (!text.startsWith("{")) {
+  const startIndex = findToolJsonObjectStart(text);
+
+  if (startIndex === undefined) {
     return { json: text, remainder: "" };
   }
 
-  const endIndex = findJsonObjectEnd(text);
+  const candidate = text.slice(startIndex);
+  const endIndex = findJsonObjectEnd(candidate);
 
   return endIndex === undefined
     ? { json: text, remainder: "" }
-    : { json: text.slice(0, endIndex + 1), remainder: text.slice(endIndex + 1) };
+    : {
+        json: candidate.slice(0, endIndex + 1),
+        remainder: `${text.slice(0, startIndex)}${candidate.slice(endIndex + 1)}`,
+      };
+}
+
+function findToolJsonObjectStart(text: string): number | undefined {
+  if (text.startsWith("{")) {
+    return 0;
+  }
+
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] !== "\n") {
+      continue;
+    }
+
+    const lineStart = skipInlineWhitespace(text, index + 1);
+
+    if (text[lineStart] === "{") {
+      return lineStart;
+    }
+  }
+
+  return undefined;
+}
+
+function skipInlineWhitespace(text: string, startIndex: number): number {
+  let index = startIndex;
+
+  while (text[index] === " " || text[index] === "\t") {
+    index += 1;
+  }
+
+  return index;
 }
 
 function findJsonObjectEnd(text: string): number | undefined {

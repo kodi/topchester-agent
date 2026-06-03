@@ -1,5 +1,12 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText, streamText, type LanguageModel, type LanguageModelUsage } from "ai";
+import {
+  generateText,
+  stepCountIs,
+  streamText,
+  type LanguageModel,
+  type LanguageModelUsage,
+  type ToolCallRepairFunction,
+} from "ai";
 import { toAiSdkToolSet } from "../agent/tools/ai-sdk-tools.js";
 import { parseNativeToolCall, parseToolCallWithSource } from "../agent/tools/parser.js";
 import {
@@ -81,6 +88,8 @@ export interface ModelReasoningEvent {
 }
 
 export type ModelReasoningSink = (event: ModelReasoningEvent) => void | Promise<void>;
+
+type NativeAiToolSet = ReturnType<typeof toAiSdkToolSet>;
 
 export class ModelGateway {
   readonly #config: ModelGatewayConfig;
@@ -200,35 +209,7 @@ export class ModelGateway {
 
     if (override === "native" || override === "auto") {
       try {
-        const result = await this.generateNativeAgentStep(request, resolved, attempts);
-
-        if (result.toolCalls.length > 0) {
-          return result;
-        }
-
-        const parsedTextCall = parseToolCallWithSource(result.text);
-
-        if (parsedTextCall) {
-          const fallbackProtocol = parsedTextCall.source === "text-xml" ? "text-xml" : "text-json";
-          const fallbackReason = "native response contained a text tool call";
-          attempts.push({ protocol: fallbackProtocol, status: "fallback", reason: fallbackReason });
-
-          return {
-            ...result,
-            toolCalls: [
-              {
-                id: `${parsedTextCall.source}-0`,
-                tool: parsedTextCall.call.tool,
-                args: parsedTextCall.call.args,
-                source: parsedTextCall.source,
-              } as ModelToolCall,
-            ],
-            toolProtocol: fallbackProtocol,
-            fallbackReason,
-          };
-        }
-
-        return result;
+        return await this.generateNativeAgentStep(request, resolved, attempts);
       } catch (error) {
         const reason = formatErrorMessage(error);
         attempts.push({ protocol: "native-openai-compatible", status: "failed", reason });
@@ -277,14 +258,18 @@ export class ModelGateway {
   ): Promise<ModelAgentResult> {
     const providerOptions = buildNativeProviderOptions(resolved.providerId, resolved.providerConfig);
     const openRouterRoutingApplied = hasOpenRouterRoutingOptions(providerOptions, resolved.providerId);
+    const tools = toAiSdkToolSet(request.tools);
+    const experimental_repairToolCall = createNativeToolCallRepair(tools);
     const result = request.onReasoning
-      ? await this.streamNativeAgentStep(request, resolved, providerOptions)
+      ? await this.streamNativeAgentStep(request, resolved, providerOptions, tools, experimental_repairToolCall)
       : await generateText({
           model: resolved.model,
           system: request.system,
           prompt: request.prompt,
-          tools: toAiSdkToolSet(request.tools),
+          tools,
           toolChoice: "auto",
+          stopWhen: stepCountIs(1),
+          experimental_repairToolCall,
           providerOptions,
           abortSignal: request.abortSignal,
         });
@@ -294,19 +279,25 @@ export class ModelGateway {
       responseBody: result.response.body,
       responseHeaders: result.response.headers,
     });
-    const toolCalls = result.toolCalls.map((call, index) => {
+    const toolCalls = result.toolCalls.flatMap((call, index) => {
+      if (isInvalidAiSdkToolCall(call)) {
+        return [];
+      }
+
       const parsed = parseNativeToolCall(call.toolName, call.input);
 
       if (!parsed) {
         throw new Error(`Native tool call for ${call.toolName} did not match the registered schema.`);
       }
 
-      return {
-        id: call.toolCallId || `native-${index}`,
-        tool: parsed.tool,
-        args: parsed.args,
-        source: "native",
-      } as ModelToolCall;
+      return [
+        {
+          id: call.toolCallId || `native-${index}`,
+          tool: parsed.tool,
+          args: parsed.args,
+          source: "native",
+        } as ModelToolCall,
+      ];
     });
 
     attempts.push({ protocol: "native-openai-compatible", status: "used" });
@@ -385,14 +376,18 @@ export class ModelGateway {
   private async streamNativeAgentStep(
     request: ModelAgentRequest,
     resolved: ReturnType<ModelGateway["resolveModel"]>,
-    providerOptions: ProviderOptions
+    providerOptions: ProviderOptions,
+    tools: NativeAiToolSet,
+    experimental_repairToolCall: ToolCallRepairFunction<NativeAiToolSet>
   ) {
     const result = streamText({
       model: resolved.model,
       system: request.system,
       prompt: request.prompt,
-      tools: toAiSdkToolSet(request.tools),
+      tools,
       toolChoice: "auto",
+      stopWhen: stepCountIs(1),
+      experimental_repairToolCall,
       providerOptions,
       abortSignal: request.abortSignal,
       includeRawChunks: true,
@@ -479,6 +474,27 @@ export class ModelGateway {
 }
 
 function noopStreamErrorHandler(): void {}
+
+function createNativeToolCallRepair(tools: NativeAiToolSet): ToolCallRepairFunction<NativeAiToolSet> {
+  return async ({ toolCall }) => {
+    const lowerToolName = toolCall.toolName.toLowerCase();
+
+    if (lowerToolName !== toolCall.toolName && Object.hasOwn(tools, lowerToolName)) {
+      return {
+        ...toolCall,
+        toolName: lowerToolName,
+      };
+    }
+
+    return null;
+  };
+}
+
+function isInvalidAiSdkToolCall(call: unknown): boolean {
+  return (
+    typeof call === "object" && call !== null && "invalid" in call && (call as { invalid?: unknown }).invalid === true
+  );
+}
 
 function guardStreamTextResultRejections(result: {
   text?: PromiseLike<unknown>;
