@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModelGateway } from "../src/model/index.js";
 import { readFileTool } from "../src/agent/tools/read-file.js";
 
@@ -10,6 +10,32 @@ afterEach(async () => {
 });
 
 describe("ModelGateway agent tool protocol", () => {
+  it("suppresses the SDK system-message warning when cache markers use message input", async () => {
+    const api = await startChatApi(() => ({
+      choices: [
+        {
+          index: 0,
+          finish_reason: "stop",
+          message: { role: "assistant", content: "Hello." },
+        },
+      ],
+    }));
+    const gateway = createGateway(api.baseURL, "openrouter");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await gateway.generateText({
+        purpose: "agent.primary",
+        system: "system",
+        prompt: "hello",
+      });
+    } finally {
+      warn.mockRestore();
+    }
+
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("AI SDK Warning: System messages"));
+  });
+
   it("returns token usage from text responses", async () => {
     const api = await startChatApi(() => ({
       choices: [

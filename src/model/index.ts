@@ -623,7 +623,7 @@ function resolveApiKey(config: OpenAICompatibleProviderConfig): string | undefin
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type ProviderOptions = Record<string, { [key: string]: JsonValue }>;
-type PromptInput = { system?: string; prompt: string } | { messages: ModelMessage[] };
+type PromptInput = { system?: string; prompt: string } | { messages: ModelMessage[]; allowSystemInMessages: true };
 
 function buildProviderOptions(
   providerId: string,
@@ -695,7 +695,7 @@ function buildPromptInput(request: ModelRequest, config: OpenAICompatibleProvide
     },
   ];
 
-  return { messages };
+  return { messages, allowSystemInMessages: true };
 }
 
 function buildPromptCacheProviderOptions(): NonNullable<ModelMessage["providerOptions"]> {
