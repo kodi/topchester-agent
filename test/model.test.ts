@@ -97,6 +97,30 @@ describe("ModelGateway agent tool protocol", () => {
     expect(result.usage).toEqual({ inputTokens: 1, outputTokens: 1, totalTokens: 2, costUsd: 0.0042 });
   });
 
+  it("returns LiteLLM response cost from response headers", async () => {
+    const api = await startChatApi(() => ({
+      headers: { "x-litellm-response-cost": "0.0051" },
+      body: {
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            message: { role: "assistant", content: "Hello." },
+          },
+        ],
+      },
+    }));
+    const gateway = createGateway(api.baseURL, "litellm");
+
+    const result = await gateway.generateText({
+      purpose: "agent.primary",
+      system: "system",
+      prompt: "hello",
+    });
+
+    expect(result.usage).toEqual({ inputTokens: 1, outputTokens: 1, totalTokens: 2, costUsd: 0.0051 });
+  });
+
   it("sends configured service tier on text responses", async () => {
     const api = await startChatApi((body) => {
       expect(body.service_tier).toBe("flex");
@@ -633,6 +657,10 @@ async function startChatApi(
     | {
         stream: Record<string, unknown>[];
       }
+    | {
+        headers: Record<string, string>;
+        body: Record<string, unknown>;
+      }
 ): Promise<{ baseURL: string; close(): Promise<void> }> {
   const server = createServer(async (request, response) => {
     const body = (await readJson(request)) as Record<string, unknown>;
@@ -645,6 +673,23 @@ async function startChatApi(
 
     if (isStreamResult(result)) {
       writeSse(response, result.stream);
+      return;
+    }
+
+    if (isResponseWithHeaders(result)) {
+      writeJson(
+        response,
+        200,
+        {
+          id: "chatcmpl-test",
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: "test-model",
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          ...result.body,
+        },
+        result.headers
+      );
       return;
     }
 
@@ -719,6 +764,19 @@ function isStreamResult(value: unknown): value is { stream: Record<string, unkno
   return typeof value === "object" && value !== null && Array.isArray((value as { stream?: unknown }).stream);
 }
 
+function isResponseWithHeaders(
+  value: unknown
+): value is { headers: Record<string, string>; body: Record<string, unknown> } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { headers?: unknown }).headers === "object" &&
+    (value as { headers?: unknown }).headers !== null &&
+    typeof (value as { body?: unknown }).body === "object" &&
+    (value as { body?: unknown }).body !== null
+  );
+}
+
 async function readJson(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
 
@@ -729,8 +787,13 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-function writeJson(response: ServerResponse, statusCode: number, value: unknown): void {
-  response.writeHead(statusCode, { "content-type": "application/json" });
+function writeJson(
+  response: ServerResponse,
+  statusCode: number,
+  value: unknown,
+  headers: Record<string, string> = {}
+): void {
+  response.writeHead(statusCode, { "content-type": "application/json", ...headers });
   response.end(JSON.stringify(value));
 }
 

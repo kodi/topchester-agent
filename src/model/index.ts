@@ -163,6 +163,7 @@ export class ModelGateway {
       providerId: resolved.providerId,
       providerConfig: resolved.providerConfig,
       responseBody: result.response.body,
+      responseHeaders: result.response.headers,
     });
 
     return {
@@ -291,6 +292,7 @@ export class ModelGateway {
       providerId: resolved.providerId,
       providerConfig: resolved.providerConfig,
       responseBody: result.response.body,
+      responseHeaders: result.response.headers,
     });
     const toolCalls = result.toolCalls.map((call, index) => {
       const parsed = parseNativeToolCall(call.toolName, call.input);
@@ -345,6 +347,7 @@ export class ModelGateway {
       providerId: resolved.providerId,
       providerConfig: resolved.providerConfig,
       responseBody: result.response.body,
+      responseHeaders: result.response.headers,
     });
     const parsed = parseToolCallWithSource(result.text, allowedSources);
     const defaultProtocol: ToolProtocol =
@@ -690,9 +693,10 @@ function normalizeUsage(
     providerId: string;
     providerConfig: OpenAICompatibleProviderConfig;
     responseBody?: unknown;
+    responseHeaders?: Record<string, string>;
   }
 ): ModelTokenUsage | undefined {
-  const costUsd = extractResponseCostUsd(context?.responseBody);
+  const costUsd = extractResponseCostUsd(context?.responseBody, context?.responseHeaders);
 
   if (!usage) {
     return costUsd === undefined ? undefined : { costUsd };
@@ -708,7 +712,13 @@ function normalizeUsage(
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
-function extractResponseCostUsd(responseBody: unknown): number | undefined {
+function extractResponseCostUsd(responseBody: unknown, responseHeaders?: Record<string, string>): number | undefined {
+  const bodyCost = extractResponseBodyCostUsd(responseBody);
+
+  return bodyCost ?? extractResponseHeaderCostUsd(responseHeaders);
+}
+
+function extractResponseBodyCostUsd(responseBody: unknown): number | undefined {
   if (!responseBody || typeof responseBody !== "object") {
     return undefined;
   }
@@ -733,6 +743,20 @@ function extractResponseCostUsd(responseBody: unknown): number | undefined {
   );
 }
 
+function extractResponseHeaderCostUsd(responseHeaders: Record<string, string> | undefined): number | undefined {
+  if (!responseHeaders) {
+    return undefined;
+  }
+
+  for (const [key, value] of Object.entries(responseHeaders)) {
+    if (key.toLowerCase() === "x-litellm-response-cost") {
+      return parseFiniteNumber(value);
+    }
+  }
+
+  return undefined;
+}
+
 function getObjectNumber(value: unknown, key: string): number | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
@@ -745,12 +769,16 @@ function getObjectNumber(value: unknown, key: string): number | undefined {
   }
 
   if (typeof field === "string" && field.trim().length > 0) {
-    const parsed = Number(field);
-
-    return Number.isFinite(parsed) ? parsed : undefined;
+    return parseFiniteNumber(field);
   }
 
   return undefined;
+}
+
+function parseFiniteNumber(value: string): number | undefined {
+  const parsed = Number(value.trim());
+
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function firstFiniteNumber(...values: Array<number | undefined>): number | undefined {
