@@ -959,6 +959,37 @@ describe("TUI rendering", () => {
     expect(output).toContain(" ↳ qwen/qwen3-coder:free · 1.4 sec");
   });
 
+  it("renders agent message metadata muted when color is enabled", () => {
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+
+    try {
+      const app = new ChatLayout(
+        new FakeTerminal(),
+        [agentMessage("Sure, I can help.", "gpt-5.5(low) · 5.8 sec · 6,634 input / 79 output tokens")],
+        "repo",
+        "model [provider]"
+      );
+
+      const output = app.render(80).join("\n");
+
+      expect(output).toContain(" \u001b[90m↳ gpt-5.5(low) · 5.8 sec · 6,634 input / 79 output tokens\u001b[0m");
+    } finally {
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
+  });
+
   it("renders one blank line between chat messages", () => {
     const terminal = new FakeTerminal();
     terminal.rows = 12;

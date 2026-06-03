@@ -28,7 +28,7 @@ The status line uses this shape:
 ready · my-project · qwen/qwen3-coder [openrouter] · ✅ kb: ready
 ```
 
-Assistant replies show a compact metadata line with the model and elapsed time. Set `TOPCHESTER_SHOW_TOKEN_USAGE=1` to also show cumulative input and output token counts for the full turn, including tool-loop model calls. If the model response includes cost data, the same metadata also shows the total USD cost for the turn.
+Assistant replies show a muted compact metadata line with the model and elapsed time. Set `TOPCHESTER_SHOW_TOKEN_USAGE=1` to also show cumulative input and output token counts for the full turn, including tool-loop model calls. If the model response includes cost data, the same metadata also shows the total USD cost for the turn.
 
 KB status labels:
 

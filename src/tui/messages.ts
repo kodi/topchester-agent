@@ -182,7 +182,7 @@ export function renderChatMessage(message: ChatMessage, options: RenderChatMessa
 
   if (message.meta) {
     const metaText = `↳ ${message.meta}`;
-    rendered.push(` ${ui.label("─".repeat(metaText.length))}`, ` ${ui.label(metaText)}`);
+    rendered.push(` ${ui.muted("─".repeat(metaText.length))}`, ` ${ui.muted(metaText)}`);
   }
 
   return rendered;
