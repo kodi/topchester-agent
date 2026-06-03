@@ -4,17 +4,37 @@ Topchester is a terminal-native TUI coding agent tightly coupled to a committed 
 
 Read these first:
 
-- `docs/ARCHITECTURE.md` — product/runtime architecture, install flow, TUI/runtime boundaries.
-- `docs/KNOWLEDGE.md` — mandatory KB architecture, Knowledge Compiler, drift model, storage/API decisions.
-- `docs/SESSIONS.md` — project-local session storage and event log decisions.
-- `docs/cli.md` — CLI command inventory and behavior notes.
-- `docs/tui.md` — interactive TUI layout, controls, slash commands, and status behavior.
+- `docs/README.md` — public docs entrypoint and source for the website docs build.
+- `docs/getting-started/`, `docs/configuration/`, `docs/features/`, `docs/hooks/`, `docs/mcp/`, and `docs/reference/` — public docs pages.
+- `docs/reference/cli.md` — CLI command inventory and behavior notes.
+- `docs/features/tui.md` — interactive TUI layout, controls, slash commands, and status behavior.
+- `docs/features/knowledge-base.md` — user-facing knowledge-base behavior.
+- `docs/features/sessions.md` — project-local session storage behavior.
+- `docs/ARCHITECTURE.md` — internal product/runtime architecture and TUI/runtime boundaries.
+- `docs/KNOWLEDGE.md` — internal KB architecture, Knowledge Compiler, drift model, storage/API decisions.
 
 If `AGENTS.override.md` exists, read it after this file for local-only instructions.
 
 Core invariant: Agent and KB are one system. Do not design or implement a normal coding path that bypasses `.agents/topchester-kb/`.
 
-CLI modifications should update `docs/cli.md` in the same change so command behavior stays tracked. TUI behavior changes should update `docs/tui.md`.
+CLI modifications should update `docs/reference/cli.md` in the same change so command behavior stays tracked. TUI behavior changes should update `docs/features/tui.md` or `docs/features/slash-commands.md`.
+
+## Docs maintenance
+
+`docs/` remains the authoring source for public Topchester docs. The public website renders these files from the sibling `topchester-web` repo, and `topchester-agent` must not commit generated website output.
+
+Public docs pages must have frontmatter with `title`, `description`, `section`, `order`, and `public: true`. Public pages live under:
+
+- `docs/getting-started/`
+- `docs/configuration/`
+- `docs/features/`
+- `docs/hooks/`
+- `docs/mcp/`
+- `docs/reference/`
+
+Internal implementation notes may live under top-level legacy docs or `docs/internals/`, but they should not use `public: true` unless they are intentionally promoted. `docs/plans/` is private implementation handoff material and must not be published in the public docs build.
+
+When behavior changes, update the nearest public docs page and the relevant reference page in the same change. Keep examples exact: config paths, command names, hook event names, MCP field names, and model slot names should match the current implementation.
 
 ## Debugging Topchester
 
@@ -24,7 +44,7 @@ When debugging what the agent actually did, inspect the runtime artifacts before
 - Sessions: `.agents/topchester/sessions/<session-id>/metadata.json` and `events.jsonl`. The latest session is usually the newest `metadata.json`; `events.jsonl` gives the ordered user messages, tool calls, task plan updates, assistant replies, and ready/status events.
 - To confirm whether a tool result was actually used, find the tool call in `events.jsonl`, then check `topchester.log` for the following `model_prompt` after that tool result. The prompt should include the `Tool result from ...` block that the model saw.
 - For tool behavior bugs, compare the compact session events with the raw log. The session proves the high-level order; `topchester.log` shows raw tool result content, model inputs, model outputs, policy decisions, and timing.
-- For TUI or session issues, include `docs/tui.md`, `docs/SESSIONS.md`, and the relevant `src/tui/*` or `src/session/*` files in the investigation.
+- For TUI or session issues, include `docs/features/tui.md`, `docs/features/sessions.md`, and the relevant `src/tui/*` or `src/session/*` files in the investigation.
 
 Use PLAIN FOLK SPEAK in user-facing text, even for highly technical product concepts; for example, write something an average developer understands instead of phrasing like `missing canonical KB`.
 

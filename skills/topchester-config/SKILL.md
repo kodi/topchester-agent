@@ -17,9 +17,11 @@ Before changing config behavior, inspect the implementation and tests:
 
 - `src/config/index.ts`
 - `test/config.test.ts`
-- `docs/config.md`
-- `docs/MODEL_CONFIG.md`
-- `docs/cli.md`
+- `docs/configuration/config-files.md`
+- `docs/configuration/models-and-providers.md`
+- `docs/configuration/bash-permissions.md`
+- `docs/reference/config-schema.md`
+- `docs/reference/cli.md`
 
 Prefer the current code and tests over older docs if they disagree, then update docs when the task changes user-facing behavior.
 
@@ -27,12 +29,11 @@ Prefer the current code and tests over older docs if they disagree, then update 
 
 Topchester loads config in this order. Later files override earlier files:
 
-1. `topchester.yaml`
+1. Built-in defaults.
 2. `topchester.jsonc`
-3. `~/.config/topchester/config.yaml`
-4. `~/.config/topchester/config.jsonc`
-5. `TOPCHESTER_CONFIG`
-6. `--config <path>`
+3. `~/.config/topchester/config.jsonc`
+4. `TOPCHESTER_CONFIG`
+5. `--config <path>`
 
 Use `topchester.jsonc` for team-shared project policy such as ignore paths, hooks, instruction filenames, and command policy. Use `~/.config/topchester/config.jsonc` for personal provider setup, model choices, and API-key environment names.
 
@@ -57,10 +58,10 @@ Use JSONC for new examples:
     "paths": ["generated/**"],
   },
   "tools": {
-    "commands": {
+    "bash": {
       "allowExact": ["pnpm test"],
-      "allow": ["node scripts/check"],
-      "deny": ["pnpm publish"],
+      "allow": [["node", "scripts/check"]],
+      "deny": [["pnpm", "publish"]],
     },
   },
 }
@@ -100,15 +101,15 @@ Valid `toolProtocol` values are `auto`, `native`, `text-json`, and `text-xml`. V
 
 ## Command Policy
 
-`run_command` only runs validator-classified commands or commands allowed by config or session/repo approval. Use:
+`bash` runs approval-gated shell commands inside the workspace. Use:
 
-- `tools.commands.allowExact` for exact repo-approved commands.
-- `tools.commands.allow` for simple command prefixes.
-- `tools.commands.deny` for blocked command prefixes.
+- `tools.bash.allowExact` for exact repo-approved commands.
+- `tools.bash.allow` for simple argv prefixes.
+- `tools.bash.deny` for blocked argv prefixes.
 
 Command policy rules must be simple command prefixes. Do not include shell operators, redirects, globs, multiline commands, absolute paths, or leading/trailing whitespace.
 
-Repo-scoped command approvals are persisted to `topchester.jsonc` under `tools.commands.allowExact`.
+Repo-scoped command approvals are persisted to `topchester.jsonc` under `tools.bash.allowExact`.
 
 ## Ignore Paths
 

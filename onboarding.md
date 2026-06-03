@@ -129,15 +129,17 @@ topchester
 - `kb: missing`: run `topchester kb init`, then `topchester kb sync`.
 - `kb: empty`: run `topchester kb sync`.
 - `N dirty`: run `topchester kb sync`.
-- Command blocked by policy: approve it in the TUI for one run, or add an exact command rule under `tools.commands.allowExact` in `topchester.jsonc`.
+- Command blocked by policy: approve it in the TUI for one run, or add an exact command rule under `tools.bash.allowExact` in `topchester.jsonc`.
 
 More detail lives in:
 
-- `docs/config.md`
-- `docs/MODEL_CONFIG.md`
-- `docs/cli.md`
-- `docs/tui.md`
-- `docs/KNOWLEDGE.md`
+- `docs/README.md`
+- `docs/getting-started/quickstart.md`
+- `docs/configuration/config-files.md`
+- `docs/configuration/models-and-providers.md`
+- `docs/reference/cli.md`
+- `docs/features/tui.md`
+- `docs/features/knowledge-base.md`
 
 ## Running From Source
 
