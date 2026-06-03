@@ -877,26 +877,35 @@ async function writeFakeApiConfig(
   model: string | undefined,
   toolProtocol: CliOptions["toolProtocol"]
 ): Promise<string> {
-  const configPath = join(outputDir, "topchester-smoke.config.yaml");
+  const configPath = join(outputDir, "topchester-smoke.config.jsonc");
   const modelId = model ?? "topchester-smoke-fake";
   await writeFile(
     configPath,
-    [
-      "models:",
-      "  default:",
-      `    name: ${JSON.stringify(modelId)}`,
-      "    provider: fake",
-      "  kb.summarize:",
-      `    name: ${JSON.stringify(modelId)}`,
-      "    provider: fake",
-      "  providers:",
-      "    default: fake",
-      "    fake:",
-      "      type: openai-compatible",
-      `      baseURL: ${JSON.stringify(baseURL)}`,
-      "      apiKey: fake",
-      ...(toolProtocol ? [`      toolProtocol: ${toolProtocol}`] : []),
-    ].join("\n")
+    `${JSON.stringify(
+      {
+        models: {
+          "default": {
+            name: modelId,
+            provider: "fake",
+          },
+          "kb.summarize": {
+            name: modelId,
+            provider: "fake",
+          },
+          "providers": {
+            default: "fake",
+            fake: {
+              type: "openai-compatible",
+              baseURL,
+              apiKey: "fake",
+              ...(toolProtocol ? { toolProtocol } : {}),
+            },
+          },
+        },
+      },
+      null,
+      2
+    )}\n`
   );
   return configPath;
 }

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://topchester.com/schemas/config.v1.json",
+  "models": {
+    "default": "openrouter/qwen/qwen3-coder:free",
+  },
+}

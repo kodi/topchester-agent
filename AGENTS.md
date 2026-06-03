@@ -23,6 +23,8 @@ CLI modifications should update `docs/reference/cli.md` in the same change so co
 
 `docs/` remains the authoring source for public Topchester docs. The public website renders these files from the sibling `topchester-web` repo, and `topchester-agent` must not commit generated website output.
 
+Public docs deployment is inter-repo: commit and push doc source changes to `topchester-agent` `main` first, then trigger the website deploy from `topchester-web` `main` because Vercel builds that repo and clones `topchester-agent/docs` during the build. If there is no website code change, use an empty `topchester-web` commit or a Vercel redeploy after the agent docs commit is on `main`.
+
 Public docs pages must have frontmatter with `title`, `description`, `section`, `order`, and `public: true`. Public pages live under:
 
 - `docs/getting-started/`

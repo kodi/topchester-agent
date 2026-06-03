@@ -24,7 +24,17 @@ topchester --version
 
 ## Configure a model
 
-Topchester reads personal model config from `~/.config/topchester/config.jsonc`. For the smallest OpenRouter setup, create:
+Topchester reads personal model config from `~/.config/topchester/config.jsonc`. On first startup, Topchester creates this file with the smallest OpenRouter setup commented out:
+
+```jsonc
+// {
+//   "models": {
+//     "default": "openrouter/google/gemini-3.1-flash-lite",
+//   },
+// }
+```
+
+Uncomment it when you want to use the default OpenRouter setup:
 
 ```jsonc
 {

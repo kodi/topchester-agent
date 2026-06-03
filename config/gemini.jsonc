@@ -1,0 +1,6 @@
+{
+  "$schema": "https://topchester.com/schemas/config.v1.json",
+  "models": {
+    "default": "openrouter/google/gemini-3.1-flash-lite",
+  },
+}

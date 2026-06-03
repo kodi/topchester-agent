@@ -106,20 +106,23 @@ function isCommanderExit(error: unknown): error is { code: string; exitCode: num
 async function makeFixture() {
   const root = await realpath(await mkdtemp(join(tmpdir(), "topchester-cli-")));
   const workspace = join(root, "workspace");
-  const config = join(root, "config.yaml");
+  const config = join(root, "config.jsonc");
 
   await writeFile(
     config,
-    [
-      "models:",
-      "  default: qwen/qwen3-coder:free",
-      "  providers:",
-      "    default: openrouter",
-      "    openrouter:",
-      "      type: openai-compatible",
-      "      baseURL: https://openrouter.ai/api/v1",
-      "      apiKeyEnv: OPENROUTER_API_KEY",
-    ].join("\n")
+    JSON.stringify({
+      models: {
+        default: "qwen/qwen3-coder:free",
+        providers: {
+          default: "openrouter",
+          openrouter: {
+            type: "openai-compatible",
+            baseURL: "https://openrouter.ai/api/v1",
+            apiKeyEnv: "OPENROUTER_API_KEY",
+          },
+        },
+      },
+    })
   );
 
   return { root, workspace, config };
@@ -409,7 +412,7 @@ describe("CLI integration", () => {
 
   it("keeps a relative config path relative to the caller cwd when workspace is overridden", async () => {
     const fixture = await makeFixture();
-    const relativeConfig = "config.yaml";
+    const relativeConfig = "config.jsonc";
 
     const { stdout } = await runCli(["--config", relativeConfig, "--workspace", fixture.workspace], fixture.root);
 
@@ -827,10 +830,17 @@ describe("CLI integration", () => {
 
   it("fails full sync clearly when no kb.summarize model or fallback is configured", async () => {
     const fixture = await makeFixture();
-    const badConfig = join(fixture.root, "bad-config.yaml");
+    const badConfig = join(fixture.root, "bad-config.jsonc");
     await writeFile(
       badConfig,
-      ["models:", "  kb.summarize:", "    name: fake-model", "    provider: missing-provider"].join("\n")
+      JSON.stringify({
+        models: {
+          "kb.summarize": {
+            name: "fake-model",
+            provider: "missing-provider",
+          },
+        },
+      })
     );
     await mkdir(fixture.workspace, { recursive: true });
     await writeFile(join(fixture.workspace, "index.ts"), "export const value = 1;\n");

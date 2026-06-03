@@ -13,7 +13,7 @@ mise run smoke 1
 Run one live-model trial from a machine with model API keys:
 
 ```sh
-mise run smoke-live config/gemini.yaml 1 inclusionai/ring-2.6-1t:free
+mise run smoke-live config/gemini.jsonc 1 inclusionai/ring-2.6-1t:free
 ```
 
 Debug one scenario and keep its workspace:

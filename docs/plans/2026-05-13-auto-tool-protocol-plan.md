@@ -239,7 +239,7 @@ pnpm test -- test/model*.test.ts
 Manual smoke check with a known tool-capable model:
 
 ```sh
-mise run smoke-live config/gemini.yaml 1 google/gemini-3-flash-preview 10000
+mise run smoke-live config/gemini.jsonc 1 google/gemini-3-flash-preview 10000
 ```
 
 Dependencies: Slice 2.
@@ -421,7 +421,7 @@ Final confidence check:
 ```sh
 pnpm run check
 mise run smoke 1
-mise run smoke-live config/gemini.yaml 1 google/gemini-3-flash-preview 10000
+mise run smoke-live config/gemini.jsonc 1 google/gemini-3-flash-preview 10000
 ```
 
 ## Files to Add

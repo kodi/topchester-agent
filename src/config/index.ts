@@ -1,8 +1,7 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve, win32 } from "node:path";
-import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
 const modelPurposeSchema = z.enum(["agent.primary", "agent.fast", "kb.summarize", "fallback"]);
@@ -345,12 +344,21 @@ export function ensureGlobalTopchesterConfigDir(): string {
   return dir;
 }
 
+export function ensureGlobalTopchesterConfigFile(): string {
+  const configPath = getGlobalTopchesterConfigPath();
+
+  if (!existsSync(configPath)) {
+    ensureGlobalTopchesterConfigDir();
+    writeFileSync(configPath, getCommentedStarterConfig(), { mode: 0o600 });
+  }
+
+  return configPath;
+}
+
 export function loadTopchesterConfig(options: ConfigLoadOptions): TopchesterConfig {
   const globalConfigDir = getGlobalTopchesterConfigDir();
   const paths = [
-    join(options.workspaceRoot, "topchester.yaml"),
     join(options.workspaceRoot, "topchester.jsonc"),
-    join(globalConfigDir, "config.yaml"),
     join(globalConfigDir, "config.jsonc"),
     process.env.TOPCHESTER_CONFIG,
     options.configPath,
@@ -578,10 +586,127 @@ function ensureStringArrayProperty(parent: Record<string, unknown>, key: string)
 
 function readConfigFile(path: string): unknown {
   try {
-    return parseYaml(readFileSync(path, "utf8")) as unknown;
+    return parseJsonc(readFileSync(path, "utf8"));
   } catch (error) {
     throw new Error(`Invalid Topchester config at ${path}: ${formatErrorMessage(error)}`);
   }
+}
+
+function parseJsonc(source: string): unknown {
+  const stripped = stripJsoncSyntax(source);
+  return stripped.trim() ? JSON.parse(stripped) : {};
+}
+
+function getCommentedStarterConfig(): string {
+  return [
+    "// Uncomment and edit this minimal config to choose a default model.",
+    "// {",
+    '//   "models": {',
+    '//     "default": "openrouter/google/gemini-3.1-flash-lite",',
+    "//   },",
+    "// }",
+    "",
+  ].join("\n");
+}
+
+function stripJsoncSyntax(source: string): string {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index]!;
+    const next = source[index + 1];
+
+    if (inString) {
+      output += char;
+
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      output += char;
+      continue;
+    }
+
+    if (char === "/" && next === "/") {
+      output += "  ";
+      index += 2;
+      while (index < source.length && source[index] !== "\n" && source[index] !== "\r") {
+        output += " ";
+        index += 1;
+      }
+      index -= 1;
+      continue;
+    }
+
+    if (char === "/" && next === "*") {
+      output += "  ";
+      index += 2;
+      while (index < source.length && !(source[index] === "*" && source[index + 1] === "/")) {
+        output += source[index] === "\n" || source[index] === "\r" ? source[index]! : " ";
+        index += 1;
+      }
+      if (index < source.length) {
+        output += "  ";
+        index += 1;
+      }
+      continue;
+    }
+
+    if (char === "," && isTrailingJsonComma(source, index + 1)) {
+      output += " ";
+      continue;
+    }
+
+    output += char;
+  }
+
+  return output;
+}
+
+function isTrailingJsonComma(source: string, startIndex: number): boolean {
+  let index = startIndex;
+
+  while (index < source.length) {
+    const char = source[index]!;
+    const next = source[index + 1];
+
+    if (/\s/u.test(char)) {
+      index += 1;
+      continue;
+    }
+
+    if (char === "/" && next === "/") {
+      index += 2;
+      while (index < source.length && source[index] !== "\n" && source[index] !== "\r") {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (char === "/" && next === "*") {
+      index += 2;
+      while (index < source.length && !(source[index] === "*" && source[index + 1] === "/")) {
+        index += 1;
+      }
+      index += 2;
+      continue;
+    }
+
+    return char === "}" || char === "]";
+  }
+
+  return false;
 }
 
 function parseConfigFile(path: string, value: unknown): TopchesterConfigFile {

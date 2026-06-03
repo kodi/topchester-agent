@@ -80,17 +80,23 @@ defaults and reads the token from `OPENROUTER_API_KEY`.
 
 MCP stdio server config lives alongside model config in the same layered Topchester config files, but MCP servers are tool providers rather than model providers. See [Configuration](./config.md#mcp-stdio-servers) for the V0 stdio-only MCP shape, limitations, and `enabledTools` guidance.
 
-```yaml
-models:
-  default: openrouter/google/gemini-3.1-flash-lite
+```jsonc
+{
+  "models": {
+    "default": "openrouter/google/gemini-3.1-flash-lite",
+  },
+}
 ```
 
 Projects that want a dedicated summarizer can set only that slot:
 
-```yaml
-models:
-  default: openrouter/google/gemini-3.1-flash-lite
-  kb.summarize: openrouter/google/gemini-3.1-pro
+```jsonc
+{
+  "models": {
+    "default": "openrouter/google/gemini-3.1-flash-lite",
+    "kb.summarize": "openrouter/google/gemini-3.1-pro",
+  },
+}
 ```
 
 Internally this normalizes to explicit task-purpose assignments and provider connection details.

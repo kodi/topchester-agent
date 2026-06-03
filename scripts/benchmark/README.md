@@ -7,7 +7,7 @@ Benchmark scripts live here and are meant to be run from the repository root.
 `l1-search.ts` measures the same L1 context-pack work as:
 
 ```sh
-topchester-dev --config config/gemini.yaml kb context "does status bar auto refresh as we work?" --json
+topchester-dev --config config/gemini.jsonc kb context "does status bar auto refresh as we work?" --json
 ```
 
 It calls the Topchester knowledge search code directly instead of shelling out to

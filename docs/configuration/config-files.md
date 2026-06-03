@@ -8,7 +8,7 @@ public: true
 
 # Config files
 
-Topchester config is JSONC. YAML is accepted as a compatibility alias, but JSONC is the normal format.
+Topchester config is JSONC.
 
 Topchester loads config in this order. Later files override earlier files.
 
@@ -33,3 +33,15 @@ Use `topchester.jsonc` for shared project policy. Use `~/.config/topchester/conf
 ```
 
 Topchester automatically reads `OPENROUTER_API_KEY` for OpenRouter shorthand models.
+
+On first startup, Topchester creates `~/.config/topchester/config.jsonc` if it does not exist. The file contains this minimal config as comments:
+
+```jsonc
+// {
+//   "models": {
+//     "default": "openrouter/google/gemini-3.1-flash-lite",
+//   },
+// }
+```
+
+Uncomment and edit it when you want personal model defaults. A comments-only config file is valid and behaves like empty config.

@@ -48,6 +48,43 @@ describe("Topchester config loading", () => {
     expect((await stat(join(home, ".config", "topchester"))).isDirectory()).toBe(true);
   });
 
+  it("creates a commented starter global config file when app context starts", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const home = join(root, "home");
+    const workspace = join(root, "workspace");
+    const configPath = join(home, ".config", "topchester", "config.jsonc");
+    process.env.HOME = home;
+    process.env.TOPCHESTER_LOG_LEVEL = "silent";
+    await mkdir(workspace, { recursive: true });
+
+    createAppContext({ workspaceRoot: workspace });
+
+    const written = await readFile(configPath, "utf8");
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(written).toContain('//   "models": {');
+    expect(written).toContain('//     "default": "openrouter/google/gemini-3.1-flash-lite",');
+    expect(config.models).toBeUndefined();
+  });
+
+  it("does not overwrite an existing global config file when app context starts", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const home = join(root, "home");
+    const workspace = join(root, "workspace");
+    const configPath = join(home, ".config", "topchester", "config.jsonc");
+    process.env.HOME = home;
+    process.env.TOPCHESTER_LOG_LEVEL = "silent";
+    await mkdir(workspace, { recursive: true });
+    await mkdir(join(home, ".config", "topchester"), { recursive: true });
+    await writeFile(configPath, '{ "models": { "default": "openrouter/qwen/qwen3-coder:free" } }\n');
+
+    createAppContext({ workspaceRoot: workspace });
+
+    expect(await readFile(configPath, "utf8")).toBe(
+      '{ "models": { "default": "openrouter/qwen/qwen3-coder:free" } }\n'
+    );
+  });
+
   it("loads JSONC config files in documented precedence and concatenates list-based policy fields", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const home = join(root, "home");
@@ -474,7 +511,7 @@ describe("Topchester config loading", () => {
     );
   });
 
-  it("keeps YAML config files as compatibility aliases while preferring JSONC in the same layer", async () => {
+  it("ignores YAML config files and only loads JSONC config files", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const home = join(root, "home");
     const workspace = join(root, "workspace");
@@ -495,8 +532,8 @@ describe("Topchester config loading", () => {
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
     await writeFile(
-      join(workspace, "topchester.yaml"),
-      ["models:", "  default: openrouter/google/gemini-3.1-flash-lite"].join("\n")
+      join(workspace, "topchester.jsonc"),
+      '{ "models": { "default": "openrouter/google/gemini-3.1-flash-lite" } }\n'
     );
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
@@ -522,13 +559,14 @@ describe("Topchester config loading", () => {
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
     await writeFile(
-      join(workspace, "topchester.yaml"),
-      [
-        "models:",
-        "  default: openrouter/anthropic/claude-sonnet-4.5",
-        "  fast: openrouter/google/gemini-3.1-flash-lite",
-        "  kb.summarize: openrouter/google/gemini-3.1-pro",
-      ].join("\n")
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        models: {
+          "default": "openrouter/anthropic/claude-sonnet-4.5",
+          "fast": "openrouter/google/gemini-3.1-flash-lite",
+          "kb.summarize": "openrouter/google/gemini-3.1-pro",
+        },
+      })
     );
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
@@ -556,19 +594,22 @@ describe("Topchester config loading", () => {
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
     await writeFile(
-      join(workspace, "topchester.yaml"),
-      [
-        "models:",
-        "  default: openrouter/openai/gpt-4.1-mini",
-        "  fast:",
-        "    name: google/gemini-3.1-flash-lite",
-        "    provider: openrouter",
-        "    toolProtocol: native",
-        "  kb.summarize:",
-        "    name: google/gemini-3.1-pro",
-        "    provider: openrouter",
-        "    toolProtocol: text-json",
-      ].join("\n")
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        models: {
+          "default": "openrouter/openai/gpt-4.1-mini",
+          "fast": {
+            name: "google/gemini-3.1-flash-lite",
+            provider: "openrouter",
+            toolProtocol: "native",
+          },
+          "kb.summarize": {
+            name: "google/gemini-3.1-pro",
+            provider: "openrouter",
+            toolProtocol: "text-json",
+          },
+        },
+      })
     );
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
@@ -590,17 +631,20 @@ describe("Topchester config loading", () => {
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
     await writeFile(
-      join(workspace, "topchester.yaml"),
-      [
-        "models:",
-        "  default: gpt-4.1-mini",
-        "  providers:",
-        "    default: openrouter",
-        "    openrouter:",
-        "      type: openai-compatible",
-        "      baseURL: https://openrouter.ai/api/v1",
-        "      apiKeyEnv: CUSTOM_OPENROUTER_KEY",
-      ].join("\n")
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        models: {
+          default: "gpt-4.1-mini",
+          providers: {
+            default: "openrouter",
+            openrouter: {
+              type: "openai-compatible",
+              baseURL: "https://openrouter.ai/api/v1",
+              apiKeyEnv: "CUSTOM_OPENROUTER_KEY",
+            },
+          },
+        },
+      })
     );
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
@@ -620,17 +664,20 @@ describe("Topchester config loading", () => {
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
     await writeFile(
-      join(workspace, "topchester.yaml"),
-      [
-        "models:",
-        "  default: qwen/qwen3-coder:free",
-        "  fast: openrouter/google/gemini-3.1-flash-lite",
-        "  providers:",
-        "    default: openrouter",
-        "    openrouter:",
-        "      type: openai-compatible",
-        "      baseURL: https://openrouter.ai/api/v1",
-      ].join("\n")
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        models: {
+          default: "qwen/qwen3-coder:free",
+          fast: "openrouter/google/gemini-3.1-flash-lite",
+          providers: {
+            default: "openrouter",
+            openrouter: {
+              type: "openai-compatible",
+              baseURL: "https://openrouter.ai/api/v1",
+            },
+          },
+        },
+      })
     );
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
@@ -652,7 +699,7 @@ describe("Topchester config loading", () => {
     process.env.HOME = home;
     delete process.env.TOPCHESTER_CONFIG;
     await mkdir(workspace, { recursive: true });
-    await writeFile(join(workspace, "topchester.yaml"), ["models:", "  default: local-model"].join("\n"));
+    await writeFile(join(workspace, "topchester.jsonc"), '{ "models": { "default": "local-model" } }\n');
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
 
@@ -670,12 +717,12 @@ describe("Topchester config loading", () => {
     await mkdir(join(home, ".config", "topchester"), { recursive: true });
     await mkdir(workspace, { recursive: true });
     await writeFile(
-      join(home, ".config", "topchester", "config.yaml"),
-      ["models:", "  default: openrouter/openai/gpt-4.1-mini"].join("\n")
+      join(home, ".config", "topchester", "config.jsonc"),
+      '{ "models": { "default": "openrouter/openai/gpt-4.1-mini" } }\n'
     );
     await writeFile(
-      join(workspace, "topchester.yaml"),
-      ["models:", "  default: openrouter/qwen/qwen3-coder:free"].join("\n")
+      join(workspace, "topchester.jsonc"),
+      '{ "models": { "default": "openrouter/qwen/qwen3-coder:free" } }\n'
     );
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
@@ -699,16 +746,12 @@ describe("Topchester config loading", () => {
     await mkdir(join(home, ".config", "topchester"), { recursive: true });
     await mkdir(workspace, { recursive: true });
     await writeFile(
-      join(home, ".config", "topchester", "config.yaml"),
-      ["models:", "  default: openrouter/openai/gpt-4.1-mini"].join("\n")
+      join(home, ".config", "topchester", "config.jsonc"),
+      '{ "models": { "default": "openrouter/openai/gpt-4.1-mini" } }\n'
     );
     await writeFile(
-      join(workspace, "topchester.yaml"),
-      [
-        "models:",
-        "  fast: openrouter/google/gemini-3.1-flash-lite",
-        "  kb.summarize: openrouter/google/gemini-3.1-pro",
-      ].join("\n")
+      join(workspace, "topchester.jsonc"),
+      '{ "models": { "fast": "openrouter/google/gemini-3.1-flash-lite", "kb.summarize": "openrouter/google/gemini-3.1-pro" } }\n'
     );
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
@@ -732,22 +775,24 @@ describe("Topchester config loading", () => {
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
     await writeFile(
-      join(workspace, "topchester.yaml"),
-      [
-        "models:",
-        "  default: openrouter/google/gemini-3.1-flash-lite",
-        "  providers:",
-        "    openrouter:",
-        "      type: openai-compatible",
-        "      baseURL: https://custom-openrouter.example/v1",
-        "      apiKeyEnv: CUSTOM_OPENROUTER_KEY",
-        "      supportsStructuredOutputs: false",
-        "      service_tier: flex",
-        "      toolProtocol: native",
-        "      openRouterToolRouting: off",
-        "      headers:",
-        "        X-Test: custom",
-      ].join("\n")
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        models: {
+          default: "openrouter/google/gemini-3.1-flash-lite",
+          providers: {
+            openrouter: {
+              type: "openai-compatible",
+              baseURL: "https://custom-openrouter.example/v1",
+              apiKeyEnv: "CUSTOM_OPENROUTER_KEY",
+              supportsStructuredOutputs: false,
+              service_tier: "flex",
+              toolProtocol: "native",
+              openRouterToolRouting: "off",
+              headers: { "X-Test": "custom" },
+            },
+          },
+        },
+      })
     );
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
@@ -773,19 +818,23 @@ describe("Topchester config loading", () => {
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
     await writeFile(
-      join(workspace, "topchester.yaml"),
-      [
-        "models:",
-        "  default: openrouter/google/gemini-3.1-flash-lite",
-        "  providers:",
-        "    openrouter:",
-        "      type: openai-compatible",
-        "      baseURL: https://openrouter.ai/api/v1",
-        "      apiKeyEnv: OPENROUTER_API_KEY",
-        "      headers:",
-        "        HTTP-Referer: https://example.com",
-        "        X-Title: Custom App",
-      ].join("\n")
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        models: {
+          default: "openrouter/google/gemini-3.1-flash-lite",
+          providers: {
+            openrouter: {
+              type: "openai-compatible",
+              baseURL: "https://openrouter.ai/api/v1",
+              apiKeyEnv: "OPENROUTER_API_KEY",
+              headers: {
+                "HTTP-Referer": "https://example.com",
+                "X-Title": "Custom App",
+              },
+            },
+          },
+        },
+      })
     );
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
@@ -803,19 +852,23 @@ describe("Topchester config loading", () => {
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
     await writeFile(
-      join(workspace, "topchester.yaml"),
-      [
-        "models:",
-        "  default:",
-        "    name: gpt-5.5(low)",
-        "    provider: openai",
-        "  providers:",
-        "    default: openai",
-        "    openai:",
-        "      type: openai-compatible",
-        "      baseURL: http://localhost:8317/v1",
-        "      apiKey: dummy-not-used",
-      ].join("\n")
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        models: {
+          default: {
+            name: "gpt-5.5(low)",
+            provider: "openai",
+          },
+          providers: {
+            default: "openai",
+            openai: {
+              type: "openai-compatible",
+              baseURL: "http://localhost:8317/v1",
+              apiKey: "dummy-not-used",
+            },
+          },
+        },
+      })
     );
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
@@ -834,20 +887,24 @@ describe("Topchester config loading", () => {
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
     await writeFile(
-      join(workspace, "topchester.yaml"),
-      [
-        "models:",
-        "  default:",
-        "    name: gpt-5.5(low)",
-        "    provider: openai",
-        "  providers:",
-        "    openai:",
-        "      type: openai-compatible",
-        "      baseURL: https://api.openai.com/v1",
-        "      apiKeyEnv: OPENAI_API_KEY",
-        "      supportsStructuredOutputs: false",
-        "      toolProtocol: auto",
-      ].join("\n")
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        models: {
+          default: {
+            name: "gpt-5.5(low)",
+            provider: "openai",
+          },
+          providers: {
+            openai: {
+              type: "openai-compatible",
+              baseURL: "https://api.openai.com/v1",
+              apiKeyEnv: "OPENAI_API_KEY",
+              supportsStructuredOutputs: false,
+              toolProtocol: "auto",
+            },
+          },
+        },
+      })
     );
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
@@ -863,39 +920,45 @@ describe("Topchester config loading", () => {
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
     await writeFile(
-      join(workspace, "topchester.yaml"),
-      [
-        "models:",
-        "  default:",
-        "    name: anthropic/claude-sonnet-4.5",
-        "    provider: openrouter",
-        "    toolProtocol: auto",
-        "  fast:",
-        "    name: openai/gpt-4.1-mini",
-        "    provider: openrouter",
-        "    toolProtocol: native",
-        "  kb.summarize:",
-        "    name: qwen2.5-coder:14b",
-        "    provider: ollama",
-        "    toolProtocol: text-json",
-        "  providers:",
-        "    default: openrouter",
-        "    openrouter:",
-        "      type: openai-compatible",
-        "      baseURL: https://openrouter.ai/api/v1",
-        "      apiKeyEnv: OPENROUTER_API_KEY",
-        "      supportsStructuredOutputs: true",
-        "      service_tier: flex",
-        "      toolProtocol: auto",
-        "      openRouterToolRouting: force",
-        "      headers:",
-        "        X-Test: custom",
-        "    ollama:",
-        "      type: openai-compatible",
-        "      baseURL: http://localhost:11434/v1",
-        "      apiKey: ollama",
-        "      supportsStructuredOutputs: false",
-      ].join("\n")
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        models: {
+          "default": {
+            name: "anthropic/claude-sonnet-4.5",
+            provider: "openrouter",
+            toolProtocol: "auto",
+          },
+          "fast": {
+            name: "openai/gpt-4.1-mini",
+            provider: "openrouter",
+            toolProtocol: "native",
+          },
+          "kb.summarize": {
+            name: "qwen2.5-coder:14b",
+            provider: "ollama",
+            toolProtocol: "text-json",
+          },
+          "providers": {
+            default: "openrouter",
+            openrouter: {
+              type: "openai-compatible",
+              baseURL: "https://openrouter.ai/api/v1",
+              apiKeyEnv: "OPENROUTER_API_KEY",
+              supportsStructuredOutputs: true,
+              service_tier: "flex",
+              toolProtocol: "auto",
+              openRouterToolRouting: "force",
+              headers: { "X-Test": "custom" },
+            },
+            ollama: {
+              type: "openai-compatible",
+              baseURL: "http://localhost:11434/v1",
+              apiKey: "ollama",
+              supportsStructuredOutputs: false,
+            },
+          },
+        },
+      })
     );
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
@@ -933,7 +996,7 @@ describe("Topchester config loading", () => {
     });
   });
 
-  it("accepts JSONC shorthand config and normalizes it like YAML", async () => {
+  it("accepts JSONC shorthand config with comments and trailing commas", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
@@ -941,10 +1004,11 @@ describe("Topchester config loading", () => {
       join(workspace, "topchester.jsonc"),
       [
         "{",
+        "  // Provider-qualified shorthand keeps config compact.",
         '  "models": {',
         '    "default": "openrouter/google/gemini-3.1-flash-lite",',
-        '    "kb.summarize": "openrouter/google/gemini-3.1-pro"',
-        "  }",
+        '    "kb.summarize": "openrouter/google/gemini-3.1-pro",',
+        "  },",
         "}",
       ].join("\n")
     );
@@ -965,15 +1029,12 @@ describe("Topchester config loading", () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
-    const invalidDefault = join(workspace, "invalid-default.yaml");
-    const invalidOldAssignments = join(workspace, "invalid-old-assignments.yaml");
-    const invalidDefaultPurpose = join(workspace, "invalid-default-purpose.yaml");
-    await writeFile(invalidDefault, ["models:", "  default:", "    label: nope"].join("\n"));
-    await writeFile(
-      invalidOldAssignments,
-      ["models:", "  assignments:", "    kb.summarize: openrouter/model"].join("\n")
-    );
-    await writeFile(invalidDefaultPurpose, ["models:", "  defaultPurpose: agent.fast"].join("\n"));
+    const invalidDefault = join(workspace, "invalid-default.jsonc");
+    const invalidOldAssignments = join(workspace, "invalid-old-assignments.jsonc");
+    const invalidDefaultPurpose = join(workspace, "invalid-default-purpose.jsonc");
+    await writeFile(invalidDefault, '{ "models": { "default": { "label": "nope" } } }\n');
+    await writeFile(invalidOldAssignments, '{ "models": { "assignments": { "kb.summarize": "openrouter/model" } } }\n');
+    await writeFile(invalidDefaultPurpose, '{ "models": { "defaultPurpose": "agent.fast" } }\n');
 
     expect(() => loadTopchesterConfig({ workspaceRoot: workspace, configPath: invalidDefault })).toThrow(
       `Invalid Topchester config at ${invalidDefault}: models.default: Invalid input`

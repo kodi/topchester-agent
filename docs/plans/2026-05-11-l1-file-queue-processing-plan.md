@@ -293,7 +293,7 @@ Unit tests prove mechanics, but a real small repo catches prompt size, path, man
 
 ### This slice should implement
 
-- Run `topchester-dev --config config/gemini.yaml --workspace ~/data/github/clsx --dev disable-kb-check-modal kb compile`.
+- Run `topchester-dev --config config/gemini.jsonc --workspace ~/data/github/clsx --dev disable-kb-check-modal kb compile`.
 - Inspect a few generated L1 entries for schema shape and useful summaries.
 - Tighten prompt or validation if outputs are too vague or invalid.
 - Record any remaining non-blocking limitations as follow-up slices.
@@ -306,7 +306,7 @@ Unit tests prove mechanics, but a real small repo catches prompt size, path, man
 ### Verification
 
 ```bash
-topchester-dev --config config/gemini.yaml --workspace ~/data/github/clsx --dev disable-kb-check-modal kb compile
+topchester-dev --config config/gemini.jsonc --workspace ~/data/github/clsx --dev disable-kb-check-modal kb compile
 pnpm check
 ```
 
@@ -343,7 +343,7 @@ Once L1 processing works, docs and naming should stop disagreeing before later c
 
 ```bash
 pnpm check
-topchester-dev --config config/gemini.yaml --workspace ~/data/github/clsx --dev disable-kb-check-modal kb compile
+topchester-dev --config config/gemini.jsonc --workspace ~/data/github/clsx --dev disable-kb-check-modal kb compile
 ```
 
 Completed in Slice 6 by aligning `docs/KNOWLEDGE.md` with the implemented `topchester-kb/l1-files/` L1 output path and keeping L2/L3/graph/service language clearly scoped as future target work.
@@ -358,7 +358,7 @@ Before considering the L1 queue processing work complete:
 
 ```bash
 pnpm check
-topchester-dev --config config/gemini.yaml --workspace ~/data/github/clsx --dev disable-kb-check-modal kb compile
+topchester-dev --config config/gemini.jsonc --workspace ~/data/github/clsx --dev disable-kb-check-modal kb compile
 ```
 
 If the external model/API is unavailable, record that the real-workspace compile could not be verified and keep the model-backed slice open.

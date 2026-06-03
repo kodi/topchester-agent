@@ -50,16 +50,12 @@ Do not put API keys in committed config files. Use environment variables, user c
 
 Topchester reads config in this order, with later entries overriding earlier ones:
 
-1. `~/.config/topchester/config.yaml`
+1. `topchester.jsonc`
 2. `~/.config/topchester/config.jsonc`
-3. `topchester.yaml`
-4. `topchester.jsonc`
-5. `.topchester/config.local.yaml`
-6. `.topchester/config.local.jsonc`
-7. `TOPCHESTER_CONFIG`
-8. `--config <path>`
+3. `TOPCHESTER_CONFIG`
+4. `--config <path>`
 
-Prefer `topchester.jsonc` for new project config. YAML paths are kept for compatibility.
+On first startup, Topchester creates `~/.config/topchester/config.jsonc` with a commented minimal example. Uncomment it to set your personal default model, or keep shared project policy in `topchester.jsonc`.
 
 ## 3. Build The Project Knowledge Base
 

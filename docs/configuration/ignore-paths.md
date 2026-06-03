@@ -10,12 +10,12 @@ public: true
 
 Use `ignore.paths` to exclude generated, vendored, or noisy paths from Topchester project knowledge and file discovery.
 
-```yaml
-ignore:
-  paths:
-    - dist
-    - coverage
-    - "*.log"
+```jsonc
+{
+  "ignore": {
+    "paths": ["dist", "coverage", "*.log"],
+  },
+}
 ```
 
 Ignore paths belong in `topchester.jsonc` when the rule is shared project policy. Use user config only for personal local paths.

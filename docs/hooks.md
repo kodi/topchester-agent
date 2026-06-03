@@ -287,22 +287,29 @@ Plain notification hooks usually do not need to return JSON. Redirect stdout so 
 
 Use either canonical events or aliases for a given lifecycle point. Configuring both `Stop` and `TaskComplete`, for example, runs both handlers at turn completion.
 
-## YAML Example
+## Config Example
 
-The same hook shape works in `topchester.yaml`:
+Hooks are configured in JSONC:
 
-```yaml
-hooks:
-  SessionStart:
-    - command: .topchester/hooks/session-start.sh
-  UserPromptSubmit:
-    - command: .topchester/hooks/user-prompt.sh
-  PreToolUse:
-    - matcher: bash
-      command: .topchester/hooks/check-command.sh
-      timeoutMs: 5000
-      statusMessage: Checking command policy
-  Stop:
-    - command: .topchester/hooks/stop.sh
-      statusMessage: Sending final notification
+```jsonc
+{
+  "hooks": {
+    "SessionStart": [{ "command": ".topchester/hooks/session-start.sh" }],
+    "UserPromptSubmit": [{ "command": ".topchester/hooks/user-prompt.sh" }],
+    "PreToolUse": [
+      {
+        "matcher": "bash",
+        "command": ".topchester/hooks/check-command.sh",
+        "timeoutMs": 5000,
+        "statusMessage": "Checking command policy",
+      },
+    ],
+    "Stop": [
+      {
+        "command": ".topchester/hooks/stop.sh",
+        "statusMessage": "Sending final notification",
+      },
+    ],
+  },
+}
 ```

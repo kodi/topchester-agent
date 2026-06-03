@@ -598,7 +598,7 @@ node_modules/.bin/tsx scripts/smoke/run-smoke.ts --fake-api --scenario 15-plan-t
 Optional live confidence check when provider keys are available:
 
 ```sh
-mise run smoke-live config/gemini.yaml 1 google/gemini-3-flash-preview 10000
+mise run smoke-live config/gemini.jsonc 1 google/gemini-3-flash-preview 10000
 ```
 
 Dependencies: Slice 6.

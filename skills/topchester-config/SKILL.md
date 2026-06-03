@@ -1,6 +1,6 @@
 ---
 name: topchester-config
-description: Configure Topchester project and user settings. Use when editing or explaining `topchester.jsonc`, `topchester.yaml`, `~/.config/topchester/config.jsonc`, model providers, command policy, ignore paths, hooks, project instruction files, or repo-scoped command approvals.
+description: Configure Topchester project and user settings. Use when editing or explaining `topchester.jsonc`, `~/.config/topchester/config.jsonc`, model providers, command policy, ignore paths, hooks, project instruction files, or repo-scoped command approvals.
 ---
 
 # Topchester Config
@@ -39,7 +39,7 @@ Use `topchester.jsonc` for team-shared project policy such as ignore paths, hook
 
 Do not put secrets in committed config. Prefer `apiKeyEnv` over `apiKey`.
 
-`.topchester/` is for local state and local config aliases, not the preferred shared project config path. `.agents/topchester/` stores sessions and logs. `topchester-kb/` stores compiled knowledge, not runtime configuration.
+`.topchester/` is for local state, not runtime configuration. `.agents/topchester/` stores sessions and logs. `topchester-kb/` stores compiled knowledge, not runtime configuration.
 
 ## Common Shape
 
