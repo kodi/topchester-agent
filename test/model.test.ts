@@ -575,6 +575,7 @@ describe("ModelGateway agent tool protocol", () => {
     const reasoningEvents: string[] = [];
     const api = await startChatApi((body) => {
       expect(body.stream).toBe(true);
+      expect(body.stream_options).toEqual({ include_usage: true });
       expect(body.tools).toBeDefined();
 
       return {
@@ -633,6 +634,42 @@ describe("ModelGateway agent tool protocol", () => {
       { id: "call_1", tool: "read_file", args: { path: "package.json" }, source: "native" },
     ]);
     expect(result.usage).toEqual({ inputTokens: 3, outputTokens: 4, totalTokens: 7, costUsd: 0.00042 });
+  });
+
+  it("can omit streaming usage options for strict proxies", async () => {
+    const api = await startChatApi((body) => {
+      expect(body.stream).toBe(true);
+      expect(body.stream_options).toBeUndefined();
+
+      return {
+        stream: [
+          chatStreamChunk({ delta: { content: "Hello." }, finish_reason: null }),
+          chatStreamChunk({ delta: {}, finish_reason: "stop" }),
+        ],
+      };
+    });
+    const gateway = new ModelGateway({
+      defaultPurpose: "agent.primary",
+      defaultProvider: "proxy",
+      models: {
+        "agent.primary": { name: "test-model" },
+      },
+      providers: {
+        proxy: {
+          type: "openai-compatible",
+          baseURL: api.baseURL,
+          apiKey: "test",
+          includeUsage: false,
+        },
+      },
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of gateway.streamText({ purpose: "agent.primary", prompt: "hello" })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.join("")).toBe("Hello.");
   });
 
   it("uses text JSON directly for OpenRouter auto mode when reasoning is streamed", async () => {

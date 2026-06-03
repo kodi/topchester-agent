@@ -21,6 +21,7 @@ const providerSchema = z.object({
   headers: z.record(z.string(), z.string()).optional(),
   supportsStructuredOutputs: z.boolean().optional(),
   service_tier: z.enum(["flex", "priority"]).optional(),
+  includeUsage: z.boolean().optional(),
   promptCaching: z.boolean().optional(),
   toolProtocol: toolProtocolSchema.optional(),
   openRouterToolRouting: z.enum(["auto", "force", "off"]).optional(),

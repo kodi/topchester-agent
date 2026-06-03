@@ -28,6 +28,7 @@ export interface OpenAICompatibleProviderConfig {
   headers?: Record<string, string>;
   supportsStructuredOutputs?: boolean;
   service_tier?: "flex" | "priority";
+  includeUsage?: boolean;
   promptCaching?: boolean;
   toolProtocol?: ToolProtocolOverride;
   openRouterToolRouting?: "auto" | "force" | "off";
@@ -151,6 +152,7 @@ export class ModelGateway {
       baseURL: providerConfig.baseURL,
       apiKey: resolveApiKey(providerConfig),
       headers: providerConfig.headers,
+      includeUsage: providerConfig.includeUsage !== false,
       supportsStructuredOutputs: providerConfig.supportsStructuredOutputs,
     });
 

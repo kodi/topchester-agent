@@ -116,6 +116,7 @@ interface ModelProviderConfig {
   headers?: Record<string, string>;
   supportsStructuredOutputs?: boolean;
   service_tier?: "flex" | "priority";
+  includeUsage?: boolean;
   promptCaching?: boolean;
   toolProtocol?: "auto" | "native" | "text-json" | "text-xml";
   openRouterToolRouting?: "auto" | "force" | "off";
@@ -154,6 +155,7 @@ Advanced debugging overrides are available but should stay out of normal example
         "baseURL": "https://openrouter.ai/api/v1",
         "apiKeyEnv": "OPENROUTER_API_KEY",
         "service_tier": "flex",
+        "includeUsage": true,
         "promptCaching": false,
         "toolProtocol": "text-json",
         "openRouterToolRouting": "off",
@@ -164,6 +166,8 @@ Advanced debugging overrides are available but should stay out of normal example
 ```
 
 `service_tier` is passed through to compatible OpenRouter requests. Supported request values are `flex` and `priority`.
+
+`includeUsage` defaults to enabled for OpenAI-compatible providers. It makes streaming requests include `stream_options: { "include_usage": true }` so proxies such as LiteLLM can return final input/output/cost data. Set `"includeUsage": false` if an upstream proxy rejects `stream_options`.
 
 `promptCaching` defaults to enabled for OpenAI-compatible providers. When enabled, Topchester sends the persisted session id as `prompt_cache_key` and marks stable prompt messages with OpenAI-compatible `cache_control: { "type": "ephemeral" }` metadata. Set `"promptCaching": false` on a provider when an upstream proxy treats prompt-cache fields as invalid request parameters.
 
