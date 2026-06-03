@@ -538,7 +538,7 @@ async function consumeReasoningStream(
       throw typedPart.error;
     }
 
-    if (typedPart.type === "raw" && hasUsageCostBody(typedPart.rawValue)) {
+    if (typedPart.type === "raw" && hasUsageOrCostBody(typedPart.rawValue)) {
       rawUsageBody = typedPart.rawValue;
       continue;
     }
@@ -572,13 +572,14 @@ async function emitReasoningSummary(
   await onReasoning?.({ type: "summary", text: reasoningText });
 }
 
-function hasUsageCostBody(value: unknown): boolean {
+function hasUsageOrCostBody(value: unknown): boolean {
   return Boolean(
     value &&
     typeof value === "object" &&
-    "usage" in value &&
-    (value as { usage?: unknown }).usage &&
-    typeof (value as { usage?: unknown }).usage === "object"
+    (("usage" in value &&
+      (value as { usage?: unknown }).usage &&
+      typeof (value as { usage?: unknown }).usage === "object") ||
+      extractResponseCostUsd(value) !== undefined)
   );
 }
 
@@ -691,10 +692,7 @@ function normalizeUsage(
     responseBody?: unknown;
   }
 ): ModelTokenUsage | undefined {
-  const costUsd =
-    context && isOpenRouterProvider(context.providerId, context.providerConfig)
-      ? extractOpenRouterCost(context.responseBody)
-      : undefined;
+  const costUsd = extractResponseCostUsd(context?.responseBody);
 
   if (!usage) {
     return costUsd === undefined ? undefined : { costUsd };
@@ -710,20 +708,53 @@ function normalizeUsage(
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
-function extractOpenRouterCost(responseBody: unknown): number | undefined {
+function extractResponseCostUsd(responseBody: unknown): number | undefined {
   if (!responseBody || typeof responseBody !== "object") {
     return undefined;
   }
 
   const usage = (responseBody as { usage?: unknown }).usage;
+  const hiddenParams = (responseBody as { hidden_params?: unknown; _hidden_params?: unknown }).hidden_params;
+  const privateHiddenParams = (responseBody as { _hidden_params?: unknown })._hidden_params;
 
-  if (!usage || typeof usage !== "object") {
+  return firstFiniteNumber(
+    getObjectNumber(responseBody, "response_cost"),
+    getObjectNumber(responseBody, "responseCost"),
+    getObjectNumber(responseBody, "cost"),
+    getObjectNumber(responseBody, "cost_usd"),
+    getObjectNumber(responseBody, "costUsd"),
+    getObjectNumber(usage, "cost"),
+    getObjectNumber(usage, "response_cost"),
+    getObjectNumber(usage, "responseCost"),
+    getObjectNumber(usage, "cost_usd"),
+    getObjectNumber(usage, "costUsd"),
+    getObjectNumber(hiddenParams, "response_cost"),
+    getObjectNumber(privateHiddenParams, "response_cost")
+  );
+}
+
+function getObjectNumber(value: unknown, key: string): number | undefined {
+  if (!value || typeof value !== "object") {
     return undefined;
   }
 
-  const cost = (usage as { cost?: unknown }).cost;
+  const field = (value as Record<string, unknown>)[key];
 
-  return typeof cost === "number" && Number.isFinite(cost) ? cost : undefined;
+  if (typeof field === "number" && Number.isFinite(field)) {
+    return field;
+  }
+
+  if (typeof field === "string" && field.trim().length > 0) {
+    const parsed = Number(field);
+
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  return undefined;
+}
+
+function firstFiniteNumber(...values: Array<number | undefined>): number | undefined {
+  return values.find((value): value is number => value !== undefined);
 }
 
 function formatErrorMessage(error: unknown): string {

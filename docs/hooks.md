@@ -15,7 +15,7 @@ Put hook config in any Topchester config file:
 
 Topchester loads those sources in that order. Later files override scalar values and hook arrays concatenate across config layers.
 
-```jsonc
+```json
 {
   "hooks": {
     "SessionStart": [{ "command": ".topchester/hooks/session-start.sh" }],
@@ -25,11 +25,11 @@ Topchester loads those sources in that order. Later files override scalar values
         "matcher": "bash",
         "command": ".topchester/hooks/check-command.sh",
         "timeoutMs": 5000,
-        "statusMessage": "Checking command policy",
-      },
+        "statusMessage": "Checking command policy"
+      }
     ],
-    "Stop": [{ "command": ".topchester/hooks/stop.sh", "statusMessage": "Sending final notification" }],
-  },
+    "Stop": [{ "command": ".topchester/hooks/stop.sh", "statusMessage": "Sending final notification" }]
+  }
 }
 ```
 
@@ -271,3 +271,23 @@ Plain notification hooks usually do not need to return JSON. Redirect stdout so 
 ```
 
 Use either canonical events or aliases for a given lifecycle point. Configuring both `Stop` and `TaskComplete`, for example, runs both handlers at turn completion.
+
+## YAML Example
+
+The same hook shape works in `topchester.yaml`:
+
+```yaml
+hooks:
+  SessionStart:
+    - command: .topchester/hooks/session-start.sh
+  UserPromptSubmit:
+    - command: .topchester/hooks/user-prompt.sh
+  PreToolUse:
+    - matcher: bash
+      command: .topchester/hooks/check-command.sh
+      timeoutMs: 5000
+      statusMessage: Checking command policy
+  Stop:
+    - command: .topchester/hooks/stop.sh
+      statusMessage: Sending final notification
+```

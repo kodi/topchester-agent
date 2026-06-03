@@ -53,6 +53,50 @@ describe("ModelGateway agent tool protocol", () => {
     expect(result.usage).toEqual({ inputTokens: 1, outputTokens: 1, totalTokens: 2, costUsd: 0.00014 });
   });
 
+  it("returns generic top-level response cost from text responses", async () => {
+    const api = await startChatApi(() => ({
+      choices: [
+        {
+          index: 0,
+          finish_reason: "stop",
+          message: { role: "assistant", content: "Hello." },
+        },
+      ],
+      response_cost: 0.0032,
+    }));
+    const gateway = createGateway(api.baseURL, "litellm");
+
+    const result = await gateway.generateText({
+      purpose: "agent.primary",
+      system: "system",
+      prompt: "hello",
+    });
+
+    expect(result.usage).toEqual({ inputTokens: 1, outputTokens: 1, totalTokens: 2, costUsd: 0.0032 });
+  });
+
+  it("returns generic nested response cost from text responses", async () => {
+    const api = await startChatApi(() => ({
+      choices: [
+        {
+          index: 0,
+          finish_reason: "stop",
+          message: { role: "assistant", content: "Hello." },
+        },
+      ],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, response_cost: "0.0042" },
+    }));
+    const gateway = createGateway(api.baseURL, "proxy");
+
+    const result = await gateway.generateText({
+      purpose: "agent.primary",
+      system: "system",
+      prompt: "hello",
+    });
+
+    expect(result.usage).toEqual({ inputTokens: 1, outputTokens: 1, totalTokens: 2, costUsd: 0.0042 });
+  });
+
   it("sends configured service tier on text responses", async () => {
     const api = await startChatApi((body) => {
       expect(body.service_tier).toBe("flex");
