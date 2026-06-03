@@ -393,6 +393,23 @@ describe("knowledge compiler inventory", () => {
     expect(l1Entries).toEqual([]);
   });
 
+  it("preserves current L1 entry count when incremental sync has no dirty files", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+    await initializeKnowledgeBase(workspace);
+
+    await syncKnowledgeBase(workspace, { full: true, model: fakeL1Model() });
+
+    const result = await syncKnowledgeBase(workspace, { model: fakeL1Model() });
+    const manifest = JSON.parse(await readFile(result.manifestPath, "utf8"));
+
+    expect(result.queuedFiles).toEqual([]);
+    expect(result.l1).toEqual({ queued: 0, completed: 0, failed: 0, changed: 0, missing: 0, currentEntries: 1 });
+    expect(manifest.l1).toEqual({ queued: 0, completed: 0, failed: 0, changed: 0, missing: 0, currentEntries: 1 });
+    expect(formatKnowledgeSyncResult(result)).toContain("current L1 entries: 1");
+  });
+
   it("excludes default and configured generated KB/cache artifact paths from inventory", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-kb-"));
     process.env.TOPCHESTER_KB_DIR = "custom-kb";

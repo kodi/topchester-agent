@@ -100,13 +100,15 @@ export async function syncKnowledgeBase(
     message: options.full ? "Writing full L1 sync queue and manifest..." : "Writing L1 sync queue and manifest...",
   });
   await writeFile(queuePath, `${JSON.stringify(queue, null, 2)}\n`);
+  const dirtyFilePaths = new Set(dirtyFiles.map((file) => file.path));
+  const currentEntryCount = options.full ? 0 : inventory.files.filter((file) => !dirtyFilePaths.has(file.path)).length;
   const l1 = {
     queued: queuedFiles.length,
     completed: 0,
     failed: 0,
     changed: 0,
     missing: 0,
-    currentEntries: 0,
+    currentEntries: currentEntryCount,
   };
   await writeFile(
     manifestPath,
