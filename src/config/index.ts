@@ -418,6 +418,7 @@ export const openRouterProviderDefaults = {
 export const codexProviderDefaults = {
   type: "openai-compatible" as const,
   baseURL: CODEX_BACKEND_BASE_URL,
+  toolProtocol: "text-json" as const,
 };
 
 export const codexStarterModelChoices = [

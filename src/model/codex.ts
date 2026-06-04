@@ -27,6 +27,7 @@ export function createCodexProviderFetch(options: CodexProviderFetchOptions = {}
   const upstreamFetch = options.fetch ?? fetch;
 
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = await rewriteCodexRequest(input, init);
     const auth = await resolveCodexAuth({
       ...options,
       providerId,
@@ -40,10 +41,20 @@ export function createCodexProviderFetch(options: CodexProviderFetchOptions = {}
       headers.set("ChatGPT-Account-Id", auth.accountId);
     }
 
-    return upstreamFetch(rewriteCodexRequestUrl(input), {
-      ...init,
+    const response = await upstreamFetch(request.input, {
+      ...request.init,
       headers,
     });
+
+    if (request.responseMode === "chat-json") {
+      return codexResponsesSseToChatJson(response);
+    }
+
+    if (request.responseMode === "chat-sse") {
+      return codexResponsesSseToChatSse(response);
+    }
+
+    return response;
   }) as typeof fetch;
 }
 
@@ -61,6 +72,307 @@ export function rewriteCodexRequestUrl(input: RequestInfo | URL): string | Reque
   }
 
   return input;
+}
+
+async function rewriteCodexRequest(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<{
+  input: string | RequestInfo | URL;
+  init?: RequestInit;
+  responseMode?: "chat-json" | "chat-sse";
+}> {
+  const rewrittenUrl = rewriteCodexRequestUrl(input);
+  const body = await readJsonBody(init?.body);
+
+  if (!isChatCompletionsBody(body)) {
+    return { input: rewrittenUrl, ...(init ? { init } : {}) };
+  }
+
+  const stream = body.stream === true;
+  const codexBody = chatCompletionsBodyToCodexResponsesBody(body);
+  const headers = new Headers(init?.headers);
+  headers.set("Content-Type", "application/json");
+
+  return {
+    input: rewrittenUrl,
+    init: {
+      ...init,
+      headers,
+      body: JSON.stringify(codexBody),
+    },
+    responseMode: stream ? "chat-sse" : "chat-json",
+  };
+}
+
+function chatCompletionsBodyToCodexResponsesBody(body: ChatCompletionsBody): Record<string, unknown> {
+  const instructions = body.messages
+    .filter((message) => message.role === "system" || message.role === "developer")
+    .map((message) => messageContentToText(message.content))
+    .filter((text) => text.trim().length > 0)
+    .join("\n\n");
+  const input = body.messages
+    .filter((message) => message.role !== "system" && message.role !== "developer")
+    .map(chatMessageToResponseInputItem)
+    .filter((item): item is Record<string, unknown> => item !== undefined);
+
+  return {
+    model: body.model,
+    instructions: instructions || "You are a helpful assistant.",
+    input,
+    store: false,
+    stream: true,
+    ...(typeof body.temperature === "number" ? { temperature: body.temperature } : {}),
+    ...(typeof body.top_p === "number" ? { top_p: body.top_p } : {}),
+    ...(typeof body.max_tokens === "number" ? { max_output_tokens: body.max_tokens } : {}),
+  };
+}
+
+function chatMessageToResponseInputItem(message: ChatMessageBody): Record<string, unknown> | undefined {
+  const text = messageContentToText(message.content);
+
+  if (!text.trim()) {
+    return undefined;
+  }
+
+  return {
+    type: "message",
+    role: message.role === "assistant" ? "assistant" : "user",
+    content: [
+      {
+        type: message.role === "assistant" ? "output_text" : "input_text",
+        text,
+      },
+    ],
+  };
+}
+
+async function codexResponsesSseToChatJson(response: Response): Promise<Response> {
+  if (!response.ok) {
+    return response;
+  }
+
+  const parsed = parseCodexResponsesSse(await response.text());
+  const headers = new Headers(response.headers);
+  headers.set("Content-Type", "application/json");
+
+  return new Response(
+    JSON.stringify({
+      id: parsed.id ?? "codex-response",
+      object: "chat.completion",
+      created: parsed.created ?? Math.floor(Date.now() / 1000),
+      model: parsed.model ?? "codex",
+      choices: [
+        {
+          index: 0,
+          finish_reason: "stop",
+          message: {
+            role: "assistant",
+            content: parsed.text,
+          },
+        },
+      ],
+      ...(parsed.usage ? { usage: parsed.usage } : {}),
+    }),
+    {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    }
+  );
+}
+
+async function codexResponsesSseToChatSse(response: Response): Promise<Response> {
+  if (!response.ok) {
+    return response;
+  }
+
+  const parsed = parseCodexResponsesSse(await response.text());
+  const encoder = new TextEncoder();
+  const id = parsed.id ?? "codex-response";
+  const created = parsed.created ?? Math.floor(Date.now() / 1000);
+  const model = parsed.model ?? "codex";
+  const chunks = [
+    {
+      id,
+      object: "chat.completion.chunk",
+      created,
+      model,
+      choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }],
+    },
+    ...(parsed.text.match(/[\s\S]{1,2048}/gu) ?? []).map((delta) => ({
+      id,
+      object: "chat.completion.chunk",
+      created,
+      model,
+      choices: [{ index: 0, delta: { content: delta }, finish_reason: null }],
+    })),
+    {
+      id,
+      object: "chat.completion.chunk",
+      created,
+      model,
+      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      ...(parsed.usage ? { usage: parsed.usage } : {}),
+    },
+  ];
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+      }
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.close();
+    },
+  });
+  const headers = new Headers(response.headers);
+  headers.set("Content-Type", "text/event-stream");
+
+  return new Response(stream, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function parseCodexResponsesSse(source: string): {
+  id?: string;
+  created?: number;
+  model?: string;
+  text: string;
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+} {
+  let text = "";
+  let response: Record<string, unknown> | undefined;
+
+  for (const event of source.split(/\n\n/u)) {
+    const dataLines = event
+      .split(/\r?\n/u)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart());
+
+    if (dataLines.length === 0) {
+      continue;
+    }
+
+    const data = dataLines.join("\n");
+    if (data === "[DONE]") {
+      continue;
+    }
+
+    const parsed = safeJsonParse(data);
+    if (!isPlainObject(parsed)) {
+      continue;
+    }
+
+    if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
+      text += parsed.delta;
+    }
+
+    if (parsed.type === "response.completed" && isPlainObject(parsed.response)) {
+      response = parsed.response;
+    }
+  }
+
+  return {
+    ...(typeof response?.id === "string" ? { id: response.id } : {}),
+    ...(typeof response?.created_at === "number" ? { created: response.created_at } : {}),
+    ...(typeof response?.model === "string" ? { model: response.model } : {}),
+    text,
+    ...normalizeCodexUsage(response?.usage),
+  };
+}
+
+function normalizeCodexUsage(usage: unknown): {
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+} {
+  if (!isPlainObject(usage)) {
+    return {};
+  }
+
+  const promptTokens = typeof usage.input_tokens === "number" ? usage.input_tokens : undefined;
+  const completionTokens = typeof usage.output_tokens === "number" ? usage.output_tokens : undefined;
+  const totalTokens = typeof usage.total_tokens === "number" ? usage.total_tokens : undefined;
+
+  return {
+    usage: {
+      ...(promptTokens === undefined ? {} : { prompt_tokens: promptTokens }),
+      ...(completionTokens === undefined ? {} : { completion_tokens: completionTokens }),
+      ...(totalTokens === undefined ? {} : { total_tokens: totalTokens }),
+    },
+  };
+}
+
+async function readJsonBody(body: BodyInit | null | undefined): Promise<unknown> {
+  if (typeof body !== "string") {
+    return undefined;
+  }
+
+  return safeJsonParse(body);
+}
+
+function safeJsonParse(source: string): unknown {
+  try {
+    return JSON.parse(source);
+  } catch {
+    return undefined;
+  }
+}
+
+interface ChatCompletionsBody {
+  model: string;
+  messages: ChatMessageBody[];
+  stream?: unknown;
+  temperature?: unknown;
+  top_p?: unknown;
+  max_tokens?: unknown;
+}
+
+interface ChatMessageBody {
+  role: string;
+  content?: unknown;
+}
+
+function isChatCompletionsBody(value: unknown): value is ChatCompletionsBody {
+  return (
+    isPlainObject(value) &&
+    typeof value.model === "string" &&
+    Array.isArray(value.messages) &&
+    value.messages.every((message) => isPlainObject(message) && typeof message.role === "string")
+  );
+}
+
+function messageContentToText(content: unknown): string {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (!Array.isArray(content)) {
+    return "";
+  }
+
+  return content
+    .map((part) => {
+      if (!isPlainObject(part)) {
+        return "";
+      }
+
+      if (typeof part.text === "string") {
+        return part.text;
+      }
+
+      if (typeof part.content === "string") {
+        return part.content;
+      }
+
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export async function resolveCodexAuth(

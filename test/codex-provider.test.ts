@@ -36,6 +36,30 @@ function createChatResponse(text = "Hello from Codex."): Response {
   );
 }
 
+function createCodexSseResponse(text = "Hello from Codex."): Response {
+  const response = {
+    id: "resp_test",
+    created_at: 1_780_000_000,
+    model: "gpt-5.5",
+    usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
+  };
+
+  return new Response(
+    [
+      `event: response.output_text.delta`,
+      `data: ${JSON.stringify({ type: "response.output_text.delta", delta: text })}`,
+      "",
+      `event: response.completed`,
+      `data: ${JSON.stringify({ type: "response.completed", response })}`,
+      "",
+    ].join("\n"),
+    {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    }
+  );
+}
+
 function jwtWithClaims(claims: Record<string, unknown>): string {
   return [
     Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url"),
@@ -90,7 +114,7 @@ describe("Codex provider adapter", () => {
     const requests: CapturedRequest[] = [];
     const fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       requests.push({ url: String(url), init: init ?? {} });
-      return createChatResponse();
+      return createCodexSseResponse();
     }) as typeof globalThis.fetch;
 
     await writeAuthStore(
@@ -122,6 +146,13 @@ describe("Codex provider adapter", () => {
     expect(headers.get("Authorization")).toBe("Bearer stored-access-token");
     expect(headers.get("ChatGPT-Account-Id")).toBe("account-1");
     expect(headers.get("X-Test")).toBe("kept");
+    expect(JSON.parse(String(requests[0]?.init.body))).toMatchObject({
+      model: "gpt-5.5",
+      instructions: "You are a helpful assistant.",
+      stream: true,
+      store: false,
+      input: [{ role: "user", content: [{ type: "input_text", text: "hello" }] }],
+    });
   });
 
   it("refreshes expired Codex OAuth tokens before model requests and persists rotated tokens", async () => {
@@ -146,7 +177,7 @@ describe("Codex provider adapter", () => {
         );
       }
 
-      return createChatResponse("Refreshed request worked.");
+      return createCodexSseResponse("Refreshed request worked.");
     }) as typeof globalThis.fetch;
 
     await writeAuthStore(

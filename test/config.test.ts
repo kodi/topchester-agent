@@ -314,6 +314,7 @@ describe("Topchester config loading", () => {
     expect(config.providers?.codex).toEqual({
       type: "openai-compatible",
       baseURL: "https://chatgpt.com/backend-api",
+      toolProtocol: "text-json",
     });
     expect(config.models?.choices?.map((choice) => `${choice.provider}/${choice.name}`)).toEqual([
       "codex/gpt-5.5",
@@ -905,6 +906,7 @@ describe("Topchester config loading", () => {
     expect(config.providers?.codex).toEqual({
       type: "openai-compatible",
       baseURL: "https://chatgpt.com/backend-api",
+      toolProtocol: "text-json",
     });
     expect(config.models?.assignments?.["agent.primary"]).toEqual({
       provider: "codex",
