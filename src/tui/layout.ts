@@ -1133,8 +1133,8 @@ function getVisibleSuggestionWindowStart(total: number, activeIndex: number, vis
 
 function formatSessionPickerRow(item: SessionPickerItem, selected: boolean, width: number): string {
   const marker = selected ? ">" : " ";
-  const date = formatSessionPickerDate(item.updatedAt);
-  const shortSessionId = item.sessionId.slice(0, 8);
+  const date = ui.ok(formatSessionPickerDate(item.updatedAt));
+  const shortSessionId = ui.muted(item.sessionId.slice(0, 8));
   const prompt = formatSessionPickerPrompt(item.firstUserPrompt);
 
   return truncateToWidth(`${marker} ${date} ${shortSessionId} ${prompt}`, width, "…", true);

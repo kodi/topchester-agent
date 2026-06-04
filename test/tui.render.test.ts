@@ -243,6 +243,43 @@ describe("TUI rendering", () => {
     expect(output).not.toContain("hidden transcript");
   });
 
+  it("colors session picker row date and id without coloring the prompt", () => {
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+
+    try {
+      const terminal = new FakeTerminal();
+      terminal.rows = 9;
+      const app = new ChatLayout(terminal, [], "repo", "model [provider]");
+      app.openSessionPicker([
+        {
+          sessionId: "019e9029-1111-7222-8333-444455556666",
+          updatedAt: "2026-06-04T10:11:12.000Z",
+          firstUserPrompt: "first normal prompt",
+        },
+      ]);
+
+      const output = app.render(72).join("\n");
+
+      expect(output).toContain("\u001b[32m2026-06-04 10:11\u001b[0m");
+      expect(output).toContain("\u001b[90m019e9029\u001b[0m");
+      expect(output).toContain("\u001b[90m019e9029\u001b[0m first normal prompt");
+    } finally {
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
+  });
+
   it("keeps session picker rows single-line and width-aware", () => {
     const terminal = new FakeTerminal();
     terminal.rows = 8;
