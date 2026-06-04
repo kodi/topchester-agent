@@ -64,6 +64,22 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
     description: "connect a model provider",
   },
   {
+    value: "/effort",
+    description: "show or set reasoning effort",
+  },
+  {
+    value: "/effort high",
+    description: "set reasoning effort to high",
+  },
+  {
+    value: "/reasoning",
+    description: "show or set reasoning effort",
+  },
+  {
+    value: "/reasoning high",
+    description: "set reasoning effort to high",
+  },
+  {
     value: "/kb status",
     description: "show non-clean knowledge files",
   },
@@ -149,6 +165,16 @@ export const slashCommands: SlashCommand[] = [
     name: "connect",
     description: "connect a model provider",
     execute: executeInteractiveOnlyCommand("/connect"),
+  },
+  {
+    name: "effort",
+    description: "show or set reasoning effort",
+    execute: executeInteractiveOnlyCommand("/effort"),
+  },
+  {
+    name: "reasoning",
+    description: "show or set reasoning effort",
+    execute: executeInteractiveOnlyCommand("/reasoning"),
   },
   {
     name: "provider",

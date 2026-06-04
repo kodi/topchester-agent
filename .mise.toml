@@ -9,9 +9,13 @@ _.file = ".env"
 dir = "{{config_root}}"
 run = "pnpm run typecheck"
 
+[tasks.format]
+dir = "{{config_root}}"
+run = "node_modules/.bin/oxfmt ."
+
 [tasks.format-check]
 dir = "{{config_root}}"
-run = "pnpm run format-check"
+run = "node_modules/.bin/oxfmt . --check"
 
 [tasks.lint]
 dir = "{{config_root}}"

@@ -68,7 +68,12 @@ function jwtWithClaims(claims: Record<string, unknown>): string {
   ].join(".");
 }
 
-function createGateway(authStorePath: string, fetch: typeof globalThis.fetch, now = 0): ModelGateway {
+function createGateway(
+  authStorePath: string,
+  fetch: typeof globalThis.fetch,
+  now = 0,
+  providerOverrides: Record<string, unknown> = {}
+): ModelGateway {
   return new ModelGateway({
     defaultPurpose: "agent.primary",
     defaultProvider: "codex",
@@ -84,6 +89,7 @@ function createGateway(authStorePath: string, fetch: typeof globalThis.fetch, no
           "Authorization": "Bearer stale-config-token",
           "X-Test": "kept",
         },
+        ...providerOverrides,
       },
     },
     codexAuth: {
@@ -152,6 +158,42 @@ describe("Codex provider adapter", () => {
       stream: true,
       store: false,
       input: [{ role: "user", content: [{ type: "input_text", text: "hello" }] }],
+    });
+    expect(JSON.parse(String(requests[0]?.init.body))).not.toHaveProperty("reasoning");
+  });
+
+  it("adds configured Codex reasoning effort to Responses requests", async () => {
+    const authStorePath = await createAuthPath();
+    const requests: CapturedRequest[] = [];
+    const fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(url), init: init ?? {} });
+      return createCodexSseResponse("Reasoning request worked.");
+    }) as typeof globalThis.fetch;
+
+    await writeAuthStore(
+      {
+        version: 1,
+        providers: {
+          codex: {
+            type: "oauth_codex",
+            issuer: CODEX_ISSUER,
+            accessToken: "stored-access-token",
+            refreshToken: "refresh-token",
+            accountId: "account-1",
+            expiresAt: 60 * 60 * 1000,
+          },
+        },
+      },
+      { path: authStorePath }
+    );
+
+    await createGateway(authStorePath, fetch, 0, { reasoningEffort: "high" }).generateText({
+      purpose: "agent.primary",
+      prompt: "hello",
+    });
+
+    expect(JSON.parse(String(requests[0]?.init.body))).toMatchObject({
+      reasoning: { effort: "high", summary: "auto" },
     });
   });
 

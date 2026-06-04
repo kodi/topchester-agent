@@ -8,8 +8,10 @@ import {
   addProjectBashAllowExactRule,
   configureCodexGlobalProvider,
   configureOpenRouterGlobalProvider,
+  getConfiguredReasoningEffort,
   loadTopchesterConfig,
   setGlobalDefaultModel,
+  setGlobalReasoningEffort,
 } from "../src/config/index.js";
 
 const envKeys = ["HOME", "TOPCHESTER_CONFIG", "TOPCHESTER_LOG_LEVEL"] as const;
@@ -1085,6 +1087,7 @@ describe("Topchester config loading", () => {
             service_tier: "flex",
             toolProtocol: "auto",
             openRouterToolRouting: "force",
+            reasoningEffort: "high",
             headers: { "X-Test": "custom" },
           },
           ollama: {
@@ -1120,6 +1123,7 @@ describe("Topchester config loading", () => {
       service_tier: "flex",
       toolProtocol: "auto",
       openRouterToolRouting: "force",
+      reasoningEffort: "high",
       headers: {
         "HTTP-Referer": "https://topchester.com",
         "X-Title": "Topchester",
@@ -1130,6 +1134,49 @@ describe("Topchester config loading", () => {
       baseURL: "http://localhost:11434/v1",
       apiKey: "ollama",
     });
+  });
+
+  it("rejects invalid provider reasoning effort values", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-config-reasoning-invalid-"));
+    await writeFile(
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        providers: {
+          openrouter: {
+            type: "openai-compatible",
+            baseURL: "https://openrouter.ai/api/v1",
+            reasoningEffort: "extreme",
+          },
+        },
+      })
+    );
+
+    expect(() => loadTopchesterConfig({ workspaceRoot: workspace })).toThrow("providers.openrouter.reasoningEffort");
+  });
+
+  it("sets, overwrites, and clears global provider reasoning effort", async () => {
+    await configureOpenRouterGlobalProvider();
+    await setGlobalDefaultModel("openrouter/openai/gpt-5");
+
+    await expect(setGlobalReasoningEffort("openrouter", "low")).resolves.toMatchObject({
+      providerId: "openrouter",
+      reasoningEffort: "low",
+    });
+    await expect(setGlobalReasoningEffort("openrouter", "xhigh")).resolves.toMatchObject({
+      providerId: "openrouter",
+      reasoningEffort: "xhigh",
+    });
+
+    let config = loadTopchesterConfig({ workspaceRoot: await mkdtemp(join(tmpdir(), "topchester-workspace-")) });
+    expect(getConfiguredReasoningEffort(config)).toBe("xhigh");
+
+    await expect(setGlobalReasoningEffort("openrouter", undefined)).resolves.toMatchObject({
+      providerId: "openrouter",
+    });
+    const written = await readFile(join(process.env.HOME!, ".config", "topchester", "config.jsonc"), "utf8");
+    expect(written).not.toContain("reasoningEffort");
+    config = loadTopchesterConfig({ workspaceRoot: await mkdtemp(join(tmpdir(), "topchester-workspace-")) });
+    expect(getConfiguredReasoningEffort(config)).toBeUndefined();
   });
 
   it("accepts JSONC shorthand config with comments and trailing commas", async () => {

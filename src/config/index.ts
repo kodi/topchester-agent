@@ -8,6 +8,8 @@ import { CODEX_BACKEND_BASE_URL } from "../auth/codex.js";
 const modelPurposeSchema = z.enum(["agent.primary", "agent.fast", "kb.summarize", "fallback"]);
 
 const toolProtocolSchema = z.enum(["auto", "native", "text-json", "text-xml"]);
+export const reasoningEfforts = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
+const reasoningEffortSchema = z.enum(reasoningEfforts);
 const openRouterAttributionHeaders = {
   "HTTP-Referer": "https://topchester.com",
   "X-Title": "Topchester",
@@ -25,6 +27,7 @@ const providerSchema = z.object({
   promptCaching: z.boolean().optional(),
   toolProtocol: toolProtocolSchema.optional(),
   openRouterToolRouting: z.enum(["auto", "force", "off"]).optional(),
+  reasoningEffort: reasoningEffortSchema.optional(),
 });
 
 const modelAssignmentSchema = z.object({
@@ -43,7 +46,7 @@ const providersSchema = z
   .object({
     default: z.string().optional(),
   })
-  .catchall(providerSchema.or(z.string()));
+  .catchall(providerSchema);
 
 const rawModelsSchema = z
   .object({
@@ -317,6 +320,7 @@ const topchesterConfigFileSchema = topchesterConfigSchema.extend({
 export type TopchesterConfig = z.infer<typeof topchesterConfigSchema>;
 type TopchesterConfigFile = z.infer<typeof topchesterConfigFileSchema>;
 export type ModelChoiceConfig = z.infer<typeof modelChoiceAssignmentSchema>;
+export type ReasoningEffort = (typeof reasoningEfforts)[number];
 
 export interface ConfigLoadOptions {
   workspaceRoot: string;
@@ -339,6 +343,12 @@ export interface ModelConfigUpdateResult {
   path: string;
   choices: string[];
   defaultModel?: string;
+}
+
+export interface ReasoningEffortUpdateResult {
+  path: string;
+  providerId: string;
+  reasoningEffort?: ReasoningEffort;
 }
 
 export function getGlobalTopchesterConfigDir(): string {
@@ -529,6 +539,64 @@ export async function setGlobalDefaultModel(modelRef: string): Promise<ModelConf
     choices: updatedChoices,
     defaultModel: normalizedModelRef,
   };
+}
+
+export async function setGlobalReasoningEffort(
+  providerId: string,
+  effort: ReasoningEffort | undefined
+): Promise<ReasoningEffortUpdateResult> {
+  const normalizedProviderId = providerId.trim();
+
+  if (!normalizedProviderId) {
+    throw new Error("No provider configured for the active model.");
+  }
+
+  const configPath = getGlobalTopchesterConfigPath();
+  const config = readConfigObject(configPath);
+  const providers = ensurePlainObjectProperty(config, "providers");
+  const provider = providers[normalizedProviderId];
+
+  if (!isPlainObject(provider)) {
+    throw new Error(`No provider configured for model provider "${normalizedProviderId}".`);
+  }
+
+  if (effort === undefined) {
+    delete provider.reasoningEffort;
+  } else {
+    provider.reasoningEffort = effort;
+  }
+
+  await writeGlobalConfig(configPath, config);
+
+  return {
+    path: configPath,
+    providerId: normalizedProviderId,
+    ...(effort === undefined ? {} : { reasoningEffort: effort }),
+  };
+}
+
+export function getActiveModelProviderId(config: TopchesterConfig): string | undefined {
+  const purpose = config.models?.defaultPurpose ?? "agent.primary";
+  const model =
+    config.models?.assignments?.[purpose as z.infer<typeof modelPurposeSchema>] ?? config.models?.assignments?.fallback;
+  const provider = model?.provider ?? config.providers?.default;
+
+  return typeof provider === "string" ? provider : undefined;
+}
+
+export function getConfiguredReasoningEffort(
+  config: TopchesterConfig,
+  providerId = getActiveModelProviderId(config)
+): ReasoningEffort | undefined {
+  if (!providerId) {
+    return undefined;
+  }
+
+  const provider = config.providers?.[providerId];
+
+  return typeof provider === "object" && provider !== null && "reasoningEffort" in provider
+    ? provider.reasoningEffort
+    : undefined;
 }
 
 export function formatModelRef(model: { name: string; provider?: string }): string {

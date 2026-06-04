@@ -18,6 +18,7 @@ import {
   type ToolProtocolAttempt,
   type ToolProtocolOverride,
 } from "../agent/tools/types.js";
+import { type ReasoningEffort } from "../config/index.js";
 import { createCodexProviderFetch, isCodexProvider, type CodexProviderFetchOptions } from "./codex.js";
 
 export type ModelPurpose = "agent.primary" | "agent.fast" | "kb.summarize" | "fallback";
@@ -34,6 +35,7 @@ export interface OpenAICompatibleProviderConfig {
   promptCaching?: boolean;
   toolProtocol?: ToolProtocolOverride;
   openRouterToolRouting?: "auto" | "force" | "off";
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface ModelConfig {
@@ -154,6 +156,7 @@ export class ModelGateway {
       ? createCodexProviderFetch({
           ...this.#config.codexAuth,
           providerId,
+          reasoningEffort: providerConfig.reasoningEffort,
         })
       : undefined;
 
@@ -654,9 +657,28 @@ function buildProviderOptions(
     options.prompt_cache_key = request.sessionId;
   }
 
+  if (config.reasoningEffort !== undefined) {
+    Object.assign(options, buildReasoningProviderOptions(providerId, config));
+  }
+
   return {
     [providerId]: options,
   };
+}
+
+function buildReasoningProviderOptions(
+  providerId: string,
+  config: Pick<OpenAICompatibleProviderConfig, "baseURL" | "reasoningEffort">
+): { [key: string]: JsonValue } {
+  if (config.reasoningEffort === undefined) {
+    return {};
+  }
+
+  if (isOpenRouterProvider(providerId, config as OpenAICompatibleProviderConfig)) {
+    return { reasoning: { effort: config.reasoningEffort } };
+  }
+
+  return { reasoningEffort: config.reasoningEffort };
 }
 
 function buildNativeProviderOptions(

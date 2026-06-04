@@ -15,6 +15,10 @@ Common commands:
 - `/model` chooses from configured model choices.
 - `/model all [search]` browses OpenRouter models and adds one to choices.
 - `/connect` connects a model provider.
+- `/effort` shows the current reasoning effort and accepted values.
+- `/effort <none|minimal|low|medium|high|xhigh>` sets reasoning effort for the active model provider.
+- `/effort clear` or `/effort default` removes the configured effort so provider defaults apply.
+- `/reasoning` is an alias for `/effort`.
 - `/new` clears the terminal and starts a fresh project-local session.
 - `/fork` clones the current session into a new project-local session and switches to it.
 - `/queue <prompt>` queues a follow-up prompt, or starts it immediately when idle.
@@ -30,4 +34,6 @@ Common commands:
 - `/kb init` creates Topchester project knowledge folders.
 - `/kb reset` deletes the local knowledge base and cache.
 
-`/model`, `/connect`, `/new`, `/fork`, `/restore`, `/queue`, `/q`, and `/steer` are TUI-only. In `topchester run`, Topchester prints a short message that says to use the interactive TUI.
+`none` is an explicit reasoning effort value. Use `clear` or `default` when you want to remove the config field instead.
+
+`/model`, `/connect`, `/effort`, `/reasoning`, `/new`, `/fork`, `/restore`, `/queue`, `/q`, and `/steer` are TUI-only. In `topchester run`, Topchester prints a short message that says to use the interactive TUI.

@@ -43,6 +43,22 @@ describe("slash commands", () => {
         description: "connect a model provider",
       },
       {
+        value: "/effort",
+        description: "show or set reasoning effort",
+      },
+      {
+        value: "/effort high",
+        description: "set reasoning effort to high",
+      },
+      {
+        value: "/reasoning",
+        description: "show or set reasoning effort",
+      },
+      {
+        value: "/reasoning high",
+        description: "set reasoning effort to high",
+      },
+      {
         value: "/kb status",
         description: "show non-clean knowledge files",
       },
@@ -123,6 +139,30 @@ describe("slash commands", () => {
         description: "connect a model provider",
       },
     ]);
+    expect(getSlashCommandSuggestions("/e")).toEqual([
+      {
+        value: "/effort",
+        description: "show or set reasoning effort",
+      },
+      {
+        value: "/effort high",
+        description: "set reasoning effort to high",
+      },
+    ]);
+    expect(getSlashCommandSuggestions("/r")).toEqual([
+      {
+        value: "/reasoning",
+        description: "show or set reasoning effort",
+      },
+      {
+        value: "/reasoning high",
+        description: "set reasoning effort to high",
+      },
+      {
+        value: "/restore",
+        description: "restore a previous session",
+      },
+    ]);
     expect(getSlashCommandSuggestions("/k")).toEqual([
       {
         value: "/kb status",
@@ -167,12 +207,6 @@ describe("slash commands", () => {
       {
         value: "/fork",
         description: "fork the current session",
-      },
-    ]);
-    expect(getSlashCommandSuggestions("/r")).toEqual([
-      {
-        value: "/restore",
-        description: "restore a previous session",
       },
     ]);
     expect(getSlashCommandSuggestions("/q")).toEqual([
@@ -255,6 +289,12 @@ describe("slash commands", () => {
     });
     await expect(executeSlashCommand("/connect", { workspaceRoot: "/repo" })).resolves.toEqual({
       messages: ["/connect is available in the interactive TUI."],
+    });
+    await expect(executeSlashCommand("/effort high", { workspaceRoot: "/repo" })).resolves.toEqual({
+      messages: ["/effort is available in the interactive TUI."],
+    });
+    await expect(executeSlashCommand("/reasoning medium", { workspaceRoot: "/repo" })).resolves.toEqual({
+      messages: ["/reasoning is available in the interactive TUI."],
     });
   });
 

@@ -60,3 +60,7 @@ When debugging what the agent actually did, inspect the runtime artifacts before
 Use PLAIN FOLK SPEAK in user-facing text, even for highly technical product concepts; for example, write something an average developer understands instead of phrasing like `missing canonical KB`.
 
 Never expose a user's full home directory path in user-facing docs, examples, comments, or responses. Use `~` for home-relative paths.
+
+Use ONLY mise tasks for repo checks and automation; never run pnpm tasks directly.
+
+Use the fff MCP tools for all file search operations instead of default tools.

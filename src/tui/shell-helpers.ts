@@ -141,6 +141,12 @@ export function isModelCommand(command: string): boolean {
   return name === "model" || name === "models";
 }
 
+export function isReasoningEffortCommand(command: string): boolean {
+  const name = getSlashCommandName(command);
+
+  return name === "effort" || name === "reasoning";
+}
+
 function getSlashCommandName(command: string): string | undefined {
   return command.trim().slice(1).split(/\s+/u).filter(Boolean)[0]?.toLowerCase();
 }

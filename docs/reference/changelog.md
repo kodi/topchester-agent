@@ -16,6 +16,7 @@ Topchester changes grouped by day. This file is the source of truth for the publ
 
 - Added `topchester integrations` for agent integration install/status/repair/remove workflows, with Codex hook setup support.
 - Added TUI queued follow-up prompts, `/queue`, and `/steer` active-turn guidance.
+- Added `/effort` and `/reasoning` commands for durable provider reasoning effort.
 - Added Codex device auth flow and global auth store ([28c0b17](https://github.com/kodi/topchester-agent/commit/28c0b17fb10c865d064944be39181ff21604b450))
 - Added interactive restore command ([84e6f78](https://github.com/kodi/topchester-agent/commit/84e6f782aefb6f72ef7eb0da5c4655e6d4c6ea26))
 - Added config validation and diagnostic summary command ([b91eb5a](https://github.com/kodi/topchester-agent/commit/b91eb5a44dcc05542526b0523e119aa5478d30c0))

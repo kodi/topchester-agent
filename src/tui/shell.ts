@@ -14,9 +14,14 @@ import {
   addGlobalModelChoices,
   configureOpenRouterGlobalProvider,
   formatModelRef,
+  getActiveModelProviderId,
   getConfiguredModelChoices,
+  getConfiguredReasoningEffort,
   loadTopchesterConfig,
+  reasoningEfforts,
   setGlobalDefaultModel,
+  setGlobalReasoningEffort,
+  type ReasoningEffort,
 } from "../config/index.js";
 import { fallbackOpenRouterStarterChoices, selectOpenRouterStarterChoices } from "../model/openrouter.js";
 import { type SessionEventPayload } from "../session/events.js";
@@ -60,6 +65,7 @@ import {
   isForkSessionCommand,
   isModelCommand,
   isNewSessionCommand,
+  isReasoningEffortCommand,
   isRestoreSessionCommand,
   isStreamReasoningEnabledByEnv,
   persistBashApproval,
@@ -587,6 +593,11 @@ export class TopchesterTuiShell implements TuiShell {
       return;
     }
 
+    if (isReasoningEffortCommand(command)) {
+      await this.submitReasoningEffortCommand(app, tui, command);
+      return;
+    }
+
     const busy = new BusyIndicator(app, tui, {
       status: "running command",
       promptHint: "working...",
@@ -702,7 +713,8 @@ export class TopchesterTuiShell implements TuiShell {
       name === "kb" ||
       isNewSessionCommand(command) ||
       isConnectCommand(command) ||
-      isModelCommand(command)
+      isModelCommand(command) ||
+      isReasoningEffortCommand(command)
     ) {
       return undefined;
     }
@@ -856,6 +868,69 @@ export class TopchesterTuiShell implements TuiShell {
     }
 
     this.showModelPicker(app, tui, query);
+  }
+
+  private async submitReasoningEffortCommand(app: ChatLayout, tui: TUI, command: string): Promise<void> {
+    await this.clearTaskPlanForNewTurn(app);
+    await this.persistPayloadWithWarning(app, slashCommandToSessionPayload(command));
+    const args = getSlashCommandArgs(command);
+    const value = args[0]?.toLowerCase();
+
+    if (args.length === 0) {
+      const current = getConfiguredReasoningEffort(this.context.config);
+      app.addMessage(systemMessage(formatCurrentReasoningEffortMessage(current)));
+      tui.requestRender();
+      return;
+    }
+
+    if (args.length > 1) {
+      app.addMessage(systemMessage(formatReasoningEffortUsageMessage()));
+      tui.requestRender();
+      return;
+    }
+
+    if (value === "clear" || value === "default") {
+      await this.updateReasoningEffort(app, undefined);
+      tui.requestRender();
+      return;
+    }
+
+    if (!isReasoningEffort(value)) {
+      app.addMessage(systemMessage(formatReasoningEffortUsageMessage()));
+      tui.requestRender();
+      return;
+    }
+
+    await this.updateReasoningEffort(app, value);
+    tui.requestRender();
+  }
+
+  private async updateReasoningEffort(app: ChatLayout, effort: ReasoningEffort | undefined): Promise<void> {
+    try {
+      const providerId = getActiveModelProviderId(this.context.config);
+      if (!providerId) {
+        app.addMessage(
+          systemMessage(
+            "No provider configured for the active model. Run /connect codex or configure a provider first."
+          )
+        );
+        return;
+      }
+
+      const result = await setGlobalReasoningEffort(providerId, effort);
+      this.reloadModelConfig(app);
+      app.addMessage(
+        systemMessage(
+          effort === undefined
+            ? `Reasoning effort cleared; provider defaults will apply.\nconfig: ${formatHomeRelativePath(result.path)}`
+            : `Reasoning effort set to ${effort}.\nconfig: ${formatHomeRelativePath(result.path)}`
+        )
+      );
+      app.setStatus("ready");
+    } catch (error) {
+      app.addMessage(systemMessage(`Reasoning effort change failed: ${formatPlainError(error)}`));
+      app.setStatus("reasoning effort change failed");
+    }
   }
 
   private showProviderPicker(app: ChatLayout, tui: TUI): void {
@@ -1364,4 +1439,16 @@ function parseSteerCommandPrompt(command: string): string | undefined {
   const match = /^\/steer(?:\s+([\s\S]*))?$/u.exec(trimmed);
 
   return match ? (match[1] ?? "") : undefined;
+}
+
+function isReasoningEffort(value: string | undefined): value is ReasoningEffort {
+  return reasoningEfforts.includes(value as ReasoningEffort);
+}
+
+function formatCurrentReasoningEffortMessage(effort: ReasoningEffort | undefined): string {
+  return `Current reasoning effort: ${effort ?? "provider default"}. Values: ${reasoningEfforts.join(", ")}.`;
+}
+
+function formatReasoningEffortUsageMessage(): string {
+  return `Usage: /effort <${reasoningEfforts.join("|")}> or /effort clear.`;
 }

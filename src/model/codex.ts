@@ -5,6 +5,7 @@ import {
   type AuthProviderRecord,
   type CodexOAuthProviderRecord,
 } from "../auth/store.js";
+import { type ReasoningEffort } from "../config/index.js";
 import type { OpenAICompatibleProviderConfig } from "./index.js";
 
 export const CODEX_PROVIDER_ID = "codex";
@@ -14,6 +15,7 @@ export interface CodexProviderFetchOptions extends CodexFetchOptions {
   authStorePath?: string;
   providerId?: string;
   refreshSafetyWindowMs?: number;
+  reasoningEffort?: ReasoningEffort;
 }
 
 const refreshesByStoreAndProvider = new Map<string, Promise<CodexOAuthProviderRecord>>();
@@ -27,7 +29,7 @@ export function createCodexProviderFetch(options: CodexProviderFetchOptions = {}
   const upstreamFetch = options.fetch ?? fetch;
 
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const request = await rewriteCodexRequest(input, init);
+    const request = await rewriteCodexRequest(input, init, options.reasoningEffort);
     const auth = await resolveCodexAuth({
       ...options,
       providerId,
@@ -76,7 +78,8 @@ export function rewriteCodexRequestUrl(input: RequestInfo | URL): string | Reque
 
 async function rewriteCodexRequest(
   input: RequestInfo | URL,
-  init?: RequestInit
+  init?: RequestInit,
+  reasoningEffort?: ReasoningEffort
 ): Promise<{
   input: string | RequestInfo | URL;
   init?: RequestInit;
@@ -90,7 +93,7 @@ async function rewriteCodexRequest(
   }
 
   const stream = body.stream === true;
-  const codexBody = chatCompletionsBodyToCodexResponsesBody(body);
+  const codexBody = chatCompletionsBodyToCodexResponsesBody(body, reasoningEffort);
   const headers = new Headers(init?.headers);
   headers.set("Content-Type", "application/json");
 
@@ -105,7 +108,10 @@ async function rewriteCodexRequest(
   };
 }
 
-function chatCompletionsBodyToCodexResponsesBody(body: ChatCompletionsBody): Record<string, unknown> {
+function chatCompletionsBodyToCodexResponsesBody(
+  body: ChatCompletionsBody,
+  reasoningEffort?: ReasoningEffort
+): Record<string, unknown> {
   const instructions = body.messages
     .filter((message) => message.role === "system" || message.role === "developer")
     .map((message) => messageContentToText(message.content))
@@ -125,6 +131,7 @@ function chatCompletionsBodyToCodexResponsesBody(body: ChatCompletionsBody): Rec
     ...(typeof body.temperature === "number" ? { temperature: body.temperature } : {}),
     ...(typeof body.top_p === "number" ? { top_p: body.top_p } : {}),
     ...(typeof body.max_tokens === "number" ? { max_output_tokens: body.max_tokens } : {}),
+    ...(reasoningEffort === undefined ? {} : { reasoning: { effort: reasoningEffort, summary: "auto" } }),
   };
 }
 

@@ -3,6 +3,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type AppContext } from "../app/context.js";
 import { formatTaskPlanForTui, type TaskPlanState } from "../agent/task-plan.js";
 import { ui } from "../cli/ui.js";
+import { getConfiguredReasoningEffort } from "../config/index.js";
 import { type KnowledgeStatus } from "../knowledge/status.js";
 import { type ModelPurpose } from "../model/index.js";
 import { colorAsciiBanner, getRandomAsciiBanner } from "./banner.js";
@@ -46,7 +47,8 @@ export function getStartupThreadMessages(context: AppContext): ChatMessage[] {
         continue;
       }
       const auth = provider.apiKeyEnv ? `env:${provider.apiKeyEnv}` : provider.apiKey ? "inline" : "none";
-      lines.push(`  ${providerId}: ${provider.type} ${provider.baseURL} auth=${auth}`);
+      const effort = provider.reasoningEffort ? ` effort=${provider.reasoningEffort}` : "";
+      lines.push(`  ${providerId}: ${provider.type} ${provider.baseURL} auth=${auth}${effort}`);
     }
   }
 
@@ -137,13 +139,15 @@ function formatSplitStatusLine(left: string, right: string, width: number): stri
 }
 
 function formatModelStatusSegment(modelLabel: string): string {
-  const providerMatch = /^(?<model>.*?)(?<provider> \[[^\]]+\])$/.exec(modelLabel);
+  const providerMatch = /^(?<model>.*?)(?<provider> \[[^\]]+\])(?<effort> · effort .+)?$/u.exec(modelLabel);
 
   if (!providerMatch?.groups) {
     return ui.model(modelLabel);
   }
 
-  return `${ui.model(providerMatch.groups.model)}${ui.label(providerMatch.groups.provider)}`;
+  const effort = providerMatch.groups.effort ? ui.label(providerMatch.groups.effort) : "";
+
+  return `${ui.model(providerMatch.groups.model)}${ui.label(providerMatch.groups.provider)}${effort}`;
 }
 
 export function formatKnowledgeFooterStatus(status: KnowledgeStatus): string {
@@ -218,6 +222,8 @@ export function getModelLabel(context: AppContext): string {
   }
 
   const provider = model.provider ?? context.config.providers?.default;
+  const effort = getConfiguredReasoningEffort(context.config, typeof provider === "string" ? provider : undefined);
+  const effortLabel = effort ? ` · effort ${effort}` : "";
 
-  return typeof provider === "string" ? `${model.name} [${provider}]` : model.name;
+  return typeof provider === "string" ? `${model.name} [${provider}]${effortLabel}` : `${model.name}${effortLabel}`;
 }

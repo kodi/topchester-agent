@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ModelGateway } from "../src/model/index.js";
+import { ModelGateway, type OpenAICompatibleProviderConfig } from "../src/model/index.js";
 import { readFileTool } from "../src/agent/tools/read-file.js";
 
 const servers: Array<{ close(): Promise<void> }> = [];
@@ -121,6 +121,54 @@ describe("ModelGateway agent tool protocol", () => {
     });
 
     expect(result.usage).toEqual({ inputTokens: 1, outputTokens: 1, totalTokens: 2, costUsd: 0.0042 });
+  });
+
+  it("sends OpenRouter reasoning effort as nested reasoning options", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const api = await startChatApi((body) => {
+      requestBody = body;
+      return {
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            message: { role: "assistant", content: "Hello." },
+          },
+        ],
+      };
+    });
+    const gateway = createGateway(api.baseURL, "openrouter", { reasoningEffort: "high" });
+
+    await gateway.generateText({ purpose: "agent.primary", prompt: "hello" });
+
+    expect(requestBody).toMatchObject({
+      reasoning: { effort: "high" },
+    });
+    expect(requestBody).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("sends generic OpenAI-compatible reasoning effort as reasoning_effort", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const api = await startChatApi((body) => {
+      requestBody = body;
+      return {
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            message: { role: "assistant", content: "Hello." },
+          },
+        ],
+      };
+    });
+    const gateway = createGateway(api.baseURL, "proxy", { reasoningEffort: "medium" });
+
+    await gateway.generateText({ purpose: "agent.primary", prompt: "hello" });
+
+    expect(requestBody).toMatchObject({
+      reasoning_effort: "medium",
+    });
+    expect(requestBody).not.toHaveProperty("reasoning");
   });
 
   it("returns LiteLLM response cost from response headers", async () => {
@@ -895,7 +943,11 @@ describe("ModelGateway agent tool protocol", () => {
   });
 });
 
-function createGateway(baseURL: string, providerId: string): ModelGateway {
+function createGateway(
+  baseURL: string,
+  providerId: string,
+  providerOverrides: Partial<OpenAICompatibleProviderConfig> = {}
+): ModelGateway {
   return new ModelGateway({
     defaultPurpose: "agent.primary",
     defaultProvider: providerId,
@@ -907,6 +959,7 @@ function createGateway(baseURL: string, providerId: string): ModelGateway {
         type: "openai-compatible",
         baseURL,
         apiKey: "test",
+        ...providerOverrides,
       },
     },
   });

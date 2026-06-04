@@ -19,6 +19,7 @@ import {
   createSkillsOverlayActions,
   formatSkillInspectBody,
   getModelSetupHint,
+  getModelLabel,
   getKnowledgeStatusMessages,
   getStartupThreadMessages,
   renderStaticLayout,
@@ -192,6 +193,35 @@ describe("TUI rendering", () => {
 
   it("keeps status line output unchanged when no KB status is supplied", () => {
     expect(formatStatusLine("repo", "model [provider]")).toBe("● ready ·  repo · model [provider]");
+  });
+
+  it("includes configured reasoning effort in the model label and footer", () => {
+    const context = {
+      workspaceRoot: "/repo",
+      config: {
+        models: {
+          assignments: {
+            "agent.primary": { name: "gpt-5.5", provider: "codex" },
+          },
+        },
+        providers: {
+          default: "codex",
+          codex: {
+            type: "openai-compatible",
+            baseURL: "https://codex.test",
+            reasoningEffort: "high",
+          },
+        },
+      },
+      modelGateway: {},
+      devFlags: new Set<string>(),
+      logger: { debug() {} },
+    } as unknown as AppContext;
+
+    const label = getModelLabel(context);
+
+    expect(label).toBe("gpt-5.5 [codex] · effort high");
+    expect(formatStatusLine("repo", label)).toBe("● ready ·  repo · gpt-5.5 [codex] · effort high");
   });
 
   it("appends optional KB status to the status line", () => {
@@ -1500,7 +1530,7 @@ describe("TUI rendering", () => {
     const app = new ChatLayout(terminal, [], "repo", "model [provider]");
     app.setInputValue("/");
 
-    for (let index = 0; index < 6; index += 1) {
+    for (let index = 0; index < 10; index += 1) {
       app.handleInput("\u001b[B");
     }
 
