@@ -892,14 +892,14 @@ async function writeFakeApiConfig(
             name: modelId,
             provider: "fake",
           },
-          "providers": {
-            default: "fake",
-            fake: {
-              type: "openai-compatible",
-              baseURL,
-              apiKey: "fake",
-              ...(toolProtocol ? { toolProtocol } : {}),
-            },
+        },
+        providers: {
+          default: "fake",
+          fake: {
+            type: "openai-compatible",
+            baseURL,
+            apiKey: "fake",
+            ...(toolProtocol ? { toolProtocol } : {}),
           },
         },
       },

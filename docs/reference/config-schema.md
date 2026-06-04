@@ -63,12 +63,10 @@ The known `codex` provider is OAuth-backed. Its config stays non-secret:
 
 ```jsonc
 {
-  "models": {
-    "providers": {
-      "codex": {
-        "type": "openai-compatible",
-        "baseURL": "https://chatgpt.com/backend-api",
-      },
+  "providers": {
+    "codex": {
+      "type": "openai-compatible",
+      "baseURL": "https://chatgpt.com/backend-api",
     },
   },
 }

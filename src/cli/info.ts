@@ -87,7 +87,7 @@ function formatModelHints(config: TopchesterConfig): string[] {
 }
 
 function formatProviderHints(config: TopchesterConfig, authStoreStatus: AuthStoreStatus): string[] {
-  const providers = config.models?.providers ?? {};
+  const providers = config.providers ?? {};
   const namedProviders = Object.entries(providers).filter(([providerId]) => providerId !== "default");
 
   if (namedProviders.length === 0) {

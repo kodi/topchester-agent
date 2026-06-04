@@ -80,17 +80,17 @@ Use this when you want a custom environment variable name, extra headers, or too
     "default": "openrouter/anthropic/claude-sonnet-4.5",
     "fast": "openrouter/openai/gpt-4.1-mini",
     "kb.summarize": "openrouter/google/gemini-3.1-pro",
-    "providers": {
-      "default": "openrouter",
-      "openrouter": {
-        "type": "openai-compatible",
-        "baseURL": "https://openrouter.ai/api/v1",
-        "apiKeyEnv": "TOPCHESTER_OPENROUTER_API_KEY",
-        "supportsStructuredOutputs": true,
-        "headers": {
-          "HTTP-Referer": "https://topchester.com",
-          "X-Title": "Topchester",
-        },
+  },
+  "providers": {
+    "default": "openrouter",
+    "openrouter": {
+      "type": "openai-compatible",
+      "baseURL": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "TOPCHESTER_OPENROUTER_API_KEY",
+      "supportsStructuredOutputs": true,
+      "headers": {
+        "HTTP-Referer": "https://topchester.com",
+        "X-Title": "Topchester",
       },
     },
   },
@@ -104,13 +104,13 @@ With `providers.default: openrouter`, model names can be written without repeati
   "models": {
     "default": "anthropic/claude-sonnet-4.5",
     "fast": "openai/gpt-4.1-mini",
-    "providers": {
-      "default": "openrouter",
-      "openrouter": {
-        "type": "openai-compatible",
-        "baseURL": "https://openrouter.ai/api/v1",
-        "apiKeyEnv": "OPENROUTER_API_KEY",
-      },
+  },
+  "providers": {
+    "default": "openrouter",
+    "openrouter": {
+      "type": "openai-compatible",
+      "baseURL": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
     },
   },
 }
@@ -125,14 +125,14 @@ Any OpenAI-compatible endpoint can be used as a provider. Ollama commonly runs a
   "models": {
     "default": "qwen2.5-coder:14b",
     "kb.summarize": "qwen2.5-coder:14b",
-    "providers": {
-      "default": "ollama",
-      "ollama": {
-        "type": "openai-compatible",
-        "baseURL": "http://localhost:11434/v1",
-        "apiKey": "ollama",
-        "supportsStructuredOutputs": false,
-      },
+  },
+  "providers": {
+    "default": "ollama",
+    "ollama": {
+      "type": "openai-compatible",
+      "baseURL": "http://localhost:11434/v1",
+      "apiKey": "ollama",
+      "supportsStructuredOutputs": false,
     },
   },
 }
@@ -152,20 +152,20 @@ Use OpenRouter for the interactive agent, but summarize the project knowledge ba
       "provider": "ollama",
       "toolProtocol": "text-json",
     },
-    "providers": {
-      "default": "openrouter",
-      "openrouter": {
-        "type": "openai-compatible",
-        "baseURL": "https://openrouter.ai/api/v1",
-        "apiKeyEnv": "OPENROUTER_API_KEY",
-        "supportsStructuredOutputs": true,
-      },
-      "ollama": {
-        "type": "openai-compatible",
-        "baseURL": "http://localhost:11434/v1",
-        "apiKey": "ollama",
-        "supportsStructuredOutputs": false,
-      },
+  },
+  "providers": {
+    "default": "openrouter",
+    "openrouter": {
+      "type": "openai-compatible",
+      "baseURL": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "supportsStructuredOutputs": true,
+    },
+    "ollama": {
+      "type": "openai-compatible",
+      "baseURL": "http://localhost:11434/v1",
+      "apiKey": "ollama",
+      "supportsStructuredOutputs": false,
     },
   },
 }
@@ -180,13 +180,13 @@ For proxies and local servers, add another OpenAI-compatible provider and point 
   "models": {
     "default": "claude-sonnet",
     "fast": "gpt-4.1-mini",
-    "providers": {
-      "default": "litellm",
-      "litellm": {
-        "type": "openai-compatible",
-        "baseURL": "http://localhost:4000/v1",
-        "apiKeyEnv": "LITELLM_API_KEY",
-      },
+  },
+  "providers": {
+    "default": "litellm",
+    "litellm": {
+      "type": "openai-compatible",
+      "baseURL": "http://localhost:4000/v1",
+      "apiKeyEnv": "LITELLM_API_KEY",
     },
   },
 }
@@ -203,13 +203,13 @@ Providers named `openai` automatically use OpenAI-native tool calls and structur
       "name": "gpt-5.5(low)",
       "provider": "openai",
     },
-    "providers": {
-      "default": "openai",
-      "openai": {
-        "type": "openai-compatible",
-        "baseURL": "http://localhost:8317/v1",
-        "apiKey": "dummy-not-used",
-      },
+  },
+  "providers": {
+    "default": "openai",
+    "openai": {
+      "type": "openai-compatible",
+      "baseURL": "http://localhost:8317/v1",
+      "apiKey": "dummy-not-used",
     },
   },
 }
@@ -221,22 +221,20 @@ Each provider supports:
 
 ```jsonc
 {
-  "models": {
-    "providers": {
-      "my-provider": {
-        "type": "openai-compatible",
-        "baseURL": "https://example.com/v1",
-        "apiKeyEnv": "MY_PROVIDER_API_KEY",
-        "apiKey": "optional-inline-key",
-        "supportsStructuredOutputs": true,
-        "service_tier": "flex",
-        "includeUsage": true,
-        "promptCaching": true,
-        "toolProtocol": "auto",
-        "openRouterToolRouting": "auto",
-        "headers": {
-          "X-Custom-Header": "value",
-        },
+  "providers": {
+    "my-provider": {
+      "type": "openai-compatible",
+      "baseURL": "https://example.com/v1",
+      "apiKeyEnv": "MY_PROVIDER_API_KEY",
+      "apiKey": "optional-inline-key",
+      "supportsStructuredOutputs": true,
+      "service_tier": "flex",
+      "includeUsage": true,
+      "promptCaching": true,
+      "toolProtocol": "auto",
+      "openRouterToolRouting": "auto",
+      "headers": {
+        "X-Custom-Header": "value",
       },
     },
   },
@@ -276,12 +274,12 @@ You can also set `toolProtocol` per model slot:
       "provider": "openrouter",
       "toolProtocol": "native",
     },
-    "providers": {
-      "openrouter": {
-        "type": "openai-compatible",
-        "baseURL": "https://openrouter.ai/api/v1",
-        "apiKeyEnv": "OPENROUTER_API_KEY",
-      },
+  },
+  "providers": {
+    "openrouter": {
+      "type": "openai-compatible",
+      "baseURL": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
     },
   },
 }

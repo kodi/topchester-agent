@@ -334,7 +334,7 @@ function createTopchesterProgram(): Command {
 
 function printStartupSummary(context: ReturnType<typeof createAppContext>) {
   const assignments = context.config.models?.assignments ?? {};
-  const providers = context.config.models?.providers ?? {};
+  const providers = context.config.providers ?? {};
 
   console.log(`workspace: ${context.workspaceRoot}`);
   console.log(`default model purpose: ${context.config.models?.defaultPurpose ?? "agent.primary"}`);

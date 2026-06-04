@@ -271,8 +271,8 @@ describe("Topchester config loading", () => {
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
     const written = await readFile(join(home, ".config", "topchester", "config.jsonc"), "utf8");
 
-    expect(config.models?.providers?.default).toBe("openrouter");
-    expect(config.models?.providers?.openrouter).toMatchObject({
+    expect(config.providers?.default).toBe("openrouter");
+    expect(config.providers?.openrouter).toMatchObject({
       type: "openai-compatible",
       baseURL: "https://openrouter.ai/api/v1",
       apiKeyEnv: "OPENROUTER_API_KEY",
@@ -310,8 +310,8 @@ describe("Topchester config loading", () => {
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
     const written = await readFile(join(home, ".config", "topchester", "config.jsonc"), "utf8");
 
-    expect(config.models?.providers?.default).toBe("codex");
-    expect(config.models?.providers?.codex).toEqual({
+    expect(config.providers?.default).toBe("codex");
+    expect(config.providers?.codex).toEqual({
       type: "openai-compatible",
       baseURL: "https://chatgpt.com/backend-api",
     });
@@ -584,8 +584,8 @@ describe("Topchester config loading", () => {
     });
     expect(config.models?.assignments?.["agent.fast"]).toBeUndefined();
     expect(config.models?.assignments?.["kb.summarize"]).toBeUndefined();
-    expect(config.models?.providers?.default).toBe("openrouter");
-    expect(config.models?.providers?.openrouter).toMatchObject({
+    expect(config.providers?.default).toBe("openrouter");
+    expect(config.providers?.openrouter).toMatchObject({
       type: "openai-compatible",
       baseURL: "https://openrouter.ai/api/v1",
       apiKeyEnv: "OPENROUTER_API_KEY",
@@ -674,13 +674,13 @@ describe("Topchester config loading", () => {
       JSON.stringify({
         models: {
           default: "gpt-4.1-mini",
-          providers: {
-            default: "openrouter",
-            openrouter: {
-              type: "openai-compatible",
-              baseURL: "https://openrouter.ai/api/v1",
-              apiKeyEnv: "CUSTOM_OPENROUTER_KEY",
-            },
+        },
+        providers: {
+          default: "openrouter",
+          openrouter: {
+            type: "openai-compatible",
+            baseURL: "https://openrouter.ai/api/v1",
+            apiKeyEnv: "CUSTOM_OPENROUTER_KEY",
           },
         },
       })
@@ -692,8 +692,8 @@ describe("Topchester config loading", () => {
       name: "gpt-4.1-mini",
       provider: "openrouter",
     });
-    expect(config.models?.providers?.default).toBe("openrouter");
-    expect(config.models?.providers?.openrouter).toMatchObject({
+    expect(config.providers?.default).toBe("openrouter");
+    expect(config.providers?.openrouter).toMatchObject({
       apiKeyEnv: "CUSTOM_OPENROUTER_KEY",
     });
   });
@@ -708,12 +708,12 @@ describe("Topchester config loading", () => {
         models: {
           default: "qwen/qwen3-coder:free",
           fast: "openrouter/google/gemini-3.1-flash-lite",
-          providers: {
-            default: "openrouter",
-            openrouter: {
-              type: "openai-compatible",
-              baseURL: "https://openrouter.ai/api/v1",
-            },
+        },
+        providers: {
+          default: "openrouter",
+          openrouter: {
+            type: "openai-compatible",
+            baseURL: "https://openrouter.ai/api/v1",
           },
         },
       })
@@ -731,6 +731,39 @@ describe("Topchester config loading", () => {
     });
   });
 
+  it("lets an explicit Codex model override an OpenRouter default provider", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        models: {
+          default: "codex/gpt-5.4-mini",
+        },
+        providers: {
+          default: "openrouter",
+          openrouter: {
+            type: "openai-compatible",
+            baseURL: "https://openrouter.ai/api/v1",
+          },
+          codex: {
+            type: "openai-compatible",
+            baseURL: "https://chatgpt.com/backend-api",
+          },
+        },
+      })
+    );
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(config.models?.assignments?.["agent.primary"]).toEqual({
+      name: "gpt-5.4-mini",
+      provider: "codex",
+    });
+    expect(config.providers?.default).toBe("openrouter");
+  });
+
   it("keeps a bare default model bare when no provider is known", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const home = join(root, "home");
@@ -743,8 +776,8 @@ describe("Topchester config loading", () => {
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
 
     expect(config.models?.assignments?.["agent.primary"]).toEqual({ name: "local-model" });
-    expect(config.models?.providers?.default).toBeUndefined();
-    expect(config.models?.providers?.openrouter).toBeUndefined();
+    expect(config.providers?.default).toBeUndefined();
+    expect(config.providers?.openrouter).toBeUndefined();
   });
 
   it("lets the user default model replace a project default model", async () => {
@@ -818,17 +851,17 @@ describe("Topchester config loading", () => {
       JSON.stringify({
         models: {
           default: "openrouter/google/gemini-3.1-flash-lite",
-          providers: {
-            openrouter: {
-              type: "openai-compatible",
-              baseURL: "https://custom-openrouter.example/v1",
-              apiKeyEnv: "CUSTOM_OPENROUTER_KEY",
-              supportsStructuredOutputs: false,
-              service_tier: "flex",
-              toolProtocol: "native",
-              openRouterToolRouting: "off",
-              headers: { "X-Test": "custom" },
-            },
+        },
+        providers: {
+          openrouter: {
+            type: "openai-compatible",
+            baseURL: "https://custom-openrouter.example/v1",
+            apiKeyEnv: "CUSTOM_OPENROUTER_KEY",
+            supportsStructuredOutputs: false,
+            service_tier: "flex",
+            toolProtocol: "native",
+            openRouterToolRouting: "off",
+            headers: { "X-Test": "custom" },
           },
         },
       })
@@ -836,7 +869,7 @@ describe("Topchester config loading", () => {
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
 
-    expect(config.models?.providers?.openrouter).toEqual({
+    expect(config.providers?.openrouter).toEqual({
       type: "openai-compatible",
       baseURL: "https://custom-openrouter.example/v1",
       apiKeyEnv: "CUSTOM_OPENROUTER_KEY",
@@ -868,8 +901,8 @@ describe("Topchester config loading", () => {
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
 
-    expect(config.models?.providers?.default).toBe("codex");
-    expect(config.models?.providers?.codex).toEqual({
+    expect(config.providers?.default).toBe("codex");
+    expect(config.providers?.codex).toEqual({
       type: "openai-compatible",
       baseURL: "https://chatgpt.com/backend-api",
     });
@@ -892,13 +925,13 @@ describe("Topchester config loading", () => {
       JSON.stringify({
         models: {
           default: "codex/gpt-5.5",
-          providers: {
-            codex: {
-              type: "openai-compatible",
-              baseURL: "https://chatgpt.example/backend-api",
-              supportsStructuredOutputs: false,
-              toolProtocol: "auto",
-            },
+        },
+        providers: {
+          codex: {
+            type: "openai-compatible",
+            baseURL: "https://chatgpt.example/backend-api",
+            supportsStructuredOutputs: false,
+            toolProtocol: "auto",
           },
         },
       })
@@ -906,7 +939,7 @@ describe("Topchester config loading", () => {
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
 
-    expect(config.models?.providers?.codex).toEqual({
+    expect(config.providers?.codex).toEqual({
       type: "openai-compatible",
       baseURL: "https://chatgpt.example/backend-api",
       supportsStructuredOutputs: false,
@@ -923,15 +956,15 @@ describe("Topchester config loading", () => {
       JSON.stringify({
         models: {
           default: "openrouter/google/gemini-3.1-flash-lite",
-          providers: {
-            openrouter: {
-              type: "openai-compatible",
-              baseURL: "https://openrouter.ai/api/v1",
-              apiKeyEnv: "OPENROUTER_API_KEY",
-              headers: {
-                "HTTP-Referer": "https://example.com",
-                "X-Title": "Custom App",
-              },
+        },
+        providers: {
+          openrouter: {
+            type: "openai-compatible",
+            baseURL: "https://openrouter.ai/api/v1",
+            apiKeyEnv: "OPENROUTER_API_KEY",
+            headers: {
+              "HTTP-Referer": "https://example.com",
+              "X-Title": "Custom App",
             },
           },
         },
@@ -940,7 +973,7 @@ describe("Topchester config loading", () => {
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
 
-    expect(config.models?.providers?.openrouter).toMatchObject({
+    expect(config.providers?.openrouter).toMatchObject({
       headers: {
         "HTTP-Referer": "https://example.com",
         "X-Title": "Custom App",
@@ -960,13 +993,13 @@ describe("Topchester config loading", () => {
             name: "gpt-5.5(low)",
             provider: "openai",
           },
-          providers: {
-            default: "openai",
-            openai: {
-              type: "openai-compatible",
-              baseURL: "http://localhost:8317/v1",
-              apiKey: "dummy-not-used",
-            },
+        },
+        providers: {
+          default: "openai",
+          openai: {
+            type: "openai-compatible",
+            baseURL: "http://localhost:8317/v1",
+            apiKey: "dummy-not-used",
           },
         },
       })
@@ -974,7 +1007,7 @@ describe("Topchester config loading", () => {
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
 
-    expect(config.models?.providers?.openai).toMatchObject({
+    expect(config.providers?.openai).toMatchObject({
       type: "openai-compatible",
       baseURL: "http://localhost:8317/v1",
       apiKey: "dummy-not-used",
@@ -995,14 +1028,14 @@ describe("Topchester config loading", () => {
             name: "gpt-5.5(low)",
             provider: "openai",
           },
-          providers: {
-            openai: {
-              type: "openai-compatible",
-              baseURL: "https://api.openai.com/v1",
-              apiKeyEnv: "OPENAI_API_KEY",
-              supportsStructuredOutputs: false,
-              toolProtocol: "auto",
-            },
+        },
+        providers: {
+          openai: {
+            type: "openai-compatible",
+            baseURL: "https://api.openai.com/v1",
+            apiKeyEnv: "OPENAI_API_KEY",
+            supportsStructuredOutputs: false,
+            toolProtocol: "auto",
           },
         },
       })
@@ -1010,7 +1043,7 @@ describe("Topchester config loading", () => {
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
 
-    expect(config.models?.providers?.openai).toMatchObject({
+    expect(config.providers?.openai).toMatchObject({
       supportsStructuredOutputs: false,
       toolProtocol: "auto",
     });
@@ -1039,24 +1072,24 @@ describe("Topchester config loading", () => {
             provider: "ollama",
             toolProtocol: "text-json",
           },
-          "providers": {
-            default: "openrouter",
-            openrouter: {
-              type: "openai-compatible",
-              baseURL: "https://openrouter.ai/api/v1",
-              apiKeyEnv: "OPENROUTER_API_KEY",
-              supportsStructuredOutputs: true,
-              service_tier: "flex",
-              toolProtocol: "auto",
-              openRouterToolRouting: "force",
-              headers: { "X-Test": "custom" },
-            },
-            ollama: {
-              type: "openai-compatible",
-              baseURL: "http://localhost:11434/v1",
-              apiKey: "ollama",
-              supportsStructuredOutputs: false,
-            },
+        },
+        providers: {
+          default: "openrouter",
+          openrouter: {
+            type: "openai-compatible",
+            baseURL: "https://openrouter.ai/api/v1",
+            apiKeyEnv: "OPENROUTER_API_KEY",
+            supportsStructuredOutputs: true,
+            service_tier: "flex",
+            toolProtocol: "auto",
+            openRouterToolRouting: "force",
+            headers: { "X-Test": "custom" },
+          },
+          ollama: {
+            type: "openai-compatible",
+            baseURL: "http://localhost:11434/v1",
+            apiKey: "ollama",
+            supportsStructuredOutputs: false,
           },
         },
       })
@@ -1079,7 +1112,7 @@ describe("Topchester config loading", () => {
       provider: "ollama",
       toolProtocol: "text-json",
     });
-    expect(config.models?.providers?.openrouter).toMatchObject({
+    expect(config.providers?.openrouter).toMatchObject({
       baseURL: "https://openrouter.ai/api/v1",
       apiKeyEnv: "OPENROUTER_API_KEY",
       service_tier: "flex",
@@ -1091,7 +1124,7 @@ describe("Topchester config loading", () => {
         "X-Test": "custom",
       },
     });
-    expect(config.models?.providers?.ollama).toMatchObject({
+    expect(config.providers?.ollama).toMatchObject({
       baseURL: "http://localhost:11434/v1",
       apiKey: "ollama",
     });
@@ -1217,17 +1250,17 @@ describe("Topchester config loading", () => {
       JSON.stringify({
         models: {
           default: { name: "debug-model", provider: "openrouter", toolProtocol: "native" },
-          providers: {
-            default: "openrouter",
-            openrouter: {
-              type: "openai-compatible",
-              baseURL: "https://openrouter.ai/api/v1",
-              apiKey: "test",
-              toolProtocol: "text-json",
-              openRouterToolRouting: "force",
-              includeUsage: false,
-              promptCaching: false,
-            },
+        },
+        providers: {
+          default: "openrouter",
+          openrouter: {
+            type: "openai-compatible",
+            baseURL: "https://openrouter.ai/api/v1",
+            apiKey: "test",
+            toolProtocol: "text-json",
+            openRouterToolRouting: "force",
+            includeUsage: false,
+            promptCaching: false,
           },
         },
       })
@@ -1236,7 +1269,7 @@ describe("Topchester config loading", () => {
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
 
     expect(config.models?.assignments?.["agent.primary"]?.toolProtocol).toBe("native");
-    expect(config.models?.providers?.openrouter).toMatchObject({
+    expect(config.providers?.openrouter).toMatchObject({
       toolProtocol: "text-json",
       openRouterToolRouting: "force",
       includeUsage: false,

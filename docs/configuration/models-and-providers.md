@@ -46,14 +46,14 @@ Use this shape for OpenAI-compatible endpoints such as OpenRouter, LiteLLM, vLLM
 {
   "models": {
     "default": "anthropic/claude-sonnet-4.5",
-    "providers": {
-      "default": "openrouter",
-      "openrouter": {
-        "type": "openai-compatible",
-        "baseURL": "https://openrouter.ai/api/v1",
-        "apiKeyEnv": "OPENROUTER_API_KEY",
-        "supportsStructuredOutputs": true,
-      },
+  },
+  "providers": {
+    "default": "openrouter",
+    "openrouter": {
+      "type": "openai-compatible",
+      "baseURL": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "supportsStructuredOutputs": true,
     },
   },
 }

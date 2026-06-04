@@ -12,22 +12,20 @@ Each provider supports:
 
 ```jsonc
 {
-  "models": {
-    "providers": {
-      "my-provider": {
-        "type": "openai-compatible",
-        "baseURL": "https://example.com/v1",
-        "apiKeyEnv": "MY_PROVIDER_API_KEY",
-        "apiKey": "optional-inline-key",
-        "supportsStructuredOutputs": true,
-        "service_tier": "flex",
-        "includeUsage": true,
-        "promptCaching": true,
-        "toolProtocol": "auto",
-        "openRouterToolRouting": "auto",
-        "headers": {
-          "X-Custom-Header": "value",
-        },
+  "providers": {
+    "my-provider": {
+      "type": "openai-compatible",
+      "baseURL": "https://example.com/v1",
+      "apiKeyEnv": "MY_PROVIDER_API_KEY",
+      "apiKey": "optional-inline-key",
+      "supportsStructuredOutputs": true,
+      "service_tier": "flex",
+      "includeUsage": true,
+      "promptCaching": true,
+      "toolProtocol": "auto",
+      "openRouterToolRouting": "auto",
+      "headers": {
+        "X-Custom-Header": "value",
       },
     },
   },
@@ -64,14 +62,14 @@ The command stores OAuth credentials in `~/.config/topchester/auth.json` and wri
 ```jsonc
 {
   "models": {
-    "providers": {
-      "default": "codex",
-      "codex": {
-        "type": "openai-compatible",
-        "baseURL": "https://chatgpt.com/backend-api",
-      },
-    },
     "choices": ["codex/gpt-5.5", "codex/gpt-5.4", "codex/gpt-5.4-mini", "codex/gpt-5.3-codex-spark"],
+  },
+  "providers": {
+    "default": "codex",
+    "codex": {
+      "type": "openai-compatible",
+      "baseURL": "https://chatgpt.com/backend-api",
+    },
   },
 }
 ```

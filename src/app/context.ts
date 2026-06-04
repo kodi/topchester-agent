@@ -39,7 +39,7 @@ export function createModelGatewayFromConfig(config: TopchesterConfig): ModelGat
 }
 
 export function normalizeModelGatewayConfig(config: TopchesterConfig): ModelGatewayConfig {
-  const providers = config.models?.providers ?? {};
+  const providers = config.providers ?? {};
   const { default: defaultProvider, ...namedProviders } = providers;
 
   return {

@@ -129,7 +129,7 @@ Device-code login:
 
 Runtime request:
 
-1. Resolve `models.providers.codex`.
+1. Resolve `providers.codex`.
 2. Resolve OAuth auth from the global auth store.
 3. Refresh access token if missing or expired.
 4. Pass custom `fetch` to `createOpenAICompatible`.

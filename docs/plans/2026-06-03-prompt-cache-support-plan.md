@@ -47,7 +47,7 @@ Out of scope:
 
 ## Edge Cases
 
-- Providers that reject `prompt_cache_key` or `cache_control`: set `models.providers.<id>.promptCaching: false`.
+- Providers that reject `prompt_cache_key` or `cache_control`: set `providers.<id>.promptCaching: false`.
 - Runs without persisted session: omit `prompt_cache_key` but still allow cache markers.
 - Cached tokens may already be included in `inputTokens`; display cache counts separately rather than subtracting from existing totals.
 - Cache-write fields are inconsistent across proxies, so raw-body extraction should accept common names.

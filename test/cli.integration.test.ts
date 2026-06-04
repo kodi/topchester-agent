@@ -119,13 +119,13 @@ async function makeFixture() {
     JSON.stringify({
       models: {
         default: "qwen/qwen3-coder:free",
-        providers: {
-          default: "openrouter",
-          openrouter: {
-            type: "openai-compatible",
-            baseURL: "https://openrouter.ai/api/v1",
-            apiKeyEnv: "OPENROUTER_API_KEY",
-          },
+      },
+      providers: {
+        default: "openrouter",
+        openrouter: {
+          type: "openai-compatible",
+          baseURL: "https://openrouter.ai/api/v1",
+          apiKeyEnv: "OPENROUTER_API_KEY",
         },
       },
     })
@@ -557,13 +557,13 @@ describe("CLI integration", () => {
       JSON.stringify({
         models: {
           default: "openrouter/qwen/qwen3-coder:free",
-          providers: {
-            default: "openrouter",
-            openrouter: {
-              type: "openai-compatible",
-              baseURL: "https://openrouter.ai/api/v1",
-              apiKeyEnv: "OPENROUTER_API_KEY",
-            },
+        },
+        providers: {
+          default: "openrouter",
+          openrouter: {
+            type: "openai-compatible",
+            baseURL: "https://openrouter.ai/api/v1",
+            apiKeyEnv: "OPENROUTER_API_KEY",
           },
         },
         mcp: {

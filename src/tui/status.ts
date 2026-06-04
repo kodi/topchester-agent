@@ -13,7 +13,7 @@ export const STARTUP_PROMPT_HINT =
 
 export function getStartupThreadMessages(context: AppContext): ChatMessage[] {
   const assignments = context.config.models?.assignments ?? {};
-  const providers = context.config.models?.providers ?? {};
+  const providers = context.config.providers ?? {};
   const banner = getRandomAsciiBanner();
   const lines = banner ? ["", "", colorAsciiBanner(banner), "", ""] : [ui.heading("")];
 
@@ -63,7 +63,7 @@ export function getStartupThreadMessages(context: AppContext): ChatMessage[] {
 
 export function getModelSetupHint(context: AppContext): string | undefined {
   const assignments = context.config.models?.assignments ?? {};
-  const providers = context.config.models?.providers ?? {};
+  const providers = context.config.providers ?? {};
   const hasAssignments = Object.keys(assignments).length > 0;
   const hasProviders = Object.entries(providers).some(([providerId]) => providerId !== "default");
 
@@ -217,7 +217,7 @@ export function getModelLabel(context: AppContext): string {
     return "not set";
   }
 
-  const provider = model.provider ?? context.config.models?.providers?.default;
+  const provider = model.provider ?? context.config.providers?.default;
 
   return typeof provider === "string" ? `${model.name} [${provider}]` : model.name;
 }

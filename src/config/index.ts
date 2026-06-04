@@ -51,7 +51,6 @@ const rawModelsSchema = z
     "fast": modelRefSchema.optional(),
     "kb.summarize": modelRefSchema.optional(),
     "choices": z.array(modelRefSchema).optional(),
-    "providers": providersSchema.optional(),
   })
   .strict();
 
@@ -272,10 +271,10 @@ export const topchesterConfigSchema = z.object({
       defaultPurpose: modelPurposeSchema.optional(),
       assignments: z.partialRecord(modelPurposeSchema, modelAssignmentSchema).optional(),
       choices: z.array(modelChoiceAssignmentSchema).optional(),
-      providers: providersSchema.optional(),
     })
     .strict()
     .optional(),
+  providers: providersSchema.optional(),
   ignore: z
     .object({
       paths: z.array(ignorePathSchema).optional(),
@@ -294,6 +293,7 @@ export const topchesterConfigSchema = z.object({
 
 const rawTopchesterConfigSchema = z.object({
   models: rawModelsSchema.optional(),
+  providers: providersSchema.optional(),
   ignore: z
     .object({
       paths: z.array(ignorePathSchema).optional(),
@@ -431,7 +431,7 @@ export async function configureOpenRouterGlobalProvider(): Promise<ModelConfigUp
   const configPath = getGlobalTopchesterConfigPath();
   const config = readConfigObject(configPath);
   const models = ensurePlainObjectProperty(config, "models");
-  const providers = ensurePlainObjectProperty(models, "providers");
+  const providers = ensurePlainObjectProperty(config, "providers");
 
   providers.default ??= "openrouter";
   providers.openrouter = {
@@ -452,7 +452,7 @@ export async function configureCodexGlobalProvider(): Promise<ModelConfigUpdateR
   const configPath = getGlobalTopchesterConfigPath();
   const config = readConfigObject(configPath);
   const models = ensurePlainObjectProperty(config, "models");
-  const providers = ensurePlainObjectProperty(models, "providers");
+  const providers = ensurePlainObjectProperty(config, "providers");
   const existingChoices = ensureStringArrayProperty(models, "choices");
   const prioritizedChoices = new Set(codexStarterModelChoices);
 
@@ -546,7 +546,7 @@ export function getConfiguredModelChoices(config: TopchesterConfig): ModelChoice
   const fallbackChoices: ModelChoiceConfig[] = [];
 
   for (const assignment of assignments) {
-    const provider = assignment.provider ?? config.models?.providers?.default;
+    const provider = assignment.provider ?? config.providers?.default;
     if (typeof provider !== "string") {
       continue;
     }
@@ -792,28 +792,42 @@ function parseConfigFile(path: string, value: unknown): TopchesterConfigFile {
 }
 
 function normalizeConfigInput(value: unknown): unknown {
-  const normalizedModels = normalizeModelsConfigInput(value);
+  const normalizedModels = normalizeModelsAndProvidersConfigInput(value);
 
   return normalizeHooksConfigInput(normalizedModels);
 }
 
-function normalizeModelsConfigInput(value: unknown): unknown {
-  if (!isPlainObject(value) || !isPlainObject(value.models)) {
+function normalizeModelsAndProvidersConfigInput(value: unknown): unknown {
+  if (!isPlainObject(value)) {
     return value;
   }
 
+  const providers = isPlainObject(value.providers) ? { ...value.providers } : {};
+
+  if (!isPlainObject(value.models)) {
+    if (Object.keys(providers).length === 0) {
+      return value;
+    }
+
+    applyKnownProviderDefaults(providers);
+    return { ...value, providers };
+  }
+
   const models = { ...value.models };
-  const providers = isPlainObject(models.providers) ? { ...models.providers } : {};
+  const knownProviders = getKnownModelProviders(providers);
   const assignments: Record<string, z.infer<typeof modelAssignmentSchema>> = {};
   const defaultModelRef = normalizeModelRef(
     models.default,
-    typeof providers.default === "string" ? providers.default : undefined
+    typeof providers.default === "string" ? providers.default : undefined,
+    knownProviders
   );
   const defaultProvider = typeof providers.default === "string" ? providers.default : defaultModelRef?.provider;
-  const fastModelRef = normalizeModelRef(models.fast, defaultProvider);
-  const kbSummarizeModelRef = normalizeModelRef(models["kb.summarize"], defaultProvider);
+  const fastModelRef = normalizeModelRef(models.fast, defaultProvider, knownProviders);
+  const kbSummarizeModelRef = normalizeModelRef(models["kb.summarize"], defaultProvider, knownProviders);
   const modelChoices = Array.isArray(models.choices)
-    ? models.choices.map((choice) => modelRefToAssignment(normalizeModelRef(choice, undefined) ?? { model: "" }))
+    ? models.choices.map((choice) =>
+        modelRefToAssignment(normalizeModelRef(choice, undefined, knownProviders) ?? { model: "" })
+      )
     : undefined;
 
   if (defaultModelRef) {
@@ -848,8 +862,8 @@ function normalizeModelsConfigInput(value: unknown): unknown {
       ...models,
       assignments,
       ...(modelChoices ? { choices: modelChoices } : {}),
-      providers,
     },
+    ...(Object.keys(providers).length > 0 ? { providers } : {}),
   };
 }
 
@@ -882,10 +896,11 @@ function normalizeHooksConfigInput(value: unknown): unknown {
 
 function normalizeModelRef(
   ref: unknown,
-  defaultProvider: string | undefined
+  defaultProvider: string | undefined,
+  knownProviders = getKnownModelProviders()
 ): { provider?: string; model: string; toolProtocol?: z.infer<typeof toolProtocolSchema> } | undefined {
   if (typeof ref === "string") {
-    return parseModelRef(ref, defaultProvider);
+    return parseModelRef(ref, defaultProvider, knownProviders);
   }
 
   if (!isPlainObject(ref) || typeof ref.name !== "string") {
@@ -917,7 +932,17 @@ function modelRefToAssignment(ref: {
   };
 }
 
-function parseModelRef(ref: string, defaultProvider: string | undefined): { provider?: string; model: string } {
+function parseModelRef(
+  ref: string,
+  defaultProvider: string | undefined,
+  knownProviders: Set<string>
+): { provider?: string; model: string } {
+  const [explicitProvider, ...explicitModelParts] = ref.split("/");
+
+  if (explicitProvider && explicitModelParts.length > 0 && knownProviders.has(explicitProvider)) {
+    return { provider: explicitProvider, model: explicitModelParts.join("/") };
+  }
+
   if (defaultProvider) {
     const providerPrefix = `${defaultProvider}/`;
 
@@ -933,6 +958,10 @@ function parseModelRef(ref: string, defaultProvider: string | undefined): { prov
   }
 
   return { model: ref };
+}
+
+function getKnownModelProviders(providers: Record<string, unknown> = {}): Set<string> {
+  return new Set(["openrouter", "codex", ...Object.keys(providers).filter((provider) => provider !== "default")]);
 }
 
 function ensureKnownProvider(providers: Record<string, unknown>, provider: string | undefined) {

@@ -112,8 +112,8 @@ interface TopchesterConfig {
     "fast"?: ModelRef;
     "kb.summarize"?: ModelRef;
     "choices"?: ModelRef[];
-    "providers"?: Record<string, ModelProviderConfig>;
   };
+  providers?: Record<string, ModelProviderConfig>;
 }
 
 interface ModelProviderConfig {
@@ -156,18 +156,16 @@ Advanced debugging overrides are available but should stay out of normal example
 
 ```jsonc
 {
-  "models": {
-    "providers": {
-      "openrouter": {
-        "type": "openai-compatible",
-        "baseURL": "https://openrouter.ai/api/v1",
-        "apiKeyEnv": "OPENROUTER_API_KEY",
-        "service_tier": "flex",
-        "includeUsage": true,
-        "promptCaching": false,
-        "toolProtocol": "text-json",
-        "openRouterToolRouting": "off",
-      },
+  "providers": {
+    "openrouter": {
+      "type": "openai-compatible",
+      "baseURL": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "service_tier": "flex",
+      "includeUsage": true,
+      "promptCaching": false,
+      "toolProtocol": "text-json",
+      "openRouterToolRouting": "off",
     },
   },
 }
@@ -218,12 +216,12 @@ User config defines personal provider setup and defaults:
   "models": {
     "default": "openrouter/anthropic/claude-sonnet-4.5",
     "choices": ["openrouter/qwen/qwen3-coder", "openrouter/anthropic/claude-sonnet-4.5"],
-    "providers": {
-      "openrouter": {
-        "type": "openai-compatible",
-        "baseURL": "https://openrouter.ai/api/v1",
-        "apiKeyEnv": "OPENROUTER_API_KEY",
-      },
+  },
+  "providers": {
+    "openrouter": {
+      "type": "openai-compatible",
+      "baseURL": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
     },
   },
 }
@@ -239,7 +237,7 @@ Config files should be deep-merged.
 - `models.default`, `models.fast`, and `models.kb.summarize` replace earlier values independently.
 - `models.default` fills `agent.primary` and `fallback`; more specific slots such as `models.fast` and `models.kb.summarize` are preserved when another layer only changes the default.
 - `models.choices` replaces earlier choice lists in normal config merging. The TUI appends to the user list when a user picks a model from `/model all`.
-- `models.providers` merges by provider id.
+- `providers` merges by provider id.
 - Later files may override only one model slot without copying the full model config.
 
 Example:
@@ -366,7 +364,7 @@ The config loader translates the persisted config:
 models.default      -> ModelGatewayConfig.models["agent.primary"] and ModelGatewayConfig.models["fallback"]
 models.fast         -> ModelGatewayConfig.models["agent.fast"]
 models.kb.summarize -> ModelGatewayConfig.models["kb.summarize"]
-models.providers    -> ModelGatewayConfig.providers
+providers           -> ModelGatewayConfig.providers
 
 Supported internal purposes are `agent.primary`, `agent.fast`, `kb.summarize`, and `fallback`.
 ```
