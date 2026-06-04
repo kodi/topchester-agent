@@ -77,6 +77,7 @@ Current behavior:
 - `--resume latest` restores the newest project-local session.
 - `--resume <session-id>` restores that exact project-local session.
 - Resumed sessions keep using the selected session log. New saved events append to the selected session log instead of creating a replacement session.
+- In an interactive TUI, `/restore` opens a previous-session picker for switching sessions without restarting Topchester.
 - Session logs live under `.agents/topchester/sessions/` in the workspace.
 - Missing, malformed, invalid, traversal, or no-session resume targets fail before the TUI/static layout opens, with plain error text.
 - V0 does not include a `topchester sessions list` command.
@@ -115,7 +116,7 @@ Current behavior:
 
 - `topchester fork --last` forks the newest project-local session.
 - `topchester fork <session-id>` forks that exact project-local session.
-- Bare `topchester fork` exits with a clear message until Topchester has a saved-session picker.
+- Bare `topchester fork` exits with a clear message until Topchester has a fork-specific saved-session picker.
 - The fork gets a fresh session ID and starts as a normal top-level user session.
 - The source session log is left untouched. Future messages append only to the fork.
 - Fork metadata records the source session ID and source root session ID.
@@ -196,7 +197,7 @@ Current behavior:
 - Routes slash-command prompts such as `/kb status` through the same command dispatcher used by the TUI.
 - Routes skill slash commands such as `/skills list`, `/skills inspect <name>`, `/skills reload`, `/skill <name>`, and `/<skill-name>` through the shared command dispatcher.
 - Supports inline skill mentions such as `@code-review review this diff` in normal prompts.
-- Interactive picker commands such as `/model` and `/connect` are TUI-only. In `topchester run`, they print a short message that says to use the interactive TUI.
+- Interactive picker commands such as `/model`, `/connect`, and `/restore` are TUI-only. In `topchester run`, they print a short message that says to use the interactive TUI.
 - Does not open the interactive TUI.
 - Exits non-zero on runtime failure or timeout.
 

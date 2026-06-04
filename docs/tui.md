@@ -51,6 +51,7 @@ KB status labels:
 - Press `Tab` while a slash command suggestion is selected to complete it.
 - Type `/new` to clear the terminal and start a fresh session in the same workspace.
 - Type `/fork` to clone the current session into a new session and switch to that fork.
+- Type `/restore` to open a previous-session picker and switch to a saved session.
 - Type `/skills` to open the Skills overlay.
 - Use `Up` and `Down` in the normal prompt to browse submitted prompt history.
 - Use your terminal scrollback to review chat history with the mouse wheel, touchpad, scrollbar, or terminal shortcuts such as `Shift+PageUp`.
@@ -70,6 +71,7 @@ Most used commands:
 - `/connect` — connect a model provider.
 - `/new` — clear the terminal and start a fresh project-local session.
 - `/fork` — clone the current session into a new project-local session.
+- `/restore` — pick a previous project-local session and switch to it.
 - `/skills` — open the Skills overlay.
 - `/skills <query>` — open the Skills overlay filtered by text.
 - `/skills list` — print available skills.
@@ -98,6 +100,8 @@ Example:
 `/new` keeps you in the same workspace but replaces the current thread with a normal startup screen, creates a new session folder, clears prompt history, and reruns startup checks.
 
 `/fork` keeps the current transcript visible, creates a fresh top-level session ID, records fork lineage in metadata, adds one system notice in the fork, and switches future messages to the fork. The source session log is left untouched. V0 does not copy child `task` session folders.
+
+`/restore` replaces the thread area with a previous-session picker while leaving the prompt box and status line visible. Rows show the session updated date, short session ID, and the first normal user prompt truncated to one line. The current active session and child `task` sessions are excluded. Use `Up` and `Down` to move, `Enter` to restore the selected session, and `Esc` to cancel without changing the active transcript or session log. After restore, future messages append to the restored session and Topchester adds one visible restore notice to that session.
 
 `/skills` opens a modal overlay. Use `Up` and `Down` to choose a skill, `Enter` to inspect it, and the modal actions to activate, reload, go back, or close. Activating from the overlay applies the skill to the next message. `/skills <query>` opens the same overlay filtered by skill name, description, or source.
 

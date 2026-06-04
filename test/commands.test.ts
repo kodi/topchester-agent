@@ -24,7 +24,7 @@ describe("slash commands", () => {
 
   it("reports unknown commands", async () => {
     await expect(executeSlashCommand("/nope", { workspaceRoot: "/repo" })).resolves.toEqual({
-      messages: ["Unknown command: /nope", "Try /kb status, /new, or /fork."],
+      messages: ["Unknown command: /nope", "Try /kb status, /new, /fork, or /restore."],
     });
   });
 
@@ -90,6 +90,10 @@ describe("slash commands", () => {
         value: "/fork",
         description: "fork the current session",
       },
+      {
+        value: "/restore",
+        description: "restore a previous session",
+      },
     ]);
     expect(getSlashCommandSuggestions("/m")).toEqual([
       {
@@ -153,6 +157,12 @@ describe("slash commands", () => {
         description: "fork the current session",
       },
     ]);
+    expect(getSlashCommandSuggestions("/r")).toEqual([
+      {
+        value: "/restore",
+        description: "restore a previous session",
+      },
+    ]);
     expect(getSlashCommandSuggestions("/skill")).toEqual([
       {
         value: "/skills",
@@ -202,6 +212,12 @@ describe("slash commands", () => {
   it("reports that /fork is an interactive TUI command outside the TUI", async () => {
     await expect(executeSlashCommand("/fork", { workspaceRoot: "/repo" })).resolves.toEqual({
       messages: ["/fork clones the current session in the interactive TUI."],
+    });
+  });
+
+  it("reports that /restore is an interactive TUI command outside the TUI", async () => {
+    await expect(executeSlashCommand("/restore", { workspaceRoot: "/repo" })).resolves.toEqual({
+      messages: ["/restore opens a previous-session picker in the interactive TUI."],
     });
   });
 

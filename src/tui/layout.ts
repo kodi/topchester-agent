@@ -53,6 +53,18 @@ export interface TemporaryLineOptions {
   expireAfterMs?: number;
 }
 
+export interface SessionPickerItem {
+  sessionId: string;
+  updatedAt: string;
+  firstUserPrompt?: string;
+}
+
+interface SessionPickerState {
+  items: SessionPickerItem[];
+  selectedIndex: number;
+  scrollOffset: number;
+}
+
 export class ChatLayout implements Component, Focusable {
   private inputFocused = false;
   private promptValue = "";
@@ -70,6 +82,9 @@ export class ChatLayout implements Component, Focusable {
   private submitMessage: ((message: string) => void) | undefined;
   private submitCommand: ((command: string) => void) | undefined;
   private modalActionHandler: ((action: ChatModalAction) => void) | undefined;
+  private sessionPicker: SessionPickerState | undefined;
+  private sessionPickerSelectionHandler: ((sessionId: string) => void) | undefined;
+  private sessionPickerCancelHandler: (() => void) | undefined;
   private activeModalActionIndex = 0;
   private activeSlashSuggestionIndex = 0;
   private threadScrollOffset = 0;
@@ -191,11 +206,40 @@ export class ChatLayout implements Component, Focusable {
     this.modalActionHandler = handler;
   }
 
+  setSessionPickerHandlers(handlers: { select?: (sessionId: string) => void; cancel?: () => void }): void {
+    this.sessionPickerSelectionHandler = handlers.select;
+    this.sessionPickerCancelHandler = handlers.cancel;
+  }
+
+  openSessionPicker(items: SessionPickerItem[]): void {
+    this.sessionPicker = {
+      items,
+      selectedIndex: 0,
+      scrollOffset: 0,
+    };
+    this.threadScrollOffset = 0;
+  }
+
+  closeSessionPicker(): void {
+    this.sessionPicker = undefined;
+  }
+
+  isSessionPickerOpen(): boolean {
+    return this.sessionPicker !== undefined;
+  }
+
   setInputValue(value: string): void {
     this.promptValue = value;
     this.promptCursor = value.length;
     this.pastedContent.clear();
     this.pasteCounter = 0;
+  }
+
+  discardLastUserMessage(text: string): void {
+    const last = this.messages.at(-1);
+    if (last?.kind === "user" && last.text === text) {
+      this.messages.pop();
+    }
   }
 
   resetForNewSession(messages: ChatMessage[]): void {
@@ -214,6 +258,9 @@ export class ChatLayout implements Component, Focusable {
     this.taskPlan = undefined;
     this.cancelPending = undefined;
     this.modalActionHandler = undefined;
+    this.sessionPicker = undefined;
+    this.sessionPickerSelectionHandler = undefined;
+    this.sessionPickerCancelHandler = undefined;
     this.activeModalActionIndex = 0;
     this.activeSlashSuggestionIndex = 0;
     this.threadScrollOffset = 0;
@@ -253,6 +300,10 @@ export class ChatLayout implements Component, Focusable {
   }
 
   handleInput(data: string): void {
+    if (this.handleSessionPickerInput(data)) {
+      return;
+    }
+
     if (this.handleModalInput(data)) {
       return;
     }
@@ -299,7 +350,8 @@ export class ChatLayout implements Component, Focusable {
 
   render(width: number): string[] {
     const safeWidth = Math.max(20, width);
-    const footerLines = this.getActiveModal() ? this.renderModalHelp(safeWidth) : this.renderPrompt(safeWidth);
+    const footerLines =
+      this.getActiveModal() && !this.sessionPicker ? this.renderModalHelp(safeWidth) : this.renderPrompt(safeWidth);
     const threadHeight = Math.max(1, this.terminal.rows - footerLines.length);
     const allThreadLines = this.renderThread(safeWidth, threadHeight);
 
@@ -328,6 +380,10 @@ export class ChatLayout implements Component, Focusable {
   }
 
   private renderThread(width: number, threadHeight: number): string[] {
+    if (this.sessionPicker) {
+      return this.renderSessionPicker(width, threadHeight);
+    }
+
     const innerWidth = Math.max(1, width);
 
     const activeModalIndex = this.getActiveModalIndex();
@@ -378,7 +434,7 @@ export class ChatLayout implements Component, Focusable {
   }
 
   private renderPrompt(width: number): string[] {
-    const slashSuggestions = this.getSlashSuggestions();
+    const slashSuggestions = this.sessionPicker ? [] : this.getSlashSuggestions();
     const top = `┌${"─".repeat(Math.max(0, width - 2))}┐`;
     const bottom = `└${"─".repeat(Math.max(0, width - 2))}┘`;
     const prefix = "> ";
@@ -515,6 +571,110 @@ export class ChatLayout implements Component, Focusable {
     );
 
     return [truncateToWidth(`  ${help}`, width, "…", true), truncateToWidth(`  ${status}`, width, "…", true)];
+  }
+
+  private renderSessionPicker(width: number, threadHeight: number): string[] {
+    const picker = this.sessionPicker;
+    if (!picker) {
+      return [];
+    }
+
+    const innerWidth = Math.max(1, width);
+    const header = truncateToWidth(" Restore previous session", innerWidth, "…", true);
+    const help = truncateToWidth(" Up/Down move   Enter restore   Esc cancel", innerWidth, "…", true);
+    const availableRows = Math.max(1, threadHeight - 3);
+    const items = picker.items;
+
+    if (items.length === 0) {
+      return padLines(
+        [
+          padThreadLine(ui.label(header), width),
+          padThreadLine("", width),
+          padThreadLine(ui.muted(" No previous sessions for this workspace."), width),
+          padThreadLine(ui.muted(help), width),
+        ],
+        threadHeight,
+        width
+      );
+    }
+
+    picker.selectedIndex = Math.max(0, Math.min(picker.selectedIndex, items.length - 1));
+    picker.scrollOffset = getVisibleSuggestionWindowStart(items.length, picker.selectedIndex, availableRows);
+    const visibleItems = items.slice(picker.scrollOffset, picker.scrollOffset + availableRows);
+    const lines = [
+      padThreadLine(ui.label(header), width),
+      padThreadLine(ui.muted(help), width),
+      padThreadLine("", width),
+      ...visibleItems.map((item, index) => {
+        const absoluteIndex = picker.scrollOffset + index;
+        const selected = absoluteIndex === picker.selectedIndex;
+        const row = formatSessionPickerRow(item, selected, innerWidth);
+
+        return selected ? ui.softBackground(padThreadLine(row, width)) : padThreadLine(row, width);
+      }),
+    ];
+
+    return padLines(lines, threadHeight, width);
+  }
+
+  private handleSessionPickerInput(data: string): boolean {
+    const picker = this.sessionPicker;
+    if (!picker) {
+      return false;
+    }
+
+    if (matchesKey(data, "escape")) {
+      this.closeSessionPicker();
+      this.sessionPickerCancelHandler?.();
+      return true;
+    }
+
+    if (picker.items.length === 0) {
+      return true;
+    }
+
+    if (isUpKey(data)) {
+      picker.selectedIndex = Math.max(0, picker.selectedIndex - 1);
+      return true;
+    }
+
+    if (isDownKey(data)) {
+      picker.selectedIndex = Math.min(picker.items.length - 1, picker.selectedIndex + 1);
+      return true;
+    }
+
+    if (isPageUpKey(data)) {
+      picker.selectedIndex = Math.max(0, picker.selectedIndex - Math.max(1, Math.floor(this.terminal.rows / 2)));
+      return true;
+    }
+
+    if (isPageDownKey(data)) {
+      picker.selectedIndex = Math.min(
+        picker.items.length - 1,
+        picker.selectedIndex + Math.max(1, Math.floor(this.terminal.rows / 2))
+      );
+      return true;
+    }
+
+    if (isHomeKey(data)) {
+      picker.selectedIndex = 0;
+      return true;
+    }
+
+    if (isEndKey(data)) {
+      picker.selectedIndex = picker.items.length - 1;
+      return true;
+    }
+
+    if (matchesKey(data, "enter") || data === "\n" || data === "\r") {
+      const item = picker.items[picker.selectedIndex];
+      if (item) {
+        this.sessionPickerSelectionHandler?.(item.sessionId);
+      }
+      return true;
+    }
+
+    return true;
   }
 
   private handleModalInput(data: string): boolean {
@@ -969,6 +1129,27 @@ function getVisibleSuggestionWindowStart(total: number, activeIndex: number, vis
   }
 
   return Math.max(0, Math.min(activeIndex - visibleRows + 1, total - visibleRows));
+}
+
+function formatSessionPickerRow(item: SessionPickerItem, selected: boolean, width: number): string {
+  const marker = selected ? ">" : " ";
+  const date = formatSessionPickerDate(item.updatedAt);
+  const shortSessionId = item.sessionId.slice(0, 8);
+  const prompt = formatSessionPickerPrompt(item.firstUserPrompt);
+
+  return truncateToWidth(`${marker} ${date} ${shortSessionId} ${prompt}`, width, "…", true);
+}
+
+function formatSessionPickerDate(updatedAt: string): string {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/u.exec(updatedAt);
+
+  return match ? `${match[1]} ${match[2]}` : updatedAt.slice(0, 16).replace("T", " ");
+}
+
+function formatSessionPickerPrompt(prompt: string | undefined): string {
+  const normalized = prompt?.replace(/\s+/gu, " ").trim();
+
+  return normalized && normalized.length > 0 ? normalized : "(no user prompt)";
 }
 
 function colorUserMessageBorder(line: string): string {

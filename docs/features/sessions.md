@@ -26,6 +26,8 @@ topchester --resume latest
 topchester --resume 0123456789abcdef
 ```
 
+Use `/restore` in the TUI to pick a previous project-local session without leaving interactive mode. The picker lists top-level user sessions from the current workspace, excludes the active session and child `task` sessions, and shows each row as updated date, short session ID, and the first normal user prompt. Press `Esc` to cancel without changing the active session or session log. Press `Enter` to switch to the selected session; future events append to that restored session log and Topchester adds one visible restore notice there.
+
 Use `/fork` in the TUI to clone the active session into a fresh top-level session and switch to it. Use `topchester fork --last` or `topchester fork <session-id>` to fork a saved project-local session before opening the fork.
 
 Events are append-only JSONL. They include user messages, assistant messages, tool calls, runtime events, task-plan state, and child-session lifecycle events.

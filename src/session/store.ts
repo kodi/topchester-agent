@@ -41,6 +41,21 @@ export interface LoadedSessionTree {
   children: LoadedSessionTree[];
 }
 
+export interface SessionSummary {
+  sessionId: string;
+  updatedAt: string;
+  createdAt: string;
+  firstUserPrompt?: string;
+  title?: string;
+  forkedFromSessionId?: string;
+}
+
+export interface ListSessionSummariesOptions {
+  excludeSessionId?: string;
+  includeSubagents?: boolean;
+  limit?: number;
+}
+
 export interface RehydratedSession {
   messages: ChatMessage[];
   status?: string;
@@ -248,6 +263,65 @@ export async function listChildSessions(workspaceRoot: string, parentSessionId: 
     const byCreatedAt = left.metadata.createdAt.localeCompare(right.metadata.createdAt);
     return byCreatedAt === 0 ? left.sessionId.localeCompare(right.sessionId) : byCreatedAt;
   });
+}
+
+export async function listSessionSummaries(
+  workspaceRoot: string,
+  options: ListSessionSummariesOptions = {}
+): Promise<SessionSummary[]> {
+  if (options.excludeSessionId !== undefined) {
+    validateSessionId(options.excludeSessionId);
+  }
+
+  const sessionsPath = getTopchesterSessionsPath(workspaceRoot);
+  let entries: string[];
+  try {
+    entries = await readdir(sessionsPath);
+  } catch {
+    return [];
+  }
+
+  const summaries: SessionSummary[] = [];
+  for (const sessionId of entries.filter((entry) => SESSION_ID_PATTERN.test(entry)).sort()) {
+    if (options.excludeSessionId === sessionId) {
+      continue;
+    }
+
+    const sessionDir = join(sessionsPath, sessionId);
+    const metadataPath = join(sessionDir, "metadata.json");
+    const eventsPath = join(sessionDir, "events.jsonl");
+
+    let metadata: SessionMetadata;
+    let events: SessionEvent[];
+    try {
+      metadata = await readMetadata(metadataPath);
+      validateMetadataConsistency(metadata, sessionId, workspaceRoot, metadataPath);
+      if (metadata.source === "subagent" && options.includeSubagents !== true) {
+        continue;
+      }
+      events = await readEvents(eventsPath);
+      validateEventConsistency(metadata, events, eventsPath);
+    } catch {
+      continue;
+    }
+
+    const prompt = firstUserPrompt(events);
+    summaries.push({
+      sessionId,
+      createdAt: metadata.createdAt,
+      updatedAt: metadata.updatedAt,
+      ...(metadata.title === undefined ? {} : { title: metadata.title }),
+      ...(metadata.forkedFromSessionId === undefined ? {} : { forkedFromSessionId: metadata.forkedFromSessionId }),
+      ...(prompt === undefined ? {} : { firstUserPrompt: prompt }),
+    });
+  }
+
+  const sorted = summaries.sort((left, right) => {
+    const byUpdatedAt = right.updatedAt.localeCompare(left.updatedAt);
+    return byUpdatedAt === 0 ? right.sessionId.localeCompare(left.sessionId) : byUpdatedAt;
+  });
+
+  return options.limit === undefined ? sorted : sorted.slice(0, Math.max(0, options.limit));
 }
 
 export async function loadSessionTree(workspaceRoot: string, sessionIdOrLatest: string): Promise<LoadedSessionTree> {
@@ -525,6 +599,27 @@ function isVisibleOnlyMessage(meta: unknown): boolean {
   return (
     typeof meta === "object" &&
     meta !== null &&
+    "visibleOnly" in meta &&
+    (meta as { visibleOnly?: unknown }).visibleOnly === true
+  );
+}
+
+function firstUserPrompt(events: SessionEvent[]): string | undefined {
+  for (const event of events) {
+    if (event.kind === "message" && event.role === "user" && !isVisibleOnlySlashCommandMessage(event.meta)) {
+      return event.text;
+    }
+  }
+
+  return undefined;
+}
+
+function isVisibleOnlySlashCommandMessage(meta: unknown): boolean {
+  return (
+    typeof meta === "object" &&
+    meta !== null &&
+    "source" in meta &&
+    (meta as { source?: unknown }).source === "slash_command" &&
     "visibleOnly" in meta &&
     (meta as { visibleOnly?: unknown }).visibleOnly === true
   );

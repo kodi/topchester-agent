@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -219,6 +219,91 @@ describe("TUI rendering", () => {
 
     expect(visibleWidth(line)).toBe(34);
     expect(line.endsWith("✅ kb: ready")).toBe(true);
+  });
+
+  it("renders a session picker over the transcript while keeping the prompt visible", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 9;
+    const app = new ChatLayout(terminal, [systemMessage("hidden transcript")], "repo", "model [provider]");
+    app.setInputValue("draft prompt");
+
+    app.openSessionPicker([
+      {
+        sessionId: "019e9029-1111-7222-8333-444455556666",
+        updatedAt: "2026-06-04T10:11:12.000Z",
+        firstUserPrompt: "first normal prompt",
+      },
+    ]);
+
+    const output = stripAnsi(app.render(72).join("\n"));
+
+    expect(output).toContain("Restore previous session");
+    expect(output).toContain("2026-06-04 10:11 019e9029 first normal prompt");
+    expect(output).toContain("> draft prompt");
+    expect(output).not.toContain("hidden transcript");
+  });
+
+  it("keeps session picker rows single-line and width-aware", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 8;
+    const app = new ChatLayout(terminal, [], "repo", "model [provider]");
+
+    app.openSessionPicker([
+      {
+        sessionId: "019e9029-1111-7222-8333-444455556666",
+        updatedAt: "2026-06-04T10:11:12.000Z",
+        firstUserPrompt: "first line\nsecond line with a very long prompt that must be truncated",
+      },
+    ]);
+
+    const lines = app.render(42).map(stripAnsi);
+    const row = lines.find((line) => line.includes("019e9029"));
+
+    expect(row).toBeDefined();
+    expect(row).toContain("first line se");
+    expect(row === undefined ? 0 : visibleWidth(row)).toBeLessThanOrEqual(42);
+    expect(lines.every((line) => visibleWidth(line) <= 42)).toBe(true);
+  });
+
+  it("renders an empty session picker state", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 8;
+    const app = new ChatLayout(terminal, [systemMessage("hidden transcript")], "repo", "model [provider]");
+
+    app.openSessionPicker([]);
+
+    const output = stripAnsi(app.render(72).join("\n"));
+
+    expect(output).toContain("Restore previous session");
+    expect(output).toContain("No previous sessions for this workspace.");
+    expect(output).not.toContain("hidden transcript");
+  });
+
+  it("navigates, selects, and cancels the session picker", () => {
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    const selected: string[] = [];
+    let canceled = 0;
+    app.setSessionPickerHandlers({
+      select(sessionId) {
+        selected.push(sessionId);
+      },
+      cancel() {
+        canceled += 1;
+      },
+    });
+    app.openSessionPicker([
+      { sessionId: "019e9029-1111-7222-8333-444455556666", updatedAt: "2026-06-04T10:11:12.000Z" },
+      { sessionId: "019e9030-1111-7222-8333-444455556666", updatedAt: "2026-06-04T10:12:12.000Z" },
+    ]);
+
+    app.handleInput("\u001b[B");
+    app.handleInput("\r");
+    expect(selected).toEqual(["019e9030-1111-7222-8333-444455556666"]);
+    expect(app.isSessionPickerOpen()).toBe(true);
+
+    app.handleInput("\u001b");
+    expect(canceled).toBe(1);
+    expect(app.isSessionPickerOpen()).toBe(false);
   });
 
   it("colors the footer model blue and provider gray when color is enabled", () => {
@@ -1992,6 +2077,228 @@ describe("TUI rendering", () => {
     expect(loadedFork.events.map((event) => ("text" in event ? event.text : undefined))).toContain("fork-only prompt");
     expect(loadedFork.events.map((event) => ("text" in event ? event.text : undefined))).toContain(
       "fork-only assistant"
+    );
+  });
+
+  it("opens and cancels /restore without mutating the active session", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tui-restore-cancel-"));
+    const context = createTestContext(workspace);
+    const active = await createSession(workspace);
+    const previous = await createSession(workspace);
+    await active.append({ kind: "message", role: "system", text: "Active thread" });
+    await previous.append({ kind: "message", role: "user", text: "previous prompt" });
+    const activeEventsBeforeRestore = await readFile(active.eventsPath, "utf8");
+    const app = new ChatLayout(
+      new FakeTerminal(),
+      [systemMessage("Active thread"), userMessage("/restore")],
+      "repo",
+      "model [provider]"
+    );
+    const shell = new TopchesterTuiShell(
+      context,
+      {
+        async checkAgent() {
+          return [];
+        },
+        async checkKnowledgeBase() {
+          return [];
+        },
+        async submitSlashCommand() {
+          return [agentEvent.systemMessage("should not run")];
+        },
+        async *submitMessageStream() {
+          yield agentEvent.assistantMessage("unused");
+        },
+        async submitMessage() {
+          return [];
+        },
+      },
+      { session: active }
+    );
+
+    await (
+      shell as unknown as {
+        submitSlashCommand(app: ChatLayout, tui: { requestRender(): void }, command: string): Promise<void>;
+      }
+    ).submitSlashCommand(app, { requestRender() {} }, "/restore");
+
+    let output = stripAnsi(app.render(80).join("\n"));
+    expect(app.isSessionPickerOpen()).toBe(true);
+    expect(output).toContain("Restore previous session");
+    expect(output).toContain("previous prompt");
+    expect(output).not.toContain("Active thread");
+    expect(output).not.toContain("▌ /restore");
+    await expect(readFile(active.eventsPath, "utf8")).resolves.toBe(activeEventsBeforeRestore);
+
+    app.handleInput("\u001b");
+
+    output = stripAnsi(app.render(80).join("\n"));
+    expect(app.isSessionPickerOpen()).toBe(false);
+    expect(output).toContain("Active thread");
+    expect(output).not.toContain("▌ /restore");
+    await expect(readFile(active.eventsPath, "utf8")).resolves.toBe(activeEventsBeforeRestore);
+  });
+
+  it("restores a selected session and switches future appends to it", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tui-restore-session-"));
+    const context = createTestContext(workspace);
+    const active = await createSession(workspace);
+    const previous = await createSession(workspace);
+    await active.append({ kind: "message", role: "system", text: "Active thread" });
+    await previous.append({ kind: "message", role: "system", text: "Previous thread" });
+    await previous.append({ kind: "message", role: "user", text: "previous prompt" });
+    await previous.append({ kind: "message", role: "assistant", text: "previous answer", meta: "model" });
+    await previous.append({
+      kind: "task_plan",
+      updatedAt: "2026-06-04T00:00:00.000Z",
+      items: [{ text: "Restore preserved plan", status: "in_progress" }],
+    });
+    const activeEventsBeforeRestore = await readFile(active.eventsPath, "utf8");
+    const app = new ChatLayout(
+      new FakeTerminal(),
+      [systemMessage("Active thread"), userMessage("/restore")],
+      "repo",
+      "model [provider]",
+      { transcriptMode: "inline" }
+    );
+    const shell = new TopchesterTuiShell(
+      context,
+      {
+        async checkAgent() {
+          return [];
+        },
+        async checkKnowledgeBase() {
+          return [];
+        },
+        async submitSlashCommand() {
+          return [agentEvent.systemMessage("should not run")];
+        },
+        async *submitMessageStream() {
+          yield agentEvent.assistantMessage("restored assistant", "model");
+        },
+        async submitMessage() {
+          return [];
+        },
+      },
+      { session: active }
+    );
+
+    await (
+      shell as unknown as {
+        submitSlashCommand(app: ChatLayout, tui: { requestRender(): void }, command: string): Promise<void>;
+      }
+    ).submitSlashCommand(app, { requestRender() {} }, "/restore");
+    app.handleInput("\r");
+    await vi.waitFor(() => expect(app.isSessionPickerOpen()).toBe(false));
+
+    const output = stripAnsi(app.render(80).join("\n"));
+    expect(output).toContain("Previous thread");
+    expect(output).toContain("previous prompt");
+    expect(output).toContain("previous answer");
+    expect(output).toContain(`Restored session ${previous.sessionId.slice(0, 8)}.`);
+    expect(output).toContain("Restore preserved plan");
+    expect(output).not.toContain("Active thread");
+    expect(output).not.toContain("▌ /restore");
+    await expect(readFile(active.eventsPath, "utf8")).resolves.toBe(activeEventsBeforeRestore);
+    await expect(readSessionLines(workspace, previous.sessionId)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "message",
+          role: "system",
+          text: `Restored session ${previous.sessionId.slice(0, 8)}.`,
+        }),
+      ])
+    );
+
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      (
+        shell as unknown as {
+          printExitBannerForCurrentSession(fallbackSession: SessionHandle): void;
+        }
+      ).printExitBannerForCurrentSession(active);
+
+      const exitOutput = log.mock.calls.map((call) => call.join(" ")).join("\n");
+      expect(exitOutput).toContain(`topchester --resume ${previous.sessionId}`);
+      expect(exitOutput).not.toContain(`topchester --resume ${active.sessionId}`);
+    } finally {
+      log.mockRestore();
+    }
+
+    await (
+      shell as unknown as {
+        submitChatMessage(app: ChatLayout, tui: { requestRender(): void }, message: string): Promise<void>;
+      }
+    ).submitChatMessage(app, { requestRender() {} }, "restored prompt");
+
+    expect((await loadSession(workspace, active.sessionId)).events).toHaveLength(1);
+    const restoredEvents = await loadSession(workspace, previous.sessionId);
+    expect(restoredEvents.events.map((event) => ("text" in event ? event.text : undefined))).toContain(
+      "restored prompt"
+    );
+    expect(restoredEvents.events.map((event) => ("text" in event ? event.text : undefined))).toContain(
+      "restored assistant"
+    );
+  });
+
+  it("keeps the active session when a selected restore target disappears", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tui-restore-deleted-"));
+    const context = createTestContext(workspace);
+    const active = await createSession(workspace);
+    const previous = await createSession(workspace);
+    await active.append({ kind: "message", role: "system", text: "Active thread" });
+    await previous.append({ kind: "message", role: "user", text: "previous prompt" });
+    const app = new ChatLayout(
+      new FakeTerminal(),
+      [systemMessage("Active thread"), userMessage("/restore")],
+      "repo",
+      "model [provider]"
+    );
+    const shell = new TopchesterTuiShell(
+      context,
+      {
+        async checkAgent() {
+          return [];
+        },
+        async checkKnowledgeBase() {
+          return [];
+        },
+        async submitSlashCommand() {
+          return [];
+        },
+        async *submitMessageStream() {
+          yield agentEvent.assistantMessage("active assistant", "model");
+        },
+        async submitMessage() {
+          return [];
+        },
+      },
+      { session: active }
+    );
+
+    await (
+      shell as unknown as {
+        submitSlashCommand(app: ChatLayout, tui: { requestRender(): void }, command: string): Promise<void>;
+      }
+    ).submitSlashCommand(app, { requestRender() {} }, "/restore");
+    await rm(previous.sessionDir, { recursive: true, force: true });
+    app.handleInput("\r");
+    await vi.waitFor(() => expect(app.isSessionPickerOpen()).toBe(false));
+
+    const output = stripAnsi(app.render(80).join("\n"));
+    expect(output).toContain("Restore failed: Session not found");
+    expect(output).toContain("Active thread");
+
+    await (
+      shell as unknown as {
+        submitChatMessage(app: ChatLayout, tui: { requestRender(): void }, message: string): Promise<void>;
+      }
+    ).submitChatMessage(app, { requestRender() {} }, "active prompt");
+
+    const activeEvents = await loadSession(workspace, active.sessionId);
+    expect(activeEvents.events.map((event) => ("text" in event ? event.text : undefined))).toContain("active prompt");
+    expect(activeEvents.events.map((event) => ("text" in event ? event.text : undefined))).toContain(
+      "active assistant"
     );
   });
 

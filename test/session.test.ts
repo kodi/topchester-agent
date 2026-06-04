@@ -10,6 +10,7 @@ import {
   forkSession,
   generateSessionId,
   listChildSessions,
+  listSessionSummaries,
   loadSession,
   loadSessionForAppend,
   loadSessionTree,
@@ -561,6 +562,114 @@ describe("session store", () => {
     ]);
     expect(tree.children[0]?.children.map((child) => child.session.sessionId)).toEqual([grandchild.sessionId]);
     expect(tree.children[0]?.children[0]?.session.metadata.rootSessionId).toBe(parent.sessionId);
+  });
+
+  it("lists restorable user session summaries sorted by updatedAt then session id", async () => {
+    const workspace = await tempWorkspace();
+    const older = await createSession(workspace);
+    const tieLow = await createSession(workspace);
+    const tieHigh = await createSession(workspace);
+    await older.append({ kind: "message", role: "user", text: "older prompt" });
+    await tieLow.append({
+      kind: "message",
+      role: "user",
+      text: "/fork",
+      meta: { source: "slash_command", visibleOnly: true },
+    });
+    await tieLow.append({ kind: "message", role: "user", text: "normal prompt after slash" });
+    await tieHigh.append({ kind: "message", role: "user", text: "tie high prompt" });
+
+    await writeFile(
+      older.metadataPath,
+      `${JSON.stringify({ ...older.metadata, updatedAt: "2025-01-01T00:00:00.000Z" }, null, 2)}\n`
+    );
+    await writeFile(
+      tieLow.metadataPath,
+      `${JSON.stringify({ ...tieLow.metadata, updatedAt: "2025-01-02T00:00:00.000Z" }, null, 2)}\n`
+    );
+    await writeFile(
+      tieHigh.metadataPath,
+      `${JSON.stringify({ ...tieHigh.metadata, updatedAt: "2025-01-02T00:00:00.000Z" }, null, 2)}\n`
+    );
+
+    const summaries = await listSessionSummaries(workspace);
+    const tieOrder = [tieLow.sessionId, tieHigh.sessionId].sort().reverse();
+
+    expect(summaries.map((summary) => summary.sessionId)).toEqual([...tieOrder, older.sessionId]);
+    expect(summaries).toMatchObject([
+      { sessionId: tieOrder[0], updatedAt: "2025-01-02T00:00:00.000Z" },
+      { sessionId: tieOrder[1], updatedAt: "2025-01-02T00:00:00.000Z" },
+      { sessionId: older.sessionId, firstUserPrompt: "older prompt" },
+    ]);
+    expect(summaries.find((summary) => summary.sessionId === tieLow.sessionId)?.firstUserPrompt).toBe(
+      "normal prompt after slash"
+    );
+  });
+
+  it("filters session summaries by active session, subagent source, and limit", async () => {
+    const workspace = await tempWorkspace();
+    const active = await createSession(workspace);
+    const parent = await createSession(workspace);
+    const child = await createChildSession(workspace, {
+      parent,
+      parentToolCallId: "task-call-1",
+      title: "Child",
+      recordParentEvent: false,
+    });
+    const fork = await forkSession(workspace, parent.sessionId, { title: "Fork" });
+    await active.append({ kind: "message", role: "user", text: "active prompt" });
+    await parent.append({ kind: "message", role: "user", text: "parent prompt" });
+    await child.append({ kind: "message", role: "user", text: "child prompt" });
+
+    const defaultSummaries = await listSessionSummaries(workspace, { excludeSessionId: active.sessionId });
+    expect(defaultSummaries.map((summary) => summary.sessionId)).toContain(parent.sessionId);
+    expect(defaultSummaries.map((summary) => summary.sessionId)).toContain(fork.sessionId);
+    expect(defaultSummaries.map((summary) => summary.sessionId)).not.toContain(active.sessionId);
+    expect(defaultSummaries.map((summary) => summary.sessionId)).not.toContain(child.sessionId);
+    expect(defaultSummaries.find((summary) => summary.sessionId === fork.sessionId)).toMatchObject({
+      title: "Fork",
+      forkedFromSessionId: parent.sessionId,
+    });
+
+    await expect(listSessionSummaries(workspace, { includeSubagents: true, limit: 1 })).resolves.toHaveLength(1);
+    await expect(listSessionSummaries(workspace, { includeSubagents: true })).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ sessionId: child.sessionId, firstUserPrompt: "child prompt" })])
+    );
+  });
+
+  it("returns stable summaries for empty session storage and empty sessions", async () => {
+    const workspace = await tempWorkspace();
+    await expect(listSessionSummaries(workspace)).resolves.toEqual([]);
+
+    const empty = await createSession(workspace);
+    await expect(listSessionSummaries(workspace)).resolves.toEqual([
+      {
+        sessionId: empty.sessionId,
+        createdAt: empty.metadata.createdAt,
+        updatedAt: empty.metadata.updatedAt,
+      },
+    ]);
+  });
+
+  it("skips malformed session folders while listing summaries", async () => {
+    const workspace = await tempWorkspace();
+    const good = await createSession(workspace);
+    const malformedEvents = await createSession(workspace);
+    const wrongWorkspace = await createSession(workspace);
+    await good.append({ kind: "message", role: "user", text: "good prompt" });
+    await malformedEvents.append({ kind: "message", role: "user", text: "bad prompt" });
+    await wrongWorkspace.append({ kind: "message", role: "user", text: "wrong workspace prompt" });
+
+    await writeFile(malformedEvents.eventsPath, "not json\n");
+    await writeFile(
+      wrongWorkspace.metadataPath,
+      `${JSON.stringify({ ...wrongWorkspace.metadata, workspaceRoot: await tempWorkspace() }, null, 2)}\n`
+    );
+    await mkdir(join(getTopchesterSessionsPath(workspace), "not-a-session-id"), { recursive: true });
+
+    await expect(listSessionSummaries(workspace)).resolves.toEqual([
+      expect.objectContaining({ sessionId: good.sessionId, firstUserPrompt: "good prompt" }),
+    ]);
   });
 
   it("creates parent session folders inside the workspace only", async () => {

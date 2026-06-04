@@ -111,6 +111,10 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
     value: "/fork",
     description: "fork the current session",
   },
+  {
+    value: "/restore",
+    description: "restore a previous session",
+  },
 ];
 
 export const slashCommands: SlashCommand[] = [
@@ -164,6 +168,11 @@ export const slashCommands: SlashCommand[] = [
     description: "fork the current interactive TUI session",
     execute: executeForkCommand,
   },
+  {
+    name: "restore",
+    description: "restore a previous interactive TUI session",
+    execute: executeRestoreCommand,
+  },
 ];
 
 export function parseSlashCommand(input: string): ParsedSlashCommand | undefined {
@@ -201,7 +210,7 @@ export async function executeSlashCommand(input: string, context: SlashCommandCo
       return shortcutResult;
     }
 
-    return { messages: [`Unknown command: /${parsed.name}`, "Try /kb status, /new, or /fork."] };
+    return { messages: [`Unknown command: /${parsed.name}`, "Try /kb status, /new, /fork, or /restore."] };
   }
 
   return command.execute(parsed.args, context);
@@ -391,6 +400,12 @@ function executeNewCommand(): SlashCommandResult {
 function executeForkCommand(): SlashCommandResult {
   return {
     messages: ["/fork clones the current session in the interactive TUI."],
+  };
+}
+
+function executeRestoreCommand(): SlashCommandResult {
+  return {
+    messages: ["/restore opens a previous-session picker in the interactive TUI."],
   };
 }
 

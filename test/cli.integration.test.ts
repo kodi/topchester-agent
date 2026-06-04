@@ -139,6 +139,7 @@ describe("CLI integration", () => {
     expect(docs).toContain("`--resume latest` restores the newest project-local session");
     expect(docs).toContain("`--resume <session-id>` restores that exact project-local session");
     expect(docs).toContain("append to the selected session log");
+    expect(docs).toContain("`/restore` opens a previous-session picker");
     expect(docs).toContain("fail before the TUI/static layout opens");
     expect(docs).toContain("V0 does not include a `topchester sessions list` command");
     expect(docs).toContain("## `topchester update`");
@@ -149,6 +150,7 @@ describe("CLI integration", () => {
     expect(docs).toContain("Reports config layers");
     expect(docs).toContain("## `topchester run`");
     expect(docs).toContain("Routes slash-command prompts such as `/kb status`");
+    expect(docs).toContain("Interactive picker commands such as `/model`, `/connect`, and `/restore` are TUI-only");
     expect(docs).toContain("Includes a per-run `runId` in structured logs");
   });
 

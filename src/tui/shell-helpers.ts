@@ -125,6 +125,10 @@ export function isForkSessionCommand(command: string): boolean {
   return command.trim() === "/fork";
 }
 
+export function isRestoreSessionCommand(command: string): boolean {
+  return command.trim() === "/restore";
+}
+
 export function isConnectCommand(command: string): boolean {
   const name = getSlashCommandName(command);
 

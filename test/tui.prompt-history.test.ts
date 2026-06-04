@@ -84,6 +84,26 @@ describe("TUI prompt history", () => {
     expect(output).not.toContain("> remembered");
   });
 
+  it("keeps session picker input ahead of prompt history and prompt editing", () => {
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    submit(app, "remembered");
+    app.setInputValue("draft");
+    app.openSessionPicker([
+      {
+        sessionId: "019e9029-1111-7222-8333-444455556666",
+        updatedAt: "2026-06-04T10:11:12.000Z",
+        firstUserPrompt: "restore target",
+      },
+    ]);
+
+    app.handleInput("\u001b[A");
+    app.handleInput("x");
+
+    expect(promptText(app)).toContain("> draft");
+    expect(promptText(app)).not.toContain("remembered");
+    expect(promptText(app)).not.toContain("draftx");
+  });
+
   it("keeps prompt history disabled while a prompt hint is shown", () => {
     const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
     submit(app, "remembered");

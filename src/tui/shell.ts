@@ -19,7 +19,15 @@ import {
 import { fallbackOpenRouterStarterChoices, selectOpenRouterStarterChoices } from "../model/openrouter.js";
 import { type SessionEventPayload } from "../session/events.js";
 import { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
-import { createSession, forkSession, loadSession, rehydrateSession, type SessionHandle } from "../session/store.js";
+import {
+  createSession,
+  forkSession,
+  listSessionSummaries,
+  loadSession,
+  loadSessionForAppend,
+  rehydrateSession,
+  type SessionHandle,
+} from "../session/store.js";
 import {
   createSkillsService,
   formatSkillActivationNotice,
@@ -50,6 +58,7 @@ import {
   isForkSessionCommand,
   isModelCommand,
   isNewSessionCommand,
+  isRestoreSessionCommand,
   isStreamReasoningEnabledByEnv,
   persistBashApproval,
   printExitBanner,
@@ -402,6 +411,11 @@ export class TopchesterTuiShell implements TuiShell {
 
     if (isForkSessionCommand(command)) {
       await this.forkCurrentSession(app, tui);
+      return;
+    }
+
+    if (isRestoreSessionCommand(command)) {
+      await this.openRestoreSessionPicker(app, tui, command);
       return;
     }
 
@@ -970,6 +984,93 @@ export class TopchesterTuiShell implements TuiShell {
     app.setTaskPlan(rehydrated.taskPlan);
     if (rehydrated.status) {
       app.setStatus(rehydrated.status);
+    }
+    tui.requestRender();
+  }
+
+  private async openRestoreSessionPicker(app: ChatLayout, tui: TUI, command: string): Promise<void> {
+    app.discardLastUserMessage(command);
+
+    const activeSession = this.session;
+    if (!activeSession) {
+      app.addMessage(systemMessage("Restore failed: no active session."));
+      tui.requestRender();
+      return;
+    }
+
+    if (!app.isReady()) {
+      app.addMessage(systemMessage("Restore is unavailable while another operation is running."));
+      tui.requestRender();
+      return;
+    }
+
+    const summaries = await listSessionSummaries(this.context.workspaceRoot, {
+      excludeSessionId: activeSession.sessionId,
+    });
+
+    app.setSessionPickerHandlers({
+      select: (sessionId) => {
+        this.startBackgroundTask(app, tui, "Restore", () => this.restoreSelectedSession(app, tui, sessionId));
+      },
+      cancel: () => {
+        tui.requestRender();
+      },
+    });
+    app.openSessionPicker(
+      summaries.map((summary) => ({
+        sessionId: summary.sessionId,
+        updatedAt: summary.updatedAt,
+        ...(summary.firstUserPrompt === undefined ? {} : { firstUserPrompt: summary.firstUserPrompt }),
+      }))
+    );
+    tui.requestRender();
+  }
+
+  private async restoreSelectedSession(app: ChatLayout, tui: TUI, sessionId: string): Promise<void> {
+    let restoredSession: SessionHandle;
+    let restoredMessages: ChatMessage[];
+    let restoredTaskPlan: TaskPlanState | undefined;
+    let restoredStatus: string | undefined;
+
+    try {
+      restoredSession = await loadSessionForAppend(this.context.workspaceRoot, sessionId);
+      const loaded = await loadSession(this.context.workspaceRoot, sessionId);
+      const rehydrated = rehydrateSession(loaded.events);
+      restoredTaskPlan = rehydrated.taskPlan;
+      restoredStatus = rehydrated.status;
+      const noticeText = `Restored session ${sessionId.slice(0, 8)}.`;
+      restoredMessages = [...rehydrated.messages, systemMessage(noticeText)];
+
+      this.session = restoredSession;
+      this.sessionStartedAt = Date.now();
+      this.pendingSkillActivations = [];
+
+      if (this.taskPlanNoticeTimer) {
+        clearTimeout(this.taskPlanNoticeTimer);
+        this.taskPlanNoticeTimer = undefined;
+      }
+
+      try {
+        await restoredSession.append({
+          kind: "message",
+          role: "system",
+          text: noticeText,
+        });
+      } catch (error) {
+        restoredMessages.push(systemMessage(`Session save failed: ${formatPlainError(error)}`));
+      }
+    } catch (error) {
+      app.closeSessionPicker();
+      app.addMessage(systemMessage(`Restore failed: ${formatPlainError(error)}`));
+      tui.requestRender();
+      return;
+    }
+
+    app.closeSessionPicker();
+    app.resetForNewSession(restoredMessages);
+    app.setTaskPlan(restoredTaskPlan);
+    if (restoredStatus) {
+      app.setStatus(restoredStatus);
     }
     tui.requestRender();
   }
