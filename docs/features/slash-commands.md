@@ -36,4 +36,6 @@ Common commands:
 
 `none` is an explicit reasoning effort value. Use `clear` or `default` when you want to remove the config field instead.
 
+Type `/effort ` or `/reasoning ` with a trailing space to list all accepted effort values in the suggestion panel. Continue typing to narrow the list, then press `Tab` to complete the selected value.
+
 `/model`, `/connect`, `/effort`, `/reasoning`, `/new`, `/fork`, `/restore`, `/queue`, `/q`, and `/steer` are TUI-only. In `topchester run`, Topchester prints a short message that says to use the interactive TUI.

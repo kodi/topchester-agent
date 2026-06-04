@@ -6,7 +6,7 @@ import {
   syncKnowledgeBase,
 } from "../knowledge/compiler/index.js";
 import { type L1SummaryModel } from "../knowledge/compiler/l1-processor.js";
-import { type TopchesterConfig } from "../config/index.js";
+import { reasoningEfforts, type TopchesterConfig } from "../config/index.js";
 import { formatKnowledgeInitResult, initializeKnowledgeBase } from "../knowledge/init.js";
 import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
 import { formatKnowledgeResetResult, resetKnowledgeBase } from "../knowledge/reset.js";
@@ -65,19 +65,11 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
   },
   {
     value: "/effort",
-    description: "show or set reasoning effort",
-  },
-  {
-    value: "/effort high",
-    description: "set reasoning effort to high",
+    description: `show or set reasoning effort (${reasoningEfforts.join(", ")}, clear)`,
   },
   {
     value: "/reasoning",
-    description: "show or set reasoning effort",
-  },
-  {
-    value: "/reasoning high",
-    description: "set reasoning effort to high",
+    description: `show or set reasoning effort (${reasoningEfforts.join(", ")}, clear)`,
   },
   {
     value: "/kb status",
@@ -390,8 +382,35 @@ export function getSlashCommandSuggestions(input: string): SlashCommandSuggestio
   }
 
   const query = trimmed.toLowerCase();
+  const reasoningSuggestions = getReasoningEffortValueSuggestions(query);
+
+  if (reasoningSuggestions) {
+    return reasoningSuggestions;
+  }
 
   return slashCommandSuggestions.filter((suggestion) => suggestion.value.toLowerCase().startsWith(query));
+}
+
+function getReasoningEffortValueSuggestions(query: string): SlashCommandSuggestion[] | undefined {
+  const match = /^\/(?<command>effort|reasoning)\s+(?<value>\S*)$/u.exec(query);
+
+  if (!match?.groups) {
+    return undefined;
+  }
+
+  const command = match.groups.command;
+  const valuePrefix = match.groups.value;
+  const options = [...reasoningEfforts, "clear", "default"];
+
+  return options
+    .filter((option) => option.startsWith(valuePrefix))
+    .map((option) => ({
+      value: `/${command} ${option}`,
+      description:
+        option === "clear" || option === "default"
+          ? "use provider default reasoning effort"
+          : `set reasoning effort to ${option}`,
+    }));
 }
 
 async function executeKbCommand(args: string[], context: SlashCommandContext): Promise<SlashCommandResult> {

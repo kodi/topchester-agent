@@ -44,19 +44,11 @@ describe("slash commands", () => {
       },
       {
         value: "/effort",
-        description: "show or set reasoning effort",
-      },
-      {
-        value: "/effort high",
-        description: "set reasoning effort to high",
+        description: "show or set reasoning effort (none, minimal, low, medium, high, xhigh, clear)",
       },
       {
         value: "/reasoning",
-        description: "show or set reasoning effort",
-      },
-      {
-        value: "/reasoning high",
-        description: "set reasoning effort to high",
+        description: "show or set reasoning effort (none, minimal, low, medium, high, xhigh, clear)",
       },
       {
         value: "/kb status",
@@ -142,21 +134,13 @@ describe("slash commands", () => {
     expect(getSlashCommandSuggestions("/e")).toEqual([
       {
         value: "/effort",
-        description: "show or set reasoning effort",
-      },
-      {
-        value: "/effort high",
-        description: "set reasoning effort to high",
+        description: "show or set reasoning effort (none, minimal, low, medium, high, xhigh, clear)",
       },
     ]);
     expect(getSlashCommandSuggestions("/r")).toEqual([
       {
         value: "/reasoning",
-        description: "show or set reasoning effort",
-      },
-      {
-        value: "/reasoning high",
-        description: "set reasoning effort to high",
+        description: "show or set reasoning effort (none, minimal, low, medium, high, xhigh, clear)",
       },
       {
         value: "/restore",
@@ -259,6 +243,80 @@ describe("slash commands", () => {
       {
         value: "/kb sync --full",
         description: "process all project files into L1 entries",
+      },
+    ]);
+    expect(getSlashCommandSuggestions("/effort ")).toEqual([
+      {
+        value: "/effort none",
+        description: "set reasoning effort to none",
+      },
+      {
+        value: "/effort minimal",
+        description: "set reasoning effort to minimal",
+      },
+      {
+        value: "/effort low",
+        description: "set reasoning effort to low",
+      },
+      {
+        value: "/effort medium",
+        description: "set reasoning effort to medium",
+      },
+      {
+        value: "/effort high",
+        description: "set reasoning effort to high",
+      },
+      {
+        value: "/effort xhigh",
+        description: "set reasoning effort to xhigh",
+      },
+      {
+        value: "/effort clear",
+        description: "use provider default reasoning effort",
+      },
+      {
+        value: "/effort default",
+        description: "use provider default reasoning effort",
+      },
+    ]);
+    expect(getSlashCommandSuggestions("/effort l")).toEqual([
+      {
+        value: "/effort low",
+        description: "set reasoning effort to low",
+      },
+    ]);
+    expect(getSlashCommandSuggestions("/reasoning ")).toEqual([
+      {
+        value: "/reasoning none",
+        description: "set reasoning effort to none",
+      },
+      {
+        value: "/reasoning minimal",
+        description: "set reasoning effort to minimal",
+      },
+      {
+        value: "/reasoning low",
+        description: "set reasoning effort to low",
+      },
+      {
+        value: "/reasoning medium",
+        description: "set reasoning effort to medium",
+      },
+      {
+        value: "/reasoning high",
+        description: "set reasoning effort to high",
+      },
+      {
+        value: "/reasoning xhigh",
+        description: "set reasoning effort to xhigh",
+      },
+      {
+        value: "/reasoning clear",
+        description: "use provider default reasoning effort",
+      },
+      {
+        value: "/reasoning default",
+        description: "use provider default reasoning effort",
       },
     ]);
     expect(getSlashCommandSuggestions("/nope")).toEqual([]);
