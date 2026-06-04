@@ -50,6 +50,7 @@ KB status labels:
 - Use `Up` and `Down` in slash command suggestions to choose an item; the suggestion panel scrolls to keep the selected command visible.
 - Press `Tab` while a slash command suggestion is selected to complete it.
 - Type `/new` to clear the terminal and start a fresh session in the same workspace.
+- Type `/fork` to clone the current session into a new session and switch to that fork.
 - Type `/skills` to open the Skills overlay.
 - Use `Up` and `Down` in the normal prompt to browse submitted prompt history.
 - Use your terminal scrollback to review chat history with the mouse wheel, touchpad, scrollbar, or terminal shortcuts such as `Shift+PageUp`.
@@ -68,6 +69,7 @@ Most used commands:
 - `/model all [search]` — browse OpenRouter models and add one to choices.
 - `/connect` — connect a model provider.
 - `/new` — clear the terminal and start a fresh project-local session.
+- `/fork` — clone the current session into a new project-local session.
 - `/skills` — open the Skills overlay.
 - `/skills <query>` — open the Skills overlay filtered by text.
 - `/skills list` — print available skills.
@@ -94,6 +96,8 @@ Example:
 `/model all [search]` asks OpenRouter for text models that support tool parameters, shows matching results in a scrollable picker, and saves the selected model to user choices before making it the default.
 
 `/new` keeps you in the same workspace but replaces the current thread with a normal startup screen, creates a new session folder, clears prompt history, and reruns startup checks.
+
+`/fork` keeps the current transcript visible, creates a fresh top-level session ID, records fork lineage in metadata, adds one system notice in the fork, and switches future messages to the fork. The source session log is left untouched. V0 does not copy child `task` session folders.
 
 `/skills` opens a modal overlay. Use `Up` and `Down` to choose a skill, `Enter` to inspect it, and the modal actions to activate, reload, go back, or close. Activating from the overlay applies the skill to the next message. `/skills <query>` opens the same overlay filtered by skill name, description, or source.
 

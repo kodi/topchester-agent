@@ -19,7 +19,7 @@ import {
 import { fallbackOpenRouterStarterChoices, selectOpenRouterStarterChoices } from "../model/openrouter.js";
 import { type SessionEventPayload } from "../session/events.js";
 import { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
-import { createSession, type SessionHandle } from "../session/store.js";
+import { createSession, forkSession, loadSession, rehydrateSession, type SessionHandle } from "../session/store.js";
 import {
   createSkillsService,
   formatSkillActivationNotice,
@@ -47,6 +47,7 @@ import {
   getSlashCommandActivities,
   getSlashCommandArgs,
   isConnectCommand,
+  isForkSessionCommand,
   isModelCommand,
   isNewSessionCommand,
   isStreamReasoningEnabledByEnv,
@@ -396,6 +397,11 @@ export class TopchesterTuiShell implements TuiShell {
 
     if (isNewSessionCommand(command)) {
       await this.startNewSession(app, tui);
+      return;
+    }
+
+    if (isForkSessionCommand(command)) {
+      await this.forkCurrentSession(app, tui);
       return;
     }
 
@@ -924,6 +930,48 @@ export class TopchesterTuiShell implements TuiShell {
     app.setStartupHintLine(STARTUP_PROMPT_HINT);
     tui.requestRender();
     await this.checkAgent(app, tui);
+  }
+
+  private async forkCurrentSession(app: ChatLayout, tui: TUI): Promise<void> {
+    if (this.taskPlanNoticeTimer) {
+      clearTimeout(this.taskPlanNoticeTimer);
+      this.taskPlanNoticeTimer = undefined;
+    }
+
+    const sourceSession = this.session;
+    if (!sourceSession) {
+      app.addMessage(systemMessage("Fork failed: no active session."));
+      tui.requestRender();
+      return;
+    }
+
+    const fork = await forkSession(this.context.workspaceRoot, sourceSession.sessionId);
+    const loaded = await loadSession(this.context.workspaceRoot, fork.sessionId);
+    const rehydrated = rehydrateSession(loaded.events);
+    const forkNoticeText = `Forked session from ${sourceSession.sessionId.slice(0, 8)}.`;
+    const forkNotice = systemMessage(forkNoticeText);
+    const resetMessages = [...rehydrated.messages, forkNotice];
+
+    this.session = fork;
+    this.sessionStartedAt = Date.now();
+    this.pendingSkillActivations = [];
+
+    try {
+      await fork.append({
+        kind: "message",
+        role: "system",
+        text: forkNoticeText,
+      });
+    } catch (error) {
+      resetMessages.push(systemMessage(`Session save failed: ${formatPlainError(error)}`));
+    }
+
+    app.resetForNewSession(resetMessages);
+    app.setTaskPlan(rehydrated.taskPlan);
+    if (rehydrated.status) {
+      app.setStatus(rehydrated.status);
+    }
+    tui.requestRender();
   }
 
   private async appendStartupRuntimeEvents(

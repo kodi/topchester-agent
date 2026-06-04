@@ -58,7 +58,7 @@ import { ABORT_CHOICE_VALUE, agentEvent } from "../src/agent/events.js";
 import { TopchesterAgentRuntime } from "../src/agent/runtime/index.js";
 import { executeRunCommand } from "../src/cli/run.js";
 import { type SessionEventPayload } from "../src/session/events.js";
-import { createSession, loadSession, rehydrateSession, type SessionHandle } from "../src/session/store.js";
+import { createSession, forkSession, loadSession, rehydrateSession, type SessionHandle } from "../src/session/store.js";
 
 // fake terminal for testing - 2
 class FakeTerminal implements Terminal {
@@ -1909,6 +1909,147 @@ describe("TUI rendering", () => {
     }
   });
 
+  it("forks the active TUI session and switches future appends to the fork", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tui-fork-session-"));
+    const context = createTestContext(workspace);
+    const source = await createSession(workspace);
+    await source.append({ kind: "message", role: "system", text: "Old thread" });
+    await source.append({ kind: "message", role: "user", text: "normal old user" });
+    await source.append({ kind: "message", role: "assistant", text: "normal old assistant", meta: "model" });
+    await source.append({
+      kind: "task_plan",
+      updatedAt: "2026-06-04T00:00:00.000Z",
+      items: [{ text: "Keep fork plan", status: "in_progress" }],
+    });
+    const sourceEventsBeforeFork = await readFile(source.eventsPath, "utf8");
+    const terminal = new FakeTerminal();
+    terminal.rows = 30;
+    const app = new ChatLayout(
+      terminal,
+      [systemMessage("Old thread"), userMessage("normal old user"), agentMessage("normal old assistant", "model")],
+      "repo",
+      "model [provider]",
+      { transcriptMode: "inline" }
+    );
+    const shell = new TopchesterTuiShell(
+      context,
+      {
+        async checkAgent() {
+          return [];
+        },
+        async checkKnowledgeBase() {
+          return [];
+        },
+        async submitSlashCommand() {
+          return [agentEvent.systemMessage("should not run")];
+        },
+        async *submitMessageStream() {
+          yield agentEvent.assistantMessage("fork-only assistant", "model");
+        },
+        async submitMessage() {
+          return [];
+        },
+      },
+      { session: source }
+    );
+
+    await (
+      shell as unknown as {
+        submitSlashCommand(app: ChatLayout, tui: { requestRender(): void }, command: string): Promise<void>;
+      }
+    ).submitSlashCommand(app, { requestRender() {} }, "/fork");
+
+    const sessionDirs = await readSessionDirs(workspace);
+    const forkSessionId = sessionDirs.find((sessionId) => sessionId !== source.sessionId);
+    expect(forkSessionId).toBeDefined();
+    expect(await readFile(source.eventsPath, "utf8")).toBe(sourceEventsBeforeFork);
+
+    const forkLines = await readSessionLines(workspace, forkSessionId!);
+    expect(forkLines.slice(0, 4)).toEqual(await readSessionLines(workspace, source.sessionId));
+    expect(forkLines.at(-1)).toMatchObject({
+      kind: "message",
+      role: "system",
+      text: `Forked session from ${source.sessionId.slice(0, 8)}.`,
+    });
+
+    const output = stripAnsi(app.render(80).join("\n"));
+    expect(terminal.clearCount).toBe(1);
+    expect(output).toContain("Old thread");
+    expect(output).toContain("normal old user");
+    expect(output).toContain("normal old assistant");
+    expect(output).toContain(`Forked session from ${source.sessionId.slice(0, 8)}.`);
+    expect(output).toContain("Keep fork plan");
+    expect(output).not.toContain("▌ /fork");
+
+    await (
+      shell as unknown as {
+        submitChatMessage(app: ChatLayout, tui: { requestRender(): void }, message: string): Promise<void>;
+      }
+    ).submitChatMessage(app, { requestRender() {} }, "fork-only prompt");
+
+    expect((await loadSession(workspace, source.sessionId)).events).toHaveLength(4);
+    const loadedFork = await loadSession(workspace, forkSessionId!);
+    expect(loadedFork.events.map((event) => ("text" in event ? event.text : undefined))).toContain("fork-only prompt");
+    expect(loadedFork.events.map((event) => ("text" in event ? event.text : undefined))).toContain(
+      "fork-only assistant"
+    );
+  });
+
+  it("prints the forked session id in the exit banner after /fork", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tui-fork-exit-banner-"));
+    const context = createTestContext(workspace);
+    const source = await createSession(workspace);
+    await source.append({ kind: "message", role: "system", text: "Old thread" });
+    const app = new ChatLayout(new FakeTerminal(), [systemMessage("Old thread")], "repo", "model [provider]");
+    const shell = new TopchesterTuiShell(
+      context,
+      {
+        async checkAgent() {
+          return [];
+        },
+        async checkKnowledgeBase() {
+          return [];
+        },
+        async submitSlashCommand() {
+          return [];
+        },
+        async *submitMessageStream() {
+          yield agentEvent.assistantMessage("unused");
+        },
+        async submitMessage() {
+          return [];
+        },
+      },
+      { session: source }
+    );
+
+    await (
+      shell as unknown as {
+        submitSlashCommand(app: ChatLayout, tui: { requestRender(): void }, command: string): Promise<void>;
+      }
+    ).submitSlashCommand(app, { requestRender() {} }, "/fork");
+
+    const sessionDirs = await readSessionDirs(workspace);
+    const forkSessionId = sessionDirs.find((sessionId) => sessionId !== source.sessionId);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      (
+        shell as unknown as {
+          printExitBannerForCurrentSession(fallbackSession: SessionHandle): void;
+        }
+      ).printExitBannerForCurrentSession(source);
+
+      const output = log.mock.calls.map((call) => call.join(" ")).join("\n");
+
+      expect(forkSessionId).toBeDefined();
+      expect(output).toContain(`topchester --resume ${forkSessionId!}`);
+      expect(output).not.toContain(`topchester --resume ${source.sessionId}`);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it("converts runtime events to structured persisted payloads", () => {
     const status = {
       workspaceRoot: "/repo",
@@ -2368,6 +2509,97 @@ describe("TUI rendering", () => {
     expect(capturedPrompts[0]).not.toContain("No KB found");
     expect(capturedPrompts[0]).not.toContain("Create KB now");
     expect(capturedPrompts[0]).not.toContain("ready");
+  });
+
+  it("filters forked resume context and diverges only after appending to the fork", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-fork-resume-context-"));
+    const source = await createSession(workspace);
+    const capturedPrompts: string[] = [];
+    const context = {
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText(request: { prompt?: string; purpose?: string }) {
+          if (request.purpose === "agent.primary") {
+            capturedPrompts.push(request.prompt ?? "");
+          }
+
+          return {
+            text: "assistant after fork resume",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    };
+
+    await source.append({ kind: "message", role: "system", text: "startup row" });
+    await source.append({ kind: "message", role: "user", text: "normal old user" });
+    await source.append({ kind: "message", role: "assistant", text: "normal old assistant" });
+    await source.append(slashCommandToSessionPayload("/kb status"));
+    await source.append({ kind: "message", role: "system", text: "slash command output" });
+    await source.append({
+      kind: "tool_call",
+      label: "read_file: README.md",
+      call: { tool: "read_file", args: { path: "README.md" } },
+    });
+    await source.append({
+      kind: "task_plan",
+      updatedAt: "2026-05-14T00:00:00.000Z",
+      items: [{ text: "Inspect", status: "in_progress" }],
+    });
+    await source.append({
+      kind: "hook_status",
+      eventName: "SessionStart",
+      statusMessage: "running",
+      label: "hook running",
+    });
+    await source.append({
+      kind: "status",
+      status: "ready",
+    });
+    await source.append({
+      kind: "choice",
+      tone: "warning",
+      title: "No KB found",
+      body: "Create one?",
+      actions: [{ label: "Create KB now", value: "/kb init" }],
+    });
+    await source.append({ kind: "message", role: "user", text: "Create KB now" });
+    const sourceBeforeRun = await loadSession(workspace, source.sessionId);
+
+    const fork = await forkSession(workspace, source.sessionId);
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await executeRunCommand(context, {
+        prompt: "new fork prompt",
+        resume: fork.sessionId,
+        json: true,
+      });
+    } finally {
+      writeSpy.mockRestore();
+    }
+
+    expect(capturedPrompts).toEqual([
+      ["User: normal old user", "Assistant: normal old assistant", "User: new fork prompt"].join("\n\n"),
+    ]);
+    expect(capturedPrompts[0]).not.toContain("startup row");
+    expect(capturedPrompts[0]).not.toContain("/kb status");
+    expect(capturedPrompts[0]).not.toContain("slash command output");
+    expect(capturedPrompts[0]).not.toContain("read_file: README.md");
+    expect(capturedPrompts[0]).not.toContain("Inspect");
+    expect(capturedPrompts[0]).not.toContain("hook running");
+    expect(capturedPrompts[0]).not.toContain("ready");
+    expect(capturedPrompts[0]).not.toContain("No KB found");
+    expect(capturedPrompts[0]).not.toContain("Create KB now");
+
+    expect((await loadSession(workspace, source.sessionId)).events).toEqual(sourceBeforeRun.events);
+    const forkEvents = (await loadSession(workspace, fork.sessionId)).events;
+    expect(forkEvents.slice(0, sourceBeforeRun.events.length)).toEqual(sourceBeforeRun.events);
+    expect(forkEvents.map((event) => ("text" in event ? event.text : undefined))).toContain("new fork prompt");
+    expect(forkEvents.map((event) => ("text" in event ? event.text : undefined))).toContain(
+      "assistant after fork resume"
+    );
   });
 
   it("filters tool rows from non-interactive resumed model context", async () => {

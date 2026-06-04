@@ -311,6 +311,94 @@ describe("CLI integration", () => {
     expect(await readSessionEvents(fixture.workspace, other.sessionId)).toContain("other unique row");
   });
 
+  it("forks an exact saved session and opens the fork in static mode", async () => {
+    const fixture = await makeFixture();
+    const source = await seedSession(fixture.workspace, "source unique row");
+    const other = await seedSession(fixture.workspace, "other unique row");
+    const sourceEventsBefore = await readFile(source.eventsPath, "utf8");
+
+    const { stdout } = await runCli(
+      ["--config", fixture.config, "--workspace", fixture.workspace, "fork", source.sessionId],
+      fixture.root
+    );
+
+    expect(stdout).toContain("source unique row");
+    expect(stdout).not.toContain("other unique row");
+    expect(await readFile(source.eventsPath, "utf8")).toBe(sourceEventsBefore);
+    const sessionIds = await readdir(join(fixture.workspace, ".agents", "topchester", "sessions"));
+    const forkSessionId = sessionIds.find(
+      (sessionId) => sessionId !== source.sessionId && sessionId !== other.sessionId
+    );
+    expect(forkSessionId).toBeDefined();
+    expect(await readSessionEvents(fixture.workspace, forkSessionId!)).toBe(sourceEventsBefore);
+    const forkMetadata = JSON.parse(
+      await readFile(
+        join(fixture.workspace, ".agents", "topchester", "sessions", forkSessionId!, "metadata.json"),
+        "utf8"
+      )
+    ) as Record<string, unknown>;
+    expect(forkMetadata).toMatchObject({
+      sessionId: forkSessionId,
+      rootSessionId: forkSessionId,
+      forkedFromSessionId: source.sessionId,
+      forkedFromRootSessionId: source.sessionId,
+      source: "user",
+    });
+  });
+
+  it("forks the latest saved session with --last", async () => {
+    const fixture = await makeFixture();
+    const older = await seedSession(fixture.workspace, "older unique row");
+    const latest = await seedSession(fixture.workspace, "latest unique row");
+
+    const { stdout } = await runCli(
+      ["--config", fixture.config, "--workspace", fixture.workspace, "fork", "--last"],
+      fixture.root
+    );
+
+    expect(stdout).toContain("latest unique row");
+    expect(stdout).not.toContain("older unique row");
+    const sessionIds = await readdir(join(fixture.workspace, ".agents", "topchester", "sessions"));
+    const forkSessionId = sessionIds.find(
+      (sessionId) => sessionId !== older.sessionId && sessionId !== latest.sessionId
+    );
+    expect(forkSessionId).toBeDefined();
+    const forkMetadata = JSON.parse(
+      await readFile(
+        join(fixture.workspace, ".agents", "topchester", "sessions", forkSessionId!, "metadata.json"),
+        "utf8"
+      )
+    ) as Record<string, unknown>;
+    expect(forkMetadata.forkedFromSessionId).toBe(latest.sessionId);
+  });
+
+  it("fails bare saved-session fork until a picker exists", async () => {
+    const fixture = await makeFixture();
+
+    await expect(runCli(["--workspace", fixture.workspace, "fork"], fixture.root)).rejects.toMatchObject({
+      stderr: expect.stringContaining("topchester fork requires --last or a session id"),
+    });
+  });
+
+  it("fails malformed fork sources before opening the TUI", async () => {
+    const fixture = await makeFixture();
+    const source = await seedSession(fixture.workspace, "broken fork source");
+    await writeFile(
+      source.eventsPath,
+      '{"version":1,"id":1,"ts":"2026-01-01T00:00:00.000Z","kind":"message","role":"user","text":"ok"}\nnot json\n'
+    );
+
+    await expect(
+      runCli(["--config", fixture.config, "--workspace", fixture.workspace, "fork", source.sessionId], fixture.root)
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining(`Could not read session event in ${source.eventsPath} line 2: invalid JSON`),
+    });
+
+    await expect(readdir(join(fixture.workspace, ".agents", "topchester", "sessions"))).resolves.toEqual([
+      source.sessionId,
+    ]);
+  });
+
   it("fails missing and empty latest resume targets before startup", async () => {
     const fixture = await makeFixture();
     const missingId = "019b0da2-0000-7000-8000-000000000099";

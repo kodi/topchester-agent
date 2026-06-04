@@ -14,6 +14,8 @@ Common commands:
 topchester
 topchester info
 topchester --resume latest
+topchester fork --last
+topchester fork 019e9029-0000-7000-8000-000000000001
 topchester run "Edit greeting.txt and change Hello to Goodbye."
 topchester run /kb status
 topchester run "/skill code-review review this diff"
@@ -42,6 +44,7 @@ topchester kb reset
 | Command                 | Purpose                                                  |
 | ----------------------- | -------------------------------------------------------- |
 | `topchester`            | Start the interactive coding agent.                      |
+| `topchester fork`       | Fork a saved project-local session and open the fork.    |
 | `topchester info`       | Show config validity and local runtime hints.            |
 | `topchester run`        | Run one prompt or slash command without opening the TUI. |
 | `topchester search`     | Search compiled L1 file knowledge.                       |
@@ -61,3 +64,9 @@ topchester kb reset
 Reports config layers, whether the effective config is valid, configured model/provider hints, provider API key env presence, MCP server command presence, hook counts, and local session/log/knowledge paths.
 
 If config is invalid, it prints the config error and exits nonzero.
+
+## `topchester fork`
+
+`topchester fork --last` forks the newest project-local session. `topchester fork <session-id>` forks that exact project-local session. Bare `topchester fork` exits with a clear message until Topchester has a saved-session picker.
+
+The fork gets a fresh top-level session ID, opens through the normal resume hydration path, and records source-session lineage in metadata. The source session log is left untouched. Child `task` session folders are not copied in V0.

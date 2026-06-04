@@ -22,7 +22,7 @@ import {
   searchL1Knowledge,
   stripEmptyContainers,
 } from "./knowledge/search.js";
-import { loadSession, loadSessionForAppend, rehydrateSession } from "./session/store.js";
+import { forkSession, loadSession, loadSessionForAppend, rehydrateSession } from "./session/store.js";
 import { TopchesterTuiShell } from "./tui/index.js";
 import { getTopchesterVersion } from "./version.js";
 import { executeRunCommand } from "./cli/run.js";
@@ -136,6 +136,31 @@ function createTopchesterProgram(): Command {
         }
       }
     );
+
+  program
+    .command("fork")
+    .description("fork a saved project session")
+    .argument("[session]", "session id to fork")
+    .option("--last", "fork the latest project session")
+    .action(async (sessionId: string | undefined, options: { last?: boolean }) => {
+      const context = createContextFromOptions(program);
+
+      try {
+        if (options.last && sessionId) {
+          throw new Error("Usage: topchester fork [--last] [session-id]");
+        }
+
+        const source = options.last ? "latest" : sessionId;
+        if (!source) {
+          throw new Error("topchester fork requires --last or a session id until a saved-session picker exists.");
+        }
+
+        await openForkedSession(context, source);
+      } catch (error) {
+        console.error(formatStartupError(error));
+        process.exitCode = 1;
+      }
+    });
 
   program
     .command("search")
@@ -311,6 +336,19 @@ function printStartupSummary(context: ReturnType<typeof createAppContext>) {
       console.log(`  ${providerId}: ${provider.type} ${provider.baseURL} auth=${auth}`);
     }
   }
+}
+
+async function openForkedSession(context: ReturnType<typeof createContextFromOptions>, sourceSession: string) {
+  const fork = await forkSession(context.workspaceRoot, sourceSession);
+  const loaded = await loadSession(context.workspaceRoot, fork.sessionId);
+  const session = await loadSessionForAppend(context.workspaceRoot, loaded.sessionId);
+  const rehydrated = rehydrateSession(loaded.events);
+
+  await new TopchesterTuiShell(context, undefined, {
+    session,
+    initialMessages: rehydrated.messages,
+    initialTaskPlan: rehydrated.taskPlan,
+  }).render();
 }
 
 function createContextFromOptions(program: Command) {

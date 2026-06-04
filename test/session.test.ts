@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,6 +7,7 @@ import {
   createChildSession,
   createSession,
   ensureSessionStorage,
+  forkSession,
   generateSessionId,
   listChildSessions,
   loadSession,
@@ -444,6 +445,90 @@ describe("session store", () => {
     expect(loadedChild.events).toEqual([
       expect.objectContaining({ kind: "message", role: "assistant", text: "Child answer" }),
     ]);
+  });
+
+  it("forks a validated session into a fresh top-level user session", async () => {
+    const workspace = await tempWorkspace();
+    const source = await createSession(workspace);
+    await source.append({ kind: "message", role: "system", text: "startup" });
+    await source.append({ kind: "message", role: "user", text: "hello" });
+    await source.append({ kind: "message", role: "assistant", text: "hi", meta: "model" });
+    const sourceEventsBeforeFork = await readFile(source.eventsPath, "utf8");
+    const sourceMetadataBeforeFork = await readFile(source.metadataPath, "utf8");
+
+    const fork = await forkSession(workspace, source.sessionId, { title: "Fork title" });
+
+    expect(fork.sessionId).not.toBe(source.sessionId);
+    expect(fork.sessionDir).toBe(join(getTopchesterSessionsPath(workspace), fork.sessionId));
+    await expect(readFile(source.eventsPath, "utf8")).resolves.toBe(sourceEventsBeforeFork);
+    await expect(readFile(source.metadataPath, "utf8")).resolves.toBe(sourceMetadataBeforeFork);
+    await expect(readFile(fork.eventsPath, "utf8")).resolves.toBe(sourceEventsBeforeFork);
+    expect(await readJson(fork.metadataPath)).toEqual({
+      version: 1,
+      sessionId: fork.sessionId,
+      rootSessionId: fork.sessionId,
+      forkedFromSessionId: source.sessionId,
+      forkedFromRootSessionId: source.sessionId,
+      source: "user",
+      title: "Fork title",
+      workspaceRoot: workspace,
+      createdAt: fork.metadata.createdAt,
+      updatedAt: fork.metadata.createdAt,
+      lastEventId: 3,
+    });
+
+    const appended = await fork.append({ kind: "message", role: "user", text: "fork-only" });
+    expect(appended.id).toBe(4);
+    expect((await loadSession(workspace, source.sessionId)).events).toHaveLength(3);
+    expect((await loadSession(workspace, fork.sessionId)).events).toHaveLength(4);
+  });
+
+  it("forks an empty session with an empty event log", async () => {
+    const workspace = await tempWorkspace();
+    const source = await createSession(workspace);
+
+    const fork = await forkSession(workspace, source.sessionId);
+
+    await expect(readFile(fork.eventsPath, "utf8")).resolves.toBe("");
+    expect(fork.metadata).toMatchObject({
+      rootSessionId: fork.sessionId,
+      forkedFromSessionId: source.sessionId,
+      forkedFromRootSessionId: source.sessionId,
+      source: "user",
+      lastEventId: 0,
+    });
+    await expect(fork.append({ kind: "message", role: "user", text: "first fork row" })).resolves.toMatchObject({
+      id: 1,
+      text: "first fork row",
+    });
+  });
+
+  it("forks latest sessions after validating the selected source", async () => {
+    const workspace = await tempWorkspace();
+    const older = await createSession(workspace);
+    const latest = await createSession(workspace);
+    await latest.append({ kind: "message", role: "user", text: "latest" });
+    await writeFile(
+      older.metadataPath,
+      `${JSON.stringify({ ...older.metadata, updatedAt: "2025-01-01T00:00:00.000Z" }, null, 2)}\n`
+    );
+
+    const fork = await forkSession(workspace, "latest");
+
+    expect(fork.metadata.forkedFromSessionId).toBe(latest.sessionId);
+    expect((await loadSession(workspace, fork.sessionId)).events).toMatchObject([{ text: "latest" }]);
+  });
+
+  it("fails before creating a fork when the source session is malformed", async () => {
+    const workspace = await tempWorkspace();
+    const source = await createSession(workspace);
+    await source.append({ kind: "message", role: "user", text: "hello" });
+    await writeFile(source.eventsPath, "not json\n");
+
+    await expect(forkSession(workspace, source.sessionId)).rejects.toThrow(/events\.jsonl line 1/u);
+
+    const entries = await readdir(getTopchesterSessionsPath(workspace));
+    expect(entries.filter((entry) => /^[0-9a-f-]+$/u.test(entry))).toEqual([source.sessionId]);
   });
 
   it("lists child sessions and loads recursive session trees", async () => {

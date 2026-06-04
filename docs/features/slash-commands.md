@@ -16,6 +16,7 @@ Common commands:
 - `/model all [search]` browses OpenRouter models and adds one to choices.
 - `/connect` connects a model provider.
 - `/new` clears the terminal and starts a fresh project-local session.
+- `/fork` clones the current session into a new project-local session and switches to it.
 - `/skills` opens the Skills overlay.
 - `/skills list` prints available skills.
 - `/skills inspect <name>` shows one `SKILL.md`.
@@ -26,4 +27,4 @@ Common commands:
 - `/kb init` creates Topchester project knowledge folders.
 - `/kb reset` deletes the local knowledge base and cache.
 
-`/model` and `/connect` are TUI-only. In `topchester run`, Topchester prints a short message that says to use the interactive TUI.
+`/model`, `/connect`, `/new`, and `/fork` are TUI-only. In `topchester run`, Topchester prints a short message that says to use the interactive TUI.

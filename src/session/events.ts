@@ -21,6 +21,8 @@ const sessionMetadataBaseSchema = z.object({
   rootSessionId: z.string().optional(),
   parentSessionId: z.string().optional(),
   parentToolCallId: z.string().optional(),
+  forkedFromSessionId: z.string().optional(),
+  forkedFromRootSessionId: z.string().optional(),
   source: z.enum(["user", "subagent"]).optional(),
   agentProfileId: z.string().optional(),
   title: z.string().optional(),

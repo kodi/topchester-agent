@@ -10,6 +10,8 @@ For the interactive terminal UI, keyboard controls, slash commands, and status l
 topchester
 topchester info
 topchester --resume latest
+topchester fork --last
+topchester fork 019e9029-0000-7000-8000-000000000001
 topchester run "Edit greeting.txt and change Hello to Goodbye."
 topchester run /kb status
 topchester run "/skill code-review review this diff"
@@ -42,6 +44,7 @@ On startup, Topchester creates the user config folder `~/.config/topchester/` if
 | Command                 | Purpose                                                  |
 | ----------------------- | -------------------------------------------------------- |
 | `topchester`            | Start the interactive coding agent.                      |
+| `topchester fork`       | Fork a saved project-local session and open the fork.    |
 | `topchester info`       | Show config validity and local runtime hints.            |
 | `topchester run`        | Run one prompt or slash command without opening the TUI. |
 | `topchester search`     | Search compiled L1 file knowledge.                       |
@@ -96,6 +99,28 @@ Current behavior:
 - `write_file` creates new UTF-8 files by default. It can create parent directories when explicitly requested, marks the file dirty-known and `needs_sync`, and fails if the target file already exists unless `overwrite: true` is paired with `expected_current_hash` from the latest `read_file` result for that file. The hash is a pre-write stale-read guard, not a predicted after-write hash.
 - `edit_file` remains the targeted edit tool for existing files; `inspect_command` remains read-only orientation and is not used for file creation.
 - `AGENTS.md` and `AGENTS.override.md` control future agent behavior. Topchester edits or writes them only when your current request explicitly asks to update project instructions or names the instruction file.
+
+## `topchester fork`
+
+Forks a saved project-local session into a new top-level session, then opens the fork with the same rehydrate path as `--resume`.
+
+Common examples:
+
+```sh
+topchester fork --last
+topchester fork 019e9029-0000-7000-8000-000000000001
+```
+
+Current behavior:
+
+- `topchester fork --last` forks the newest project-local session.
+- `topchester fork <session-id>` forks that exact project-local session.
+- Bare `topchester fork` exits with a clear message until Topchester has a saved-session picker.
+- The fork gets a fresh session ID and starts as a normal top-level user session.
+- The source session log is left untouched. Future messages append only to the fork.
+- Fork metadata records the source session ID and source root session ID.
+- Child `task` session folders are not copied. Historical child-session lifecycle rows copied in the parent transcript remain historical rows.
+- Missing, malformed, invalid, traversal, or no-session fork sources fail before the TUI/static layout opens, with plain error text.
 
 ## `topchester update`
 

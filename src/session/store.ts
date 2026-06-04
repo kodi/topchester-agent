@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, stat, truncate, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, truncate, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { uuidv7 } from "uuidv7";
 import { ZodError } from "zod";
@@ -53,6 +53,10 @@ export interface CreateChildSessionOptions {
   agentProfileId?: string;
   title?: string;
   recordParentEvent?: boolean;
+}
+
+export interface ForkSessionOptions {
+  title?: string;
 }
 
 export function generateSessionId(): string {
@@ -134,6 +138,53 @@ export async function createChildSession(
   }
 
   return child;
+}
+
+export async function forkSession(
+  workspaceRoot: string,
+  sourceSessionIdOrLatest: string,
+  options: ForkSessionOptions = {}
+): Promise<SessionHandle> {
+  const source = await loadSession(workspaceRoot, sourceSessionIdOrLatest);
+  const copiedEvents = await readFile(join(source.sessionDir, "events.jsonl"), "utf8");
+  const sessionsPath = getTopchesterSessionsPath(workspaceRoot);
+  const createdAt = new Date().toISOString();
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const sessionId = generateSessionId();
+    const sessionDir = join(sessionsPath, sessionId);
+    const metadataPath = join(sessionDir, "metadata.json");
+    const eventsPath = join(sessionDir, "events.jsonl");
+    const metadata: SessionMetadata = {
+      version: SESSION_METADATA_VERSION,
+      sessionId,
+      rootSessionId: sessionId,
+      forkedFromSessionId: source.sessionId,
+      forkedFromRootSessionId: source.metadata.rootSessionId,
+      source: "user",
+      ...(options.title === undefined ? {} : { title: options.title }),
+      workspaceRoot,
+      createdAt,
+      updatedAt: createdAt,
+      lastEventId: source.metadata.lastEventId,
+    };
+
+    try {
+      await mkdir(sessionDir);
+      await writeMetadata(metadataPath, metadata);
+      await writeFile(eventsPath, copiedEvents, { flag: "wx" });
+
+      return buildHandle(sessionDir, metadata);
+    } catch (error) {
+      if (isFileExistsError(error)) {
+        continue;
+      }
+      await rm(sessionDir, { recursive: true, force: true });
+      throw error;
+    }
+  }
+
+  throw new Error("Could not create forked session after repeated session id collisions");
 }
 
 export async function loadSessionForAppend(workspaceRoot: string, sessionId: string): Promise<SessionHandle> {
@@ -481,4 +532,8 @@ function isVisibleOnlyMessage(meta: unknown): boolean {
 
 function isFileNotFoundError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+function isFileExistsError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
 }

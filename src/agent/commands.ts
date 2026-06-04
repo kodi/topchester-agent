@@ -107,6 +107,10 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
     value: "/new",
     description: "start a fresh session",
   },
+  {
+    value: "/fork",
+    description: "fork the current session",
+  },
 ];
 
 export const slashCommands: SlashCommand[] = [
@@ -155,6 +159,11 @@ export const slashCommands: SlashCommand[] = [
     description: "start a fresh interactive TUI session",
     execute: executeNewCommand,
   },
+  {
+    name: "fork",
+    description: "fork the current interactive TUI session",
+    execute: executeForkCommand,
+  },
 ];
 
 export function parseSlashCommand(input: string): ParsedSlashCommand | undefined {
@@ -192,7 +201,7 @@ export async function executeSlashCommand(input: string, context: SlashCommandCo
       return shortcutResult;
     }
 
-    return { messages: [`Unknown command: /${parsed.name}`, "Try /kb status or /new."] };
+    return { messages: [`Unknown command: /${parsed.name}`, "Try /kb status, /new, or /fork."] };
   }
 
   return command.execute(parsed.args, context);
@@ -376,6 +385,12 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
 function executeNewCommand(): SlashCommandResult {
   return {
     messages: ["/new starts a fresh session in the interactive TUI."],
+  };
+}
+
+function executeForkCommand(): SlashCommandResult {
+  return {
+    messages: ["/fork clones the current session in the interactive TUI."],
   };
 }
 
