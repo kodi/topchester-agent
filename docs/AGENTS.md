@@ -25,4 +25,6 @@ public: true
 
 Keep `docs/plans/`, benchmarks, drafts, and internal design notes out of public navigation. Do not add `public: true` to implementation handoff documents.
 
+`docs/reference/changelog.md` is the source of truth for the public `/changelog/` page. Keep it hand-maintained: add or update date sections with newest days first, group entries under short headings, and link to the relevant commits when useful.
+
 When code behavior changes, update the closest public task page first, then update the relevant reference page if command, config, hook, MCP, or model behavior changed.
