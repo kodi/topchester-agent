@@ -35,6 +35,8 @@ Local competitor checkouts inspected on 2026-06-04:
 - Do not add configurable `busy_input_mode` in V0. That can come after the queue and steer contracts are proven.
 - Do not implement queued-message menus, removal, editing, or persistence in V0.
 - Do not make non-interactive `topchester run` accept queued busy input. Non-interactive `/queue` and `/steer` should return interactive-only messages.
+- If the user switches sessions with `/new`, `/fork`, or `/restore`, clear TUI-local queued prompts and pending steering with a visible notice. Do not carry queued input across sessions in V0.
+- Queueing and steering must not bypass active approval modals. Modal input keeps priority over prompt input, and normal text, `/queue`, and `/steer` should wait until the modal is resolved.
 
 ## Scope
 
@@ -131,13 +133,12 @@ Add a minimal object passed through `AgentRuntimeSubmitMessageOptions`, for exam
 
 ```ts
 export interface RuntimeSteeringBuffer {
-  push(text: string): void;
   drain(): string | undefined;
   hasPending(): boolean;
 }
 ```
 
-The TUI owns the buffer instance for the active turn. The runtime only calls `drain()` after tool results are available and before it builds the next `nextPrompt`.
+The TUI owns the mutable buffer instance for the active turn. The runtime receives only a drain-capable view and calls `drain()` after tool results are available and before it builds the next `nextPrompt`. After the stream exits, the shell checks the same buffer for unconsumed text and queues any remainder as a follow-up.
 
 Preferred V0 injection wording:
 
@@ -169,7 +170,7 @@ private activeSteeringBuffer: RuntimeSteeringBuffer | undefined;
 
 ```ts
 type SubmitMessageResult = "submitted" | "queued" | void;
-setSubmitMessage((message) => SubmitMessageResult | Promise<SubmitMessageResult>);
+setSubmitMessage((message) => SubmitMessageResult);
 ```
 
 Then `submitPromptValue()` can:
@@ -222,6 +223,8 @@ Possible new files:
 - Keep one active chat turn at a time.
 - Preserve existing Esc abort behavior.
 - Preserve approval modal behavior; queued input should not answer approval prompts.
+- Add regression tests that normal text, `/queue`, and `/steer` do not bypass an active approval modal.
+- Clear TUI-local queued prompts and pending steering on `/new`, `/fork`, and `/restore`, with a visible notice.
 - Avoid changing session event schemas unless a later slice proves it is necessary.
 
 ## Edge Cases
@@ -306,6 +309,7 @@ This slice should implement:
 - After `submitChatMessage()` finishes, if the session is still valid and not exiting, start exactly one queued prompt.
 - Repeat draining one prompt at a time.
 - Decide and encode behavior for failures: preferred V0 is to continue draining only if the current turn ends with ready, not when it leaves `chat failed`.
+- Clear queued prompts on `/new`, `/fork`, and `/restore`, and show a short visible notice when anything was dropped.
 - Add tests for order preservation and no premature persistence.
 
 Expected output:
@@ -392,6 +396,8 @@ This slice should implement:
 - Pass the buffer through `AgentRuntimeSubmitMessageOptions`.
 - After each tool result is formatted and before the next model prompt, drain steering text and append a steering instruction to `nextPrompt`.
 - Cover single-tool, parallel-tool, and task-tool result paths if they each build continuation prompts separately.
+- Treat only continuation-prompt paths as steering injection sites. Do not inject into terminal paths that immediately return `assistantMessage`, `choice`, `status("ready")`, or error/failure output.
+- Add an implementation checklist with the exact `submitMessageStream()` continuation sites changed, so future edits do not miss one model-loop path or accidentally alter a terminal path.
 - Do not inject steering before the first model call.
 - Do not consume steering if the current turn will return without another model prompt.
 - Add focused runtime tests proving steering text reaches the next model prompt after a tool result.
@@ -423,6 +429,7 @@ This slice should implement:
 - If busy, push text into the active steering buffer and show a compact notice.
 - If active steering remains pending when `submitChatMessage()` exits, move it into `queuedChatMessages`.
 - If Esc aborts the turn, drop pending steering or restore it to the prompt. Preferred V0 is to restore/drop visibly, not silently run it.
+- Clear pending steering on `/new`, `/fork`, and `/restore`, with the same visible dropped-input notice used for queued follow-ups.
 - Add tests for consumed steer and fallback-to-queue.
 
 Expected output:
@@ -472,7 +479,6 @@ Dependencies: Slices 1 through 6.
 - Should idle `/queue <prompt>` run immediately or always enqueue then drain? Preferred V0: run immediately because the observable result is the same and avoids queue state churn.
 - Should idle `/steer <prompt>` run immediately or warn that nothing is running? Preferred V0: run immediately, matching competitor fallback behavior.
 - Should queued prompts continue draining after a turn fails with `chat failed`? Preferred V0: stop draining on failure so the user can inspect before more work starts.
-- Should Esc with queued follow-ups keep the queued messages or restore them to the prompt? Preferred V0: keep queued follow-ups but restore/drop pending steering visibly. This needs a product decision during Slice 6.
 - Where should the queue count render: thread notice line, status line, or prompt border? Preferred V0: thread notice line because it avoids widening the status format.
 
 ## Progress Log
