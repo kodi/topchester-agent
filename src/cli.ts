@@ -35,6 +35,14 @@ import {
   runSelfUpdate,
 } from "./cli/self-update.js";
 import { collectTopchesterInfo } from "./cli/info.js";
+import {
+  executeHookStop,
+  formatIntegrationAction,
+  formatIntegrationStatuses,
+  installIntegration,
+  listIntegrationStatusesAsync,
+  removeIntegration,
+} from "./cli/integrations.js";
 import { configureCodexGlobalProvider } from "./config/index.js";
 
 export async function runTopchesterCli(argv = process.argv, options: { exitOverride?: boolean } = {}): Promise<void> {
@@ -206,6 +214,92 @@ function createTopchesterProgram(): Command {
     .option("--json", "write full JSON search result to stdout")
     .action(async (queryParts: string[], options: KbSearchCommandOptions) => {
       await executeKbSearchCommand(program, queryParts, options);
+    });
+
+  const integrationsCommand = program
+    .command("integrations")
+    .description("manage Topchester integrations with other agents");
+
+  integrationsCommand
+    .command("list")
+    .description("list supported integrations")
+    .action(async () => {
+      try {
+        console.log(formatIntegrationStatuses(await listIntegrationStatusesAsync()).join("\n"));
+      } catch (error) {
+        console.error(formatStartupError(error));
+        process.exitCode = 1;
+      }
+    });
+
+  integrationsCommand
+    .command("status")
+    .description("check whether integrations are installed")
+    .argument("[agent]", "agent id")
+    .action(async (agent: string | undefined) => {
+      try {
+        console.log(formatIntegrationStatuses(await listIntegrationStatusesAsync(agent)).join("\n"));
+      } catch (error) {
+        console.error(formatStartupError(error));
+        process.exitCode = 1;
+      }
+    });
+
+  integrationsCommand
+    .command("install")
+    .description("install Topchester lifecycle hooks for another agent")
+    .argument("<agent>", "agent id")
+    .action(async (agent: string) => {
+      try {
+        const result = await installIntegration(agent);
+        console.log(formatIntegrationAction(result.action, result.status).join("\n"));
+      } catch (error) {
+        console.error(formatStartupError(error));
+        process.exitCode = 1;
+      }
+    });
+
+  integrationsCommand
+    .command("repair")
+    .description("repair a Topchester integration")
+    .argument("<agent>", "agent id")
+    .action(async (agent: string) => {
+      try {
+        const result = await installIntegration(agent, "repaired");
+        console.log(formatIntegrationAction(result.action, result.status).join("\n"));
+      } catch (error) {
+        console.error(formatStartupError(error));
+        process.exitCode = 1;
+      }
+    });
+
+  integrationsCommand
+    .command("remove")
+    .description("remove a Topchester integration")
+    .argument("<agent>", "agent id")
+    .action(async (agent: string) => {
+      try {
+        const result = await removeIntegration(agent);
+        console.log(formatIntegrationAction(result.action, result.status).join("\n"));
+      } catch (error) {
+        console.error(formatStartupError(error));
+        process.exitCode = 1;
+      }
+    });
+
+  const hookCommand = program.command("hook").description("low-level lifecycle hook endpoints");
+
+  hookCommand
+    .command("stop")
+    .description("receive a Stop hook from another agent")
+    .argument("<agent>", "agent id")
+    .action(async (agent: string) => {
+      try {
+        await executeHookStop(agent);
+      } catch (error) {
+        console.error(formatStartupError(error));
+        process.exitCode = 1;
+      }
     });
 
   const kbCommand = program.command("kb").description("knowledge base commands");
