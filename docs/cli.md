@@ -197,7 +197,7 @@ Current behavior:
 - Routes slash-command prompts such as `/kb status` through the same command dispatcher used by the TUI.
 - Routes skill slash commands such as `/skills list`, `/skills inspect <name>`, `/skills reload`, `/skill <name>`, and `/<skill-name>` through the shared command dispatcher.
 - Supports inline skill mentions such as `@code-review review this diff` in normal prompts.
-- Interactive picker commands such as `/model`, `/connect`, and `/restore` are TUI-only. In `topchester run`, they print a short message that says to use the interactive TUI.
+- Interactive commands such as `/model`, `/connect`, `/restore`, `/queue`, and `/steer` are TUI-only. In `topchester run`, they print a short message that says to use the interactive TUI.
 - Does not open the interactive TUI.
 - Exits non-zero on runtime failure or timeout.
 

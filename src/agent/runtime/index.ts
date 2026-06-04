@@ -53,6 +53,7 @@ import {
   type TurnTokenUsageTotals,
 } from "./format.js";
 import { formatTuiSyncStatus, getKnowledgeStatusEvents, shouldRefreshKnowledgeStatus } from "./knowledge.js";
+import { formatRuntimeSteeringPrompt, type RuntimeSteeringBuffer } from "./steering.js";
 import {
   generateAgentStep,
   getExecutableModelToolCalls,
@@ -75,6 +76,7 @@ import {
 import { validateBashPolicy, type BashApprovalCandidates } from "../tools/bash-policy.js";
 
 export { getKnowledgeStatusEvents } from "./knowledge.js";
+export { MutableRuntimeSteeringBuffer, type RuntimeSteeringBuffer } from "./steering.js";
 
 const MAX_TOOL_CALLS_PER_TURN = 75;
 const DEFAULT_TASK_CONCURRENCY = 3;
@@ -113,6 +115,7 @@ export interface AgentRuntimeSubmitMessageOptions {
   onReasoning?: ModelReasoningSink;
   session?: SessionHandle;
   requestBashApproval?: (request: BashApprovalRequest) => Promise<BashApprovalDecision>;
+  steering?: RuntimeSteeringBuffer;
 }
 
 export interface BashApprovalRequest {
@@ -619,16 +622,19 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           }
 
           afterTool = "task";
-          nextPrompt = this.appendHookContextsToPrompt(
-            `${nextPrompt}\n\n${taskResults
-              .map((toolResult) => formatToolResultForPrompt(toolResult!))
-              .join("\n\n")}\n\n${formatContinuationInstruction(
-              result.toolProtocol,
-              taskResults.at(-1)!,
-              isToolAllowed(permissions, "plan_todo")
-            )}`,
-            "PostToolUse",
-            postHookContexts
+          nextPrompt = this.appendRuntimeSteeringToContinuationPrompt(
+            this.appendHookContextsToPrompt(
+              `${nextPrompt}\n\n${taskResults
+                .map((toolResult) => formatToolResultForPrompt(toolResult!))
+                .join("\n\n")}\n\n${formatContinuationInstruction(
+                result.toolProtocol,
+                taskResults.at(-1)!,
+                isToolAllowed(permissions, "plan_todo")
+              )}`,
+              "PostToolUse",
+              postHookContexts
+            ),
+            options.steering
           );
           continue;
         }
@@ -733,16 +739,19 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           }
 
           afterTool = parallelCalls.at(-1)?.tool;
-          nextPrompt = this.appendHookContextsToPrompt(
-            `${nextPrompt}\n\n${parallelResults
-              .map((toolResult) => formatToolResultForPrompt(toolResult!))
-              .join("\n\n")}\n\n${formatContinuationInstruction(
-              result.toolProtocol,
-              parallelResults.at(-1)!,
-              isToolAllowed(permissions, "plan_todo")
-            )}`,
-            "PostToolUse",
-            postHookContexts
+          nextPrompt = this.appendRuntimeSteeringToContinuationPrompt(
+            this.appendHookContextsToPrompt(
+              `${nextPrompt}\n\n${parallelResults
+                .map((toolResult) => formatToolResultForPrompt(toolResult!))
+                .join("\n\n")}\n\n${formatContinuationInstruction(
+                result.toolProtocol,
+                parallelResults.at(-1)!,
+                isToolAllowed(permissions, "plan_todo")
+              )}`,
+              "PostToolUse",
+              postHookContexts
+            ),
+            options.steering
           );
           continue;
         }
@@ -878,14 +887,17 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         }
 
         afterTool = executableToolCall.tool;
-        nextPrompt = this.appendHookContextsToPrompt(
-          `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(
-            result.toolProtocol,
-            toolResult,
-            isToolAllowed(permissions, "plan_todo")
-          )}`,
-          "PostToolUse",
-          postHook.contexts
+        nextPrompt = this.appendRuntimeSteeringToContinuationPrompt(
+          this.appendHookContextsToPrompt(
+            `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(
+              result.toolProtocol,
+              toolResult,
+              isToolAllowed(permissions, "plan_todo")
+            )}`,
+            "PostToolUse",
+            postHook.contexts
+          ),
+          options.steering
         );
       }
 
@@ -1293,6 +1305,19 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     );
 
     return { ...status, nonCleanFileCount: result.files.length };
+  }
+
+  private appendRuntimeSteeringToContinuationPrompt(
+    prompt: string,
+    steering: RuntimeSteeringBuffer | undefined
+  ): string {
+    const text = steering?.drain()?.trim();
+
+    if (!text) {
+      return prompt;
+    }
+
+    return `${prompt}\n\n${formatRuntimeSteeringPrompt(text)}`;
   }
 
   /**

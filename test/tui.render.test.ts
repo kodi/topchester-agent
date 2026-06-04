@@ -1311,6 +1311,24 @@ describe("TUI rendering", () => {
     expect(submitted).toBe("hello");
   });
 
+  it("clears queued submissions without appending a user message", () => {
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    let submitted = "";
+    app.setSubmitMessage((message) => {
+      submitted = message;
+      return "queued";
+    });
+    app.setInputValue("follow up");
+
+    app.handleInput("\n");
+    const output = stripAnsi(app.render(60).join("\n"));
+
+    expect(output).not.toContain("▌ follow up");
+    expect(output).not.toContain("> follow up");
+    expect(output).toContain("> ");
+    expect(submitted).toBe("follow up");
+  });
+
   it("supports multiline prompt drafts and submits them as one message", () => {
     const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
     let submitted = "";
@@ -1662,6 +1680,41 @@ describe("TUI rendering", () => {
     expect(submitted).toBe("Skip creation");
   });
 
+  it("keeps normal text, /queue, and /steer behind an active chat modal", () => {
+    for (const draft of ["normal prompt", "/queue follow up", "/steer focus"]) {
+      let submittedMessage = "";
+      let submittedCommand = "";
+      const app = new ChatLayout(
+        new FakeTerminal(),
+        [
+          modalMessage({
+            tone: "warning",
+            title: "Run bash command?",
+            actions: [{ label: "Run once" }, { label: "Cancel", value: "cancel" }],
+          }),
+        ],
+        "repo",
+        "model [provider]"
+      );
+      app.setSubmitMessage((message) => {
+        submittedMessage = message;
+      });
+      app.setSubmitCommand((command) => {
+        submittedCommand = command;
+      });
+      app.setInputValue(draft);
+
+      app.handleInput("\n");
+      const output = stripAnsi(app.render(80).join("\n"));
+
+      expect(output).toContain("▌ Run once");
+      expect(output).toContain(`> ${draft}`);
+      expect(output).not.toContain(`▌ ${draft}`);
+      expect(submittedMessage).toBe("Run once");
+      expect(submittedCommand).toBe("");
+    }
+  });
+
   it("submits cancel when Esc is pressed with an active chat modal", () => {
     const app = new ChatLayout(
       new FakeTerminal(),
@@ -1728,6 +1781,37 @@ describe("TUI rendering", () => {
 
     expect(output).toContain("Doing one...");
     expect(output).toContain("press Esc to stop");
+  });
+
+  it("busy indicator can keep the prompt editor active with an activity hint", () => {
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    const busy = new BusyIndicator(
+      app,
+      { requestRender() {} },
+      {
+        status: "thinking",
+        activityHint: "press Esc to stop",
+        activities: ["Thinking..."],
+      }
+    );
+    let submitted = "";
+    app.setSubmitMessage((message) => {
+      submitted = message;
+      return "queued";
+    });
+
+    busy.start();
+    app.setQueuedFollowUpCount(1);
+    app.handleInput("follow up");
+    app.handleInput("\n");
+    const output = stripAnsi(app.render(80).join("\n"));
+    busy.stop();
+
+    expect(output).toContain("Thinking... · press Esc to stop");
+    expect(output).toContain("queued: 1 follow-up");
+    expect(output).not.toContain("> follow up");
+    expect(output).not.toContain("▌ follow up");
+    expect(submitted).toBe("follow up");
   });
 
   it("busy indicator can override and clear transient activity", () => {
@@ -3129,6 +3213,377 @@ describe("TUI rendering", () => {
     await submitting;
 
     expect(app.render(60).join("\n")).toContain("Done.");
+  });
+
+  it("queues busy chat submissions and drains them after the active turn is ready", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-queued-chat-"));
+    const context = createTestContext(workspace);
+    const session = await createSession(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [userMessage("first")], "repo", "model [provider]");
+    const submitted: string[] = [];
+    let releaseFirstTurn: (() => void) | undefined;
+    let firstTurnStarted: (() => void) | undefined;
+    const firstTurnStartedPromise = new Promise<void>((resolve) => {
+      firstTurnStarted = resolve;
+    });
+    const shell = new TopchesterTuiShell(
+      context,
+      {
+        async checkAgent() {
+          return [];
+        },
+        async checkKnowledgeBase() {
+          return [];
+        },
+        async submitSlashCommand() {
+          return [];
+        },
+        async *submitMessageStream(_conversation, message) {
+          submitted.push(message);
+          if (message === "first") {
+            firstTurnStarted?.();
+            await new Promise<void>((resolve) => {
+              releaseFirstTurn = resolve;
+            });
+          }
+          yield agentEvent.assistantMessage(`Done: ${message}`);
+          yield agentEvent.status("ready");
+        },
+        async submitMessage() {
+          return [];
+        },
+      },
+      {
+        session,
+      }
+    );
+    const tui = { requestRender() {} };
+
+    const firstTurn = (
+      shell as unknown as {
+        submitChatMessage(app: ChatLayout, tui: { requestRender(): void }, message: string): Promise<void>;
+      }
+    ).submitChatMessage(app, tui, "first");
+    await firstTurnStartedPromise;
+
+    await (
+      shell as unknown as {
+        submitChatMessage(app: ChatLayout, tui: { requestRender(): void }, message: string): Promise<void>;
+      }
+    ).submitChatMessage(app, tui, "second");
+
+    const queuedOutput = stripAnsi(app.render(80).join("\n"));
+    const queuedSession = await readFile(session.eventsPath, "utf8");
+
+    expect(queuedOutput).toContain("queued: 1 follow-up");
+    expect(queuedOutput).not.toContain("▌ second");
+    expect(queuedSession).toContain("first");
+    expect(queuedSession).not.toContain("second");
+
+    releaseFirstTurn?.();
+    await firstTurn;
+
+    const drainedOutput = stripAnsi(app.render(80).join("\n"));
+    const drainedSession = await readFile(session.eventsPath, "utf8");
+
+    expect(submitted).toEqual(["first", "second"]);
+    expect(drainedOutput).toContain("▌ second");
+    expect(drainedOutput).toContain("Done: second");
+    expect(drainedOutput).not.toContain("queued: 1 follow-up");
+    expect(drainedSession).toContain("second");
+  });
+
+  it("keeps queued chat submissions pending after a failed active turn", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-queued-chat-failure-"));
+    const context = createTestContext(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [userMessage("first")], "repo", "model [provider]");
+    const submitted: string[] = [];
+    let firstTurnStarted: (() => void) | undefined;
+    const firstTurnStartedPromise = new Promise<void>((resolve) => {
+      firstTurnStarted = resolve;
+    });
+    const shell = new TopchesterTuiShell(context, {
+      async checkAgent() {
+        return [];
+      },
+      async checkKnowledgeBase() {
+        return [];
+      },
+      async submitSlashCommand() {
+        return [];
+      },
+      async *submitMessageStream(_conversation, message) {
+        submitted.push(message);
+        firstTurnStarted?.();
+        if (Date.now() < 0) {
+          yield agentEvent.status("unreachable");
+        }
+        throw new Error("model failed");
+      },
+      async submitMessage() {
+        return [];
+      },
+    });
+    const tui = { requestRender() {} };
+
+    const firstTurn = (
+      shell as unknown as {
+        submitChatMessage(app: ChatLayout, tui: { requestRender(): void }, message: string): Promise<void>;
+      }
+    ).submitChatMessage(app, tui, "first");
+    await firstTurnStartedPromise;
+
+    await (
+      shell as unknown as {
+        submitChatMessage(app: ChatLayout, tui: { requestRender(): void }, message: string): Promise<void>;
+      }
+    ).submitChatMessage(app, tui, "second");
+    await firstTurn;
+
+    const output = stripAnsi(app.render(80).join("\n"));
+
+    expect(submitted).toEqual(["first"]);
+    expect(output).toContain("Chat failed: model failed");
+    expect(output).toContain("queued: 1 follow-up");
+    expect(output).not.toContain("▌ second");
+  });
+
+  it("runs idle /queue prompts as normal chat turns without showing a slash row", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-idle-queue-command-"));
+    const context = createTestContext(workspace);
+    const session = await createSession(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    const submitted: string[] = [];
+    let turnFinished: (() => void) | undefined;
+    const turnFinishedPromise = new Promise<void>((resolve) => {
+      turnFinished = resolve;
+    });
+    const shell = new TopchesterTuiShell(
+      context,
+      {
+        async checkAgent() {
+          return [];
+        },
+        async checkKnowledgeBase() {
+          return [];
+        },
+        async submitSlashCommand() {
+          return [];
+        },
+        async *submitMessageStream(_conversation, message) {
+          submitted.push(message);
+          yield agentEvent.assistantMessage(`Done: ${message}`);
+          yield agentEvent.status("ready");
+          turnFinished?.();
+        },
+        async submitMessage() {
+          return [];
+        },
+      },
+      {
+        session,
+      }
+    );
+
+    (
+      shell as unknown as {
+        submitQueueCommand(app: ChatLayout, tui: { requestRender(): void }, prompt: string): void;
+      }
+    ).submitQueueCommand(app, { requestRender() {} }, "queued from command");
+    await turnFinishedPromise;
+
+    const output = stripAnsi(app.render(80).join("\n"));
+    const rawSession = await readFile(session.eventsPath, "utf8");
+
+    expect(submitted).toEqual(["queued from command"]);
+    expect(output).toContain("▌ queued from command");
+    expect(output).toContain("Done: queued from command");
+    expect(output).not.toContain("/queue queued from command");
+    expect(rawSession).toContain("queued from command");
+    expect(rawSession).not.toContain("/queue queued from command");
+  });
+
+  it("queues busy /queue prompts without showing a slash row", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-busy-queue-command-"));
+    const context = createTestContext(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [userMessage("first")], "repo", "model [provider]");
+    let releaseFirstTurn: (() => void) | undefined;
+    let firstTurnStarted: (() => void) | undefined;
+    const firstTurnStartedPromise = new Promise<void>((resolve) => {
+      firstTurnStarted = resolve;
+    });
+    const shell = new TopchesterTuiShell(context, {
+      async checkAgent() {
+        return [];
+      },
+      async checkKnowledgeBase() {
+        return [];
+      },
+      async submitSlashCommand() {
+        return [];
+      },
+      async *submitMessageStream(_conversation, message) {
+        if (message === "first") {
+          firstTurnStarted?.();
+          await new Promise<void>((resolve) => {
+            releaseFirstTurn = resolve;
+          });
+        }
+        yield agentEvent.assistantMessage(`Done: ${message}`);
+        yield agentEvent.status("ready");
+      },
+      async submitMessage() {
+        return [];
+      },
+    });
+    const tui = { requestRender() {} };
+    const firstTurn = (
+      shell as unknown as {
+        submitChatMessage(app: ChatLayout, tui: { requestRender(): void }, message: string): Promise<void>;
+      }
+    ).submitChatMessage(app, tui, "first");
+    await firstTurnStartedPromise;
+
+    (
+      shell as unknown as {
+        submitQueueCommand(app: ChatLayout, tui: { requestRender(): void }, prompt: string): void;
+      }
+    ).submitQueueCommand(app, tui, "queued from command");
+    const queuedOutput = stripAnsi(app.render(80).join("\n"));
+
+    expect(queuedOutput).toContain("queued: 1 follow-up");
+    expect(queuedOutput).not.toContain("▌ /queue queued from command");
+    expect(queuedOutput).not.toContain("▌ queued from command");
+
+    releaseFirstTurn?.();
+    await firstTurn;
+
+    const drainedOutput = stripAnsi(app.render(80).join("\n"));
+
+    expect(drainedOutput).toContain("▌ queued from command");
+    expect(drainedOutput).toContain("Done: queued from command");
+  });
+
+  it("delivers busy /steer prompts to the active steering buffer without a visible user row", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-busy-steer-command-"));
+    const context = createTestContext(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [userMessage("first")], "repo", "model [provider]");
+    let releaseRuntime: (() => void) | undefined;
+    let firstTurnStarted: (() => void) | undefined;
+    const firstTurnStartedPromise = new Promise<void>((resolve) => {
+      firstTurnStarted = resolve;
+    });
+    let consumedSteering = "";
+    const shell = new TopchesterTuiShell(context, {
+      async checkAgent() {
+        return [];
+      },
+      async checkKnowledgeBase() {
+        return [];
+      },
+      async submitSlashCommand() {
+        return [];
+      },
+      async *submitMessageStream(_conversation, message, _abortSignal, options) {
+        firstTurnStarted?.();
+        await new Promise<void>((resolve) => {
+          releaseRuntime = resolve;
+        });
+        consumedSteering = options?.steering?.drain() ?? "";
+        yield agentEvent.assistantMessage(`Done: ${message}`);
+        yield agentEvent.status("ready");
+      },
+      async submitMessage() {
+        return [];
+      },
+    });
+    const tui = { requestRender() {} };
+    const firstTurn = (
+      shell as unknown as {
+        submitChatMessage(app: ChatLayout, tui: { requestRender(): void }, message: string): Promise<void>;
+      }
+    ).submitChatMessage(app, tui, "first");
+    await firstTurnStartedPromise;
+
+    (
+      shell as unknown as {
+        submitSteerCommand(app: ChatLayout, tui: { requestRender(): void }, prompt: string): void;
+      }
+    ).submitSteerCommand(app, tui, "focus on tests");
+    const steeringOutput = stripAnsi(app.render(80).join("\n"));
+
+    expect(steeringOutput).toContain("steering added to active turn");
+    expect(steeringOutput).not.toContain("▌ /steer focus on tests");
+    expect(steeringOutput).not.toContain("▌ focus on tests");
+
+    releaseRuntime?.();
+    await firstTurn;
+
+    const finalOutput = stripAnsi(app.render(80).join("\n"));
+
+    expect(consumedSteering).toBe("focus on tests");
+    expect(finalOutput).not.toContain("queued: 1 follow-up");
+    expect(finalOutput).not.toContain("▌ focus on tests");
+  });
+
+  it("queues unconsumed /steer prompts after the active turn completes", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-steer-fallback-"));
+    const context = createTestContext(workspace);
+    const app = new ChatLayout(new FakeTerminal(), [userMessage("first")], "repo", "model [provider]");
+    const submitted: string[] = [];
+    let releaseRuntime: (() => void) | undefined;
+    let firstTurnStarted: (() => void) | undefined;
+    const firstTurnStartedPromise = new Promise<void>((resolve) => {
+      firstTurnStarted = resolve;
+    });
+    const shell = new TopchesterTuiShell(context, {
+      async checkAgent() {
+        return [];
+      },
+      async checkKnowledgeBase() {
+        return [];
+      },
+      async submitSlashCommand() {
+        return [];
+      },
+      async *submitMessageStream(_conversation, message) {
+        submitted.push(message);
+        if (message === "first") {
+          firstTurnStarted?.();
+          await new Promise<void>((resolve) => {
+            releaseRuntime = resolve;
+          });
+        }
+        yield agentEvent.assistantMessage(`Done: ${message}`);
+        yield agentEvent.status("ready");
+      },
+      async submitMessage() {
+        return [];
+      },
+    });
+    const tui = { requestRender() {} };
+    const firstTurn = (
+      shell as unknown as {
+        submitChatMessage(app: ChatLayout, tui: { requestRender(): void }, message: string): Promise<void>;
+      }
+    ).submitChatMessage(app, tui, "first");
+    await firstTurnStartedPromise;
+
+    (
+      shell as unknown as {
+        submitSteerCommand(app: ChatLayout, tui: { requestRender(): void }, prompt: string): void;
+      }
+    ).submitSteerCommand(app, tui, "still answer this");
+
+    releaseRuntime?.();
+    await firstTurn;
+
+    const output = stripAnsi(app.render(80).join("\n"));
+
+    expect(submitted).toEqual(["first", "still answer this"]);
+    expect(output).toContain("▌ still answer this");
+    expect(output).toContain("Done: still answer this");
+    expect(output).not.toContain("▌ /steer still answer this");
   });
 
   it("keeps streamed reasoning visible after the answer without saving it", async () => {

@@ -17,6 +17,9 @@ Common commands:
 - `/connect` connects a model provider.
 - `/new` clears the terminal and starts a fresh project-local session.
 - `/fork` clones the current session into a new project-local session and switches to it.
+- `/queue <prompt>` queues a follow-up prompt, or starts it immediately when idle.
+- `/q <prompt>` is a short alias for `/queue`.
+- `/steer <prompt>` sends best-effort guidance to the active turn, falling back to a queued follow-up if it is not consumed.
 - `/skills` opens the Skills overlay.
 - `/skills list` prints available skills.
 - `/skills inspect <name>` shows one `SKILL.md`.
@@ -27,4 +30,4 @@ Common commands:
 - `/kb init` creates Topchester project knowledge folders.
 - `/kb reset` deletes the local knowledge base and cache.
 
-`/model`, `/connect`, `/new`, and `/fork` are TUI-only. In `topchester run`, Topchester prints a short message that says to use the interactive TUI.
+`/model`, `/connect`, `/new`, `/fork`, `/restore`, `/queue`, `/q`, and `/steer` are TUI-only. In `topchester run`, Topchester prints a short message that says to use the interactive TUI.

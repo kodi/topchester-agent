@@ -10,7 +10,7 @@ import {
   getSlashCommandSuggestions,
   parseSlashCommand,
 } from "../src/agent/commands.js";
-import { TopchesterAgentRuntime } from "../src/agent/runtime/index.js";
+import { MutableRuntimeSteeringBuffer, TopchesterAgentRuntime } from "../src/agent/runtime/index.js";
 import { createSession, listChildSessions, loadSession } from "../src/session/store.js";
 import { createSkillsService } from "../src/skills/index.js";
 
@@ -81,6 +81,18 @@ describe("slash commands", () => {
       {
         value: "/skill",
         description: "activate a skill",
+      },
+      {
+        value: "/queue",
+        description: "queue a follow-up prompt",
+      },
+      {
+        value: "/q",
+        description: "queue a follow-up prompt",
+      },
+      {
+        value: "/steer",
+        description: "steer the active turn",
       },
       {
         value: "/new",
@@ -163,6 +175,16 @@ describe("slash commands", () => {
         description: "restore a previous session",
       },
     ]);
+    expect(getSlashCommandSuggestions("/q")).toEqual([
+      {
+        value: "/queue",
+        description: "queue a follow-up prompt",
+      },
+      {
+        value: "/q",
+        description: "queue a follow-up prompt",
+      },
+    ]);
     expect(getSlashCommandSuggestions("/skill")).toEqual([
       {
         value: "/skills",
@@ -183,6 +205,12 @@ describe("slash commands", () => {
       {
         value: "/skill",
         description: "activate a skill",
+      },
+    ]);
+    expect(getSlashCommandSuggestions("/st")).toEqual([
+      {
+        value: "/steer",
+        description: "steer the active turn",
       },
     ]);
     expect(getSlashCommandSuggestions("/kb s")).toEqual([
@@ -227,6 +255,21 @@ describe("slash commands", () => {
     });
     await expect(executeSlashCommand("/connect", { workspaceRoot: "/repo" })).resolves.toEqual({
       messages: ["/connect is available in the interactive TUI."],
+    });
+  });
+
+  it("reports that /queue commands are interactive TUI commands outside the TUI", async () => {
+    await expect(executeSlashCommand("/queue later", { workspaceRoot: "/repo" })).resolves.toEqual({
+      messages: ["/queue is available in the interactive TUI."],
+    });
+    await expect(executeSlashCommand("/q later", { workspaceRoot: "/repo" })).resolves.toEqual({
+      messages: ["/q is available in the interactive TUI."],
+    });
+  });
+
+  it("reports that /steer is an interactive TUI command outside the TUI", async () => {
+    await expect(executeSlashCommand("/steer focus on tests", { workspaceRoot: "/repo" })).resolves.toEqual({
+      messages: ["/steer is available in the interactive TUI."],
     });
   });
 
@@ -636,6 +679,55 @@ describe("slash commands", () => {
     expect(prompts[1]).toContain("-enabled=false");
     expect(prompts[1]).toContain("+enabled=true");
     expect(prompts[1]).not.toContain("Edited example.txt");
+  });
+
+  it("injects runtime steering into the next prompt after a tool result", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-runtime-steering-"));
+    await writeFile(join(workspace, "notes.txt"), "hello\n");
+    const prompts: string[] = [];
+    const steering = new MutableRuntimeSteeringBuffer();
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (prompts.length === 1) {
+            steering.push("Prefer a concise answer.");
+            return {
+              text: JSON.stringify({ tool: "read_file", args: { path: "notes.txt" } }),
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          return {
+            text: "Read notes concisely.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "read notes", undefined, undefined, { steering });
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "tool_call", label: "read_file: notes.txt" }),
+        expect.objectContaining({ type: "message", role: "assistant", text: "Read notes concisely." }),
+      ])
+    );
+    expect(prompts[0]).not.toContain("User steering received while this turn was running:");
+    expect(prompts[1]).toContain('Tool result from read_file "notes.txt":');
+    expect(prompts[1]).toContain("User steering received while this turn was running:");
+    expect(prompts[1]).toContain("Prefer a concise answer.");
+    expect(prompts[1]).toContain(
+      "Continue the user's original request, applying this steering if it is still relevant."
+    );
+    expect(steering.hasPending()).toBe(false);
   });
 
   it("shows cumulative model token usage in assistant metadata when enabled", async () => {

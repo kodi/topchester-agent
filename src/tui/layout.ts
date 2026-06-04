@@ -59,6 +59,8 @@ export interface SessionPickerItem {
   firstUserPrompt?: string;
 }
 
+export type SubmitMessageResult = "submitted" | "queued" | void;
+
 interface SessionPickerState {
   items: SessionPickerItem[];
   selectedIndex: number;
@@ -76,11 +78,12 @@ export class ChatLayout implements Component, Focusable {
   private temporaryLine: string | undefined;
   private taskPlanNoticeLine: string | undefined;
   private noticeLine: string | undefined;
+  private queuedFollowUpCount = 0;
   private promptHint: string | undefined;
   private taskPlan: TaskPlanState | undefined;
   private cancelPending: (() => void) | undefined;
-  private submitMessage: ((message: string) => void) | undefined;
-  private submitCommand: ((command: string) => void) | undefined;
+  private submitMessage: ((message: string) => SubmitMessageResult) | undefined;
+  private submitCommand: ((command: string) => SubmitMessageResult) | undefined;
   private modalActionHandler: ((action: ChatModalAction) => void) | undefined;
   private sessionPicker: SessionPickerState | undefined;
   private sessionPickerSelectionHandler: ((sessionId: string) => void) | undefined;
@@ -186,6 +189,10 @@ export class ChatLayout implements Component, Focusable {
     this.noticeLine = line;
   }
 
+  setQueuedFollowUpCount(count: number): void {
+    this.queuedFollowUpCount = Math.max(0, count);
+  }
+
   setPromptHint(hint: string | undefined): void {
     this.promptHint = hint;
   }
@@ -194,11 +201,11 @@ export class ChatLayout implements Component, Focusable {
     this.cancelPending = cancel;
   }
 
-  setSubmitMessage(submit: ((message: string) => void) | undefined): void {
+  setSubmitMessage(submit: ((message: string) => SubmitMessageResult) | undefined): void {
     this.submitMessage = submit;
   }
 
-  setSubmitCommand(submit: ((command: string) => void) | undefined): void {
+  setSubmitCommand(submit: ((command: string) => SubmitMessageResult) | undefined): void {
     this.submitCommand = submit;
   }
 
@@ -254,6 +261,7 @@ export class ChatLayout implements Component, Focusable {
     this.temporaryLine = undefined;
     this.taskPlanNoticeLine = undefined;
     this.noticeLine = undefined;
+    this.queuedFollowUpCount = 0;
     this.promptHint = undefined;
     this.taskPlan = undefined;
     this.cancelPending = undefined;
@@ -416,6 +424,18 @@ export class ChatLayout implements Component, Focusable {
 
     if (this.noticeLine) {
       lines.push(...this.renderThreadMessageLines([` ${this.noticeLine}`], innerWidth, width, false));
+    }
+
+    if (this.queuedFollowUpCount > 0) {
+      const suffix = this.queuedFollowUpCount === 1 ? "follow-up" : "follow-ups";
+      lines.push(
+        ...this.renderThreadMessageLines(
+          [` ${ui.muted(`queued: ${this.queuedFollowUpCount} ${suffix}`)}`],
+          innerWidth,
+          width,
+          false
+        )
+      );
     }
 
     return lines;
@@ -947,12 +967,14 @@ export class ChatLayout implements Component, Focusable {
     }
 
     const message = this.expandPastedContent(this.promptValue).trim();
-    this.addMessage(userMessage(message));
     this.promptValue = "";
     this.promptCursor = 0;
     this.pastedContent.clear();
     this.pasteCounter = 0;
-    this.submitUserInput(message);
+    const result = this.submitUserInput(message);
+    if (result !== "queued") {
+      this.addMessage(userMessage(message));
+    }
   }
 
   private handlePromptEditInput(data: string): boolean {
@@ -1110,16 +1132,29 @@ export class ChatLayout implements Component, Focusable {
     this.activeModalActionIndex = 0;
   }
 
-  private submitUserInput(message: string): void {
+  private submitUserInput(message: string): SubmitMessageResult {
+    this.promptHistory.add(message);
+    if (message.startsWith("/")) {
+      const result = this.submitCommand?.(message);
+      if (result === "queued") {
+        return result;
+      }
+
+      this.setTaskPlanNotice(undefined);
+      this.setStartupHintLine(undefined);
+      this.setEphemeralLine(undefined);
+      return result;
+    }
+
+    const result = this.submitMessage?.(message);
+    if (result === "queued") {
+      return result;
+    }
+
     this.setTaskPlanNotice(undefined);
     this.setStartupHintLine(undefined);
     this.setEphemeralLine(undefined);
-    this.promptHistory.add(message);
-    if (message.startsWith("/")) {
-      this.submitCommand?.(message);
-    } else {
-      this.submitMessage?.(message);
-    }
+    return result;
   }
 }
 

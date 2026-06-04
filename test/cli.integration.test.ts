@@ -160,7 +160,9 @@ describe("CLI integration", () => {
     expect(docs).toContain("Reports config layers");
     expect(docs).toContain("## `topchester run`");
     expect(docs).toContain("Routes slash-command prompts such as `/kb status`");
-    expect(docs).toContain("Interactive picker commands such as `/model`, `/connect`, and `/restore` are TUI-only");
+    expect(docs).toContain(
+      "Interactive commands such as `/model`, `/connect`, `/restore`, `/queue`, and `/steer` are TUI-only"
+    );
     expect(docs).toContain("Includes a per-run `runId` in structured logs");
   });
 

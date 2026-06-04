@@ -52,6 +52,8 @@ KB status labels:
 - Type `/new` to clear the terminal and start a fresh session in the same workspace.
 - Type `/fork` to clone the current session into a new session and switch to that fork.
 - Type `/restore` to open a previous-session picker and switch to a saved session.
+- Type `/queue <prompt>` to queue a follow-up prompt.
+- Type `/steer <prompt>` to send best-effort guidance to the active turn.
 - Type `/skills` to open the Skills overlay.
 - Use `Up` and `Down` in the normal prompt to browse submitted prompt history.
 - Use your terminal scrollback to review chat history with the mouse wheel, touchpad, scrollbar, or terminal shortcuts such as `Shift+PageUp`.
@@ -59,6 +61,14 @@ KB status labels:
 - Press `Ctrl-C` again right away to exit.
 
 While the startup agent check is running, the prompt shows `press Esc to stop`.
+
+While a chat turn is running, the prompt stays editable. Pressing `Enter` on normal text queues it as the next follow-up turn. Queued prompts are local to the running TUI process and are not saved as user messages until they actually start. A compact `queued: N follow-up` line appears while follow-ups are waiting.
+
+`/queue <prompt>` explicitly queues a follow-up. When the agent is idle, it starts immediately like a normal prompt. `/q <prompt>` is the short alias.
+
+`/steer <prompt>` sends guidance to the active turn. If the runtime reaches a safe tool-result checkpoint, the guidance is folded into the next model prompt without adding a visible user row. If it is not consumed before the active turn completes, Topchester queues it as a follow-up so the text is not lost.
+
+V0 does not persist queued drafts across restarts, does not provide queue editing or deletion, and does not expose configurable busy input modes. Switching sessions with `/new`, `/fork`, or `/restore` drops queued follow-ups and pending steering with a visible notice.
 
 ## Slash Commands
 
@@ -72,6 +82,9 @@ Most used commands:
 - `/new` — clear the terminal and start a fresh project-local session.
 - `/fork` — clone the current session into a new project-local session.
 - `/restore` — pick a previous project-local session and switch to it.
+- `/queue <prompt>` — queue a follow-up prompt, or start it immediately when idle.
+- `/q <prompt>` — short alias for `/queue`.
+- `/steer <prompt>` — steer the active turn, with queued fallback if it is not consumed.
 - `/skills` — open the Skills overlay.
 - `/skills <query>` — open the Skills overlay filtered by text.
 - `/skills list` — print available skills.

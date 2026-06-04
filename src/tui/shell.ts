@@ -2,10 +2,12 @@ import { ProcessTerminal, TUI } from "@earendil-works/pi-tui";
 import { type AgentRuntimeEvent } from "../agent/events.js";
 import { formatTaskPlanNotice, type TaskPlanState } from "../agent/task-plan.js";
 import {
+  MutableRuntimeSteeringBuffer,
   TopchesterAgentRuntime,
   type AgentRuntime,
   type BashApprovalDecision,
   type BashApprovalRequest,
+  type RuntimeSteeringBuffer,
 } from "../agent/runtime/index.js";
 import { createModelGatewayFromConfig, type AppContext } from "../app/context.js";
 import {
@@ -40,7 +42,7 @@ import { BusyIndicator } from "./busy.js";
 import { formatPlainError } from "./errors.js";
 import { createExitConfirmationInputListener } from "./exit-confirmation.js";
 import { ChatLayout } from "./layout.js";
-import { type ChatMessage, systemMessage } from "./messages.js";
+import { type ChatMessage, systemMessage, userMessage } from "./messages.js";
 import {
   fetchOpenRouterChoicesWithFallback,
   filterOpenRouterChoices,
@@ -117,6 +119,9 @@ export class TopchesterTuiShell implements TuiShell {
   private knowledgeStatusTimer: ReturnType<typeof setInterval> | undefined;
   private readonly skillsService: SkillsService;
   private pendingSkillActivations: LoadedSkill[] = [];
+  private chatRunning = false;
+  private queuedChatMessages: string[] = [];
+  private activeSteeringBuffer: MutableRuntimeSteeringBuffer | undefined;
 
   constructor(
     private readonly context: AppContext,
@@ -186,10 +191,29 @@ export class TopchesterTuiShell implements TuiShell {
       app.setStartupHintLine(STARTUP_PROMPT_HINT);
     }
     app.setSubmitMessage((message) => {
+      if (this.chatRunning) {
+        this.enqueueChatMessage(app, tui, message);
+        return "queued";
+      }
+
       this.startBackgroundTask(app, tui, "Chat", () => this.submitChatMessage(app, tui, message));
+      return "submitted";
     });
     app.setSubmitCommand((command) => {
+      const queuedPrompt = parseQueueCommandPrompt(command);
+      if (queuedPrompt !== undefined) {
+        this.submitQueueCommand(app, tui, queuedPrompt);
+        return "queued";
+      }
+
+      const steeringPrompt = parseSteerCommandPrompt(command);
+      if (steeringPrompt !== undefined) {
+        this.submitSteerCommand(app, tui, steeringPrompt);
+        return "queued";
+      }
+
       this.startBackgroundTask(app, tui, "Command", () => this.submitSlashCommand(app, tui, command));
+      return "submitted";
     });
 
     tui.addChild(app);
@@ -263,19 +287,29 @@ export class TopchesterTuiShell implements TuiShell {
   }
 
   private async submitChatMessage(app: ChatLayout, tui: TUI, message: string): Promise<void> {
+    if (this.chatRunning) {
+      this.enqueueChatMessage(app, tui, message);
+      return;
+    }
+
+    const activeSession = this.session;
+    const steering = new MutableRuntimeSteeringBuffer();
     const busy = new BusyIndicator(app, tui, {
       status: "thinking",
-      promptHint: "press Esc to stop",
+      activityHint: "press Esc to stop",
       activities: ["Thinking...", "Calling model...", "Writing response..."],
     });
     const abortController = new AbortController();
     const reasoningDisplay = isStreamReasoningEnabledByEnv() ? createBusyReasoningSink(busy) : undefined;
     let cancelled = false;
 
+    this.activeSteeringBuffer = steering;
     app.setCancelPending(() => {
       cancelled = true;
       abortController.abort();
     });
+    this.chatRunning = true;
+    this.refreshQueuedChatStatus(app);
     busy.start();
     tui.requestRender();
 
@@ -298,6 +332,7 @@ export class TopchesterTuiShell implements TuiShell {
         onReasoning: reasoningDisplay?.sink,
         session: this.session,
         requestBashApproval: (request) => this.requestBashApproval(app, tui, busy, request, abortController.signal),
+        steering,
       })) {
         if (event.type === "message" && event.role === "assistant") {
           reasoningDisplay?.commit(app);
@@ -320,9 +355,132 @@ export class TopchesterTuiShell implements TuiShell {
       }
     } finally {
       app.setCancelPending(undefined);
+      this.chatRunning = false;
+      if (this.activeSteeringBuffer === steering) {
+        this.activeSteeringBuffer = undefined;
+      }
       busy.stop();
       tui.requestRender();
     }
+
+    this.handleUnconsumedSteering(app, tui, steering, cancelled);
+
+    if (this.session === activeSession && app.isReady()) {
+      await this.drainQueuedChatMessages(app, tui);
+    }
+  }
+
+  private enqueueChatMessage(app: ChatLayout, tui: { requestRender(): void }, message: string): void {
+    const trimmed = message.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    this.queuedChatMessages.push(trimmed);
+    this.refreshQueuedChatStatus(app);
+    tui.requestRender();
+  }
+
+  private submitQueueCommand(app: ChatLayout, tui: TUI, prompt: string): void {
+    const trimmed = prompt.trim();
+    if (trimmed.length === 0) {
+      app.addMessage(systemMessage("Usage: /queue <prompt>"));
+      tui.requestRender();
+      return;
+    }
+
+    if (this.chatRunning) {
+      this.enqueueChatMessage(app, tui, trimmed);
+      return;
+    }
+
+    app.addMessage(userMessage(trimmed));
+    this.startBackgroundTask(app, tui, "Chat", () => this.submitChatMessage(app, tui, trimmed));
+    tui.requestRender();
+  }
+
+  private submitSteerCommand(app: ChatLayout, tui: TUI, prompt: string): void {
+    const trimmed = prompt.trim();
+    if (trimmed.length === 0) {
+      app.addMessage(systemMessage("Usage: /steer <prompt>"));
+      tui.requestRender();
+      return;
+    }
+
+    if (!this.chatRunning) {
+      app.addMessage(userMessage(trimmed));
+      this.startBackgroundTask(app, tui, "Chat", () => this.submitChatMessage(app, tui, trimmed));
+      tui.requestRender();
+      return;
+    }
+
+    const steering = this.activeSteeringBuffer;
+    if (!steering) {
+      this.enqueueChatMessage(app, tui, trimmed);
+      return;
+    }
+
+    steering.push(trimmed);
+    app.setTemporaryLine("steering added to active turn", { expireAfterMs: 2000 });
+    tui.requestRender();
+  }
+
+  private handleUnconsumedSteering(
+    app: ChatLayout,
+    tui: { requestRender(): void },
+    steering: RuntimeSteeringBuffer,
+    cancelled: boolean
+  ): void {
+    const pending = steering.drain();
+    if (!pending) {
+      return;
+    }
+
+    if (cancelled) {
+      app.addMessage(systemMessage("Dropped pending steering after response stopped."));
+      tui.requestRender();
+      return;
+    }
+
+    this.enqueueChatMessage(app, tui, pending);
+  }
+
+  private async drainQueuedChatMessages(app: ChatLayout, tui: TUI): Promise<void> {
+    while (!this.chatRunning && app.isReady()) {
+      const message = this.queuedChatMessages.shift();
+      this.refreshQueuedChatStatus(app);
+      if (!message) {
+        tui.requestRender();
+        return;
+      }
+
+      app.addMessage(userMessage(message));
+      tui.requestRender();
+      await this.submitChatMessage(app, tui, message);
+    }
+  }
+
+  private refreshQueuedChatStatus(app: ChatLayout): void {
+    app.setQueuedFollowUpCount(this.queuedChatMessages.length);
+  }
+
+  private clearQueuedChatMessages(app: ChatLayout): string | undefined {
+    const droppedCount = this.queuedChatMessages.length;
+    this.queuedChatMessages = [];
+    const droppedSteering = this.activeSteeringBuffer?.hasPending() ? this.activeSteeringBuffer.drain() : undefined;
+    this.refreshQueuedChatStatus(app);
+
+    if (droppedCount === 0 && !droppedSteering) {
+      return undefined;
+    }
+
+    const suffix = droppedCount === 1 ? "follow-up" : "follow-ups";
+    const parts = droppedCount > 0 ? [`Dropped ${droppedCount} queued ${suffix}.`] : [];
+    if (droppedSteering) {
+      parts.push("Dropped pending steering.");
+    }
+
+    return parts.join(" ");
   }
 
   private requestBashApproval(
@@ -928,7 +1086,11 @@ export class TopchesterTuiShell implements TuiShell {
     }
 
     const session = await createSession(this.context.workspaceRoot);
+    const droppedQueuedNotice = this.clearQueuedChatMessages(app);
     const messages = getStartupThreadMessages(this.context);
+    if (droppedQueuedNotice) {
+      messages.push(systemMessage(droppedQueuedNotice));
+    }
     this.session = session;
     this.sessionStartedAt = Date.now();
     this.pendingSkillActivations = [];
@@ -964,7 +1126,12 @@ export class TopchesterTuiShell implements TuiShell {
     const rehydrated = rehydrateSession(loaded.events);
     const forkNoticeText = `Forked session from ${sourceSession.sessionId.slice(0, 8)}.`;
     const forkNotice = systemMessage(forkNoticeText);
-    const resetMessages = [...rehydrated.messages, forkNotice];
+    const droppedQueuedNotice = this.clearQueuedChatMessages(app);
+    const resetMessages = [
+      ...rehydrated.messages,
+      forkNotice,
+      ...(droppedQueuedNotice ? [systemMessage(droppedQueuedNotice)] : []),
+    ];
 
     this.session = fork;
     this.sessionStartedAt = Date.now();
@@ -1039,7 +1206,12 @@ export class TopchesterTuiShell implements TuiShell {
       restoredTaskPlan = rehydrated.taskPlan;
       restoredStatus = rehydrated.status;
       const noticeText = `Restored session ${sessionId.slice(0, 8)}.`;
-      restoredMessages = [...rehydrated.messages, systemMessage(noticeText)];
+      const droppedQueuedNotice = this.clearQueuedChatMessages(app);
+      restoredMessages = [
+        ...rehydrated.messages,
+        systemMessage(noticeText),
+        ...(droppedQueuedNotice ? [systemMessage(droppedQueuedNotice)] : []),
+      ];
 
       this.session = restoredSession;
       this.sessionStartedAt = Date.now();
@@ -1178,4 +1350,18 @@ export class TopchesterTuiShell implements TuiShell {
 
     printExitBanner(session.sessionId, Date.now() - this.sessionStartedAt);
   }
+}
+
+function parseQueueCommandPrompt(command: string): string | undefined {
+  const trimmed = command.trim();
+  const match = /^\/(?:queue|q)(?:\s+([\s\S]*))?$/u.exec(trimmed);
+
+  return match ? (match[1] ?? "") : undefined;
+}
+
+function parseSteerCommandPrompt(command: string): string | undefined {
+  const trimmed = command.trim();
+  const match = /^\/steer(?:\s+([\s\S]*))?$/u.exec(trimmed);
+
+  return match ? (match[1] ?? "") : undefined;
 }

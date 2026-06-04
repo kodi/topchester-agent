@@ -265,7 +265,7 @@ Record the exact commands and results in this plan as slices are completed.
 
 ### Slice 1: Queue-Aware TUI Submission Contract
 
-Status: `[ ]` Not started
+Status: `[x]` Complete
 
 Goal: Let the shell decide whether a submitted prompt is visible immediately or queued for later.
 
@@ -295,7 +295,7 @@ Dependencies: none.
 
 ### Slice 2: TUI Follow-Up Queue and Drain
 
-Status: `[ ]` Not started
+Status: `[x]` Complete
 
 Goal: Queue normal prompts submitted during an active chat turn and drain them after the current turn completes.
 
@@ -327,7 +327,7 @@ Dependencies: Slice 1.
 
 ### Slice 3: Busy Editor UX
 
-Status: `[ ]` Not started
+Status: `[x]` Complete
 
 Goal: Keep the prompt editor usable while a chat turn is busy without losing Esc abort behavior.
 
@@ -356,7 +356,7 @@ Dependencies: Slice 2.
 
 ### Slice 4: `/queue` Command
 
-Status: `[ ]` Not started
+Status: `[x]` Complete
 
 Goal: Add an explicit command for next-turn follow-up queueing.
 
@@ -384,7 +384,7 @@ Dependencies: Slice 2.
 
 ### Slice 5: Runtime Steering Buffer
 
-Status: `[ ]` Not started
+Status: `[x]` Complete
 
 Goal: Add a runtime option that can consume steering text at safe model-loop checkpoints.
 
@@ -406,6 +406,14 @@ Expected output:
 
 - `/steer` can affect an active tool loop without creating a separate user turn.
 
+Implementation checklist:
+
+- Single-tool continuation path appends drained steering after `formatToolResultForPrompt(toolResult)` and `formatContinuationInstruction(...)`.
+- Parallel safe-tool continuation path appends drained steering after the joined parallel tool results and continuation instruction.
+- Multi-`task` continuation path appends drained steering after the joined task results and continuation instruction.
+- Terminal paths that return assistant messages, choices, ready status, stopped hooks, approval cancellation, or failed output do not drain steering.
+- The initial model prompt is built before any steering drain can occur.
+
 Verification:
 
 ```sh
@@ -416,7 +424,7 @@ Dependencies: Slice 2.
 
 ### Slice 6: `/steer` TUI Command and Fallback
 
-Status: `[ ]` Not started
+Status: `[x]` Complete
 
 Goal: Wire `/steer <prompt>` to active-turn steering and queue unconsumed text after completion.
 
@@ -446,7 +454,7 @@ Dependencies: Slice 5.
 
 ### Slice 7: Docs and Final Verification
 
-Status: `[ ]` Not started
+Status: `[x]` Complete
 
 Goal: Document the V0 user contract and run the broader repo checks.
 
@@ -484,3 +492,10 @@ Dependencies: Slices 1 through 6.
 ## Progress Log
 
 - 2026-06-04: Plan created. No implementation started.
+- 2026-06-04: Slice 1 complete. `pnpm exec vitest test/tui.render.test.ts` passed, then `mise run local-ci` failed on pre-existing `docs/reference/changelog.md` formatting. Ran `pnpm run format`; reran `mise run local-ci` and it passed.
+- 2026-06-04: Slice 2 complete. `pnpm exec vitest test/tui.render.test.ts` passed. First `mise run local-ci` surfaced one lint warning in a new test; fixed it and reran `mise run local-ci`, which passed with 0 warnings.
+- 2026-06-04: Slice 3 complete. `pnpm exec vitest test/tui.render.test.ts test/tui.prompt-history.test.ts` passed, then `mise run local-ci` passed.
+- 2026-06-04: Slice 4 complete. `pnpm exec vitest test/commands.test.ts test/tui.render.test.ts` passed, then `mise run local-ci` passed.
+- 2026-06-04: Slice 5 complete. `pnpm exec vitest test/commands.test.ts` passed. First `mise run local-ci` failed on formatting in `src/agent/runtime/index.ts`; ran `pnpm run format` and reran `mise run local-ci`, which passed.
+- 2026-06-04: Slice 6 complete. `pnpm exec vitest test/commands.test.ts test/tui.render.test.ts` passed, then `mise run local-ci` passed.
+- 2026-06-04: Slice 7 complete. Docs and this plan were updated; `mise run local-ci` passed. Final verification: `pnpm test` initially found one stale docs assertion, which was updated; rerun `pnpm test` passed. `pnpm run check` initially found formatting in `test/cli.integration.test.ts`, which was fixed with `pnpm run format`; rerun `pnpm run check` passed. Completion audit added explicit modal-priority coverage for normal text, `/queue`, and `/steer`; final `pnpm test` passed with 28 files and 635 tests, final `pnpm run check` passed, and final `mise run local-ci` passed on the completed worktree.

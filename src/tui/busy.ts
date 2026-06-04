@@ -2,7 +2,8 @@ import { type ChatLayout } from "./layout.js";
 
 export interface BusyIndicatorOptions {
   status: string;
-  promptHint: string;
+  promptHint?: string;
+  activityHint?: string;
   activities: string[];
   activityEveryMs?: number;
 }
@@ -71,13 +72,19 @@ export class BusyIndicator {
 
   private render(): void {
     if (this.activityOverride) {
-      this.app.setEphemeralLine(`${this.frames[this.index]} ${this.activityOverride}`);
+      this.app.setEphemeralLine(this.formatActivityLine(this.activityOverride));
       return;
     }
 
     const activityEveryMs = this.options.activityEveryMs ?? 1200;
     const activityIndex = Math.floor((this.ticks * 80) / activityEveryMs) % this.options.activities.length;
-    this.app.setEphemeralLine(`${this.frames[this.index]} ${this.options.activities[activityIndex]}`);
+    this.app.setEphemeralLine(this.formatActivityLine(this.options.activities[activityIndex] ?? ""));
+  }
+
+  private formatActivityLine(activity: string): string {
+    const hint = this.options.activityHint ? ` · ${this.options.activityHint}` : "";
+
+    return `${this.frames[this.index]} ${activity}${hint}`;
   }
 }
 

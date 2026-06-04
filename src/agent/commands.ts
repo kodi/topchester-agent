@@ -104,6 +104,18 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
     description: "activate a skill",
   },
   {
+    value: "/queue",
+    description: "queue a follow-up prompt",
+  },
+  {
+    value: "/q",
+    description: "queue a follow-up prompt",
+  },
+  {
+    value: "/steer",
+    description: "steer the active turn",
+  },
+  {
     value: "/new",
     description: "start a fresh session",
   },
@@ -172,6 +184,21 @@ export const slashCommands: SlashCommand[] = [
     name: "restore",
     description: "restore a previous interactive TUI session",
     execute: executeRestoreCommand,
+  },
+  {
+    name: "queue",
+    description: "queue a follow-up prompt",
+    execute: executeInteractiveOnlyCommand("/queue"),
+  },
+  {
+    name: "q",
+    description: "queue a follow-up prompt",
+    execute: executeInteractiveOnlyCommand("/q"),
+  },
+  {
+    name: "steer",
+    description: "steer the active turn",
+    execute: executeInteractiveOnlyCommand("/steer"),
   },
 ];
 
