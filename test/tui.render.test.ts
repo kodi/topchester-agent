@@ -56,6 +56,7 @@ import { type Terminal } from "@earendil-works/pi-tui";
 import { type AppContext } from "../src/app/context.js";
 import { getTopchesterSessionsPath } from "../src/app/paths.js";
 import { ABORT_CHOICE_VALUE, agentEvent } from "../src/agent/events.js";
+import { slashCommandSuggestions } from "../src/agent/commands.js";
 import { TopchesterAgentRuntime } from "../src/agent/runtime/index.js";
 import { executeRunCommand } from "../src/cli/run.js";
 import { type SessionEventPayload } from "../src/session/events.js";
@@ -1530,13 +1531,15 @@ describe("TUI rendering", () => {
     const app = new ChatLayout(terminal, [], "repo", "model [provider]");
     app.setInputValue("/");
 
-    for (let index = 0; index < 10; index += 1) {
+    const selectedIndex = 10;
+    for (let index = 0; index < selectedIndex; index += 1) {
       app.handleInput("\u001b[B");
     }
 
     const output = stripAnsi(app.render(80).join("\n"));
+    const selectedSuggestion = slashCommandSuggestions[selectedIndex];
 
-    expect(output).toContain("> /kb init — start project knowledge base setup");
+    expect(output).toContain(`> ${selectedSuggestion?.value} — ${selectedSuggestion?.description}`);
     expect(output).not.toContain("/model — choose from configured model choices");
   });
 
