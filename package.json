@@ -33,31 +33,31 @@
     "prepublishOnly": "pnpm build"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "^2.0.47",
-    "@earendil-works/pi-tui": "^0.74.0",
+    "@ai-sdk/openai-compatible": "^2.0.48",
+    "@earendil-works/pi-tui": "^0.78.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "ai": "^6.0.177",
+    "ai": "^6.0.196",
     "cli-highlight": "^2.1.11",
-    "commander": "^14.0.3",
+    "commander": "^15.0.0",
     "diff": "^9.0.0",
     "picomatch": "^4.0.4",
     "pino": "^10.3.1",
     "uuidv7": "1.2.1",
-    "yaml": "^2.8.4",
+    "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^24.12.3",
     "@types/picomatch": "^4.0.3",
-    "@typescript/native-preview": "7.0.0-dev.20260513.1",
-    "lefthook": "^2.1.6",
-    "oxfmt": "^0.48.0",
-    "oxlint": "^1.63.0",
+    "@typescript/native-preview": "7.0.0-dev.20260603.1",
+    "lefthook": "^2.1.9",
+    "oxfmt": "^0.53.0",
+    "oxlint": "^1.68.0",
     "tinybench": "^6.0.2",
-    "tsdown": "^0.22.0",
-    "tsx": "^4.21.0",
+    "tsdown": "^0.22.1",
+    "tsx": "^4.22.4",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.8"
   },
   "engines": {
     "node": ">=24",

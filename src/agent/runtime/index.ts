@@ -362,14 +362,14 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           yield event;
         }
         const system = this.buildSystemPromptWithProjectInstructions({ profile, permissions }, projectInstructions);
-        const modelRequestMetadata = this.context.modelGateway.resolveModel("agent.primary");
+        const modelRequestMetadata = this.resolveModelMetadata("agent.primary");
         this.context.logger.debug(
           {
             event: "model_prompt",
             purpose: "agent.primary",
-            providerId: modelRequestMetadata.providerId,
-            modelId: modelRequestMetadata.modelId,
-            reasoningEffort: modelRequestMetadata.providerConfig.reasoningEffort,
+            providerId: modelRequestMetadata?.providerId,
+            modelId: modelRequestMetadata?.modelId,
+            reasoningEffort: modelRequestMetadata?.providerConfig.reasoningEffort,
             afterTool,
             toolProtocol: toolProtocolOverride,
             promptLength: nextPrompt.length,
@@ -1096,39 +1096,50 @@ export class TopchesterAgentRuntime implements AgentRuntime {
   }
 
   private createHookModelPayload(purpose: ModelPurpose): Partial<HookModelPayload> {
-    const resolveModel = this.context.modelGateway.resolveModel;
+    const resolved = this.resolveModelMetadata(purpose);
 
-    if (typeof resolveModel !== "function") {
+    if (!resolved) {
       return {};
     }
 
-    try {
-      const resolved = resolveModel.call(this.context.modelGateway, purpose);
-      const modelRef = `${resolved.providerId}/${resolved.modelId}`;
+    const modelRef = `${resolved.providerId}/${resolved.modelId}`;
 
-      return {
-        model_purpose: resolved.purpose,
-        model_provider: resolved.providerId,
-        model_id: resolved.modelId,
-        model_ref: modelRef,
-        model: {
-          purpose: resolved.purpose,
-          providerId: resolved.providerId,
-          modelId: resolved.modelId,
-          ref: modelRef,
-        },
-      };
+    return {
+      model_purpose: resolved.purpose,
+      model_provider: resolved.providerId,
+      model_id: resolved.modelId,
+      model_ref: modelRef,
+      model: {
+        purpose: resolved.purpose,
+        providerId: resolved.providerId,
+        modelId: resolved.modelId,
+        ref: modelRef,
+      },
+    };
+  }
+
+  private resolveModelMetadata(
+    purpose: ModelPurpose
+  ): ReturnType<AppContext["modelGateway"]["resolveModel"]> | undefined {
+    const resolveModel = this.context.modelGateway.resolveModel;
+
+    if (typeof resolveModel !== "function") {
+      return undefined;
+    }
+
+    try {
+      return resolveModel.call(this.context.modelGateway, purpose);
     } catch (error) {
       this.context.logger.debug(
         {
-          event: "hook_model_resolution_skipped",
+          event: "model_resolution_skipped",
           purpose,
           error: error instanceof Error ? error.message : String(error),
         },
-        "hook model metadata unavailable"
+        "model metadata unavailable"
       );
 
-      return {};
+      return undefined;
     }
   }
 
