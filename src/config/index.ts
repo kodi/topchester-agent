@@ -3,6 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve, win32 } from "node:path";
 import { z } from "zod";
+import { CODEX_BACKEND_BASE_URL } from "../auth/codex.js";
 
 const modelPurposeSchema = z.enum(["agent.primary", "agent.fast", "kb.summarize", "fallback"]);
 
@@ -341,7 +342,7 @@ export interface ModelConfigUpdateResult {
 }
 
 export function getGlobalTopchesterConfigDir(): string {
-  return join(homedir(), ".config", "topchester");
+  return join(process.env.HOME ?? homedir(), ".config", "topchester");
 }
 
 export function ensureGlobalTopchesterConfigDir(): string {
@@ -414,6 +415,18 @@ export const openRouterProviderDefaults = {
   headers: { ...openRouterAttributionHeaders },
 };
 
+export const codexProviderDefaults = {
+  type: "openai-compatible" as const,
+  baseURL: CODEX_BACKEND_BASE_URL,
+};
+
+export const codexStarterModelChoices = [
+  "codex/gpt-5.5",
+  "codex/gpt-5.4",
+  "codex/gpt-5.4-mini",
+  "codex/gpt-5.3-codex-spark",
+];
+
 export async function configureOpenRouterGlobalProvider(): Promise<ModelConfigUpdateResult> {
   const configPath = getGlobalTopchesterConfigPath();
   const config = readConfigObject(configPath);
@@ -425,6 +438,33 @@ export async function configureOpenRouterGlobalProvider(): Promise<ModelConfigUp
     ...openRouterProviderDefaults,
     ...(isPlainObject(providers.openrouter) ? providers.openrouter : {}),
   };
+
+  await writeGlobalConfig(configPath, config);
+
+  return {
+    path: configPath,
+    choices: getRawModelChoices(models),
+    defaultModel: typeof models.default === "string" ? models.default : undefined,
+  };
+}
+
+export async function configureCodexGlobalProvider(): Promise<ModelConfigUpdateResult> {
+  const configPath = getGlobalTopchesterConfigPath();
+  const config = readConfigObject(configPath);
+  const models = ensurePlainObjectProperty(config, "models");
+  const providers = ensurePlainObjectProperty(models, "providers");
+  const existingChoices = ensureStringArrayProperty(models, "choices");
+  const prioritizedChoices = new Set(codexStarterModelChoices);
+
+  providers.default ??= "codex";
+  providers.codex = {
+    ...codexProviderDefaults,
+    ...(isPlainObject(providers.codex) ? providers.codex : {}),
+  };
+  models.choices = [
+    ...codexStarterModelChoices,
+    ...existingChoices.filter((choice) => !prioritizedChoices.has(choice)),
+  ];
 
   await writeGlobalConfig(configPath, config);
 
@@ -896,11 +936,14 @@ function parseModelRef(ref: string, defaultProvider: string | undefined): { prov
 }
 
 function ensureKnownProvider(providers: Record<string, unknown>, provider: string | undefined) {
-  if (provider !== "openrouter" || providers.openrouter !== undefined) {
+  if (provider === "openrouter" && providers.openrouter === undefined) {
+    providers.openrouter = { ...openRouterProviderDefaults };
     return;
   }
 
-  providers.openrouter = { ...openRouterProviderDefaults };
+  if (provider === "codex" && providers.codex === undefined) {
+    providers.codex = { ...codexProviderDefaults };
+  }
 }
 
 function applyKnownProviderDefaults(providers: Record<string, unknown>) {

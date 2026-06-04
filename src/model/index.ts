@@ -18,6 +18,7 @@ import {
   type ToolProtocolAttempt,
   type ToolProtocolOverride,
 } from "../agent/tools/types.js";
+import { createCodexProviderFetch, isCodexProvider, type CodexProviderFetchOptions } from "./codex.js";
 
 export type ModelPurpose = "agent.primary" | "agent.fast" | "kb.summarize" | "fallback";
 
@@ -46,6 +47,7 @@ export interface ModelGatewayConfig {
   models: Partial<Record<ModelPurpose, ModelConfig>>;
   defaultProvider?: string;
   providers: Record<string, OpenAICompatibleProviderConfig>;
+  codexAuth?: Omit<CodexProviderFetchOptions, "providerId">;
 }
 
 export interface ModelRequest {
@@ -148,11 +150,19 @@ export class ModelGateway {
       throw new Error(`No provider configured for model provider "${providerId}".`);
     }
 
+    const providerFetch = isCodexProvider(providerId, providerConfig)
+      ? createCodexProviderFetch({
+          ...this.#config.codexAuth,
+          providerId,
+        })
+      : undefined;
+
     const provider = createOpenAICompatible({
       name: providerId,
       baseURL: providerConfig.baseURL,
       apiKey: resolveApiKey(providerConfig),
       headers: providerConfig.headers,
+      fetch: providerFetch,
       includeUsage: providerConfig.includeUsage !== false,
       supportsStructuredOutputs: providerConfig.supportsStructuredOutputs,
     });

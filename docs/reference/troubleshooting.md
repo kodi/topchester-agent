@@ -12,6 +12,24 @@ public: true
 
 Run `/connect openrouter` and then `/model` in the TUI, or edit `~/.config/topchester/config.jsonc` directly.
 
+For Codex ChatGPT models, run:
+
+```sh
+topchester auth login codex --device
+```
+
+Then check `topchester auth status` or `topchester info`.
+
+## Codex auth needs relogin
+
+If a Codex request fails because the refresh token was revoked, expired, reused, or belongs to a different account, run:
+
+```sh
+topchester auth login codex --device
+```
+
+Topchester stores refreshed Codex OAuth credentials in `~/.config/topchester/auth.json` and redacts token values in `topchester auth status` and `topchester info`.
+
 ## Knowledge base is missing
 
 Run:

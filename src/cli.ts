@@ -1,6 +1,8 @@
 import { cwd } from "node:process";
 import { isAbsolute, resolve } from "node:path";
 import { Command } from "commander";
+import { exchangeCodexAuthorizationCode, pollCodexDeviceAuthorization, requestCodexDeviceCode } from "./auth/codex.js";
+import { getAuthStoreStatus, setAuthProvider } from "./auth/store.js";
 import { createAppContext } from "./app/context.js";
 import { ui } from "./cli/ui.js";
 import { type L1FileScanStatus } from "./knowledge/compiler/l1-entry.js";
@@ -33,6 +35,7 @@ import {
   runSelfUpdate,
 } from "./cli/self-update.js";
 import { collectTopchesterInfo } from "./cli/info.js";
+import { configureCodexGlobalProvider } from "./config/index.js";
 
 export async function runTopchesterCli(argv = process.argv, options: { exitOverride?: boolean } = {}): Promise<void> {
   const program = createTopchesterProgram();
@@ -101,6 +104,34 @@ function createTopchesterProgram(): Command {
 
       console.log(result.lines.join("\n"));
       if (!result.ok) {
+        process.exitCode = 1;
+      }
+    });
+
+  const authCommand = program.command("auth").description("manage global provider authentication");
+
+  authCommand
+    .command("login")
+    .description("log in to a provider")
+    .argument("<provider>", "provider id")
+    .option("--device", "use device-code login")
+    .action(async (provider: string, options: { device?: boolean }) => {
+      try {
+        await executeAuthLoginCommand(provider, options);
+      } catch (error) {
+        console.error(formatStartupError(error));
+        process.exitCode = 1;
+      }
+    });
+
+  authCommand
+    .command("status")
+    .description("show stored provider authentication status")
+    .action(async () => {
+      try {
+        console.log((await formatAuthStatus()).join("\n"));
+      } catch (error) {
+        console.error(formatStartupError(error));
         process.exitCode = 1;
       }
     });
@@ -338,6 +369,59 @@ function printStartupSummary(context: ReturnType<typeof createAppContext>) {
   }
 }
 
+async function executeAuthLoginCommand(provider: string, options: { device?: boolean }) {
+  if (provider !== "codex") {
+    throw new Error(`Unsupported auth provider "${provider}". Supported providers: codex.`);
+  }
+
+  if (!options.device) {
+    throw new Error("Usage: topchester auth login codex --device");
+  }
+
+  const deviceCode = await requestCodexDeviceCode();
+  console.log("Codex device login");
+  console.log(`verification URL: ${deviceCode.verificationUrl}`);
+  console.log(`user code: ${deviceCode.userCode}`);
+  console.log(`expires: ${new Date(deviceCode.expiresAt).toISOString()}`);
+  console.log("Device codes are a common phishing target. Never share this code.");
+  console.log("Waiting for browser approval...");
+
+  const authorization = await pollCodexDeviceAuthorization(deviceCode);
+  const record = await exchangeCodexAuthorizationCode(authorization, { issuer: deviceCode.issuer });
+  await setAuthProvider("codex", record);
+  await configureCodexGlobalProvider();
+
+  console.log("Codex login saved.");
+  console.log("Configured global Codex provider and starter model choices.");
+}
+
+async function formatAuthStatus(): Promise<string[]> {
+  const status = await getAuthStoreStatus();
+  const lines = ["Topchester auth status", `store: ${status.path} ${status.exists ? "[ok]" : "[missing]"}`];
+
+  if (status.error) {
+    lines.push("status: invalid", `error: ${status.error}`);
+    return lines;
+  }
+
+  if (status.providers.length === 0) {
+    lines.push("providers: none");
+    return lines;
+  }
+
+  lines.push("providers:");
+  for (const provider of status.providers) {
+    const state = provider.needsLogin ? "needs-login" : provider.needsRefresh ? "needs-refresh" : "ok";
+    const expires = provider.expiresAt ? ` expires=${new Date(provider.expiresAt).toISOString()}` : "";
+    const account = provider.hasAccountId ? " account=yes" : "";
+    lines.push(
+      `  ${provider.id}: ${provider.type} source=${provider.source} state=${state} access=${formatYesNo(provider.hasAccessToken)} refresh=${formatYesNo(provider.hasRefreshToken)}${account}${expires}`
+    );
+  }
+
+  return lines;
+}
+
 async function openForkedSession(context: ReturnType<typeof createContextFromOptions>, sourceSession: string) {
   const fork = await forkSession(context.workspaceRoot, sourceSession);
   const loaded = await loadSession(context.workspaceRoot, fork.sessionId);
@@ -451,6 +535,10 @@ function parseNonNegativeNumber(value: string): number {
   }
 
   return parsed;
+}
+
+function formatYesNo(value: boolean): "yes" | "no" {
+  return value ? "yes" : "no";
 }
 
 function formatDryRunSyncStatus(status: L1FileScanStatus): string {

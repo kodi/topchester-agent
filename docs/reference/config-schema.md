@@ -40,3 +40,38 @@ interface TopchesterConfig {
 ```
 
 Arrays such as `ignore.paths`, `tools.bash.allow`, `tools.bash.allowExact`, `tools.bash.deny`, and hook handler arrays concatenate across config layers. Later scalar and object fields override or merge according to the config loader.
+
+Model providers use OpenAI-compatible provider config:
+
+```ts
+interface ModelProviderConfig {
+  type: "openai-compatible";
+  baseURL: string;
+  apiKeyEnv?: string;
+  apiKey?: string;
+  headers?: Record<string, string>;
+  supportsStructuredOutputs?: boolean;
+  service_tier?: "flex" | "priority";
+  includeUsage?: boolean;
+  promptCaching?: boolean;
+  toolProtocol?: "auto" | "native" | "text-json" | "text-xml";
+  openRouterToolRouting?: "auto" | "force" | "off";
+}
+```
+
+The known `codex` provider is OAuth-backed. Its config stays non-secret:
+
+```jsonc
+{
+  "models": {
+    "providers": {
+      "codex": {
+        "type": "openai-compatible",
+        "baseURL": "https://chatgpt.com/backend-api",
+      },
+    },
+  },
+}
+```
+
+Codex OAuth tokens live in `~/.config/topchester/auth.json`, not in project config.

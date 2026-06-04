@@ -6,6 +6,7 @@ import { createAppContext } from "../src/app/context.js";
 import {
   addGlobalModelChoices,
   addProjectBashAllowExactRule,
+  configureCodexGlobalProvider,
   configureOpenRouterGlobalProvider,
   loadTopchesterConfig,
   setGlobalDefaultModel,
@@ -285,6 +286,44 @@ describe("Topchester config loading", () => {
       { provider: "openrouter", name: "qwen/qwen3-coder" },
     ]);
     expect(written).toContain('"OPENROUTER_API_KEY"');
+  });
+
+  it("writes Codex provider setup and starter model choices to global user config", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const home = join(root, "home");
+    const workspace = join(root, "workspace");
+    process.env.HOME = home;
+    await mkdir(workspace, { recursive: true });
+
+    await addGlobalModelChoices(["openrouter/qwen/qwen3-coder", "codex/gpt-5.4-mini"]);
+    await expect(configureCodexGlobalProvider()).resolves.toMatchObject({
+      path: join(home, ".config", "topchester", "config.jsonc"),
+      choices: [
+        "codex/gpt-5.5",
+        "codex/gpt-5.4",
+        "codex/gpt-5.4-mini",
+        "codex/gpt-5.3-codex-spark",
+        "openrouter/qwen/qwen3-coder",
+      ],
+    });
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+    const written = await readFile(join(home, ".config", "topchester", "config.jsonc"), "utf8");
+
+    expect(config.models?.providers?.default).toBe("codex");
+    expect(config.models?.providers?.codex).toEqual({
+      type: "openai-compatible",
+      baseURL: "https://chatgpt.com/backend-api",
+    });
+    expect(config.models?.choices?.map((choice) => `${choice.provider}/${choice.name}`)).toEqual([
+      "codex/gpt-5.5",
+      "codex/gpt-5.4",
+      "codex/gpt-5.4-mini",
+      "codex/gpt-5.3-codex-spark",
+      "openrouter/qwen/qwen3-coder",
+    ]);
+    expect(written).not.toContain("apiKey");
+    expect(written).not.toContain("OPENAI_API_KEY");
   });
 
   it("moves the selected global model choice to the top", async () => {
@@ -810,6 +849,68 @@ describe("Topchester config loading", () => {
         "X-Title": "Topchester",
         "X-Test": "custom",
       },
+    });
+  });
+
+  it("adds known Codex provider defaults for Codex model refs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        models: {
+          default: "codex/gpt-5.5",
+          choices: ["codex/gpt-5.5", "codex/gpt-5.4-mini"],
+        },
+      })
+    );
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(config.models?.providers?.default).toBe("codex");
+    expect(config.models?.providers?.codex).toEqual({
+      type: "openai-compatible",
+      baseURL: "https://chatgpt.com/backend-api",
+    });
+    expect(config.models?.assignments?.["agent.primary"]).toEqual({
+      provider: "codex",
+      name: "gpt-5.5",
+    });
+    expect(config.models?.choices).toEqual([
+      { provider: "codex", name: "gpt-5.5" },
+      { provider: "codex", name: "gpt-5.4-mini" },
+    ]);
+  });
+
+  it("preserves explicit Codex provider overrides without adding API-key auth defaults", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      join(workspace, "topchester.jsonc"),
+      JSON.stringify({
+        models: {
+          default: "codex/gpt-5.5",
+          providers: {
+            codex: {
+              type: "openai-compatible",
+              baseURL: "https://chatgpt.example/backend-api",
+              supportsStructuredOutputs: false,
+              toolProtocol: "auto",
+            },
+          },
+        },
+      })
+    );
+
+    const config = loadTopchesterConfig({ workspaceRoot: workspace });
+
+    expect(config.models?.providers?.codex).toEqual({
+      type: "openai-compatible",
+      baseURL: "https://chatgpt.example/backend-api",
+      supportsStructuredOutputs: false,
+      toolProtocol: "auto",
     });
   });
 

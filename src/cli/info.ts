@@ -1,6 +1,7 @@
 import { accessSync, constants, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, isAbsolute, join, relative, resolve } from "node:path";
+import { getAuthStoreStatus, type AuthStoreStatus } from "../auth/store.js";
 import { getTopchesterLogFilePath, getTopchesterSessionsPath } from "../app/paths.js";
 import {
   formatModelRef,
@@ -53,7 +54,7 @@ export async function collectTopchesterInfo(options: InfoCommandOptions): Promis
     "",
     ...formatModelHints(config),
     "",
-    ...formatProviderHints(config)
+    ...formatProviderHints(config, await getAuthStoreStatus())
   );
   lines.push("", ...formatMcpHints(config), "", ...formatHooksHints(config), "", ...formatPathHints(options));
 
@@ -85,7 +86,7 @@ function formatModelHints(config: TopchesterConfig): string[] {
   ];
 }
 
-function formatProviderHints(config: TopchesterConfig): string[] {
+function formatProviderHints(config: TopchesterConfig, authStoreStatus: AuthStoreStatus): string[] {
   const providers = config.models?.providers ?? {};
   const namedProviders = Object.entries(providers).filter(([providerId]) => providerId !== "default");
 
@@ -104,16 +105,41 @@ function formatProviderHints(config: TopchesterConfig): string[] {
       continue;
     }
 
-    const auth = provider.apiKeyEnv
-      ? `env:${provider.apiKeyEnv} ${statusBadge(Boolean(process.env[provider.apiKeyEnv]), "set")}`
-      : provider.apiKey
-        ? status("inline", "good")
-        : status("none", "muted");
+    const auth = formatProviderAuth(providerId, provider, authStoreStatus);
 
     lines.push(row(providerId, `${provider.type} ${provider.baseURL} auth=${auth}`));
   }
 
   return lines;
+}
+
+function formatProviderAuth(
+  providerId: string,
+  provider: { apiKeyEnv?: string; apiKey?: string },
+  authStoreStatus: AuthStoreStatus
+): string {
+  if (providerId === "codex") {
+    if (authStoreStatus.error) {
+      return `oauth ${status("invalid", "bad")}`;
+    }
+
+    const providerStatus = authStoreStatus.providers.find((entry) => entry.id === providerId);
+    if (!providerStatus) {
+      return `oauth ${statusBadge(false)}`;
+    }
+
+    if (providerStatus.needsLogin) {
+      return `oauth ${status("needs-login", "warn")}`;
+    }
+
+    return `oauth ${status(providerStatus.needsRefresh ? "needs-refresh" : "stored", "good")}`;
+  }
+
+  return provider.apiKeyEnv
+    ? `env:${provider.apiKeyEnv} ${statusBadge(Boolean(process.env[provider.apiKeyEnv]), "set")}`
+    : provider.apiKey
+      ? status("inline", "good")
+      : status("none", "muted");
 }
 
 function formatMcpHints(config: TopchesterConfig): string[] {

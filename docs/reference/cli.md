@@ -20,6 +20,8 @@ topchester run "Edit greeting.txt and change Hello to Goodbye."
 topchester run /kb status
 topchester run "/skill code-review review this diff"
 topchester search "status bar"
+topchester auth login codex --device
+topchester auth status
 
 topchester kb init
 topchester kb sync
@@ -44,6 +46,7 @@ topchester kb reset
 | Command                 | Purpose                                                  |
 | ----------------------- | -------------------------------------------------------- |
 | `topchester`            | Start the interactive coding agent.                      |
+| `topchester auth`       | Manage global provider authentication.                   |
 | `topchester fork`       | Fork a saved project-local session and open the fork.    |
 | `topchester info`       | Show config validity and local runtime hints.            |
 | `topchester run`        | Run one prompt or slash command without opening the TUI. |
@@ -64,6 +67,16 @@ topchester kb reset
 Reports config layers, whether the effective config is valid, configured model/provider hints, provider API key env presence, MCP server command presence, hook counts, and local session/log/knowledge paths.
 
 If config is invalid, it prints the config error and exits nonzero.
+
+## `topchester auth login codex --device`
+
+Starts the SSH-friendly Codex ChatGPT device login flow. Topchester prints a verification URL, one-time user code, expiry time, and phishing warning. Open the URL in any browser, enter the code, and return to the terminal while Topchester polls for approval.
+
+On success, Topchester stores OAuth tokens in `~/.config/topchester/auth.json`, configures the global `codex` provider in `~/.config/topchester/config.jsonc`, and seeds starter Codex model choices. Token values are not printed.
+
+## `topchester auth status`
+
+Shows the global auth store path and redacted provider auth state. It reports whether stored access and refresh tokens exist, whether a provider needs refresh or relogin, and never prints token values.
 
 ## `topchester fork`
 

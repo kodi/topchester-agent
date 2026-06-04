@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { CODEX_CLIENT_ID, CODEX_ISSUER } from "../src/auth/codex.js";
+import { writeAuthStore } from "../src/auth/store.js";
 import { runTopchesterCli } from "../src/cli.js";
 import { createSession, type SessionHandle } from "../src/session/store.js";
 
@@ -126,6 +128,14 @@ async function makeFixture() {
   );
 
   return { root, workspace, config };
+}
+
+function jwtWithClaims(claims: Record<string, unknown>): string {
+  return [
+    Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url"),
+    Buffer.from(JSON.stringify(claims)).toString("base64url"),
+    "signature",
+  ].join(".");
 }
 
 describe("CLI integration", () => {
@@ -587,6 +597,127 @@ describe("CLI integration", () => {
     expect(stdout).toContain("commands:");
     expect(stdout).toContain(`sessions: ${join(fixture.workspace, ".agents", "topchester", "sessions")}`);
     expect(stdout).toContain(`knowledge: ${join(fixture.workspace, "topchester-kb")} [missing]`);
+  });
+
+  it("shows redacted Codex OAuth status in auth status and info", async () => {
+    const fixture = await makeFixture();
+    const authPath = join(fixture.root, ".config", "topchester", "auth.json");
+    const configPath = join(fixture.root, "codex-config.jsonc");
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        models: {
+          default: "codex/gpt-5.5",
+        },
+      })
+    );
+    await writeAuthStore(
+      {
+        version: 1,
+        providers: {
+          codex: {
+            type: "oauth_codex",
+            issuer: CODEX_ISSUER,
+            accessToken: "access-secret",
+            refreshToken: "refresh-secret",
+            idToken: "id-secret",
+            accountId: "account-secret",
+            expiresAt: 4_102_444_800_000,
+          },
+        },
+      },
+      { path: authPath }
+    );
+
+    const statusResult = await runCli(["auth", "status"], fixture.root);
+    const infoResult = await runCli(["--config", configPath, "--workspace", fixture.workspace, "info"], fixture.root);
+
+    expect(statusResult.stdout).toContain("Topchester auth status");
+    expect(statusResult.stdout).toContain(
+      "codex: oauth_codex source=stored state=ok access=yes refresh=yes account=yes"
+    );
+    expect(statusResult.stdout).not.toContain("secret");
+    expect(infoResult.stdout).toContain("codex: openai-compatible https://chatgpt.com/backend-api auth=oauth stored");
+    expect(infoResult.stdout).not.toContain("secret");
+  });
+
+  it("completes mocked Codex device login without printing token values", async () => {
+    const fixture = await makeFixture();
+    const requests: Array<{ url: string; init: RequestInit }> = [];
+    const idToken = jwtWithClaims({ chatgpt_account_id: "account-1" });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(url), init: init ?? {} });
+
+      if (String(url).endsWith("/api/accounts/deviceauth/usercode")) {
+        return new Response(
+          JSON.stringify({
+            device_auth_id: "device-1",
+            user_code: "ABCD-EFGH",
+            interval: "1",
+            expires_in: 900,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (String(url).endsWith("/api/accounts/deviceauth/token")) {
+        return new Response(
+          JSON.stringify({
+            authorization_code: "authorization-code",
+            code_verifier: "code-verifier",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (String(url).endsWith("/oauth/token")) {
+        return new Response(
+          JSON.stringify({
+            id_token: idToken,
+            access_token: "access-secret",
+            refresh_token: "refresh-secret",
+            expires_in: 3600,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${String(url)}`);
+    }) as typeof globalThis.fetch;
+
+    try {
+      const { stdout } = await runCli(["auth", "login", "codex", "--device"], fixture.root);
+
+      expect(stdout).toContain("Codex device login");
+      expect(stdout).toContain(`verification URL: ${CODEX_ISSUER}/codex/device`);
+      expect(stdout).toContain("user code: ABCD-EFGH");
+      expect(stdout).toContain("Codex login saved.");
+      expect(stdout).not.toContain("access-secret");
+      expect(stdout).not.toContain("refresh-secret");
+      expect(stdout).not.toContain(idToken);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(requests.map((request) => request.url)).toEqual([
+      `${CODEX_ISSUER}/api/accounts/deviceauth/usercode`,
+      `${CODEX_ISSUER}/api/accounts/deviceauth/token`,
+      `${CODEX_ISSUER}/oauth/token`,
+    ]);
+    expect(JSON.parse(requests[0]!.init.body as string)).toEqual({ client_id: CODEX_CLIENT_ID });
+    expect(Object.fromEntries(new URLSearchParams(requests[2]!.init.body as string))).toMatchObject({
+      grant_type: "authorization_code",
+      code: "authorization-code",
+      code_verifier: "code-verifier",
+      client_id: CODEX_CLIENT_ID,
+    });
+
+    const authFile = await readFile(join(fixture.root, ".config", "topchester", "auth.json"), "utf8");
+    const configFile = await readFile(join(fixture.root, ".config", "topchester", "config.jsonc"), "utf8");
+    expect(authFile).toContain("refresh-secret");
+    expect(configFile).toContain('"codex"');
+    expect(configFile).not.toContain("access-secret");
   });
 
   it("reports invalid config without opening the TUI", async () => {
