@@ -34,6 +34,13 @@ Topchester changes grouped by day. This file is the source of truth for the publ
 
 ### Releases
 
+- Release topchester-ai v0.56.0 ([8152224](https://github.com/kodi/topchester-agent/commit/815222481411fc79d01d768ed509593a73fa1e6b))
+- Release topchester-ai v0.55.0 ([9d7f372](https://github.com/kodi/topchester-agent/commit/9d7f37248959031e3be3a032c4040f38b4cddda2))
+- Release topchester-ai v0.54.0 ([5225a49](https://github.com/kodi/topchester-agent/commit/5225a49af4ce01ae5155ac627ca148043deed5e7))
+- Release topchester-ai v0.53.0 ([f6bceeb](https://github.com/kodi/topchester-agent/commit/f6bceeb6b4f41294c134b323da0c637f477c6311))
+- Release topchester-ai v0.52.0 ([5a01f80](https://github.com/kodi/topchester-agent/commit/5a01f8000eb89fcd17e41c12285b444c5847fed0))
+- Release topchester-ai v0.51.0 ([de8c0ca](https://github.com/kodi/topchester-agent/commit/de8c0ca997ee091f38588953a437b166078c7ab4))
+- Release topchester-ai v0.50.0 ([a226660](https://github.com/kodi/topchester-agent/commit/a226660a7ab3d7cd782baf2092b861520b41913b))
 - Release topchester-ai v0.49.0 ([57ff726](https://github.com/kodi/topchester-agent/commit/57ff7261449589aec9642a0ffb36e7e027f9797c))
 - Release topchester-ai v0.48.0 ([dea2810](https://github.com/kodi/topchester-agent/commit/dea2810908d90a8c433f4b4aef6c930d4c7577a7))
 - Release topchester-ai v0.47.0 ([0801cd9](https://github.com/kodi/topchester-agent/commit/0801cd9792f90187146487c60ccce5a070689867))
