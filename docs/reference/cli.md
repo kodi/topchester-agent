@@ -74,6 +74,8 @@ Starts the SSH-friendly Codex ChatGPT device login flow. Topchester prints a ver
 
 On success, Topchester stores OAuth tokens in `~/.config/topchester/auth.json`, configures the global `codex` provider in `~/.config/topchester/config.jsonc`, and seeds starter Codex model choices. Token values are not printed.
 
+`topchester auth --help` and `topchester auth login --help` list supported auth providers and examples. Bare `topchester auth login`, unsupported providers, and `topchester auth login codex` without `--device` print the `codex` provider, exact login command, and next help command instead of only reporting a missing argument.
+
 ## `topchester auth status`
 
 Shows the global auth store path and redacted provider auth state. It reports whether stored access and refresh tokens exist, whether a provider needs refresh or relogin, and never prints token values.

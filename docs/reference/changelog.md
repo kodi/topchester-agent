@@ -21,6 +21,7 @@ Topchester changes grouped by day. This file is the source of truth for the publ
 
 ### Fixes and polish
 
+- Improved auth provider help, examples, and `topchester auth login` error guidance.
 - Added colors to session picker date and id ([520526c](https://github.com/kodi/topchester-agent/commit/520526ce4d07b4095e1228e5225e4021fe84e20e))
 
 ### Docs and config

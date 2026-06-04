@@ -96,6 +96,10 @@ async function runCli(args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) 
 }
 
 function isCommanderExit(error: unknown): error is { code: string; exitCode: number } {
+  if (error instanceof Error && error.message === 'process.exit unexpectedly called with "0"') {
+    return true;
+  }
+
   return (
     typeof error === "object" &&
     error !== null &&
@@ -641,6 +645,40 @@ describe("CLI integration", () => {
     expect(statusResult.stdout).not.toContain("secret");
     expect(infoResult.stdout).toContain("codex: openai-compatible https://chatgpt.com/backend-api auth=oauth stored");
     expect(infoResult.stdout).not.toContain("secret");
+  });
+
+  it("shows supported providers and examples in auth help", async () => {
+    const fixture = await makeFixture();
+
+    const authHelp = await runCli(["auth", "--help"], fixture.root);
+    const loginHelp = await runCli(["auth", "login", "--help"], fixture.root);
+
+    expect(authHelp.stdout).toContain("Supported providers:");
+    expect(authHelp.stdout).toContain("codex");
+    expect(authHelp.stdout).toContain("topchester auth login codex --device");
+    expect(loginHelp.stdout).toContain("Usage: topchester auth login [options] <provider>");
+    expect(loginHelp.stdout).toContain("OAuth device-code login for Codex-backed model access.");
+    expect(loginHelp.stdout).toContain("Topchester prints a browser URL and one-time code");
+  });
+
+  it("prints auth login guidance when provider or required mode is missing", async () => {
+    const fixture = await makeFixture();
+
+    await expect(runCli(["auth", "login"], fixture.root)).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining("Missing provider."),
+    });
+    await expect(runCli(["auth", "login"], fixture.root)).rejects.toMatchObject({
+      stderr: expect.stringContaining("topchester auth login codex --device"),
+    });
+    await expect(runCli(["auth", "login", "codex"], fixture.root)).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining('Codex login currently requires "--device".'),
+    });
+    await expect(runCli(["auth", "login", "openai", "--device"], fixture.root)).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining('Unsupported auth provider "openai".'),
+    });
   });
 
   it("completes mocked Codex device login without printing token values", async () => {

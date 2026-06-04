@@ -108,14 +108,19 @@ function createTopchesterProgram(): Command {
       }
     });
 
-  const authCommand = program.command("auth").description("manage global provider authentication");
+  const authCommand = program
+    .command("auth")
+    .description("manage global provider authentication")
+    .addHelpText("after", formatAuthCommandHelp);
 
   authCommand
     .command("login")
+    .usage("[options] <provider>")
     .description("log in to a provider")
-    .argument("<provider>", "provider id")
+    .argument("[provider]", "provider id")
     .option("--device", "use device-code login")
-    .action(async (provider: string, options: { device?: boolean }) => {
+    .addHelpText("after", formatAuthLoginHelp)
+    .action(async (provider: string | undefined, options: { device?: boolean }) => {
       try {
         await executeAuthLoginCommand(provider, options);
       } catch (error) {
@@ -369,29 +374,94 @@ function printStartupSummary(context: ReturnType<typeof createAppContext>) {
   }
 }
 
-async function executeAuthLoginCommand(provider: string, options: { device?: boolean }) {
+interface AuthProviderHelp {
+  id: string;
+  name: string;
+  auth: string;
+  example: string;
+}
+
+const AUTH_PROVIDERS: AuthProviderHelp[] = [
+  {
+    id: "codex",
+    name: "Codex / ChatGPT",
+    auth: "OAuth device-code login for Codex-backed model access.",
+    example: "topchester auth login codex --device",
+  },
+];
+
+function formatAuthCommandHelp(): string {
+  return [
+    "",
+    ui.label("Supported providers:"),
+    ...AUTH_PROVIDERS.map(
+      (provider) => `  ${ui.modelInline(provider.id.padEnd(8))} ${provider.name} - ${provider.auth}`
+    ),
+    "",
+    ui.label("Examples:"),
+    ...AUTH_PROVIDERS.map((provider) => `  ${provider.example}`),
+    "  topchester auth status",
+  ].join("\n");
+}
+
+function formatAuthLoginHelp(): string {
+  return [
+    "",
+    ui.label("Supported providers:"),
+    ...AUTH_PROVIDERS.map((provider) => `  ${ui.modelInline(provider.id.padEnd(8))} ${provider.auth}`),
+    "",
+    ui.label("Examples:"),
+    ...AUTH_PROVIDERS.map((provider) => `  ${provider.example}`),
+    "",
+    ui.label("What happens:"),
+    "  Topchester prints a browser URL and one-time code, waits for approval, then stores tokens in the global auth store.",
+  ].join("\n");
+}
+
+function formatAuthLoginUsageError(reason: string): string {
+  return [
+    ui.error(reason),
+    "",
+    ui.label("Usage:"),
+    "  topchester auth login <provider> --device",
+    "",
+    ui.label("Supported providers:"),
+    ...AUTH_PROVIDERS.map((provider) => `  ${provider.id.padEnd(8)} ${provider.name} - ${provider.auth}`),
+    "",
+    ui.label("Examples:"),
+    ...AUTH_PROVIDERS.map((provider) => `  ${provider.example}`),
+    "",
+    "Run `topchester auth login --help` for details.",
+  ].join("\n");
+}
+
+async function executeAuthLoginCommand(provider: string | undefined, options: { device?: boolean }) {
+  if (!provider) {
+    throw new Error(formatAuthLoginUsageError("Missing provider."));
+  }
+
   if (provider !== "codex") {
-    throw new Error(`Unsupported auth provider "${provider}". Supported providers: codex.`);
+    throw new Error(formatAuthLoginUsageError(`Unsupported auth provider "${provider}".`));
   }
 
   if (!options.device) {
-    throw new Error("Usage: topchester auth login codex --device");
+    throw new Error(formatAuthLoginUsageError('Codex login currently requires "--device".'));
   }
 
   const deviceCode = await requestCodexDeviceCode();
-  console.log("Codex device login");
-  console.log(`verification URL: ${deviceCode.verificationUrl}`);
-  console.log(`user code: ${deviceCode.userCode}`);
-  console.log(`expires: ${new Date(deviceCode.expiresAt).toISOString()}`);
-  console.log("Device codes are a common phishing target. Never share this code.");
-  console.log("Waiting for browser approval...");
+  console.log(ui.heading("Codex device login"));
+  console.log(`${ui.label("verification URL:")} ${deviceCode.verificationUrl}`);
+  console.log(`${ui.label("user code:")} ${ui.inverse(deviceCode.userCode)}`);
+  console.log(`${ui.label("expires:")} ${new Date(deviceCode.expiresAt).toISOString()}`);
+  console.log(ui.warn("Device codes are a common phishing target. Never share this code."));
+  console.log(ui.label("Waiting for browser approval..."));
 
   const authorization = await pollCodexDeviceAuthorization(deviceCode);
   const record = await exchangeCodexAuthorizationCode(authorization, { issuer: deviceCode.issuer });
   await setAuthProvider("codex", record);
   await configureCodexGlobalProvider();
 
-  console.log("Codex login saved.");
+  console.log(ui.ok("Codex login saved."));
   console.log("Configured global Codex provider and starter model choices.");
 }
 
