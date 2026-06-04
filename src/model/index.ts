@@ -65,6 +65,7 @@ export interface ModelTextResult {
   providerId: string;
   modelId: string;
   purpose: ModelPurpose;
+  reasoningEffort?: ReasoningEffort;
   usage?: ModelTokenUsage;
 }
 
@@ -201,6 +202,7 @@ export class ModelGateway {
       providerId: resolved.providerId,
       modelId: resolved.modelId,
       purpose: resolved.purpose,
+      ...(resolved.providerConfig.reasoningEffort ? { reasoningEffort: resolved.providerConfig.reasoningEffort } : {}),
       ...(usage ? { usage } : {}),
     };
   }
@@ -327,6 +329,7 @@ export class ModelGateway {
       providerId: resolved.providerId,
       modelId: resolved.modelId,
       purpose: resolved.purpose,
+      ...(resolved.providerConfig.reasoningEffort ? { reasoningEffort: resolved.providerConfig.reasoningEffort } : {}),
       ...(usage ? { usage } : {}),
       toolCalls,
       toolProtocol: "native-openai-compatible",
@@ -372,6 +375,7 @@ export class ModelGateway {
       providerId: resolved.providerId,
       modelId: resolved.modelId,
       purpose: resolved.purpose,
+      ...(resolved.providerConfig.reasoningEffort ? { reasoningEffort: resolved.providerConfig.reasoningEffort } : {}),
       ...(usage ? { usage } : {}),
       toolCalls: parsed
         ? [

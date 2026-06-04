@@ -362,10 +362,14 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           yield event;
         }
         const system = this.buildSystemPromptWithProjectInstructions({ profile, permissions }, projectInstructions);
+        const modelRequestMetadata = this.context.modelGateway.resolveModel("agent.primary");
         this.context.logger.debug(
           {
             event: "model_prompt",
             purpose: "agent.primary",
+            providerId: modelRequestMetadata.providerId,
+            modelId: modelRequestMetadata.modelId,
+            reasoningEffort: modelRequestMetadata.providerConfig.reasoningEffort,
             afterTool,
             toolProtocol: toolProtocolOverride,
             promptLength: nextPrompt.length,
@@ -400,6 +404,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             event: "model_response",
             purpose: "agent.primary",
             modelId: result.modelId,
+            providerId: result.providerId,
+            reasoningEffort: result.reasoningEffort,
             durationMs,
             totalDurationMs,
             textLength: result.text.length,
@@ -426,6 +432,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             event: "model_response_text",
             purpose: "agent.primary",
             modelId: result.modelId,
+            providerId: result.providerId,
+            reasoningEffort: result.reasoningEffort,
             afterTool,
             toolProtocol: result.toolProtocol,
             text: result.text,
