@@ -107,7 +107,10 @@ Current gap:
 2. Use Codex-compatible values: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`.
 3. Store the setting durably in config, not only in ephemeral TUI state.
 4. Prefer a provider-level config field for V0: `providers.<id>.reasoningEffort`.
-5. For Codex Responses, map `reasoningEffort` to `reasoning: { effort, summary: "auto" }`.
+5. Use one generic config field and map it at the provider edge:
+   - Codex Responses: `reasoning: { effort, summary: "auto" }`;
+   - OpenRouter: `reasoning: { effort }`;
+   - generic OpenAI-compatible fallback: `reasoning_effort`.
 6. Keep the implementation scoped to request parameters and config. Do not alter prompt wording to simulate effort.
 
 ## Scope
@@ -127,7 +130,7 @@ Out of scope:
 
 - A full OpenCode-style model variant system.
 - Provider catalog support for per-model supported effort lists.
-- Provider-specific reasoning support beyond Codex Responses and a minimal OpenAI-compatible/OpenRouter-compatible path if already easy through existing provider options.
+- Provider-specific reasoning support beyond Codex Responses, OpenRouter, and the generic OpenAI-compatible fallback.
 - Session-specific effort that differs from global config.
 - Changing model selection behavior.
 
@@ -143,9 +146,19 @@ Add `reasoningEffort?: ReasoningEffort` to `OpenAICompatibleProviderConfig`.
 
 For request generation:
 
-- `buildProviderOptions()` should include provider-specific reasoning when the provider is not Codex and the AI SDK path can forward it safely.
+- Add a small provider-edge mapper, for example:
+
+```ts
+type ReasoningParamStyle = "codex-responses" | "openrouter" | "openai-compatible";
+```
+
+- Choose `codex-responses` for `isCodexProvider(...)`.
+- Choose `openrouter` for `isOpenRouterProvider(...)`.
+- Use `openai-compatible` as the fallback for any other OpenAI-compatible endpoint.
+- `buildProviderOptions()` should include provider-specific reasoning for OpenRouter and generic OpenAI-compatible providers.
 - `chatCompletionsBodyToCodexResponsesBody()` should understand reasoning metadata emitted from provider options or a request body extension and produce Codex Responses `reasoning`.
-- The simplest robust implementation is to add `reasoningEffort` to the provider config, pass it through `buildProviderOptions()`, and teach `rewriteCodexRequest()` to read the original chat body plus provider config context. If the current Codex fetch wrapper cannot see provider config, extend `createCodexProviderFetch()` options with `reasoningEffort`.
+- The simplest robust implementation is to add `reasoningEffort` to the provider config, pass it through `buildProviderOptions()` for non-Codex providers, and extend `createCodexProviderFetch()` options with `reasoningEffort` so the Codex adapter can inject Responses-native reasoning directly.
+- Keep the mapper deliberately small. Do not infer support from model names in V0; if a user configures effort for an unsupported model, let the provider return its normal validation error.
 
 For commands:
 
@@ -180,7 +193,8 @@ Recommended command messages:
 - Current model uses a non-default provider: prefer the resolved active model provider over `providers.default` if they differ.
 - `none` is an explicit value and must not be treated as clearing the field.
 - `clear` removes the field and must not leave `reasoningEffort: undefined` serialized into JSON.
-- Future OpenRouter support may need nested `reasoning: { effort }`; do not bake Codex-only names into the generic config field.
+- OpenRouter must receive nested `reasoning: { effort }`, not `reasoning_effort`, because that is OpenRouter's normalized cross-provider control surface.
+- Generic OpenAI-compatible fallback uses `reasoning_effort`; this may not work for every proxy/model, so docs should describe it as best-effort provider pass-through.
 
 ## Files To Change
 
@@ -201,6 +215,7 @@ Recommended command messages:
 ## Cross-Slice Rules
 
 - Use one canonical effort enum everywhere.
+- Use a provider-edge mapper for request field shapes; do not bake Codex-only or OpenRouter-only names into the config field.
 - Keep `/effort` and `/reasoning` behavior identical.
 - Prefer active resolved model provider over raw `providers.default` when deciding which provider config to mutate.
 - Treat `none` as explicit effort and `clear` as removal.
@@ -243,19 +258,22 @@ Status: `[ ]` Not started
 
 Goal: Make configured reasoning effort reach model requests without changing user-visible commands yet.
 
-Why here: The setting must actually affect Codex before adding slash command UI.
+Why here: The setting must actually affect Codex and OpenRouter before adding slash command UI.
 
 This slice should implement:
 
 - Add `reasoningEffort` to `OpenAICompatibleProviderConfig`.
 - Thread the configured effort into the Codex provider fetch wrapper.
 - Add Codex Responses body output: `reasoning: { effort, summary: "auto" }`.
-- Decide whether generic OpenAI-compatible requests should use provider options or direct request fields for `reasoning_effort`; document any V0 limitation in the plan if deferred.
-- Add focused tests proving Codex rewritten requests include reasoning when configured and omit it when not configured.
+- Add OpenRouter body/provider options output: `reasoning: { effort }`.
+- Add generic OpenAI-compatible body/provider options output: `reasoning_effort`.
+- Add focused tests proving configured reasoning is emitted in the correct shape for Codex, OpenRouter, and the generic fallback, and omitted when not configured.
 
 Expected output:
 
 - Codex OAuth requests include the expected `reasoning` object when `providers.codex.reasoningEffort` is set.
+- OpenRouter requests include `reasoning: { effort }` when `providers.openrouter.reasoningEffort` is set.
+- Other OpenAI-compatible requests include `reasoning_effort` when configured.
 - Existing non-Codex provider tests still pass.
 
 Verification:
@@ -412,7 +430,7 @@ Dependencies: Slices 1-6.
 1. Should `/effort <level>` mutate the active resolved provider or always mutate `providers.default`? Recommendation: active resolved provider.
 2. Should `/effort` be available outside the TUI as a direct config command? Recommendation: no for V0; keep it aligned with `/model`.
 3. Should Topchester expose reasoning effort per model assignment instead of provider config? Recommendation: provider config for V0, revisit if users need different effort per model.
-4. Should OpenRouter receive reasoning options in V0? Recommendation: implement only if it naturally falls out of `buildProviderOptions()`; otherwise ship Codex first and document the limitation.
+4. Should OpenRouter receive reasoning options in V0? Decision: yes. Implement it through the same generic mapper, using OpenRouter's normalized `reasoning: { effort }` shape.
 5. Should `summary` be configurable? Recommendation: hardcode `summary: "auto"` for Codex in V0 and avoid a second command axis.
 
 ## Final Verification
