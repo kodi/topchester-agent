@@ -162,10 +162,6 @@ describe("CLI integration", () => {
     expect(docs).toContain("## `topchester info`");
     expect(docs).toContain("lite doctor");
     expect(docs).toContain("Reports config layers");
-    expect(docs).toContain("## `topchester integrations`");
-    expect(docs).toContain("topchester integrations install codex");
-    expect(docs).toContain("## `topchester hook stop <agent>`");
-    expect(docs).toContain("low-level endpoint used by generated integration config");
     expect(docs).toContain("## `topchester run`");
     expect(docs).toContain("Routes slash-command prompts such as `/kb status`");
     expect(docs).toContain(
@@ -208,53 +204,6 @@ describe("CLI integration", () => {
 
     expect(stdout).toContain("info");
     expect(stdout).toContain("show config and local runtime hints");
-  });
-
-  it("lists integrations as the public setup and status command group", async () => {
-    const fixture = await makeFixture();
-
-    const { stdout } = await runCli(["--help"], fixture.root);
-
-    expect(stdout).toContain("integrations");
-    expect(stdout).toContain("manage Topchester integrations with other agents");
-    expect(stdout).not.toContain("hooks");
-  });
-
-  it("installs, checks, repairs, and removes the Codex integration", async () => {
-    const fixture = await makeFixture();
-    const codexHome = join(fixture.root, "codex-home");
-    const codexConfig = join(codexHome, "config.toml");
-
-    const before = await runCli(["integrations", "status", "codex"], fixture.root, { CODEX_HOME: codexHome });
-    expect(before.stdout).toContain("codex: not installed");
-    expect(before.stdout).toContain(`config: ${codexConfig}`);
-
-    const installed = await runCli(["integrations", "install", "codex"], fixture.root, { CODEX_HOME: codexHome });
-    expect(installed.stdout).toContain("Integration installed");
-    expect(installed.stdout).toContain("state: installed");
-    expect(await readFile(codexConfig, "utf8")).toContain('command = "topchester hook stop codex"');
-
-    const after = await runCli(["integrations", "status"], fixture.root, { CODEX_HOME: codexHome });
-    expect(after.stdout).toContain("Integrations");
-    expect(after.stdout).toContain("codex: installed");
-
-    const repaired = await runCli(["integrations", "repair", "codex"], fixture.root, { CODEX_HOME: codexHome });
-    expect(repaired.stdout).toContain("Integration repaired");
-    expect((await readFile(codexConfig, "utf8")).match(/topchester hook stop codex/gu)).toHaveLength(1);
-
-    const removed = await runCli(["integrations", "remove", "codex"], fixture.root, { CODEX_HOME: codexHome });
-    expect(removed.stdout).toContain("Integration removed");
-    expect(removed.stdout).toContain("state: not installed");
-    expect(await readFile(codexConfig, "utf8")).not.toContain("topchester integration: codex");
-  });
-
-  it("keeps hook stop as a quiet low-level endpoint", async () => {
-    const fixture = await makeFixture();
-
-    const { stdout, stderr } = await runCli(["hook", "stop", "codex"], fixture.root);
-
-    expect(stdout).toBe("");
-    expect(stderr).toBe("");
   });
 
   it("prints the package version", async () => {

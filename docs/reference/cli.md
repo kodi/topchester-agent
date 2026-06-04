@@ -22,8 +22,6 @@ topchester run "/skill code-review review this diff"
 topchester search "status bar"
 topchester auth login codex --device
 topchester auth status
-topchester integrations status
-topchester integrations install codex
 
 topchester kb init
 topchester kb sync
@@ -45,24 +43,22 @@ topchester kb reset
 
 ## Command overview
 
-| Command                   | Purpose                                                  |
-| ------------------------- | -------------------------------------------------------- |
-| `topchester`              | Start the interactive coding agent.                      |
-| `topchester auth`         | Manage global provider authentication.                   |
-| `topchester fork`         | Fork a saved project-local session and open the fork.    |
-| `topchester info`         | Show config validity and local runtime hints.            |
-| `topchester integrations` | Manage Topchester integrations with other agents.        |
-| `topchester hook stop`    | Low-level Stop hook endpoint for installed integrations. |
-| `topchester run`          | Run one prompt or slash command without opening the TUI. |
-| `topchester search`       | Search compiled L1 file knowledge.                       |
-| `topchester kb init`      | Create the project knowledge folders.                    |
-| `topchester kb context`   | Create an L1 context pack for a query.                   |
-| `topchester kb dry-run`   | Preview which files would be synced.                     |
-| `topchester kb search`    | Search compiled L1 file knowledge.                       |
-| `topchester kb sync`      | Build or update L1 entries for non-clean files.          |
-| `topchester kb reset`     | Delete the local knowledge base and cache.               |
-| `topchester kb status`    | Show files that are not current in the knowledge base.   |
-| `topchester update`       | Update Topchester with npm, pnpm, or bun.                |
+| Command                 | Purpose                                                  |
+| ----------------------- | -------------------------------------------------------- |
+| `topchester`            | Start the interactive coding agent.                      |
+| `topchester auth`       | Manage global provider authentication.                   |
+| `topchester fork`       | Fork a saved project-local session and open the fork.    |
+| `topchester info`       | Show config validity and local runtime hints.            |
+| `topchester run`        | Run one prompt or slash command without opening the TUI. |
+| `topchester search`     | Search compiled L1 file knowledge.                       |
+| `topchester kb init`    | Create the project knowledge folders.                    |
+| `topchester kb context` | Create an L1 context pack for a query.                   |
+| `topchester kb dry-run` | Preview which files would be synced.                     |
+| `topchester kb search`  | Search compiled L1 file knowledge.                       |
+| `topchester kb sync`    | Build or update L1 entries for non-clean files.          |
+| `topchester kb reset`   | Delete the local knowledge base and cache.               |
+| `topchester kb status`  | Show files that are not current in the knowledge base.   |
+| `topchester update`     | Update Topchester with npm, pnpm, or bun.                |
 
 ## `topchester info`
 
@@ -83,25 +79,6 @@ On success, Topchester stores OAuth tokens in `~/.config/topchester/auth.json`, 
 ## `topchester auth status`
 
 Shows the global auth store path and redacted provider auth state. It reports whether stored access and refresh tokens exist, whether a provider needs refresh or relogin, and never prints token values.
-
-## `topchester integrations`
-
-Use this command group for install/status workflows with other coding agents:
-
-```sh
-topchester integrations list
-topchester integrations status
-topchester integrations status codex
-topchester integrations install codex
-topchester integrations repair codex
-topchester integrations remove codex
-```
-
-`install codex` writes Topchester's marked Stop hook block to `CODEX_HOME/config.toml` or `~/.codex/config.toml`. `repair codex` rewrites only that marked block. `remove codex` removes only that marked block.
-
-## `topchester hook stop <agent>`
-
-Low-level endpoint used by installed integrations. Keep setup and status checks on `topchester integrations ...`.
 
 ## `topchester fork`
 

@@ -16,8 +16,6 @@ topchester run "Edit greeting.txt and change Hello to Goodbye."
 topchester run /kb status
 topchester run "/skill code-review review this diff"
 topchester search "status bar"
-topchester integrations status
-topchester integrations install codex
 
 topchester kb init
 topchester kb sync
@@ -43,24 +41,22 @@ On startup, Topchester creates the user config folder `~/.config/topchester/` if
 
 ## Command Overview
 
-| Command                   | Purpose                                                  |
-| ------------------------- | -------------------------------------------------------- |
-| `topchester`              | Start the interactive coding agent.                      |
-| `topchester fork`         | Fork a saved project-local session and open the fork.    |
-| `topchester info`         | Show config validity and local runtime hints.            |
-| `topchester integrations` | Manage Topchester integrations with other agents.        |
-| `topchester hook stop`    | Low-level Stop hook endpoint for installed integrations. |
-| `topchester run`          | Run one prompt or slash command without opening the TUI. |
-| `topchester search`       | Search compiled L1 file knowledge.                       |
-| `topchester dev`          | Print local development startup details.                 |
-| `topchester kb init`      | Create the project knowledge folders.                    |
-| `topchester kb context`   | Create an L1 context pack for a query.                   |
-| `topchester kb dry-run`   | Preview which files would be synced.                     |
-| `topchester kb search`    | Search compiled L1 file knowledge.                       |
-| `topchester kb sync`      | Build or update L1 entries for non-clean files.          |
-| `topchester kb reset`     | Delete the local knowledge base and cache.               |
-| `topchester kb status`    | Show files that are not current in the knowledge base.   |
-| `topchester update`       | Update Topchester with npm, pnpm, or bun.                |
+| Command                 | Purpose                                                  |
+| ----------------------- | -------------------------------------------------------- |
+| `topchester`            | Start the interactive coding agent.                      |
+| `topchester fork`       | Fork a saved project-local session and open the fork.    |
+| `topchester info`       | Show config validity and local runtime hints.            |
+| `topchester run`        | Run one prompt or slash command without opening the TUI. |
+| `topchester search`     | Search compiled L1 file knowledge.                       |
+| `topchester dev`        | Print local development startup details.                 |
+| `topchester kb init`    | Create the project knowledge folders.                    |
+| `topchester kb context` | Create an L1 context pack for a query.                   |
+| `topchester kb dry-run` | Preview which files would be synced.                     |
+| `topchester kb search`  | Search compiled L1 file knowledge.                       |
+| `topchester kb sync`    | Build or update L1 entries for non-clean files.          |
+| `topchester kb reset`   | Delete the local knowledge base and cache.               |
+| `topchester kb status`  | Show files that are not current in the knowledge base.   |
+| `topchester update`     | Update Topchester with npm, pnpm, or bun.                |
 
 ## `topchester`
 
@@ -164,34 +160,6 @@ Current behavior:
 - Does not contact model providers.
 - Does not start MCP servers.
 - Does not create project state folders.
-
-## `topchester integrations`
-
-Manages Topchester integrations with other coding agents. These commands are the user-facing setup and status surface for agent lifecycle hooks.
-
-Common examples:
-
-```sh
-topchester integrations list
-topchester integrations status
-topchester integrations status codex
-topchester integrations install codex
-topchester integrations repair codex
-topchester integrations remove codex
-```
-
-Current behavior:
-
-- `topchester integrations list` lists supported agent integrations and their install state.
-- `topchester integrations status [agent]` checks all supported integrations or one named integration.
-- `topchester integrations install codex` writes Topchester's marked Codex hook block to `CODEX_HOME/config.toml` or `~/.codex/config.toml`.
-- `topchester integrations repair codex` rewrites that marked block without touching unrelated Codex config.
-- `topchester integrations remove codex` removes only Topchester's marked Codex hook block.
-- Codex is the first supported integration. Unsupported agents fail with a plain error.
-
-## `topchester hook stop <agent>`
-
-Receives Stop lifecycle hook calls from installed integrations. This is a low-level endpoint used by generated integration config, not the setup or status command surface. Use `topchester integrations ...` for install, repair, remove, and status workflows.
 
 ## `topchester run`
 

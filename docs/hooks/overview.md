@@ -14,8 +14,6 @@ Topchester starts each command hook as a child shell process, sends one JSON pay
 
 Write logs and diagnostics to stderr so stdout can stay reserved for hook responses.
 
-For Topchester integrations with other coding agents, use `topchester integrations status`, `topchester integrations install <agent>`, `topchester integrations repair <agent>`, and `topchester integrations remove <agent>`. Those commands manage generated hook config for supported agents; this page covers manual Topchester hook config.
-
 ## Example
 
 ```jsonc
