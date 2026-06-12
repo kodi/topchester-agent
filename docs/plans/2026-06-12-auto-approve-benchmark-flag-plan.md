@@ -148,7 +148,7 @@ Likely files:
 
 ### Slice 1: Runtime Approval Mode Contract
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Add a runtime-level approval mode without changing default behavior.
 
@@ -172,14 +172,21 @@ Expected output:
 Verification:
 
 ```sh
-pnpm test test/commands.test.ts test/bash-tool.test.ts
+mise run local-ci
 ```
+
+Completed notes:
+
+- Added `UserApprovalMode = "interactive" | "auto_allow"` to runtime submit options.
+- Auto-allow is handled in `resolveBashApproval(...)` after bash policy validation and `PermissionRequest` hooks.
+- Auto-approved bash commands are added only to the current tool execution's exact-command approval list.
+- Runtime coverage proves approval-required bash executes in auto-allow mode and destructive bash policy rejects are not auto-approved.
 
 Dependencies: none.
 
 ### Slice 2: Hook And Observability Semantics
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Preserve hook behavior and make bypassed prompts auditable.
 
@@ -202,14 +209,21 @@ Expected output:
 Verification:
 
 ```sh
-pnpm test test/hooks.test.ts test/commands.test.ts
+mise run local-ci
 ```
+
+Completed notes:
+
+- `PermissionRequest` hooks still run before auto-approval.
+- Auto-approval hook payloads include `approval_mode: "auto_allow"` and `auto_approved: true`.
+- Hook `block` prevents auto-approved bash execution and returns a tool error.
+- Runtime JSON/session output includes a `permission_auto_approved` event with command, workdir, reason, tool, call id, and approval mode.
 
 Dependencies: Slice 1.
 
 ### Slice 3: `topchester run` Flag
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Expose the runtime mode through the headless automation command.
 
@@ -232,14 +246,22 @@ Expected output:
 Verification:
 
 ```sh
-pnpm test test/cli.integration.test.ts test/commands.test.ts
+mise run local-ci
 ```
+
+Completed notes:
+
+- Added `topchester run --dangerously-auto-approve`.
+- Added `dangerouslyAutoApprove?: boolean` to run command options.
+- `topchester run` passes `userApprovalMode: "auto_allow"` only when the flag is present.
+- `run.started` JSON/log metadata records `dangerouslyAutoApprove`.
+- CLI help exposes the flag with dangerous wording.
 
 Dependencies: Slices 1 and 2.
 
 ### Slice 4: Optional Interactive Wiring
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Decide whether the global TUI also needs the flag.
 
@@ -260,14 +282,19 @@ Expected output:
 Verification:
 
 ```sh
-pnpm test test/tui.render.test.ts test/commands.test.ts
+mise run local-ci
 ```
+
+Completed notes:
+
+- V0 keeps auto-approval headless-only. The benchmark requirement is satisfied through `topchester run`, and interactive TUI modal behavior stays unchanged.
+- Runtime event rendering handles auto-approval events so the shared event union remains exhaustive.
 
 Dependencies: Slices 1 and 2.
 
 ### Slice 5: Docs And Benchmark Notes
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Document how to use the flag and what it does not bypass.
 
@@ -288,9 +315,15 @@ Expected output:
 Verification:
 
 ```sh
-pnpm test test/cli.integration.test.ts
-pnpm run typecheck
+mise run local-ci
 ```
+
+Completed notes:
+
+- Updated `docs/cli.md` and `docs/reference/cli.md` with the flag and benchmark command form.
+- Updated bash permission/config docs to say auto-approval is runtime-only and not persisted to `topchester.jsonc`.
+- Updated hook docs to describe auto-approval payload metadata.
+- Documented that hard rejects, deny rules, workspace boundaries, and hook blocks still apply.
 
 Dependencies: Slice 3, and Slice 4 if interactive wiring is included.
 
@@ -299,8 +332,7 @@ Dependencies: Slice 3, and Slice 4 if interactive wiring is included.
 Run the focused suites and the repo-standard checks after implementation:
 
 ```sh
-pnpm test test/commands.test.ts test/hooks.test.ts test/cli.integration.test.ts test/bash-tool.test.ts
-pnpm run typecheck
+mise run local-ci
 ```
 
 For benchmark validation, run a temporary fixture with an unknown but non-destructive bash command through `topchester run --dangerously-auto-approve` and confirm:
@@ -310,6 +342,13 @@ For benchmark validation, run a temporary fixture with an unknown but non-destru
 - the command executes;
 - JSON output records the auto-approval mode;
 - the same command without the flag still follows existing headless behavior.
+
+Completed verification:
+
+- Focused runtime, hook, CLI, and bash-policy suites passed after implementation.
+- Temporary fake-API fixture with `topchester run --dangerously-auto-approve` ran an unknown non-destructive bash command without a config allow rule, emitted `permission_auto_approved`, and recorded `dangerouslyAutoApprove: true`.
+- Matching fixture without the flag returned the existing headless bash approval error and emitted no `permission_auto_approved` event.
+- `mise run local-ci` passed.
 
 ## Open Questions
 
