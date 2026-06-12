@@ -189,10 +189,17 @@ function createTopchesterProgram(): Command {
     .option("--timeout <ms>", "timeout for the run in milliseconds", parsePositiveInteger)
     .option("--json", "write JSONL run events to stdout")
     .option("--output-json <path>", "write JSONL run events to a file")
+    .option("--dangerously-auto-approve", "auto-approve prompt-gated tool calls for this non-interactive run")
     .action(
       async (
         promptParts: string[],
-        options: { model?: string; timeout?: number; json?: boolean; outputJson?: string }
+        options: {
+          model?: string;
+          timeout?: number;
+          json?: boolean;
+          outputJson?: string;
+          dangerouslyAutoApprove?: boolean;
+        }
       ) => {
         const context = createContextFromOptions(program);
         const globalOptions = program.opts<{ resume?: string }>();
@@ -205,6 +212,7 @@ function createTopchesterProgram(): Command {
             json: options.json,
             outputJson: options.outputJson,
             resume: globalOptions.resume,
+            dangerouslyAutoApprove: options.dangerouslyAutoApprove,
           });
         } catch (error) {
           console.error(formatStartupError(error));

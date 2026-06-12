@@ -26,6 +26,7 @@ export interface RunCommandOptions {
   json?: boolean;
   outputJson?: string;
   resume?: string;
+  dangerouslyAutoApprove?: boolean;
 }
 
 interface RunJsonEvent {
@@ -62,12 +63,14 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
       json: Boolean(options.json),
       outputJson: options.outputJson,
       timeoutMs,
+      dangerouslyAutoApprove: Boolean(options.dangerouslyAutoApprove),
     },
     "run started"
   );
   pushJson(jsonEvents, runId, session.sessionId, "run.started", {
     workspaceRoot: runContext.workspaceRoot,
     timeoutMs,
+    dangerouslyAutoApprove: Boolean(options.dangerouslyAutoApprove),
   });
 
   try {
@@ -121,6 +124,7 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
       pushJson(jsonEvents, runId, session.sessionId, "user.message", { text: options.prompt, inputType: "prompt" });
       for await (const event of runtime.submitMessageStream(conversation, options.prompt, abortController.signal, {
         session,
+        userApprovalMode: options.dangerouslyAutoApprove ? "auto_allow" : "interactive",
       })) {
         await applyRuntimeEvent({
           event,
@@ -238,6 +242,11 @@ async function applyRuntimeEvent(options: {
 function printPlainEvent(event: AgentRuntimeEvent): void {
   if (event.type === "message") {
     console.log(event.text);
+    return;
+  }
+
+  if (event.type === "permission_auto_approved") {
+    console.log(event.label);
     return;
   }
 

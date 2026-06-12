@@ -184,6 +184,7 @@ Common examples:
 topchester run "Read data.txt and summarize it."
 topchester run --json "Edit greeting.txt and change Hello to Goodbye."
 topchester run --output-json /tmp/topchester-events.jsonl "Run /kb status"
+topchester run --dangerously-auto-approve --json "Run the benchmark task."
 topchester run /kb status
 topchester run "/skills list"
 topchester run "/skill code-review review this diff"
@@ -195,6 +196,7 @@ Options:
 - `--timeout <ms>` — stop the run after this many milliseconds.
 - `--json` — write JSONL run events to stdout.
 - `--output-json <path>` — write JSONL run events to a file.
+- `--dangerously-auto-approve` — auto-approve prompt-gated tool calls for this non-interactive run.
 
 Current behavior:
 
@@ -207,12 +209,15 @@ Current behavior:
 - Persists `plan_todo` task-plan events to the session log. Resume restores the latest visible plan without adding task-plan rows to future model context.
 - Persists child `task` sessions separately under the same project-local session root and records parent-child links in session metadata.
 - Includes a per-run `runId` in structured logs when `TOPCHESTER_LOG_LEVEL` enables logging.
+- Includes `dangerouslyAutoApprove` in `run.started` JSON metadata. Auto-approved permission prompts also emit `permission_auto_approved` runtime events and a plain output line.
 - Routes slash-command prompts such as `/kb status` through the same command dispatcher used by the TUI.
 - Routes skill slash commands such as `/skills list`, `/skills inspect <name>`, `/skills reload`, `/skill <name>`, and `/<skill-name>` through the shared command dispatcher.
 - Supports inline skill mentions such as `@code-review review this diff` in normal prompts.
 - Interactive commands such as `/model`, `/connect`, `/restore`, `/queue`, and `/steer` are TUI-only. In `topchester run`, they print a short message that says to use the interactive TUI.
 - Does not open the interactive TUI.
 - Exits non-zero on runtime failure or timeout.
+
+`--dangerously-auto-approve` is intended for benchmarks and automation that cannot answer approval prompts. It only bypasses prompts that would otherwise ask the user, currently approval-required `bash` calls. Hard policy rejects, deny rules, destructive command detection, workspace boundary failures, profile/tool-catalog denial, and hook `block` or `stop` responses still apply. Auto-approved bash commands are approved only for the current tool execution and are not written to `topchester.jsonc`.
 
 ## `topchester search`
 

@@ -402,6 +402,8 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
           visibleOnlyActionValues = new Set();
         }
         break;
+      case "permission_auto_approved":
+        break;
       case "tool_call":
         messages.push(toolCallMessage(event.call as unknown as ToolCall, event.label, undefined, event.diff));
         break;

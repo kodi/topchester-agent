@@ -1982,6 +1982,126 @@ describe("slash commands", () => {
     expect(prompts[1]).toContain("stdout:");
   });
 
+  it("auto-approves approval-required bash commands when runtime approval mode is enabled", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (prompts.length === 1) {
+            return {
+              text: "",
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+              toolCalls: [{ id: "bash-0", tool: "bash", args: { command: "node --version" }, source: "text-json" }],
+              toolProtocol: "text-json" as const,
+              protocolAttempts: [],
+              providerRejectedTools: false,
+              warnings: [],
+              openRouterRoutingApplied: false,
+            };
+          }
+
+          return {
+            text: "Node version reported.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+            toolCalls: [],
+            toolProtocol: "text-json" as const,
+            protocolAttempts: [],
+            providerRejectedTools: false,
+            warnings: [],
+            openRouterRoutingApplied: false,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "check node version", undefined, undefined, {
+      userApprovalMode: "auto_allow",
+    });
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "permission_auto_approved",
+          approvalMode: "auto_allow",
+          permissionMode: "bash",
+          command: "node --version",
+          reason: "bash policy requires approval for 'node --version'.",
+        }),
+        expect.objectContaining({ type: "tool_call", label: expect.stringContaining("bash: node --version") }),
+        expect.objectContaining({ type: "message", role: "assistant", text: "Node version reported." }),
+      ])
+    );
+    expect(prompts[1]).toContain("Tool result from bash via node --version:");
+    expect(prompts[1]).toContain("stdout:");
+  });
+
+  it("does not auto-approve destructive bash policy rejections", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (prompts.length === 1) {
+            return {
+              text: "",
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+              toolCalls: [{ id: "bash-0", tool: "bash", args: { command: "rm -rf dist" }, source: "text-json" }],
+              toolProtocol: "text-json" as const,
+              protocolAttempts: [],
+              providerRejectedTools: false,
+              warnings: [],
+              openRouterRoutingApplied: false,
+            };
+          }
+
+          return {
+            text: "Skipped destructive command.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+            toolCalls: [],
+            toolProtocol: "text-json" as const,
+            protocolAttempts: [],
+            providerRejectedTools: false,
+            warnings: [],
+            openRouterRoutingApplied: false,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "remove dist", undefined, undefined, {
+      userApprovalMode: "auto_allow",
+    });
+
+    expect(events.some((event) => event.type === "permission_auto_approved")).toBe(false);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool_call",
+          label:
+            "bash failed: bash policy rejected 'rm -rf dist' because it looks destructive: recursive forced deletion.",
+        }),
+        expect.objectContaining({ type: "message", role: "assistant", text: "Skipped destructive command." }),
+      ])
+    );
+    expect(prompts[1]).toContain("Error:");
+    expect(prompts[1]).toContain("recursive forced deletion");
+  });
+
   it("returns bash cancellation to the model when approval is denied", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     const prompts: string[] = [];
@@ -2161,6 +2281,8 @@ function createTestContext(workspaceRoot: string): AppContext {
     logger: {
       debug() {},
       trace() {},
+      info() {},
+      warn() {},
       error() {},
     } as unknown as AppContext["logger"],
   };

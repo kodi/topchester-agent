@@ -337,6 +337,8 @@ You can change the instruction filenames in project config:
 
 Deny rules win over allow rules. `allowExact` matches a complete command string, while `allow` matches a command prefix plus a following space. `allowExact`, `allow`, and `deny` arrays concatenate across config layers. Use `run_validator` for tests, lint, typecheck, build, check, format-check, and smoke whenever it fits.
 
+For benchmark or automation runs, `topchester run --dangerously-auto-approve` can auto-approve approval-required `bash` prompts without writing allow rules to `topchester.jsonc`. This is a runtime mode, not config. Deny rules, destructive command detection, workspace boundary checks, and hook blocks still win over auto-approval.
+
 ## MCP Stdio Servers
 
 Topchester can expose tools from configured local stdio MCP servers to the primary agent runtime. V0 starts enabled stdio servers before the first model call in a turn, lists their tools, exposes them as model-facing Topchester tools, and calls the already-connected MCP server when the model selects one.

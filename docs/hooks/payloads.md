@@ -45,7 +45,7 @@ Session fields are present when a session handle is available. Model fields are 
 }
 ```
 
-`PostToolUse` includes the same tool metadata plus `result`. `PermissionRequest` includes the pending approval context. `Stop` includes turn completion status.
+`PostToolUse` includes the same tool metadata plus `result`. `PermissionRequest` includes the pending approval context. During `topchester run --dangerously-auto-approve`, pending prompts that will be auto-approved include `approval_mode: "auto_allow"` and `auto_approved: true`. `Stop` includes turn completion status.
 
 ## Responses
 

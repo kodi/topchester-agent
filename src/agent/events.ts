@@ -6,6 +6,7 @@ import { type HookEventName } from "../config/index.js";
 export type AgentRuntimeEvent =
   | AgentStatusEvent
   | AgentMessageEvent
+  | AgentPermissionAutoApprovedEvent
   | AgentToolCallEvent
   | AgentHookStatusEvent
   | AgentTaskPlanEvent
@@ -27,6 +28,18 @@ export interface AgentMessageEvent {
   role: "system" | "assistant";
   text: string;
   meta?: string;
+}
+
+export interface AgentPermissionAutoApprovedEvent {
+  type: "permission_auto_approved";
+  permissionMode: "bash";
+  approvalMode: "auto_allow";
+  toolName: string;
+  command: string;
+  workdir: string;
+  reason: string;
+  label: string;
+  toolCallId?: string;
 }
 
 export interface AgentToolCallEvent {
@@ -138,6 +151,15 @@ export interface AgentSubagentFailedOptions extends AgentSubagentEventBaseOption
   error: string;
 }
 
+export interface AgentPermissionAutoApprovedOptions {
+  permissionMode: AgentPermissionAutoApprovedEvent["permissionMode"];
+  toolName: string;
+  command: string;
+  workdir: string;
+  reason: string;
+  toolCallId?: string;
+}
+
 export const ABORT_CHOICE_VALUE = "__topchester_abort__";
 
 export const agentEvent = {
@@ -153,6 +175,15 @@ export const agentEvent = {
     return meta === undefined
       ? { type: "message", role: "assistant", text }
       : { type: "message", role: "assistant", text, meta };
+  },
+
+  permissionAutoApproved(options: AgentPermissionAutoApprovedOptions): AgentPermissionAutoApprovedEvent {
+    return {
+      type: "permission_auto_approved",
+      approvalMode: "auto_allow",
+      label: `auto-approved ${options.permissionMode} permission: ${options.command}`,
+      ...options,
+    };
   },
 
   toolCall(call: ToolCall, label: string, diff?: string): AgentToolCallEvent {

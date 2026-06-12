@@ -543,6 +543,150 @@ describe("agent hooks", () => {
     expect(captureJson.env).toEqual({ TOPCHESTER_HOOK_EVENT: "PermissionRequest" });
   });
 
+  it("runs PermissionRequest hooks with auto-approval metadata before auto-allowing bash", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-auto-approval-"));
+    const script = join(workspace, "auto-required.cjs");
+    const capture = join(workspace, "auto-required-capture.json");
+    const prompts: string[] = [];
+
+    await writeFile(
+      script,
+      [
+        "const fs = require('node:fs');",
+        "let input = '';",
+        "process.stdin.setEncoding('utf8');",
+        "process.stdin.on('data', (chunk) => { input += chunk; });",
+        "process.stdin.on('end', () => {",
+        "  fs.writeFileSync(process.argv[2], JSON.stringify({",
+        "    payload: JSON.parse(input),",
+        "    env: { TOPCHESTER_HOOK_EVENT: process.env.TOPCHESTER_HOOK_EVENT }",
+        "  }));",
+        "});",
+      ].join("\n")
+    );
+
+    const runtime = new TopchesterAgentRuntime({
+      ...createHookTestContext(workspace, {
+        hooks: {
+          PermissionRequest: [{ command: `node ${shellQuote(script)} ${shellQuote(capture)}` }],
+        },
+      }),
+      modelGateway: {
+        async generateAgentStep(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (prompts.length === 1) {
+            return fakeAgentStep("", [
+              {
+                id: "bash-auto-approval-1",
+                source: "native" as const,
+                tool: "bash",
+                args: { command: "node --version", workdir: "." },
+              },
+            ]);
+          }
+
+          return fakeAgentStep("The command ran.");
+        },
+      } as AppContext["modelGateway"],
+    });
+
+    const events = await collectRuntimeEvents(
+      runtime.submitMessageStream([], "run local task", undefined, {
+        userApprovalMode: "auto_allow",
+      })
+    );
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "permission_auto_approved",
+          command: "node --version",
+          toolCallId: "bash-auto-approval-1",
+        }),
+        expect.objectContaining({ type: "tool_call", label: expect.stringContaining("bash: node --version") }),
+      ])
+    );
+    expect(prompts[1]).toContain("Tool result from bash via node --version:");
+
+    const captureJson = JSON.parse(await readFile(capture, "utf8")) as {
+      payload: Record<string, unknown>;
+      env: Record<string, unknown>;
+    };
+    expect(captureJson.payload).toMatchObject({
+      hook_event_name: "PermissionRequest",
+      event: "PermissionRequest",
+      notification_type: "permission_prompt",
+      permission_mode: "bash",
+      approval_mode: "auto_allow",
+      auto_approved: true,
+      source: "topchester",
+      command: "node --version",
+      tool: { name: "bash", callId: "bash-auto-approval-1" },
+    });
+    expect(captureJson.env).toEqual({ TOPCHESTER_HOOK_EVENT: "PermissionRequest" });
+  });
+
+  it("blocks auto-approved bash before execution when PermissionRequest returns block", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-auto-approval-block-"));
+    const script = join(workspace, "block.cjs");
+    const prompts: string[] = [];
+
+    await writeFile(
+      script,
+      [
+        "process.stdin.resume();",
+        "process.stdin.on('end', () => {",
+        "  process.stdout.write(JSON.stringify({ action: 'block', message: 'auto approval blocked by hook' }));",
+        "});",
+      ].join("\n")
+    );
+
+    const runtime = new TopchesterAgentRuntime({
+      ...createHookTestContext(workspace, {
+        hooks: {
+          PermissionRequest: [{ command: `node ${shellQuote(script)}` }],
+        },
+      }),
+      modelGateway: {
+        async generateAgentStep(request: { prompt: string }) {
+          prompts.push(request.prompt);
+
+          if (prompts.length === 1) {
+            return fakeAgentStep("", [
+              {
+                id: "bash-auto-approval-block-1",
+                source: "native" as const,
+                tool: "bash",
+                args: { command: "node --version", workdir: "." },
+              },
+            ]);
+          }
+
+          return fakeAgentStep("The command was blocked.");
+        },
+      } as AppContext["modelGateway"],
+    });
+
+    const events = await collectRuntimeEvents(
+      runtime.submitMessageStream([], "run local task", undefined, {
+        userApprovalMode: "auto_allow",
+      })
+    );
+
+    expect(events.some((event) => event.type === "permission_auto_approved")).toBe(false);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool_call",
+          label: "bash failed: auto approval blocked by hook",
+        }),
+        expect.objectContaining({ type: "message", role: "assistant", text: "The command was blocked." }),
+      ])
+    );
+    expect(prompts[1]).toContain("auto approval blocked by hook");
+  });
+
   it("stops the turn before interactive command approval when PermissionRequest returns stop", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-approval-stop-"));
     const script = join(workspace, "stop.cjs");

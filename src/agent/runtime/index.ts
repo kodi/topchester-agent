@@ -111,10 +111,13 @@ export interface AgentRuntime {
 
 export type AgentRuntimeEventSink = (event: AgentRuntimeEvent) => void | Promise<void>;
 
+export type UserApprovalMode = "interactive" | "auto_allow";
+
 export interface AgentRuntimeSubmitMessageOptions {
   onReasoning?: ModelReasoningSink;
   session?: SessionHandle;
   requestBashApproval?: (request: BashApprovalRequest) => Promise<BashApprovalDecision>;
+  userApprovalMode?: UserApprovalMode;
   steering?: RuntimeSteeringBuffer;
 }
 
@@ -1221,7 +1224,13 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       return { cancelled: false, approvedCommands, events: [] };
     }
 
-    if (!isBashApprovalRequired(decision) || !options.requestBashApproval) {
+    if (!isBashApprovalRequired(decision)) {
+      return { cancelled: false, approvedCommands, events: [] };
+    }
+
+    const approvalMode = options.userApprovalMode ?? "interactive";
+
+    if (approvalMode !== "auto_allow" && !options.requestBashApproval) {
       return { cancelled: false, approvedCommands, events: [] };
     }
 
@@ -1234,6 +1243,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         command,
         workdir: parsed.data.workdir,
         reason: decision.reason,
+        ...(approvalMode === "auto_allow" ? { approval_mode: "auto_allow", auto_approved: true } : {}),
       }),
       { toolName: call.tool, abortSignal }
     );
@@ -1256,6 +1266,37 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         reason: interruption.message,
         events,
       };
+    }
+
+    if (approvalMode === "auto_allow") {
+      const event = agentEvent.permissionAutoApproved({
+        permissionMode: "bash",
+        toolName: call.tool,
+        ...(toolCallId === undefined ? {} : { toolCallId }),
+        command,
+        workdir: parsed.data.workdir,
+        reason: decision.reason,
+      });
+
+      this.context.logger.info(
+        {
+          event: "permission_auto_approved",
+          approvalMode: "auto_allow",
+          permissionMode: "bash",
+          toolName: call.tool,
+          toolCallId,
+          command,
+          workdir: parsed.data.workdir,
+          reason: decision.reason,
+        },
+        "permission request auto-approved"
+      );
+
+      return { cancelled: false, approvedCommands: [...approvedCommands, command], events: [...events, event] };
+    }
+
+    if (!options.requestBashApproval) {
+      return { cancelled: false, approvedCommands, events };
     }
 
     const approval = await options.requestBashApproval({

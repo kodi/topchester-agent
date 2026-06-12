@@ -25,3 +25,5 @@ public: true
 `allowExact` matches a complete command string. `allow` and `deny` match command argv prefixes after parsing. Deny rules win.
 
 Use project config for commands that are safe and expected in the repo. Keep broad permissions out of shared config unless the whole team accepts that policy.
+
+For benchmark or automation runs, `topchester run --dangerously-auto-approve` can auto-approve approval-required `bash` prompts without adding allow rules to `topchester.jsonc`. This runtime mode does not bypass deny rules, destructive command detection, workspace boundary checks, or hook blocks.

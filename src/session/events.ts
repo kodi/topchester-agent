@@ -51,6 +51,18 @@ const messagePayloadSchema = z.object({
   meta: jsonValueSchema.optional(),
 });
 
+const permissionAutoApprovedPayloadSchema = z.object({
+  kind: z.literal("permission_auto_approved"),
+  permissionMode: z.literal("bash"),
+  approvalMode: z.literal("auto_allow"),
+  toolName: z.string(),
+  command: z.string(),
+  workdir: z.string(),
+  reason: z.string(),
+  label: z.string(),
+  toolCallId: z.string().optional(),
+});
+
 const toolCallPayloadSchema = z.object({
   kind: z.literal("tool_call"),
   label: z.string(),
@@ -140,6 +152,7 @@ const subagentFailedPayloadSchema = subagentLifecycleBasePayloadSchema.extend({
 
 export const sessionEventPayloadSchema = z.discriminatedUnion("kind", [
   messagePayloadSchema,
+  permissionAutoApprovedPayloadSchema,
   toolCallPayloadSchema,
   hookStatusPayloadSchema,
   taskPlanPayloadSchema,

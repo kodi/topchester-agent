@@ -10,6 +10,18 @@ export function runtimeEventToSessionPayload(event: AgentRuntimeEvent): SessionE
         text: event.text,
         ...(event.meta === undefined ? {} : { meta: event.meta }),
       };
+    case "permission_auto_approved":
+      return {
+        kind: "permission_auto_approved",
+        permissionMode: event.permissionMode,
+        approvalMode: event.approvalMode,
+        toolName: event.toolName,
+        command: event.command,
+        workdir: event.workdir,
+        reason: event.reason,
+        label: event.label,
+        ...(event.toolCallId === undefined ? {} : { toolCallId: event.toolCallId }),
+      };
     case "tool_call":
       return {
         kind: "tool_call",

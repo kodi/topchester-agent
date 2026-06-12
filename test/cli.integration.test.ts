@@ -187,6 +187,15 @@ describe("CLI integration", () => {
     expect(stdout).toContain("run one prompt or slash command");
   });
 
+  it("lists the dangerous auto-approve flag for non-interactive runs", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout } = await runCli(["run", "--help"], fixture.root);
+
+    expect(stdout).toContain("--dangerously-auto-approve");
+    expect(stdout).toContain("auto-approve prompt-gated tool calls");
+  });
+
   it("lists update as a top-level command", async () => {
     const fixture = await makeFixture();
 
@@ -881,6 +890,25 @@ describe("CLI integration", () => {
     const log = await readFile(join(fixture.workspace, ".agents", "topchester", "logs", "topchester.log"), "utf8");
     expect(log).toContain(`"runId":"${runId}"`);
     expect(log).toContain('"event":"slash_command_dispatch"');
+  });
+
+  it("records the dangerous auto-approve flag in run JSON metadata", async () => {
+    const fixture = await makeFixture();
+    await mkdir(join(fixture.workspace, "src"), { recursive: true });
+    await writeFile(join(fixture.workspace, "src", "index.ts"), "export const value = 1;\n");
+
+    const { stdout } = await runCli(
+      ["--workspace", fixture.workspace, "run", "--json", "--dangerously-auto-approve", "/kb", "status"],
+      fixture.root
+    );
+    const events = stdout
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { type: string; dangerouslyAutoApprove?: boolean });
+
+    expect(events.find((event) => event.type === "run.started")).toMatchObject({
+      dangerouslyAutoApprove: true,
+    });
   });
 
   it("initializes project knowledge folders", async () => {

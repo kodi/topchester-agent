@@ -246,10 +246,19 @@ Includes tool metadata and approval details:
     "callId": "call_..."
   },
   "notification_type": "permission_prompt",
-  "permission_mode": "",
+  "permission_mode": "bash",
   "command": "node scripts/local-task.js",
   "workdir": ".",
   "reason": "command requires approval"
+}
+```
+
+When `topchester run --dangerously-auto-approve` will auto-approve the pending prompt, the payload also includes:
+
+```json
+{
+  "approval_mode": "auto_allow",
+  "auto_approved": true
 }
 ```
 

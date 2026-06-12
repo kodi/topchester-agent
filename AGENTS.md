@@ -61,6 +61,6 @@ Use PLAIN FOLK SPEAK in user-facing text, even for highly technical product conc
 
 Never expose a user's full home directory path in user-facing docs, examples, comments, or responses. Use `~` for home-relative paths.
 
-Use ONLY mise tasks for repo checks and automation; never run pnpm tasks directly.
+Use ONLY mise tasks for repo checks and automation; never run pnpm tasks directly. Eg never run `pnpm exec oxfmt` use mise tasks.
 
 Use the fff MCP tools for all file search operations instead of default tools.

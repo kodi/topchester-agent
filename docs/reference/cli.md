@@ -98,3 +98,27 @@ topchester mcp add <server-name> --env KEY=VALUE -- <stdio server-command> [args
 `topchester fork --last` forks the newest project-local session. `topchester fork <session-id>` forks that exact project-local session. Bare `topchester fork` exits with a clear message until Topchester has a fork-specific saved-session picker.
 
 The fork gets a fresh top-level session ID, opens through the normal resume hydration path, and records source-session lineage in metadata. The source session log is left untouched. Child `task` session folders are not copied in V0.
+
+## `topchester run`
+
+Runs one prompt or slash command without opening the TUI.
+
+```sh
+topchester run "Read data.txt and summarize it."
+topchester run --json "Edit greeting.txt and change Hello to Goodbye."
+topchester run --output-json /tmp/topchester-events.jsonl "Run /kb status"
+topchester run --dangerously-auto-approve --json "Run the benchmark task."
+topchester run /kb status
+```
+
+Options:
+
+- `--model <model>` overrides the `agent.primary` model for this run.
+- `--timeout <ms>` stops the run after this many milliseconds.
+- `--json` writes JSONL run events to stdout.
+- `--output-json <path>` writes JSONL run events to a file.
+- `--dangerously-auto-approve` auto-approves prompt-gated tool calls for this non-interactive run.
+
+`--dangerously-auto-approve` is intended for benchmarks and automation that cannot answer approval prompts. It only bypasses prompts that would otherwise ask the user, currently approval-required `bash` calls. Hard policy rejects, deny rules, destructive command detection, workspace boundary failures, profile/tool-catalog denial, and hook `block` or `stop` responses still apply. Auto-approved bash commands are approved only for the current tool execution and are not written to `topchester.jsonc`.
+
+Run JSON includes a per-run `runId`, `dangerouslyAutoApprove` in the `run.started` event, and `permission_auto_approved` runtime events when a permission prompt is bypassed.
