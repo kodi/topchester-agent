@@ -46,6 +46,8 @@ import {
   formatAgentMessageMeta,
   formatContinuationInstruction,
   formatInvalidToolCallRepairInstruction,
+  formatNoEditCompletionFailure,
+  formatNoEditCompletionRepairInstruction,
   formatOpenPlanClosureInstruction,
   formatToolCallMessage,
   formatToolResultForPrompt,
@@ -351,6 +353,9 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     let toolProtocolOverride = readToolProtocolEnvOverride();
     let requestedPlanClosure = false;
     let invalidToolCallRepairs = 0;
+    let noEditCompletionRepairs = 0;
+    let hasSourceMutation = false;
+    const implementationTask = isImplementationTaskRequest(message);
     const projectInstructionToolState = { shownSourceKeys: new Set<string>() };
     const persistedProjectInstructionKeys = new Set<string>();
 
@@ -477,6 +482,31 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           const plan = this.taskPlan.get();
           const finalText = stripSuppressiblePlanTodoPrefix(result.text, plan) ?? result.text;
 
+          if (
+            implementationTask &&
+            !hasSourceMutation &&
+            canStillUseSourceEditTool(permissions) &&
+            noEditCompletionRepairs < 2
+          ) {
+            noEditCompletionRepairs += 1;
+            nextPrompt = `${nextPrompt}\n\n${formatNoEditCompletionRepairInstruction(result.toolProtocol, finalText)}`;
+            continue;
+          }
+
+          if (implementationTask && !hasSourceMutation && canStillUseSourceEditTool(permissions)) {
+            const finalMessage = formatNoEditCompletionFailure(finalText);
+
+            yield agentEvent.assistantMessage(
+              finalMessage,
+              formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
+            );
+            for await (const event of this.streamStopHookEvents(session, finalMessage, "failed", abortSignal)) {
+              yield event;
+            }
+            yield agentEvent.status("ready");
+            return;
+          }
+
           if (hasOpenTaskPlan(plan)) {
             if (!requestedPlanClosure) {
               requestedPlanClosure = true;
@@ -600,6 +630,9 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             )) {
               yield event;
             }
+            if (isSourceMutationResult(toolResult)) {
+              hasSourceMutation = true;
+            }
             yield agentEvent.toolCall(
               call,
               formatToolCallMessage(call, toolResult),
@@ -716,6 +749,9 @@ export class TopchesterAgentRuntime implements AgentRuntime {
               persistedProjectInstructionKeys
             )) {
               yield event;
+            }
+            if (isSourceMutationResult(toolResult)) {
+              hasSourceMutation = true;
             }
             yield agentEvent.toolCall(
               call,
@@ -864,6 +900,24 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         for (const event of createInstructionContextEventsFromToolResult(toolResult, persistedProjectInstructionKeys)) {
           yield event;
         }
+
+        if (executableToolCall.tool === "finish_task") {
+          const finishError = validateFinishTaskResult(toolResult, {
+            implementationTask,
+            hasSourceMutation,
+            hasOpenPlan: hasOpenTaskPlan(this.taskPlan.get()),
+            canUseSourceEditTool: canStillUseSourceEditTool(permissions),
+          });
+
+          if (finishError) {
+            toolResult = createToolErrorResult(executableToolCall.tool, finishError);
+          }
+        }
+
+        if (isSourceMutationResult(toolResult)) {
+          hasSourceMutation = true;
+        }
+
         yield agentEvent.toolCall(
           executableToolCall,
           formatToolCallMessage(executableToolCall, toolResult),
@@ -893,6 +947,20 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             yield agentEvent.systemMessage(postHook.stopped.message);
           }
 
+          yield agentEvent.status("ready");
+          return;
+        }
+
+        if (!isToolErrorResult(toolResult) && toolResult.tool === "finish_task") {
+          const finalMessage = toolResult.finalResponse.trim() || "Task complete.";
+
+          yield agentEvent.assistantMessage(
+            finalMessage,
+            formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
+          );
+          for await (const event of this.streamStopHookEvents(session, finalMessage, "completed", abortSignal)) {
+            yield event;
+          }
           yield agentEvent.status("ready");
           return;
         }
@@ -1460,6 +1528,76 @@ function getToolCallDisplayDiff(result: ToolExecutionResult<ToolResult>): string
     return result.diff;
   }
 
+  if (result.tool === "apply_patch" && !isToolErrorResult(result) && result.diffs.length > 0) {
+    return result.diffs.join("\n");
+  }
+
+  return undefined;
+}
+
+function isImplementationTaskRequest(message: string): boolean {
+  return /\b(implement|complete|fix|add|update|change|modify|refactor|write|create|wire|hook|support|benchmark|task end-to-end)\b/iu.test(
+    message
+  );
+}
+
+function canStillUseSourceEditTool(permissions: ToolPermissionView): boolean {
+  return (
+    isToolAllowed(permissions, "edit_file") ||
+    isToolAllowed(permissions, "write_file") ||
+    isToolAllowed(permissions, "apply_patch")
+  );
+}
+
+function isSourceMutationResult(result: ToolExecutionResult<ToolResult>): boolean {
+  if (isToolErrorResult(result)) {
+    return false;
+  }
+
+  if (result.tool === "edit_file") {
+    return isSourcePath(result.path);
+  }
+
+  if (result.tool === "write_file") {
+    return isSourcePath(result.path);
+  }
+
+  if (result.tool === "apply_patch") {
+    return result.changedFiles.some(isSourcePath);
+  }
+
+  return false;
+}
+
+function isSourcePath(path: string | undefined): boolean {
+  if (!path) {
+    return false;
+  }
+
+  return !path.startsWith(".agents/") && !path.startsWith(".git/") && !path.startsWith("topchester-kb/");
+}
+
+function validateFinishTaskResult(
+  result: ToolExecutionResult<ToolResult>,
+  state: {
+    implementationTask: boolean;
+    hasSourceMutation: boolean;
+    hasOpenPlan: boolean;
+    canUseSourceEditTool: boolean;
+  }
+): string | undefined {
+  if (isToolErrorResult(result) || result.tool !== "finish_task") {
+    return undefined;
+  }
+
+  if (state.hasOpenPlan) {
+    return "finish_task rejected because the visible plan is still open. Close or update plan_todo first.";
+  }
+
+  if (state.implementationTask && state.canUseSourceEditTool && !state.hasSourceMutation) {
+    return "finish_task rejected because this appears to be an implementation task but no successful source-file edit has occurred. Use edit_file, write_file, or apply_patch first, unless you can prove no code change is required.";
+  }
+
   return undefined;
 }
 
@@ -1502,7 +1640,7 @@ function createInstructionContextEventsFromToolResult(
   result: ToolExecutionResult<ToolResult>,
   persistedKeys: Set<string>
 ): AgentRuntimeEvent[] {
-  if (isToolErrorResult(result) || !result.projectInstructions) {
+  if (isToolErrorResult(result) || !("projectInstructions" in result) || !result.projectInstructions) {
     return [];
   }
 

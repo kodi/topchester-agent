@@ -25,9 +25,11 @@ export interface TurnTokenUsageTotals {
  * error block.
  */
 export function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult>): string {
-  const path = result.path ? ` ${JSON.stringify(result.path)}` : "";
+  const resultPath = "path" in result && typeof result.path === "string" ? result.path : undefined;
+  const resultWarning = "warning" in result && typeof result.warning === "string" ? result.warning : undefined;
+  const path = resultPath ? ` ${JSON.stringify(resultPath)}` : "";
   const command = "command" in result && result.command ? ` via ${result.command}` : "";
-  const warning = result.warning ? `\nWarning: ${result.warning}` : "";
+  const warning = resultWarning ? `\nWarning: ${resultWarning}` : "";
 
   if (isToolErrorResult(result)) {
     return [
@@ -65,6 +67,10 @@ export function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult
     return [`Tool result from ${result.tool}:`, result.content].join("\n");
   }
 
+  if (result.tool === "finish_task") {
+    return [`Tool result from ${result.tool}:`, result.content].join("\n");
+  }
+
   if (result.tool === "edit_file" && "diff" in result) {
     return [
       `Tool result from ${result.tool}${path}:`,
@@ -94,6 +100,17 @@ export function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult
     ]
       .filter(Boolean)
       .join("\n");
+  }
+
+  if (result.tool === "apply_patch") {
+    return [
+      `Tool result from ${result.tool}:`,
+      `changed_files: ${result.changedFiles.join(", ")}`,
+      `kb_state: ${result.kbState}`,
+      result.diffs.length > 0 ? "```diff" : "```",
+      result.diffs.length > 0 ? result.diffs.map(formatDiffForPrompt).join("\n") : result.content,
+      "```",
+    ].join("\n");
   }
 
   if (result.tool === "inspect_command") {
@@ -311,6 +328,37 @@ export function formatInvalidToolCallRepairInstruction(rejection: ToolCallParseR
     .join("\n");
 }
 
+export function formatNoEditCompletionRepairInstruction(protocol: ToolProtocol, draftAnswer: string): string {
+  const toolInstruction =
+    protocol === "text-xml"
+      ? "Reply now with only one XML tool call that edits source files, or with a tool call that gathers the missing evidence."
+      : protocol === "text-json"
+        ? "Reply now with only one tool JSON object that edits source files, or with a tool call that gathers the missing evidence."
+        : "Use the available tool calling path now to edit source files, or gather the missing evidence.";
+  const trimmedDraft = draftAnswer.trim();
+
+  return [
+    "The current task appears to require repository implementation work, but this turn has no successful source-file edit yet.",
+    "Do not finish by describing intended changes as if they were made. A prose summary is not an implementation.",
+    "Use edit_file, write_file, apply_patch, or another mutating tool to make the actual source change. If no code change is truly required, use tools to gather evidence and then explain that specifically.",
+    toolInstruction,
+    trimmedDraft ? `Previous draft answer that was rejected as unsupported:\n${trimmedDraft}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function formatNoEditCompletionFailure(draftAnswer: string): string {
+  const trimmedDraft = draftAnswer.trim();
+
+  return [
+    "I could not complete the implementation because no successful source-file edit occurred in this turn.",
+    trimmedDraft ? `The model tried to finish with this unsupported summary:\n${trimmedDraft}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function getTextToolCallSources(protocol: ToolProtocol): readonly ToolCallSource[] {
   return protocol === "text-xml" ? ["text-xml"] : protocol === "text-json" ? ["text-json"] : ["text-json", "text-xml"];
 }
@@ -345,8 +393,12 @@ export function formatToolCallMessage(call: ToolCall, result?: ToolExecutionResu
       return `find_file: ${call.args.query} in ${call.args.path}`;
     case "edit_file":
       return `edit_file: ${call.args.path}${formatEditFileChangeSummary(result)}`;
+    case "apply_patch":
+      return `apply_patch${formatApplyPatchChangeSummary(result)}`;
     case "write_file":
       return `write_file: ${call.args.path}${formatWriteFileChangeSummary(result)}`;
+    case "finish_task":
+      return "finish_task";
     case "git_status":
       return `git_status: ${result?.tool === "git_status" ? `${result.files.length} changed` : call.args.path}`;
     case "git_diff":
@@ -464,6 +516,14 @@ function formatWriteFileChangeSummary(result: ToolExecutionResult<ToolResult> | 
   return ` (${result.writeEvent.writeSummary})`;
 }
 
+function formatApplyPatchChangeSummary(result: ToolExecutionResult<ToolResult> | undefined): string {
+  if (result?.tool !== "apply_patch" || isToolErrorResult(result)) {
+    return "";
+  }
+
+  return ` (${result.changedFiles.length} files)`;
+}
+
 function formatDiffForPrompt(diff: string): string {
   return diff
     .split("\n")
@@ -479,6 +539,7 @@ function isProjectInstructionRetryResult(
 } {
   return Boolean(
     !isToolErrorResult(result) &&
+    "projectInstructions" in result &&
     result.projectInstructions &&
     (result.tool === "edit_file" || result.tool === "write_file")
   );

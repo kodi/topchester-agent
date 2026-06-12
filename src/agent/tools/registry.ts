@@ -1,5 +1,7 @@
 import { bashTool } from "./bash.js";
+import { applyPatchTool } from "./apply-patch.js";
 import { editFileTool } from "./edit-file.js";
+import { finishTaskTool } from "./finish-task.js";
 import { findFileTool } from "./find-file.js";
 import { gitAddTool, gitCommitTool, gitDiffTool, gitLogTool, gitStatusTool } from "./git.js";
 import { grepTool } from "./grep.js";
@@ -20,6 +22,7 @@ export const toolRegistry = {
   [listFilesTool.name]: listFilesTool,
   [grepTool.name]: grepTool,
   [findFileTool.name]: findFileTool,
+  [applyPatchTool.name]: applyPatchTool,
   [editFileTool.name]: editFileTool,
   [writeFileTool.name]: writeFileTool,
   [gitStatusTool.name]: gitStatusTool,
@@ -30,6 +33,7 @@ export const toolRegistry = {
   [inspectCommandTool.name]: inspectCommandTool,
   [runValidatorTool.name]: runValidatorTool,
   [bashTool.name]: bashTool,
+  [finishTaskTool.name]: finishTaskTool,
   [skillsListTool.name]: skillsListTool,
   [skillViewTool.name]: skillViewTool,
 } as const;

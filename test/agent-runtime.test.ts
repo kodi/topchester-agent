@@ -192,6 +192,89 @@ describe("agent runtime project instructions", () => {
     expect(await readFile(join(workspace, "src", "value.txt"), "utf8")).toBe("enabled=true\n");
   });
 
+  it("rejects implementation completion when no source file was edited", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText(request: { prompt: string }) {
+          prompts.push(request.prompt);
+          return {
+            text: "Implemented the requested change in src/value.ts.",
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "implement the requested change");
+    const finalMessage = events.findLast((event) => event.type === "message" && event.role === "assistant");
+
+    expect(prompts).toHaveLength(3);
+    expect(prompts[1]).toContain("no successful source-file edit yet");
+    expect(prompts[2]).toContain("Previous draft answer that was rejected as unsupported");
+    expect(finalMessage).toMatchObject({
+      type: "message",
+      role: "assistant",
+      text: expect.stringContaining("no successful source-file edit occurred"),
+    });
+  });
+
+  it("accepts finish_task after a source edit", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "src", "value.ts"), "export const value = 1;\n");
+    let step = 0;
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText() {
+          step += 1;
+          if (step === 1) {
+            return {
+              text: JSON.stringify({
+                tool: "edit_file",
+                args: {
+                  path: "src/value.ts",
+                  edits: [{ old_text: "export const value = 1;\n", new_text: "export const value = 2;\n" }],
+                },
+              }),
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          return {
+            text: JSON.stringify({
+              tool: "finish_task",
+              args: {
+                final_response: "Changed src/value.ts.",
+                files_changed: ["src/value.ts"],
+                validation: [],
+                remaining_issues: [],
+              },
+            }),
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "update the value");
+
+    expect(await readFile(join(workspace, "src", "value.ts"), "utf8")).toBe("export const value = 2;\n");
+    expect(events).toContainEqual(expect.objectContaining({ type: "tool_call", label: "finish_task" }));
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "message", role: "assistant", text: "Changed src/value.ts." })
+    );
+  });
+
   it("exposes configured stdio MCP tools to the runtime loop and feeds results back to the model", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
     const prompts: string[] = [];

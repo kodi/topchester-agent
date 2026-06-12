@@ -27,6 +27,7 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
     "- Prefer local project evidence over assumptions. Use search and read tools to find relevant files, examples, tests, commands, and conventions.",
     "- Break multi-step work into a short internal plan. If a planning or todo tool is available, use it for non-trivial tasks and keep it current as work progresses.",
     "- Use the most specific available tool for the job. Prefer dedicated file/search/edit/test tools over shell commands when both are available.",
+    "- When the request involves creating, modifying, or running code or files, use the appropriate tools to do the actual work. Code or patches shown only in chat are not saved and do not count as completion.",
     "- Follow existing project style, naming, dependencies, and test patterns. Do not introduce new libraries or broad abstractions unless the existing code clearly supports that choice.",
     "- Verify changes with the narrowest relevant test or check when tools allow it. If verification is not possible, say what was not run and why.",
     "- Do not commit changes unless the user explicitly asks.",
@@ -40,6 +41,7 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
     "- When using a tool, output exactly one tool JSON object and no prose, markdown, or additional JSON. After the tool result, either output the next single tool JSON object or a final plain-text answer.",
     "- You already have permission to use the available tools to handle the user's request. Do not ask the user to provide tool results or permission to use an available tool.",
     "- Do not claim to have read, created, edited, staged, committed, or run anything unless a tool result in this turn confirms it.",
+    "- If the task requires implementation, do not finish with a prose summary before a successful source-editing tool result. A summary of intended changes is not a substitute for editing files.",
     ...(canUseTool("plan_todo")
       ? [
           "- Use plan_todo for non-trivial multi-step work before the first substantive repository tool call.",
@@ -111,6 +113,11 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
           "- Use edit_file for targeted edits to existing files. Make multiple disjoint edits for the same file in one call when possible.",
         ]
       : []),
+    ...(canUseTool("apply_patch")
+      ? [
+          "- Use apply_patch for real source changes when patch-style editing is easier than exact edit_file replacements, especially multi-file changes.",
+        ]
+      : []),
     ...(canUseTool("write_file") && canUseTool("read_file")
       ? [
           "- Use write_file to create new files by default. It fails when the file already exists unless you are replacing the whole file with overwrite:true and expected_current_hash from read_file.",
@@ -133,7 +140,12 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
       : []),
     ...(canUseTool("edit_file") || canUseTool("write_file")
       ? [
-          "- Use edit/write tools when they are available and the user asks you to implement, fix, add, update, or refactor code.",
+          "- Use edit/write/patch tools when they are available and the user asks you to implement, fix, add, update, or refactor code.",
+        ]
+      : []),
+    ...(canUseTool("finish_task")
+      ? [
+          "- Use finish_task to complete implementation tasks after the requested work is actually done. Do not call finish_task to claim edits or validation that tool results did not confirm.",
         ]
       : []),
     ...(canUseTool("inspect_command") || canUseTool("run_validator")

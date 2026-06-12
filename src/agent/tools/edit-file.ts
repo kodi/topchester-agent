@@ -58,6 +58,8 @@ export const editFileTool = defineTool({
   prompt:
     'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. expected_current_hash is optional and must be the current/pre-edit hash returned by the latest read_file for that file; never invent it or use a predicted after-edit hash. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_current_hash":"sha256:current-file-hash-from-read_file","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
   argsSchema: editFileArgsSchema,
+  mutatesWorkspace: true,
+  requiresExclusiveWorkspace: true,
   execute: async (context, args) => {
     if (
       isProtectedConfiguredProjectInstructionTarget(context, args.path) &&

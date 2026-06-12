@@ -62,6 +62,8 @@ export const writeFileTool = defineTool({
   prompt:
     'write_file: create a new UTF-8 file inside the workspace by default; use edit_file for targeted changes to existing files; pass create_parent_dirs:true only when creating the folder path is intended. Replace an existing whole file only with overwrite:true and expected_current_hash set to the current/pre-write hash returned by the latest read_file for that file; never invent it or use a predicted after-write hash. To create a file, reply with only JSON: {"tool":"write_file","args":{"path":"test/example.test.ts","content":"import { it, expect } from \\"vitest\\";\\n\\nit(\\"works\\", () => {\\n  expect(true).toBe(true);\\n});\\n","create_parent_dirs":true}}',
   argsSchema: writeFileArgsSchema,
+  mutatesWorkspace: true,
+  requiresExclusiveWorkspace: true,
   execute: async (context, args) => {
     if (
       isProtectedConfiguredProjectInstructionTarget(context, args.path) &&

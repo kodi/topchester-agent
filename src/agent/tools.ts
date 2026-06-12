@@ -18,6 +18,13 @@ export {
   type TaskPlanSummary,
 } from "./task-plan.js";
 export {
+  applyPatchArgsSchema,
+  applyPatchTool,
+  type ApplyPatchToolArgs,
+  type ApplyPatchToolCall,
+  type ApplyPatchToolResult,
+} from "./tools/apply-patch.js";
+export {
   applyExactEdits,
   editFileTool,
   editWorkspaceFile,
@@ -36,6 +43,13 @@ export {
   type WriteFileToolResult,
   type WriteFileToolArgs,
 } from "./tools/write-file.js";
+export {
+  finishTaskArgsSchema,
+  finishTaskTool,
+  type FinishTaskToolArgs,
+  type FinishTaskToolCall,
+  type FinishTaskToolResult,
+} from "./tools/finish-task.js";
 export {
   findFileTool,
   findWorkspaceFilesByName,

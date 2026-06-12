@@ -110,6 +110,20 @@ describe("agent tools", () => {
     });
   });
 
+  it("parses apply_patch tool calls from JSON", () => {
+    expect(
+      parseToolCall(
+        '{"tool":"apply_patch","args":{"patch":"*** Begin Patch\\n*** Update File: src/example.ts\\n@@\\n-const enabled = false;\\n+const enabled = true;\\n*** End Patch\\n"}}'
+      )
+    ).toEqual({
+      tool: "apply_patch",
+      args: {
+        patch:
+          "*** Begin Patch\n*** Update File: src/example.ts\n@@\n-const enabled = false;\n+const enabled = true;\n*** End Patch\n",
+      },
+    });
+  });
+
   it("parses write_file tool calls from JSON", () => {
     expect(
       parseToolCall(
@@ -121,6 +135,22 @@ describe("agent tools", () => {
         path: "test/example.test.ts",
         content: 'it("works", () => {});\n',
         create_parent_dirs: true,
+      },
+    });
+  });
+
+  it("parses finish_task tool calls from JSON", () => {
+    expect(
+      parseToolCall(
+        '{"tool":"finish_task","args":{"final_response":"Changed src/example.ts.","files_changed":["src/example.ts"],"validation":["pnpm test"],"remaining_issues":[]}}'
+      )
+    ).toEqual({
+      tool: "finish_task",
+      args: {
+        final_response: "Changed src/example.ts.",
+        files_changed: ["src/example.ts"],
+        validation: ["pnpm test"],
+        remaining_issues: [],
       },
     });
   });
@@ -443,6 +473,42 @@ describe("agent tools", () => {
     });
   });
 
+  it("applies patch-style updates and creates files", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "src", "example.ts"), "const enabled = false;\n");
+    const call = parseToolCall(
+      JSON.stringify({
+        tool: "apply_patch",
+        args: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: src/example.ts",
+            "@@",
+            "-const enabled = false;",
+            "+const enabled = true;",
+            "*** Add File: src/new.ts",
+            "+export const value = 1;",
+            "*** End Patch",
+            "",
+          ].join("\n"),
+        },
+      })
+    );
+
+    if (!call) {
+      throw new Error("Expected apply_patch tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call);
+
+    expect(result.tool).toBe("apply_patch");
+    expect(result.content).toContain("Edited src/example.ts");
+    expect(result.content).toContain("Created src/new.ts");
+    expect(await readFile(join(workspace, "src", "example.ts"), "utf8")).toBe("const enabled = true;\n");
+    expect(await readFile(join(workspace, "src", "new.ts"), "utf8")).toBe("export const value = 1;\n");
+  });
+
   it("loads nested project instructions once for path-scoped read tools", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
     await mkdir(join(workspace, "src"), { recursive: true });
@@ -711,6 +777,7 @@ describe("agent tools", () => {
       'list_files: list files and directories inside the workspace; top-level by default, recursive only when requested, with "/" after directory names. To use it, reply with only JSON: {"tool":"list_files","args":{"path":"src","recursive":false,"limit":500}}',
       'grep: search text inside file contents in the workspace; output lines are the files containing the matched text, and paths mentioned inside those lines are not confirmed files unless checked with find_file or read_file. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
       'find_file: find existing files by fuzzy path or filename inside the workspace; matches may appear in the middle of a filename, and results are file paths, not file contents. To use it, reply with only JSON: {"tool":"find_file","args":{"query":"runtime"}}',
+      'apply_patch: apply a patch to files inside the workspace. Use it for real source changes, especially multi-file edits. The patch must start with "*** Begin Patch" and end with "*** End Patch"; use "*** Add File: path", "*** Update File: path", or "*** Delete File: path" sections. For updates, include @@ hunks with context/removal/addition lines. Example: {"tool":"apply_patch","args":{"patch":"*** Begin Patch\\n*** Update File: src/example.ts\\n@@\\n-const enabled = false;\\n+const enabled = true;\\n*** End Patch\\n"}}',
       'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. expected_current_hash is optional and must be the current/pre-edit hash returned by the latest read_file for that file; never invent it or use a predicted after-edit hash. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_current_hash":"sha256:current-file-hash-from-read_file","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
       'write_file: create a new UTF-8 file inside the workspace by default; use edit_file for targeted changes to existing files; pass create_parent_dirs:true only when creating the folder path is intended. Replace an existing whole file only with overwrite:true and expected_current_hash set to the current/pre-write hash returned by the latest read_file for that file; never invent it or use a predicted after-write hash. To create a file, reply with only JSON: {"tool":"write_file","args":{"path":"test/example.test.ts","content":"import { it, expect } from \\"vitest\\";\\n\\nit(\\"works\\", () => {\\n  expect(true).toBe(true);\\n});\\n","create_parent_dirs":true}}',
       'git_status: inspect branch, head, clean state, staged, unstaged, and untracked files without parsing shell output. To use it, reply with only JSON: {"tool":"git_status","args":{"path":".","include_untracked":true}}',
@@ -721,6 +788,7 @@ describe("agent tools", () => {
       'inspect_command: run a safe read-only discovery command inside the workspace for quick repo orientation; prefer read_file, list_files, grep, and find_file for exact file tasks, and do not use it for builds, tests, installs, network, shell scripts, edits, or user-requested specific commands such as node --version, which node, or pnpm --version. To use it, reply with only JSON: {"tool":"inspect_command","args":{"command":"pwd && rg --files docs/plans | head -20","workdir":".","timeout_ms":10000}}',
       'run_validator: run a strict verification command after edits, such as tests, lint, typecheck, build, check, format-check, or smoke; format means check-only commands such as pnpm format-check, not mutating formatter commands such as pnpm format; failed exits are useful evidence and should be inspected before retrying. To use it, reply with only JSON: {"tool":"run_validator","args":{"command":"pnpm test test/tools.test.ts","validator":"test","workdir":".","timeout_ms":120000}}',
       'bash: run an approval-gated shell command for terminal work that needs shell syntax, one-off user-requested commands, package manager commands, scripts, pipelines, redirects, or chaining. Prefer run_validator for tests, lint, typecheck, build, check, format-check, and smoke. To use it, reply with only JSON: {"tool":"bash","args":{"command":"printf hi | wc -c","workdir":".","timeout_ms":120000,"description":"count bytes"}}',
+      'finish_task: complete the task with a brief final response only after tool results prove the work is done. For implementation tasks, do not call finish_task until source files were changed by edit_file, write_file, apply_patch, or another mutating tool, unless no code change is truly required. Example: {"tool":"finish_task","args":{"final_response":"Changed src/foo.ts and ran pnpm test foo.test.ts.","files_changed":["src/foo.ts"],"validation":["pnpm test foo.test.ts"],"remaining_issues":[]}}',
       'skills_list: List available on-demand skills without loading full skill bodies. Args: {}. Example: {"tool":"skills_list","args":{}}',
       'skill_view: Load full SKILL.md content for one skill by name. Args: {"name":"skill-name"}. Example: {"tool":"skill_view","args":{"name":"code-review"}}',
     ]);

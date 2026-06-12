@@ -455,6 +455,8 @@ def _benchmark_instruction(instruction: str) -> str:
 
 Complete the task end-to-end in the repository at /app. Do not stop after analysis, do not ask for confirmation, and do not offer to continue later. Make the necessary code and test changes directly.
 
+This is an implementation benchmark. A final response without a successful source-file edit is incomplete unless the task truly requires no code change. Do not describe intended changes as if they were made. Use edit_file, write_file, apply_patch, or another mutating tool to make real changes before finalizing.
+
 Use the project knowledge base that has already been prepared. Inspect the repository as needed, modify files, and run focused validation when practical. If validation is too expensive or blocked, report exactly what you ran or why it could not be run.
 
 Your final response should be brief and must include:
