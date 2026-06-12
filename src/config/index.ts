@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve, win32 } from "node:path";
+import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
 import { z } from "zod";
 import { CODEX_BACKEND_BASE_URL } from "../auth/codex.js";
 
@@ -351,6 +351,15 @@ export interface ReasoningEffortUpdateResult {
   reasoningEffort?: ReasoningEffort;
 }
 
+export interface McpStdioServerUpdateResult {
+  path: string;
+  serverName: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  replaced: boolean;
+}
+
 export function getGlobalTopchesterConfigDir(): string {
   return join(process.env.HOME ?? homedir(), ".config", "topchester");
 }
@@ -659,6 +668,52 @@ export async function addProjectBashAllowExactRule(
   };
 }
 
+export async function addMcpStdioServerConfig(
+  configPath: string,
+  options: {
+    serverName: string;
+    command: string;
+    args?: string[];
+    env?: Record<string, string>;
+  }
+): Promise<McpStdioServerUpdateResult> {
+  const serverName = options.serverName.trim();
+  if (!isValidMcpServerName(serverName)) {
+    throw new Error(`invalid MCP server name "${options.serverName}" (use letters, numbers, "-", "_")`);
+  }
+
+  const command = options.command.trim();
+  if (!command) {
+    throw new Error("MCP stdio command is required.");
+  }
+
+  const config = readConfigObject(configPath);
+  const mcp = ensurePlainObjectProperty(config, "mcp");
+  const replaced = mcp[serverName] !== undefined;
+  const env = options.env ?? {};
+  const server = {
+    type: "stdio" as const,
+    command,
+    args: options.args ?? [],
+    ...(Object.keys(env).length > 0 ? { env } : {}),
+  };
+
+  mcp[serverName] = server;
+
+  mkdirSync(dirname(configPath), { recursive: true, mode: 0o700 });
+  parseConfigFile(configPath, config);
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  return {
+    path: configPath,
+    serverName,
+    command,
+    args: server.args,
+    env,
+    replaced,
+  };
+}
+
 function readProjectConfigObject(configPath: string): Record<string, unknown> {
   return readConfigObject(configPath);
 }
@@ -717,6 +772,10 @@ function ensureStringArrayProperty(parent: Record<string, unknown>, key: string)
   }
 
   return value;
+}
+
+function isValidMcpServerName(name: string): boolean {
+  return name.length > 0 && /^[A-Za-z0-9_-]+$/u.test(name);
 }
 
 function readConfigFile(path: string): unknown {

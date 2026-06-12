@@ -605,6 +605,66 @@ describe("CLI integration", () => {
     expect(stdout).toContain(`knowledge: ${join(fixture.workspace, "topchester-kb")} [missing]`);
   });
 
+  it("adds a stdio MCP server to the selected config file", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout, stderr } = await runCli(
+      [
+        "--config",
+        fixture.config,
+        "mcp",
+        "add",
+        "github",
+        "--env",
+        "GITHUB_TOKEN=secret",
+        "--env",
+        "MODE=stdio",
+        "--",
+        "node",
+        "server.js",
+        "--flag",
+      ],
+      fixture.root
+    );
+
+    const config = JSON.parse(await readFile(fixture.config, "utf8"));
+
+    expect(stderr).toBe("");
+    expect(stdout).toContain('Added MCP stdio server "github".');
+    expect(stdout).toContain(`config: ${fixture.config}`);
+    expect(config.mcp.github).toEqual({
+      type: "stdio",
+      command: "node",
+      args: ["server.js", "--flag"],
+      env: {
+        GITHUB_TOKEN: "secret",
+        MODE: "stdio",
+      },
+    });
+  });
+
+  it("replaces an existing stdio MCP server entry", async () => {
+    const fixture = await makeFixture();
+
+    await runCli(["--config", fixture.config, "mcp", "add", "fixture", "--", "node", "old.js"], fixture.root);
+    const { stdout } = await runCli(
+      ["--config", fixture.config, "mcp", "add", "fixture", "--env", "VALUE=new", "--", "node", "new.js"],
+      fixture.root
+    );
+
+    const config = JSON.parse(await readFile(fixture.config, "utf8"));
+
+    expect(stdout).toContain('Updated MCP stdio server "fixture".');
+    expect(config.mcp.fixture).toEqual({
+      type: "stdio",
+      command: "node",
+      args: ["new.js"],
+      env: {
+        VALUE: "new",
+      },
+    });
+  });
+
   it("shows redacted Codex OAuth status in auth status and info", async () => {
     const fixture = await makeFixture();
     const authPath = join(fixture.root, ".config", "topchester", "auth.json");

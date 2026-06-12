@@ -22,6 +22,8 @@ topchester run "/skill code-review review this diff"
 topchester search "status bar"
 topchester auth login codex --device
 topchester auth status
+topchester mcp add filesystem -- npx -y @modelcontextprotocol/server-filesystem .
+topchester mcp add github --env GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx -- npx -y @modelcontextprotocol/server-github
 
 topchester kb init
 topchester kb sync
@@ -49,6 +51,7 @@ topchester kb reset
 | `topchester auth`       | Manage global provider authentication.                   |
 | `topchester fork`       | Fork a saved project-local session and open the fork.    |
 | `topchester info`       | Show config validity and local runtime hints.            |
+| `topchester mcp add`    | Add or replace a stdio MCP server in config.             |
 | `topchester run`        | Run one prompt or slash command without opening the TUI. |
 | `topchester search`     | Search compiled L1 file knowledge.                       |
 | `topchester kb init`    | Create the project knowledge folders.                    |
@@ -79,6 +82,16 @@ On success, Topchester stores OAuth tokens in `~/.config/topchester/auth.json`, 
 ## `topchester auth status`
 
 Shows the global auth store path and redacted provider auth state. It reports whether stored access and refresh tokens exist, whether a provider needs refresh or relogin, and never prints token values.
+
+## `topchester mcp add`
+
+Adds or replaces a stdio MCP server entry:
+
+```sh
+topchester mcp add <server-name> --env KEY=VALUE -- <stdio server-command> [args...]
+```
+
+`--env KEY=VALUE` can be repeated. Server names use letters, numbers, `-`, and `_`. The command writes to `--config` when provided, otherwise to `~/.config/topchester/config.jsonc`.
 
 ## `topchester fork`
 

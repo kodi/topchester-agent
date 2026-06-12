@@ -35,7 +35,11 @@ import {
   runSelfUpdate,
 } from "./cli/self-update.js";
 import { collectTopchesterInfo } from "./cli/info.js";
-import { configureCodexGlobalProvider } from "./config/index.js";
+import {
+  addMcpStdioServerConfig,
+  configureCodexGlobalProvider,
+  getGlobalTopchesterConfigPath,
+} from "./config/index.js";
 
 export async function runTopchesterCli(argv = process.argv, options: { exitOverride?: boolean } = {}): Promise<void> {
   const program = createTopchesterProgram();
@@ -135,6 +139,42 @@ function createTopchesterProgram(): Command {
     .action(async () => {
       try {
         console.log((await formatAuthStatus()).join("\n"));
+      } catch (error) {
+        console.error(formatStartupError(error));
+        process.exitCode = 1;
+      }
+    });
+
+  const mcpCommand = program.command("mcp").description("manage MCP servers");
+
+  mcpCommand
+    .command("add")
+    .usage("[options] <server-name> -- <stdio server-command>")
+    .description("add or replace a stdio MCP server")
+    .argument("<server-name>", "server name")
+    .argument("<command...>", "stdio server command after --")
+    .option("--env <KEY=VALUE>", "environment variable for the server process", collectEnvPair, {})
+    .addHelpText("after", formatMcpAddHelp)
+    .action(async (serverName: string, commandParts: string[], options: { env: Record<string, string> }) => {
+      try {
+        const [command, ...args] = commandParts;
+        if (!command) {
+          throw new Error("Usage: topchester mcp add <server-name> -- <stdio server-command>");
+        }
+
+        const result = await addMcpStdioServerConfig(getWritableConfigPathFromProgram(program), {
+          serverName,
+          command,
+          args,
+          env: options.env,
+        });
+
+        console.log(`${result.replaced ? "Updated" : "Added"} MCP stdio server "${result.serverName}".`);
+        console.log(`config: ${result.path}`);
+        console.log(`command: ${[result.command, ...result.args].join(" ")}`);
+        if (Object.keys(result.env).length > 0) {
+          console.log(`env: ${Object.keys(result.env).join(", ")}`);
+        }
       } catch (error) {
         console.error(formatStartupError(error));
         process.exitCode = 1;
@@ -418,6 +458,18 @@ function formatAuthLoginHelp(): string {
   ].join("\n");
 }
 
+function formatMcpAddHelp(): string {
+  return [
+    "",
+    ui.label("Examples:"),
+    "  topchester mcp add filesystem -- npx -y @modelcontextprotocol/server-filesystem .",
+    "  topchester mcp add github --env GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx -- npx -y @modelcontextprotocol/server-github",
+    "",
+    ui.label("What happens:"),
+    "  Writes to --config when provided, otherwise to the global user config.",
+  ].join("\n");
+}
+
 function formatAuthLoginUsageError(reason: string): string {
   return [
     ui.error(reason),
@@ -519,6 +571,15 @@ function getContextOptionsFromProgram(program: Command) {
   };
 }
 
+function getWritableConfigPathFromProgram(program: Command): string {
+  const options = program.opts<{ config?: string }>();
+  return options.config
+    ? isAbsolute(options.config)
+      ? options.config
+      : resolve(cwd(), options.config)
+    : getGlobalTopchesterConfigPath();
+}
+
 interface KbSearchCommandOptions {
   limit?: number;
   json?: boolean;
@@ -585,6 +646,23 @@ function formatStartupError(error: unknown): string {
 
 function collectDevFlag(flag: string, flags: string[]): string[] {
   return [...flags, flag];
+}
+
+function collectEnvPair(raw: string, env: Record<string, string>): Record<string, string> {
+  const separatorIndex = raw.indexOf("=");
+  if (separatorIndex <= 0) {
+    throw new Error("Environment entries must be in KEY=VALUE form.");
+  }
+
+  const key = raw.slice(0, separatorIndex).trim();
+  if (!key) {
+    throw new Error("Environment entries must be in KEY=VALUE form.");
+  }
+
+  return {
+    ...env,
+    [key]: raw.slice(separatorIndex + 1),
+  };
 }
 
 function parsePositiveInteger(value: string): number {

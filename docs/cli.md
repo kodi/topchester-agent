@@ -16,6 +16,8 @@ topchester run "Edit greeting.txt and change Hello to Goodbye."
 topchester run /kb status
 topchester run "/skill code-review review this diff"
 topchester search "status bar"
+topchester mcp add filesystem -- npx -y @modelcontextprotocol/server-filesystem .
+topchester mcp add github --env GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx -- npx -y @modelcontextprotocol/server-github
 
 topchester kb init
 topchester kb sync
@@ -46,6 +48,7 @@ On startup, Topchester creates the user config folder `~/.config/topchester/` if
 | `topchester`            | Start the interactive coding agent.                      |
 | `topchester fork`       | Fork a saved project-local session and open the fork.    |
 | `topchester info`       | Show config validity and local runtime hints.            |
+| `topchester mcp add`    | Add or replace a stdio MCP server in config.             |
 | `topchester run`        | Run one prompt or slash command without opening the TUI. |
 | `topchester search`     | Search compiled L1 file knowledge.                       |
 | `topchester dev`        | Print local development startup details.                 |
@@ -147,6 +150,16 @@ Current behavior:
 - If the install method cannot be detected, Topchester does not guess. It prints a manual package-manager command instead.
 - After a successful update, restart Topchester to use the new version.
 - `topchester upgrade` is an alias for `topchester update`.
+
+## `topchester mcp add`
+
+Adds or replaces a stdio MCP server entry:
+
+```sh
+topchester mcp add <server-name> --env KEY=VALUE -- <stdio server-command> [args...]
+```
+
+`--env KEY=VALUE` can be repeated. Server names use letters, numbers, `-`, and `_`. The `--` separator marks the start of the server command and its args. The command writes to `--config` when provided, otherwise to `~/.config/topchester/config.jsonc`.
 
 ## `topchester info`
 

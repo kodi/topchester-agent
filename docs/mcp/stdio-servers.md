@@ -8,6 +8,15 @@ public: true
 
 # Stdio servers
 
+Add a stdio server from the CLI:
+
+```sh
+topchester mcp add filesystem -- npx -y @modelcontextprotocol/server-filesystem .
+topchester mcp add github --env GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx -- npx -y @modelcontextprotocol/server-github
+```
+
+`--env KEY=VALUE` can be repeated. The `--` separator marks the start of the server command and its args. The command writes to `--config` when provided, otherwise to the global user config at `~/.config/topchester/config.jsonc`.
+
 Configure MCP servers under `mcp` in normal Topchester config:
 
 ```jsonc
