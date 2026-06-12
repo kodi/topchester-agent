@@ -43,6 +43,8 @@ class TopchesterAgent(BaseInstalledAgent):
         kb_ignore_mode: str = "code",
         kb_max_files: int = 150,
         benchmark_prompt: bool = True,
+        plan_todo_mode: str = "compact",
+        max_plan_todo_updates: int | None = 3,
         prewarm_kb: bool = True,
         prewarm_full: bool = True,
         dangerously_auto_approve_flag: str = "--dangerously-auto-approve",
@@ -60,6 +62,8 @@ class TopchesterAgent(BaseInstalledAgent):
         self._kb_ignore_mode = kb_ignore_mode
         self._kb_max_files = kb_max_files
         self._benchmark_prompt = benchmark_prompt
+        self._plan_todo_mode = plan_todo_mode
+        self._max_plan_todo_updates = max_plan_todo_updates
         self._prewarm_kb = prewarm_kb
         self._prewarm_full = prewarm_full
         self._dangerously_auto_approve_flag = dangerously_auto_approve_flag
@@ -222,6 +226,10 @@ class TopchesterAgent(BaseInstalledAgent):
                     "max_files": self._kb_max_files,
                 },
                 "prompt": {"benchmark_wrapper": self._benchmark_prompt},
+                "plan_todo": {
+                    "mode": self._plan_todo_mode,
+                    "max_updates_per_turn": self._max_plan_todo_updates,
+                },
                 "models": {
                     "agent": self.model_name,
                     "kb_summarize": self._kb_model or self.model_name,
@@ -306,8 +314,11 @@ class TopchesterAgent(BaseInstalledAgent):
                 "TOPCHESTER_CONFIG": "",
                 "TOPCHESTER_LOG_LEVEL": "debug",
                 "TOPCHESTER_HOME": self._REMOTE_TOPCHESTER_HOME.as_posix(),
+                "TOPCHESTER_PLAN_TODO_MODE": self._plan_todo_mode,
             }
         )
+        if self._max_plan_todo_updates is not None:
+            env["TOPCHESTER_MAX_PLAN_TODO_UPDATES_PER_TURN"] = str(self._max_plan_todo_updates)
         if self._get_env("OPENROUTER_API_KEY"):
             env["OPENROUTER_API_KEY"] = self._get_env("OPENROUTER_API_KEY") or ""
         if self._get_env("OPENAI_API_KEY"):
@@ -458,6 +469,8 @@ Complete the task end-to-end in the repository at /app. Do not stop after analys
 This is an implementation benchmark. A final response without a successful source-file edit is incomplete unless the task truly requires no code change. Do not describe intended changes as if they were made. Use edit_file, write_file, apply_patch, or another mutating tool to make real changes before finalizing.
 
 Use the project knowledge base that has already been prepared. Inspect the repository as needed, modify files, and run focused validation when practical. If validation is too expensive or blocked, report exactly what you ran or why it could not be run.
+
+Use todo/plan updates sparingly in this benchmark. A short initial plan is fine for complex tasks, but do not spend tool calls maintaining checklist wording; prioritize source edits and validation.
 
 Your final response should be brief and must include:
 - files changed

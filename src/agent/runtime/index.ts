@@ -32,7 +32,7 @@ import {
 } from "../profiles.js";
 import { getChatSystemPrompt } from "../prompts.js";
 import { SubagentManager } from "../subagents.js";
-import { createTaskPlanController, hasOpenTaskPlan } from "../task-plan.js";
+import { createTaskPlanController, hasOpenTaskPlan, type TaskPlanState } from "../task-plan.js";
 import { type SessionHandle } from "../../session/store.js";
 import { type ModelPurpose, type ModelReasoningSink } from "../../model/index.js";
 import {
@@ -80,8 +80,14 @@ import { validateBashPolicy, type BashApprovalCandidates } from "../tools/bash-p
 export { getKnowledgeStatusEvents } from "./knowledge.js";
 export { MutableRuntimeSteeringBuffer, type RuntimeSteeringBuffer } from "./steering.js";
 
-const MAX_TOOL_CALLS_PER_TURN = 75;
+const DEFAULT_MAX_TOOL_CALLS_PER_TURN = 75;
+const MAX_TOOL_CALLS_PER_TURN_ENV = "TOPCHESTER_MAX_TOOL_CALLS_PER_TURN";
+const PLAN_TODO_MODE_ENV = "TOPCHESTER_PLAN_TODO_MODE";
+const MAX_PLAN_TODO_UPDATES_PER_TURN_ENV = "TOPCHESTER_MAX_PLAN_TODO_UPDATES_PER_TURN";
+const DEFAULT_COMPACT_MAX_PLAN_TODO_UPDATES_PER_TURN = 3;
 const DEFAULT_TASK_CONCURRENCY = 3;
+
+type PlanTodoMode = "normal" | "compact";
 
 export interface AgentRuntime {
   checkAgent(abortSignal?: AbortSignal): Promise<AgentRuntimeEvent[]>;
@@ -355,12 +361,16 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     let invalidToolCallRepairs = 0;
     let noEditCompletionRepairs = 0;
     let hasSourceMutation = false;
+    const maxToolCallsPerTurn = readMaxToolCallsPerTurn();
+    const planTodoMode = readPlanTodoMode();
+    const maxPlanTodoUpdatesPerTurn = readMaxPlanTodoUpdatesPerTurn(planTodoMode);
+    let planTodoUpdates = 0;
     const implementationTask = isImplementationTaskRequest(message);
     const projectInstructionToolState = { shownSourceKeys: new Set<string>() };
     const persistedProjectInstructionKeys = new Set<string>();
 
     try {
-      for (let toolCalls = 0; toolCalls <= MAX_TOOL_CALLS_PER_TURN; toolCalls += 1) {
+      for (let toolCalls = 0; toolCalls <= maxToolCallsPerTurn; toolCalls += 1) {
         const startedAt = Date.now();
         const projectInstructions = await this.resolveBaseProjectInstructions();
         for (const event of createInstructionContextEventsFromProjectInstructions(
@@ -507,7 +517,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             return;
           }
 
-          if (hasOpenTaskPlan(plan)) {
+          if (planTodoMode === "normal" && hasOpenTaskPlan(plan)) {
             if (!requestedPlanClosure) {
               requestedPlanClosure = true;
               nextPrompt = `${nextPrompt}\n\n${formatOpenPlanClosureInstruction(finalText, result.toolProtocol)}`;
@@ -530,11 +540,11 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           return;
         }
 
-        if (toolCalls === MAX_TOOL_CALLS_PER_TURN) {
+        if (toolCalls === maxToolCallsPerTurn) {
           yield agentEvent.choice({
             tone: "warning",
             title: "Tool call limit reached",
-            body: `Stopped after ${MAX_TOOL_CALLS_PER_TURN} tool calls in one turn. Continue starts another turn; abort leaves the call stopped.`,
+            body: `Stopped after ${maxToolCallsPerTurn} tool calls in one turn. Continue starts another turn; abort leaves the call stopped.`,
             actions: [
               choiceAction("Continue", "Continue the previous task from where you stopped."),
               choiceAction("Abort", ABORT_CHOICE_VALUE),
@@ -673,7 +683,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 .join("\n\n")}\n\n${formatContinuationInstruction(
                 result.toolProtocol,
                 taskResults.at(-1)!,
-                isToolAllowed(permissions, "plan_todo")
+                isToolAllowed(permissions, "plan_todo"),
+                planTodoMode
               )}`,
               "PostToolUse",
               postHookContexts
@@ -793,7 +804,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 .join("\n\n")}\n\n${formatContinuationInstruction(
                 result.toolProtocol,
                 parallelResults.at(-1)!,
-                isToolAllowed(permissions, "plan_todo")
+                isToolAllowed(permissions, "plan_todo"),
+                planTodoMode
               )}`,
               "PostToolUse",
               postHookContexts
@@ -824,76 +836,85 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           return;
         }
 
-        const preHookRun = this.startPreToolUseHook(executableToolCall, toolCall.id, session, abortSignal);
-        for await (const event of preHookRun.statusEvents) {
-          yield event;
-        }
-        const preHook = await preHookRun.result;
-        for (const event of this.hookResultToEvents(preHook)) {
-          yield event;
-        }
-
         let toolResult: ToolExecutionResult<ToolResult>;
+        const planTodoRejection = validatePlanTodoCall(executableToolCall, this.taskPlan.get(), {
+          afterTool,
+          planTodoUpdates,
+          maxPlanTodoUpdatesPerTurn,
+        });
 
-        if (preHook.stopped) {
-          if (preHook.messages.length === 0) {
-            yield agentEvent.systemMessage(preHook.stopped.message);
-          }
-
-          yield agentEvent.status("ready");
-          return;
-        }
-
-        if (preHook.blocked) {
-          toolResult = createToolErrorResult(executableToolCall.tool, preHook.blocked.message);
+        if (planTodoRejection) {
+          toolResult = createToolErrorResult(executableToolCall.tool, planTodoRejection);
         } else {
-          const approval = await this.resolveBashApproval(
-            executableToolCall,
-            toolCall.id,
-            options,
-            session,
-            abortSignal
-          );
-          for (const event of approval.events) {
+          const preHookRun = this.startPreToolUseHook(executableToolCall, toolCall.id, session, abortSignal);
+          for await (const event of preHookRun.statusEvents) {
+            yield event;
+          }
+          const preHook = await preHookRun.result;
+          for (const event of this.hookResultToEvents(preHook)) {
             yield event;
           }
 
-          if (approval.cancelled && approval.stopped) {
-            if (!approval.events.some((event) => event.type === "message" && event.text === approval.reason)) {
-              yield agentEvent.systemMessage(approval.reason);
+          if (preHook.stopped) {
+            if (preHook.messages.length === 0) {
+              yield agentEvent.systemMessage(preHook.stopped.message);
             }
 
             yield agentEvent.status("ready");
             return;
           }
 
-          if (approval.cancelled) {
-            toolResult = createToolErrorResult(executableToolCall.tool, approval.reason);
+          if (preHook.blocked) {
+            toolResult = createToolErrorResult(executableToolCall.tool, preHook.blocked.message);
           } else {
-            const toolEventQueue = createRuntimeEventQueue();
-            const toolResultPromise = executeToolCall(this.context.workspaceRoot, executableToolCall, {
-              logger: this.context.logger,
-              config: this.context.config,
-              bashApprovals: { allowExactCommands: approval.approvedCommands },
-              taskPlan: this.taskPlan,
-              profile,
-              permissions,
-              subagents,
-              projectInstructions: projectInstructionToolState,
-              currentUserMessage: message,
-              abortSignal,
-              toolCallId: toolCall.id,
-              toolCatalog,
-              eventSink: (event) => toolEventQueue.push(event),
-            }).finally(() => {
-              toolEventQueue.close();
-            });
-
-            for await (const event of toolEventQueue) {
+            const approval = await this.resolveBashApproval(
+              executableToolCall,
+              toolCall.id,
+              options,
+              session,
+              abortSignal
+            );
+            for (const event of approval.events) {
               yield event;
             }
 
-            toolResult = await toolResultPromise;
+            if (approval.cancelled && approval.stopped) {
+              if (!approval.events.some((event) => event.type === "message" && event.text === approval.reason)) {
+                yield agentEvent.systemMessage(approval.reason);
+              }
+
+              yield agentEvent.status("ready");
+              return;
+            }
+
+            if (approval.cancelled) {
+              toolResult = createToolErrorResult(executableToolCall.tool, approval.reason);
+            } else {
+              const toolEventQueue = createRuntimeEventQueue();
+              const toolResultPromise = executeToolCall(this.context.workspaceRoot, executableToolCall, {
+                logger: this.context.logger,
+                config: this.context.config,
+                bashApprovals: { allowExactCommands: approval.approvedCommands },
+                taskPlan: this.taskPlan,
+                profile,
+                permissions,
+                subagents,
+                projectInstructions: projectInstructionToolState,
+                currentUserMessage: message,
+                abortSignal,
+                toolCallId: toolCall.id,
+                toolCatalog,
+                eventSink: (event) => toolEventQueue.push(event),
+              }).finally(() => {
+                toolEventQueue.close();
+              });
+
+              for await (const event of toolEventQueue) {
+                yield event;
+              }
+
+              toolResult = await toolResultPromise;
+            }
           }
         }
 
@@ -905,7 +926,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           const finishError = validateFinishTaskResult(toolResult, {
             implementationTask,
             hasSourceMutation,
-            hasOpenPlan: hasOpenTaskPlan(this.taskPlan.get()),
+            hasOpenPlan: planTodoMode === "normal" && hasOpenTaskPlan(this.taskPlan.get()),
             canUseSourceEditTool: canStillUseSourceEditTool(permissions),
           });
 
@@ -924,6 +945,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           getToolCallDisplayDiff(toolResult)
         );
         if (!isToolErrorResult(toolResult) && toolResult.tool === "plan_todo") {
+          planTodoUpdates += 1;
           yield agentEvent.taskPlan(toolResult.plan);
         }
 
@@ -971,7 +993,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(
               result.toolProtocol,
               toolResult,
-              isToolAllowed(permissions, "plan_todo")
+              isToolAllowed(permissions, "plan_todo"),
+              planTodoMode
             )}`,
             "PostToolUse",
             postHook.contexts
@@ -1533,6 +1556,99 @@ function getToolCallDisplayDiff(result: ToolExecutionResult<ToolResult>): string
   }
 
   return undefined;
+}
+
+function readMaxToolCallsPerTurn(): number {
+  const raw = process.env[MAX_TOOL_CALLS_PER_TURN_ENV]?.trim();
+  if (!raw) {
+    return DEFAULT_MAX_TOOL_CALLS_PER_TURN;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return DEFAULT_MAX_TOOL_CALLS_PER_TURN;
+  }
+
+  return parsed;
+}
+
+function readPlanTodoMode(): PlanTodoMode {
+  const raw = process.env[PLAN_TODO_MODE_ENV]?.trim().toLowerCase();
+  return raw === "compact" ? "compact" : "normal";
+}
+
+function readMaxPlanTodoUpdatesPerTurn(mode: PlanTodoMode): number | undefined {
+  const raw = process.env[MAX_PLAN_TODO_UPDATES_PER_TURN_ENV]?.trim();
+  if (!raw) {
+    return mode === "compact" ? DEFAULT_COMPACT_MAX_PLAN_TODO_UPDATES_PER_TURN : undefined;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    return mode === "compact" ? DEFAULT_COMPACT_MAX_PLAN_TODO_UPDATES_PER_TURN : undefined;
+  }
+
+  return parsed;
+}
+
+function validatePlanTodoCall(
+  call: ToolCall,
+  currentPlan: TaskPlanState,
+  state: {
+    afterTool: ToolCall["tool"] | undefined;
+    planTodoUpdates: number;
+    maxPlanTodoUpdatesPerTurn: number | undefined;
+  }
+): string | undefined {
+  if (call.tool !== "plan_todo") {
+    return undefined;
+  }
+
+  const allCompleted = isAllCompletedPlanTodoCall(call.args);
+
+  if (state.afterTool === "plan_todo" && !allCompleted) {
+    return "plan_todo rejected because the previous tool call was also plan_todo. Batch checklist updates and proceed with repository work.";
+  }
+
+  if (state.maxPlanTodoUpdatesPerTurn !== undefined && state.planTodoUpdates >= state.maxPlanTodoUpdatesPerTurn) {
+    return `plan_todo rejected because this turn already used ${state.planTodoUpdates} plan update(s), which meets the configured limit of ${state.maxPlanTodoUpdatesPerTurn}. Continue with repository work and summarize progress in the final response.`;
+  }
+
+  if (isSamePlanTodoItems(call.args, currentPlan) && !allCompleted) {
+    return "plan_todo rejected because it does not change the visible plan. Continue with the next substantive tool call or final response.";
+  }
+
+  return undefined;
+}
+
+function isAllCompletedPlanTodoCall(args: unknown): boolean {
+  const items = (args as { items?: unknown }).items;
+  return (
+    Array.isArray(items) &&
+    items.length > 0 &&
+    items.every((item) => {
+      return Boolean(
+        item && typeof item === "object" && "status" in item && (item as { status?: unknown }).status === "completed"
+      );
+    })
+  );
+}
+
+function isSamePlanTodoItems(args: unknown, currentPlan: TaskPlanState): boolean {
+  const items = (args as { items?: unknown }).items;
+  if (!Array.isArray(items) || items.length !== currentPlan.items.length) {
+    return false;
+  }
+
+  return items.every((item, index) => {
+    const current = currentPlan.items[index];
+    if (!current || typeof item !== "object" || item === null) {
+      return false;
+    }
+
+    const candidate = item as { text?: unknown; status?: unknown };
+    return candidate.text === current.text && candidate.status === current.status;
+  });
 }
 
 function isImplementationTaskRequest(message: string): boolean {

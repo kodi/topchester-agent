@@ -44,8 +44,10 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
     "- If the task requires implementation, do not finish with a prose summary before a successful source-editing tool result. A summary of intended changes is not a substitute for editing files.",
     ...(canUseTool("plan_todo")
       ? [
-          "- Use plan_todo for non-trivial multi-step work before the first substantive repository tool call.",
-          "- Keep plan_todo items short, user-safe, and usually 2 to 6 items. Maintain exactly one in_progress item while work remains, update it after major progress changes, and clear it only when abandoning the plan or when no visible plan is useful.",
+          "- Use plan_todo for genuinely multi-step work when a visible checklist helps; for small or straightforward tasks, do the work directly.",
+          "- If you use plan_todo, usually create it once after initial orientation. Keep items short, user-safe, and usually 2 to 6 items with exactly one in_progress item while work remains.",
+          "- Batch plan_todo updates. Update only when a milestone completes, scope changes, or the next major phase starts; do not update after routine reads, searches, failed edit attempts, or wording-only changes.",
+          "- Never call plan_todo twice in a row.",
           "- Do not use plan_todo for simple one-step answers, tiny reads, or trivial edits.",
           "- Do not call plan_todo only to summarize completed work before a final answer. If no visible plan is active and the work is done, answer directly.",
         ]

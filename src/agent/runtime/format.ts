@@ -253,14 +253,15 @@ export function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult
 
 /**
  * Builds the follow-up instruction appended after each tool result. It keeps
- * the model on the active task, reminds it to maintain the visible plan, and
- * restates the current tool-call protocol so the next model step remains
- * parseable by the runtime.
+ * the model on the active task, lightly references the visible plan when one
+ * is active, and restates the current tool-call protocol so the next model
+ * step remains parseable by the runtime.
  */
 export function formatContinuationInstruction(
   protocol: ToolProtocol,
   result: ToolExecutionResult<ToolResult>,
-  canUsePlanTodo = true
+  canUsePlanTodo = true,
+  planTodoMode: "normal" | "compact" = "normal"
 ): string {
   const toolInstruction =
     protocol === "text-xml"
@@ -276,8 +277,13 @@ export function formatContinuationInstruction(
   return [
     "Continue the user's request using the tool result above and the visible plan when one is active.",
     resultInstruction,
-    canUsePlanTodo ? "Update plan_todo after major progress changes." : "",
-    canUsePlanTodo
+    canUsePlanTodo && planTodoMode === "compact"
+      ? "Compact plan mode is active: do not update plan_todo unless task scope materially changes; avoid final plan-closure calls."
+      : "",
+    canUsePlanTodo && planTodoMode === "normal"
+      ? "Use plan_todo sparingly: batch updates only when a milestone completes, scope changes, or the next major phase starts."
+      : "",
+    canUsePlanTodo && planTodoMode === "normal"
       ? "Before a final answer, close the visible plan by calling plan_todo with all finished items marked completed, or with [] if abandoning the plan."
       : "",
     toolInstruction,

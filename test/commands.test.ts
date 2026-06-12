@@ -2211,6 +2211,245 @@ describe("slash commands", () => {
     expect(events.at(-1)).toEqual({ type: "status", status: "ready" });
   });
 
+  it("honors TOPCHESTER_MAX_TOOL_CALLS_PER_TURN", async () => {
+    const previous = process.env.TOPCHESTER_MAX_TOOL_CALLS_PER_TURN;
+    process.env.TOPCHESTER_MAX_TOOL_CALLS_PER_TURN = "2";
+
+    try {
+      const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+      let calls = 0;
+      const runtime = new TopchesterAgentRuntime({
+        ...createTestContext(workspace),
+        modelGateway: {
+          async generateAgentStep() {
+            calls += 1;
+
+            return {
+              text: "",
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+              toolCalls: [
+                {
+                  id: `list-files-${calls}`,
+                  tool: "list_files",
+                  args: { path: ".", recursive: false, limit: 1 },
+                  source: "text-json",
+                },
+              ],
+              toolProtocol: "text-json" as const,
+              protocolAttempts: [],
+              providerRejectedTools: false,
+              warnings: [],
+              openRouterRoutingApplied: false,
+            };
+          },
+        } as unknown as AppContext["modelGateway"],
+      });
+
+      const events = await runtime.submitMessage([], "keep listing");
+      const choiceEvent = events.find((event): event is Extract<AgentRuntimeEvent, { type: "choice" }> => {
+        return event.type === "choice";
+      });
+
+      expect(events.filter((event) => event.type === "tool_call")).toHaveLength(2);
+      expect(calls).toBe(3);
+      expect(choiceEvent).toEqual(
+        expect.objectContaining({
+          tone: "warning",
+          title: "Tool call limit reached",
+          body: "Stopped after 2 tool calls in one turn. Continue starts another turn; abort leaves the call stopped.",
+        })
+      );
+    } finally {
+      if (previous === undefined) {
+        delete process.env.TOPCHESTER_MAX_TOOL_CALLS_PER_TURN;
+      } else {
+        process.env.TOPCHESTER_MAX_TOOL_CALLS_PER_TURN = previous;
+      }
+    }
+  });
+
+  it("rejects consecutive plan_todo calls", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+    await writeFile(join(workspace, "data.txt"), "hello\n");
+    let calls = 0;
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateAgentStep() {
+          calls += 1;
+
+          if (calls === 1) {
+            return fakeAgentStep("", [
+              {
+                id: "plan-1",
+                tool: "plan_todo",
+                args: {
+                  items: [
+                    { text: "Inspect data", status: "in_progress" },
+                    { text: "Answer", status: "pending" },
+                  ],
+                },
+                source: "text-json",
+              },
+            ]);
+          }
+
+          if (calls === 2) {
+            return fakeAgentStep("", [
+              {
+                id: "plan-2",
+                tool: "plan_todo",
+                args: {
+                  items: [
+                    { text: "Inspect data carefully", status: "in_progress" },
+                    { text: "Answer", status: "pending" },
+                  ],
+                },
+                source: "text-json",
+              },
+            ]);
+          }
+
+          if (calls === 3) {
+            return fakeAgentStep("", [
+              {
+                id: "read-1",
+                tool: "read_file",
+                args: { path: "data.txt" },
+                source: "text-json",
+              },
+            ]);
+          }
+
+          if (calls === 4) {
+            return fakeAgentStep("", [
+              {
+                id: "plan-3",
+                tool: "plan_todo",
+                args: {
+                  items: [
+                    { text: "Inspect data", status: "completed" },
+                    { text: "Answer", status: "completed" },
+                  ],
+                },
+                source: "text-json",
+              },
+            ]);
+          }
+
+          return fakeAgentStep("done");
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    const events = await runtime.submitMessage([], "inspect and answer");
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool_call",
+          call: expect.objectContaining({ tool: "plan_todo" }),
+          label: expect.stringContaining("previous tool call was also plan_todo"),
+        }),
+        expect.objectContaining({ type: "message", role: "assistant", text: "done" }),
+      ])
+    );
+    expect(events.filter((event) => event.type === "task_plan")).toHaveLength(2);
+  });
+
+  it("caps plan_todo updates in compact mode", async () => {
+    const previousMode = process.env.TOPCHESTER_PLAN_TODO_MODE;
+    const previousMax = process.env.TOPCHESTER_MAX_PLAN_TODO_UPDATES_PER_TURN;
+    process.env.TOPCHESTER_PLAN_TODO_MODE = "compact";
+    process.env.TOPCHESTER_MAX_PLAN_TODO_UPDATES_PER_TURN = "1";
+
+    try {
+      const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+      await writeFile(join(workspace, "data.txt"), "hello\n");
+      let calls = 0;
+      const runtime = new TopchesterAgentRuntime({
+        ...createTestContext(workspace),
+        modelGateway: {
+          async generateAgentStep() {
+            calls += 1;
+
+            if (calls === 1) {
+              return fakeAgentStep("", [
+                {
+                  id: "plan-1",
+                  tool: "plan_todo",
+                  args: {
+                    items: [
+                      { text: "Inspect data", status: "in_progress" },
+                      { text: "Answer", status: "pending" },
+                    ],
+                  },
+                  source: "text-json",
+                },
+              ]);
+            }
+
+            if (calls === 2) {
+              return fakeAgentStep("", [
+                {
+                  id: "read-1",
+                  tool: "read_file",
+                  args: { path: "data.txt" },
+                  source: "text-json",
+                },
+              ]);
+            }
+
+            if (calls === 3) {
+              return fakeAgentStep("", [
+                {
+                  id: "plan-2",
+                  tool: "plan_todo",
+                  args: {
+                    items: [
+                      { text: "Inspect data", status: "completed" },
+                      { text: "Answer", status: "in_progress" },
+                    ],
+                  },
+                  source: "text-json",
+                },
+              ]);
+            }
+
+            return fakeAgentStep("done");
+          },
+        } as unknown as AppContext["modelGateway"],
+      });
+
+      const events = await runtime.submitMessage([], "inspect and answer");
+
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "tool_call",
+            call: expect.objectContaining({ tool: "plan_todo" }),
+            label: expect.stringContaining("configured limit of 1"),
+          }),
+          expect.objectContaining({ type: "message", role: "assistant", text: "done" }),
+        ])
+      );
+      expect(events.filter((event) => event.type === "task_plan")).toHaveLength(1);
+    } finally {
+      if (previousMode === undefined) {
+        delete process.env.TOPCHESTER_PLAN_TODO_MODE;
+      } else {
+        process.env.TOPCHESTER_PLAN_TODO_MODE = previousMode;
+      }
+      if (previousMax === undefined) {
+        delete process.env.TOPCHESTER_MAX_PLAN_TODO_UPDATES_PER_TURN;
+      } else {
+        process.env.TOPCHESTER_MAX_PLAN_TODO_UPDATES_PER_TURN = previousMax;
+      }
+    }
+  });
+
   it("keeps using text JSON for the rest of a turn after native tools are rejected", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     await writeFile(join(workspace, "data.txt"), "hello\n");

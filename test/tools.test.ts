@@ -772,7 +772,7 @@ describe("agent tools", () => {
   it("gets model prompt lines from the tool registry", () => {
     expect(getToolPromptLines()).toEqual([
       'task: delegate focused read-only research or isolated analysis to a child agent session. Use it when parallel context gathering would help. To use it, reply with only JSON: {"tool":"task","args":{"description":"Inspect runtime event flow","prompt":"Read the runtime and summarize how events are emitted.","subagent_type":"explore"}}',
-      'plan_todo: replace the visible session task plan for non-trivial multi-step work; keep 2-6 short items, exactly one in_progress item while work remains, and use [] only to clear. Do not use plan_todo just to report completed work before a final answer. To use it, reply with only JSON: {"tool":"plan_todo","args":{"items":[{"text":"Inspect relevant files","status":"in_progress"},{"text":"Implement focused change","status":"pending"}]}}',
+      'plan_todo: replace the visible session task plan for genuinely multi-step work. Usually create it once after initial orientation, keep 2-6 short milestone items, exactly one in_progress item while work remains, and batch updates when milestones change. Do not call plan_todo twice in a row, after routine reads/searches, after failed edit attempts, for wording-only changes, or just to report completed work before a final answer. To use it, reply with only JSON: {"tool":"plan_todo","args":{"items":[{"text":"Inspect relevant files","status":"in_progress"},{"text":"Implement focused change","status":"pending"}]}}',
       'read_file: read a UTF-8 file inside the workspace. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
       'list_files: list files and directories inside the workspace; top-level by default, recursive only when requested, with "/" after directory names. To use it, reply with only JSON: {"tool":"list_files","args":{"path":"src","recursive":false,"limit":500}}',
       'grep: search text inside file contents in the workspace; output lines are the files containing the matched text, and paths mentioned inside those lines are not confirmed files unless checked with find_file or read_file. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
@@ -803,8 +803,9 @@ describe("agent tools", () => {
   it("tells the model when to use plan_todo", () => {
     const prompt = getChatSystemPrompt();
 
-    expect(prompt).toContain("Use plan_todo for non-trivial multi-step work");
-    expect(prompt).toContain("Keep plan_todo items short");
+    expect(prompt).toContain("Use plan_todo for genuinely multi-step work");
+    expect(prompt).toContain("Batch plan_todo updates");
+    expect(prompt).toContain("Never call plan_todo twice in a row");
     expect(prompt).toContain("Do not use plan_todo for simple one-step answers");
     expect(prompt).toContain("Do not call plan_todo only to summarize completed work before a final answer");
   });
