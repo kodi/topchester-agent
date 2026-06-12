@@ -45,6 +45,8 @@ import {
   addTokenUsageTotals,
   formatAgentMessageMeta,
   formatContinuationInstruction,
+  formatFinishTaskRequiredFailure,
+  formatFinishTaskRequiredRepairInstruction,
   formatInvalidToolCallRepairInstruction,
   formatNoEditCompletionFailure,
   formatNoEditCompletionRepairInstruction,
@@ -84,7 +86,9 @@ const DEFAULT_MAX_TOOL_CALLS_PER_TURN = 75;
 const MAX_TOOL_CALLS_PER_TURN_ENV = "TOPCHESTER_MAX_TOOL_CALLS_PER_TURN";
 const PLAN_TODO_MODE_ENV = "TOPCHESTER_PLAN_TODO_MODE";
 const MAX_PLAN_TODO_UPDATES_PER_TURN_ENV = "TOPCHESTER_MAX_PLAN_TODO_UPDATES_PER_TURN";
+const REQUIRE_FINISH_TASK_ENV = "TOPCHESTER_REQUIRE_FINISH_TASK";
 const DEFAULT_COMPACT_MAX_PLAN_TODO_UPDATES_PER_TURN = 3;
+const MAX_FINISH_TASK_REQUIRED_REPAIRS = 3;
 const DEFAULT_TASK_CONCURRENCY = 3;
 
 type PlanTodoMode = "normal" | "compact";
@@ -360,12 +364,14 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     let requestedPlanClosure = false;
     let invalidToolCallRepairs = 0;
     let noEditCompletionRepairs = 0;
+    let finishTaskRequiredRepairs = 0;
     let hasSourceMutation = false;
     const maxToolCallsPerTurn = readMaxToolCallsPerTurn();
     const planTodoMode = readPlanTodoMode();
     const maxPlanTodoUpdatesPerTurn = readMaxPlanTodoUpdatesPerTurn(planTodoMode);
     let planTodoUpdates = 0;
     const implementationTask = isImplementationTaskRequest(message);
+    const requireFinishTask = isFinishTaskRequiredByEnv() && isToolAllowed(permissions, "finish_task");
     const projectInstructionToolState = { shownSourceKeys: new Set<string>() };
     const persistedProjectInstructionKeys = new Set<string>();
 
@@ -505,6 +511,26 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
           if (implementationTask && !hasSourceMutation && canStillUseSourceEditTool(permissions)) {
             const finalMessage = formatNoEditCompletionFailure(finalText);
+
+            yield agentEvent.assistantMessage(
+              finalMessage,
+              formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
+            );
+            for await (const event of this.streamStopHookEvents(session, finalMessage, "failed", abortSignal)) {
+              yield event;
+            }
+            yield agentEvent.status("ready");
+            return;
+          }
+
+          if (requireFinishTask) {
+            if (finishTaskRequiredRepairs < MAX_FINISH_TASK_REQUIRED_REPAIRS) {
+              finishTaskRequiredRepairs += 1;
+              nextPrompt = `${nextPrompt}\n\n${formatFinishTaskRequiredRepairInstruction(result.toolProtocol, finalText)}`;
+              continue;
+            }
+
+            const finalMessage = formatFinishTaskRequiredFailure(finalText);
 
             yield agentEvent.assistantMessage(
               finalMessage,
@@ -1575,6 +1601,11 @@ function readMaxToolCallsPerTurn(): number {
 function readPlanTodoMode(): PlanTodoMode {
   const raw = process.env[PLAN_TODO_MODE_ENV]?.trim().toLowerCase();
   return raw === "compact" ? "compact" : "normal";
+}
+
+function isFinishTaskRequiredByEnv(): boolean {
+  const raw = process.env[REQUIRE_FINISH_TASK_ENV]?.trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
 function readMaxPlanTodoUpdatesPerTurn(mode: PlanTodoMode): number | undefined {

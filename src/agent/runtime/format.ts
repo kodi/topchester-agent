@@ -365,6 +365,38 @@ export function formatNoEditCompletionFailure(draftAnswer: string): string {
     .join("\n");
 }
 
+export function formatFinishTaskRequiredRepairInstruction(protocol: ToolProtocol, draftAnswer: string): string {
+  const toolInstruction =
+    protocol === "text-xml"
+      ? "Reply now with only one XML tool call for the next implementation or validation step, or call finish_task if the work is complete."
+      : protocol === "text-json"
+        ? "Reply now with only one tool JSON object for the next implementation or validation step, or call finish_task if the work is complete."
+        : "Use the available tool calling path now for the next implementation or validation step, or call finish_task if the work is complete.";
+  const trimmedDraft = draftAnswer.trim();
+
+  return [
+    "This run requires finish_task as the only terminal action.",
+    "A normal assistant message is treated as a progress note, not completion.",
+    "Do not summarize next steps in prose. Use tools to perform the next step.",
+    "Call finish_task only when the requested work is complete and its files_changed, validation, and remaining_issues fields are accurate.",
+    toolInstruction,
+    trimmedDraft ? `Previous progress note that did not finish the task:\n${trimmedDraft}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function formatFinishTaskRequiredFailure(draftAnswer: string): string {
+  const trimmedDraft = draftAnswer.trim();
+
+  return [
+    "I stopped because this run requires finish_task, but the model kept replying with normal assistant messages instead of using tools.",
+    trimmedDraft ? `Last progress note:\n${trimmedDraft}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function getTextToolCallSources(protocol: ToolProtocol): readonly ToolCallSource[] {
   return protocol === "text-xml" ? ["text-xml"] : protocol === "text-json" ? ["text-json"] : ["text-json", "text-xml"];
 }

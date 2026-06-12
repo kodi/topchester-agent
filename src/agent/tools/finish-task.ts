@@ -32,7 +32,7 @@ export const finishTaskTool = defineTool<"finish_task", FinishTaskToolArgs, Fini
   description:
     "Finish the current task only after the requested work has actually been completed with tools. Do not use this to claim edits, file reads, or validation that did not happen.",
   prompt:
-    'finish_task: complete the task with a brief final response only after tool results prove the work is done. For implementation tasks, do not call finish_task until source files were changed by edit_file, write_file, apply_patch, or another mutating tool, unless no code change is truly required. Example: {"tool":"finish_task","args":{"final_response":"Changed src/foo.ts and ran pnpm test foo.test.ts.","files_changed":["src/foo.ts"],"validation":["pnpm test foo.test.ts"],"remaining_issues":[]}}',
+    'finish_task: complete the task with a brief final response only after tool results prove the work is done. In benchmark or require-finish mode, this is the only valid terminal action; normal assistant messages are progress notes and do not finish the task. For implementation tasks, do not call finish_task until source files were changed by edit_file, write_file, apply_patch, or another mutating tool, unless no code change is truly required. Example: {"tool":"finish_task","args":{"final_response":"Changed src/foo.ts and ran pnpm test foo.test.ts.","files_changed":["src/foo.ts"],"validation":["pnpm test foo.test.ts"],"remaining_issues":[]}}',
   argsSchema: finishTaskArgsSchema,
   execute: async (_context, args) => {
     const filesChanged = args.files_changed ?? [];

@@ -7,7 +7,7 @@ _.file = ".env"
 
 [tasks.typecheck]
 dir = "{{config_root}}"
-run = "pnpm run typecheck"
+run = "node_modules/.bin/tsgo --noEmit"
 
 [tasks.format]
 dir = "{{config_root}}"
@@ -19,19 +19,23 @@ run = "node_modules/.bin/oxfmt . --check"
 
 [tasks.lint]
 dir = "{{config_root}}"
-run = "pnpm run lint"
+run = "node_modules/.bin/oxlint"
+
+[tasks.test]
+dir = "{{config_root}}"
+run = "node_modules/.bin/vitest run"
 
 [tasks.smoke]
 dir = "{{config_root}}"
-run = "pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --trials {{arg(name='trials', default='1')}}"
+run = "node_modules/.bin/tsx scripts/smoke/run-smoke.ts --fake-api --trials {{arg(name='trials', default='1')}}"
 
 [tasks.smoke-scenario]
 dir = "{{config_root}}"
-run = "pnpm exec tsx scripts/smoke/run-smoke.ts --fake-api --scenario {{arg(name='scenario')}} --trials {{arg(name='trials', default='1')}} --keep-workspaces"
+run = "node_modules/.bin/tsx scripts/smoke/run-smoke.ts --fake-api --scenario {{arg(name='scenario')}} --trials {{arg(name='trials', default='1')}} --keep-workspaces"
 
 [tasks.smoke-live]
 dir = "{{config_root}}"
-run = "config=\"{{arg(name='config')}}\"; trials=\"{{arg(name='trials', default='1')}}\"; model=\"{{arg(name='model', default='')}}\"; timeout_ms=\"{{arg(name='timeout_ms', default='120000')}}\"; if [ -n \"$model\" ] && [ \"$model\" != \"''\" ]; then pnpm exec tsx scripts/smoke/run-smoke.ts --config \"$config\" --trials \"$trials\" --model \"$model\" --timeout \"$timeout_ms\"; else pnpm exec tsx scripts/smoke/run-smoke.ts --config \"$config\" --trials \"$trials\" --timeout \"$timeout_ms\"; fi"
+run = "config=\"{{arg(name='config')}}\"; trials=\"{{arg(name='trials', default='1')}}\"; model=\"{{arg(name='model', default='')}}\"; timeout_ms=\"{{arg(name='timeout_ms', default='120000')}}\"; if [ -n \"$model\" ] && [ \"$model\" != \"''\" ]; then node_modules/.bin/tsx scripts/smoke/run-smoke.ts --config \"$config\" --trials \"$trials\" --model \"$model\" --timeout \"$timeout_ms\"; else node_modules/.bin/tsx scripts/smoke/run-smoke.ts --config \"$config\" --trials \"$trials\" --timeout \"$timeout_ms\"; fi"
 
 [tasks.local-ci]
 depends = ["typecheck", "format-check", "lint"]

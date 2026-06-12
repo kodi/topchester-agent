@@ -315,6 +315,7 @@ class TopchesterAgent(BaseInstalledAgent):
                 "TOPCHESTER_LOG_LEVEL": "debug",
                 "TOPCHESTER_HOME": self._REMOTE_TOPCHESTER_HOME.as_posix(),
                 "TOPCHESTER_PLAN_TODO_MODE": self._plan_todo_mode,
+                "TOPCHESTER_REQUIRE_FINISH_TASK": "1",
             }
         )
         if self._max_plan_todo_updates is not None:
@@ -472,10 +473,13 @@ Use the project knowledge base that has already been prepared. Inspect the repos
 
 Use todo/plan updates sparingly in this benchmark. A short initial plan is fine for complex tasks, but do not spend tool calls maintaining checklist wording; prioritize source edits and validation.
 
-Your final response should be brief and must include:
-- files changed
-- tests or validation run
-- any known remaining issues
+You cannot finish this benchmark with a normal assistant message. A normal assistant message is only a progress note, and the runtime will continue the task after it.
+
+The only valid way to end this benchmark is to call finish_task. Call finish_task only when:
+- requested source changes are implemented
+- relevant validation was run, or you explain why it was blocked
+- files_changed lists the source files actually changed
+- remaining_issues is empty or explicitly describes known incomplete work
 
 Task:
 
