@@ -535,9 +535,9 @@ describe("ModelGateway agent tool protocol", () => {
     expect(result.toolCalls).toEqual([]);
   });
 
-  it("adds OpenRouter native-tool routing options internally", async () => {
+  it("does not add OpenRouter strict routing options by default", async () => {
     const api = await startChatApi((body) => {
-      expect(body.provider).toEqual({ require_parameters: true });
+      expect(body.provider).toBeUndefined();
       expect(body.parallel_tool_calls).toBe(false);
       expect(body.service_tier).toBe("flex");
 
@@ -563,6 +563,47 @@ describe("ModelGateway agent tool protocol", () => {
           baseURL: api.baseURL,
           apiKey: "test",
           service_tier: "flex",
+        },
+      },
+    });
+
+    const result = await gateway.generateAgentStep({
+      purpose: "agent.primary",
+      system: "system",
+      prompt: "hello",
+      tools: [readFileTool],
+    });
+
+    expect(result.openRouterRoutingApplied).toBe(false);
+  });
+
+  it("adds OpenRouter strict routing options when forced", async () => {
+    const api = await startChatApi((body) => {
+      expect(body.provider).toEqual({ require_parameters: true });
+      expect(body.parallel_tool_calls).toBe(false);
+
+      return {
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            message: { role: "assistant", content: "Done." },
+          },
+        ],
+      };
+    });
+    const gateway = new ModelGateway({
+      defaultPurpose: "agent.primary",
+      defaultProvider: "openrouter",
+      models: {
+        "agent.primary": { name: "test-model", toolProtocol: "native" },
+      },
+      providers: {
+        openrouter: {
+          type: "openai-compatible",
+          baseURL: api.baseURL,
+          apiKey: "test",
+          openRouterToolRouting: "force",
         },
       },
     });
@@ -722,23 +763,31 @@ describe("ModelGateway agent tool protocol", () => {
     expect(chunks.join("")).toBe("Hello.");
   });
 
-  it("uses text JSON directly for OpenRouter auto mode when reasoning is streamed", async () => {
+  it("uses native tools for OpenRouter auto mode when reasoning is streamed", async () => {
     let requestCount = 0;
     const reasoningEvents: string[] = [];
     const api = await startChatApi((body) => {
       requestCount += 1;
       expect(body.stream).toBe(true);
-      expect(body.tools).toBeUndefined();
+      expect(body.tools).toBeDefined();
       expect(body.provider).toBeUndefined();
 
       return {
         stream: [
-          chatStreamChunk({ delta: { reasoning_content: "Using text tools." }, finish_reason: null }),
           chatStreamChunk({
-            delta: { content: JSON.stringify({ tool: "read_file", args: { path: "README.md" } }) },
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_read",
+                  type: "function",
+                  function: { name: "read_file", arguments: JSON.stringify({ path: "README.md" }) },
+                },
+              ],
+            },
             finish_reason: null,
           }),
-          chatStreamChunk({ delta: {}, finish_reason: "stop" }),
+          chatStreamChunk({ delta: {}, finish_reason: "tool_calls" }),
         ],
       };
     });
@@ -755,19 +804,12 @@ describe("ModelGateway agent tool protocol", () => {
     });
 
     expect(requestCount).toBe(1);
-    expect(reasoningEvents).toEqual(["delta:Using text tools."]);
+    expect(reasoningEvents).toEqual([]);
     expect(result.providerRejectedTools).toBe(false);
-    expect(result.fallbackReason).toBe("openrouter streaming auto uses text JSON protocol");
-    expect(result.protocolAttempts).toEqual([
-      {
-        protocol: "native-openai-compatible",
-        status: "skipped",
-        reason: "openrouter streaming auto uses text-json",
-      },
-      { protocol: "text-json", status: "used", reason: "openrouter streaming auto uses text JSON protocol" },
-    ]);
+    expect(result.fallbackReason).toBeUndefined();
+    expect(result.protocolAttempts).toEqual([{ protocol: "native-openai-compatible", status: "used" }]);
     expect(result.toolCalls).toEqual([
-      { id: "text-json-0", tool: "read_file", args: { path: "README.md" }, source: "text-json" },
+      { id: "call_read", tool: "read_file", args: { path: "README.md" }, source: "native" },
     ]);
   });
 
@@ -920,7 +962,7 @@ describe("ModelGateway agent tool protocol", () => {
         ],
       };
     });
-    const gateway = createGateway(api.baseURL, "openrouter");
+    const gateway = createGateway(api.baseURL, "openrouter", { openRouterToolRouting: "force" });
 
     const result = await gateway.generateAgentStep({
       purpose: "agent.primary",

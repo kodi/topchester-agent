@@ -213,23 +213,6 @@ export class ModelGateway {
       request.toolProtocol ?? resolved.modelConfig.toolProtocol ?? resolved.providerConfig.toolProtocol ?? "auto";
     const attempts: ToolProtocolAttempt[] = [];
 
-    if (override === "auto" && shouldUseTextProtocolForOpenRouterStreaming(request, resolved)) {
-      attempts.push({
-        protocol: "native-openai-compatible",
-        status: "skipped",
-        reason: "openrouter streaming auto uses text-json",
-      });
-
-      return this.generateTextAgentStep(
-        request,
-        resolved,
-        attempts,
-        "openrouter streaming auto uses text JSON protocol",
-        false,
-        ["text-json"]
-      );
-    }
-
     if (override === "native" || override === "auto") {
       try {
         return await this.generateNativeAgentStep(request, resolved, attempts);
@@ -755,22 +738,11 @@ function shouldApplyOpenRouterRoutingOptions(providerId: string, config: OpenAIC
     return true;
   }
 
-  if (config.openRouterToolRouting === "off") {
-    return false;
-  }
-
-  return isOpenRouterProvider(providerId, config);
+  return false;
 }
 
 function isOpenRouterProvider(providerId: string, config: OpenAICompatibleProviderConfig): boolean {
   return providerId.toLowerCase().includes("openrouter") || config.baseURL.toLowerCase().includes("openrouter.ai");
-}
-
-function shouldUseTextProtocolForOpenRouterStreaming(
-  request: ModelAgentRequest,
-  resolved: ReturnType<ModelGateway["resolveModel"]>
-): boolean {
-  return request.onReasoning !== undefined && isOpenRouterProvider(resolved.providerId, resolved.providerConfig);
 }
 
 function hasOpenRouterRoutingOptions(providerOptions: ProviderOptions, providerId: string): boolean {

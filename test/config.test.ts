@@ -278,6 +278,8 @@ describe("Topchester config loading", () => {
       type: "openai-compatible",
       baseURL: "https://openrouter.ai/api/v1",
       apiKeyEnv: "OPENROUTER_API_KEY",
+      toolProtocol: "auto",
+      openRouterToolRouting: "off",
     });
     expect(config.models?.assignments?.["agent.primary"]).toEqual({
       provider: "openrouter",

@@ -2,6 +2,9 @@ node_modules/
 .pnpm-store/
 dist/
 coverage/
+jobs/
+__pycache__/
+*.py[cod]
 .agents/topchester/
 .agents/topchester-kb-cache/
 .claude/

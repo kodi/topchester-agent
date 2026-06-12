@@ -431,6 +431,8 @@ export const openRouterProviderDefaults = {
   baseURL: "https://openrouter.ai/api/v1",
   apiKeyEnv: "OPENROUTER_API_KEY",
   supportsStructuredOutputs: true,
+  toolProtocol: "auto" as const,
+  openRouterToolRouting: "off" as const,
   headers: { ...openRouterAttributionHeaders },
 };
 
@@ -1115,6 +1117,8 @@ function applyKnownProviderDefaults(providers: Record<string, unknown>) {
     }
 
     if (isOpenRouterProvider(providerId, provider.baseURL)) {
+      provider.toolProtocol ??= "auto";
+      provider.openRouterToolRouting ??= "off";
       provider.headers = {
         ...openRouterAttributionHeaders,
         ...(isPlainObject(provider.headers) ? provider.headers : {}),

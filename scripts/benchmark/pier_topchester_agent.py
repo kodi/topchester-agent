@@ -24,6 +24,7 @@ class TopchesterAgent(BaseInstalledAgent):
     _REMOTE_EVENTS_PATH = PurePosixPath(EnvironmentPaths.agent_dir / "topchester-events.jsonl")
     _REMOTE_RUN_STDOUT_PATH = PurePosixPath(EnvironmentPaths.agent_dir / "topchester-run.stdout")
     _REMOTE_KB_INIT_STDOUT_PATH = PurePosixPath(EnvironmentPaths.agent_dir / "topchester-kb-init.stdout")
+    _REMOTE_KB_INVENTORY_PATH = PurePosixPath(EnvironmentPaths.agent_dir / "topchester-kb-inventory.txt")
     _REMOTE_KB_SYNC_STDOUT_PATH = PurePosixPath(EnvironmentPaths.agent_dir / "topchester-kb-sync.stdout")
     _REMOTE_LOG_PATH = PurePosixPath(EnvironmentPaths.agent_dir / "topchester.log")
     _REMOTE_METADATA_PATH = PurePosixPath(EnvironmentPaths.agent_dir / "topchester-metadata.json")
@@ -36,6 +37,12 @@ class TopchesterAgent(BaseInstalledAgent):
         topchester_binary: str = "topchester",
         config_jsonc: str | None = None,
         config_jsonc_file: str | None = None,
+        kb_model: str | None = None,
+        tool_protocol: str | None = None,
+        openrouter_tool_routing: str | None = None,
+        kb_ignore_mode: str = "code",
+        kb_max_files: int = 150,
+        benchmark_prompt: bool = True,
         prewarm_kb: bool = True,
         prewarm_full: bool = True,
         dangerously_auto_approve_flag: str = "--dangerously-auto-approve",
@@ -47,6 +54,12 @@ class TopchesterAgent(BaseInstalledAgent):
         self._config_jsonc = config_jsonc
         if config_jsonc_file:
             self._config_jsonc = Path(config_jsonc_file).read_text()
+        self._kb_model = kb_model
+        self._tool_protocol = tool_protocol
+        self._openrouter_tool_routing = openrouter_tool_routing
+        self._kb_ignore_mode = kb_ignore_mode
+        self._kb_max_files = kb_max_files
+        self._benchmark_prompt = benchmark_prompt
         self._prewarm_kb = prewarm_kb
         self._prewarm_full = prewarm_full
         self._dangerously_auto_approve_flag = dangerously_auto_approve_flag
@@ -94,6 +107,7 @@ class TopchesterAgent(BaseInstalledAgent):
         )
 
         symlink_run = (
+            "if [ -s /root/.nvm/nvm.sh ]; then . /root/.nvm/nvm.sh; fi; "
             "if [ -s /home/agent/.nvm/nvm.sh ]; then . /home/agent/.nvm/nvm.sh; fi; "
             "for bin in node npm npx topchester; do "
             "  BIN_PATH=\"$(command -v \"$bin\" 2>/dev/null || true)\"; "
@@ -134,6 +148,8 @@ class TopchesterAgent(BaseInstalledAgent):
 
     @with_prompt_template
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
+        topchester_instruction = _benchmark_instruction(instruction) if self._benchmark_prompt else instruction
+
         await self.exec_as_agent(
             environment,
             command=f"mkdir -p {shlex.quote(EnvironmentPaths.agent_dir.as_posix())}",
@@ -145,7 +161,7 @@ class TopchesterAgent(BaseInstalledAgent):
         )
         await self.exec_as_agent(
             environment,
-            command=_write_file_command(self._REMOTE_INSTRUCTION_PATH, instruction),
+            command=_write_file_command(self._REMOTE_INSTRUCTION_PATH, topchester_instruction),
             env=self._topchester_env(),
         )
 
@@ -166,14 +182,18 @@ class TopchesterAgent(BaseInstalledAgent):
                 )
                 kb_init_duration_ms = int((time.monotonic() - started) * 1000)
 
+                await self.exec_as_agent(
+                    environment,
+                    command=self._kb_inventory_guard_command(),
+                    env=self._topchester_env(),
+                    cwd="/app",
+                )
+
                 started = time.monotonic()
                 sync_args = " --full" if self._prewarm_full else ""
                 await self.exec_as_agent(
                     environment,
-                    command=(
-                        f"{self._base_topchester_command()} kb sync{sync_args} "
-                        f"2>&1 | tee {shlex.quote(self._REMOTE_KB_SYNC_STDOUT_PATH.as_posix())}"
-                    ),
+                    command=self._kb_sync_command(sync_args),
                     env=self._topchester_env(),
                     cwd="/app",
                 )
@@ -184,6 +204,7 @@ class TopchesterAgent(BaseInstalledAgent):
                 environment,
                 command=(
                     f"{self._base_topchester_command()} run "
+                    f"{shlex.quote(self._dangerously_auto_approve_flag)} "
                     f"--json --output-json {shlex.quote(self._REMOTE_EVENTS_PATH.as_posix())} "
                     f"\"$(cat {shlex.quote(self._REMOTE_INSTRUCTION_PATH.as_posix())})\" "
                     f"2>&1 | tee {shlex.quote(self._REMOTE_RUN_STDOUT_PATH.as_posix())}"
@@ -198,6 +219,12 @@ class TopchesterAgent(BaseInstalledAgent):
                     "full": self._prewarm_full,
                     "init_duration_ms": kb_init_duration_ms,
                     "sync_duration_ms": kb_sync_duration_ms,
+                    "max_files": self._kb_max_files,
+                },
+                "prompt": {"benchmark_wrapper": self._benchmark_prompt},
+                "models": {
+                    "agent": self.model_name,
+                    "kb_summarize": self._kb_model or self.model_name,
                 },
                 "agent_run": {"duration_ms": run_duration_ms},
             }
@@ -239,13 +266,35 @@ class TopchesterAgent(BaseInstalledAgent):
         if self._config_jsonc:
             return self._config_jsonc
         model = self.model_name or "openrouter/qwen/qwen3-coder"
+        kb_model = self._kb_model or model
+        provider_config: dict[str, Any] = {}
+        if self._tool_protocol or self._openrouter_tool_routing:
+            provider_config = {
+                "providers": {
+                    "default": "openrouter",
+                    "openrouter": {
+                        "type": "openai-compatible",
+                        "baseURL": "https://openrouter.ai/api/v1",
+                        "apiKeyEnv": "OPENROUTER_API_KEY",
+                        "supportsStructuredOutputs": True,
+                        **({"toolProtocol": self._tool_protocol} if self._tool_protocol else {}),
+                        **(
+                            {"openRouterToolRouting": self._openrouter_tool_routing}
+                            if self._openrouter_tool_routing
+                            else {}
+                        ),
+                    },
+                }
+            }
         return json.dumps(
             {
                 "$schema": "https://topchester.com/schemas/config.v1.json",
                 "models": {
                     "default": model,
-                    "kb.summarize": model,
+                    "kb.summarize": kb_model,
                 },
+                **provider_config,
+                **({"ignore": {"paths": CODE_ONLY_KB_IGNORE_PATHS}} if self._kb_ignore_mode == "code" else {}),
             },
             indent=2,
         )
@@ -253,6 +302,7 @@ class TopchesterAgent(BaseInstalledAgent):
     def _topchester_env(self) -> dict[str, str]:
         env = self.build_process_env(
             {
+                "NODE_USE_ENV_PROXY": "1",
                 "TOPCHESTER_CONFIG": "",
                 "TOPCHESTER_LOG_LEVEL": "debug",
                 "TOPCHESTER_HOME": self._REMOTE_TOPCHESTER_HOME.as_posix(),
@@ -267,13 +317,118 @@ class TopchesterAgent(BaseInstalledAgent):
     def _base_topchester_command(self) -> str:
         parts = [
             self._topchester_binary,
-            self._dangerously_auto_approve_flag,
             "--workspace",
             "/app",
             "--config",
             self._REMOTE_CONFIG_PATH.as_posix(),
         ]
         return " ".join(shlex.quote(part) for part in parts if part)
+
+    def _kb_sync_command(self, sync_args: str) -> str:
+        output_path = self._REMOTE_KB_SYNC_STDOUT_PATH.as_posix()
+        # Topchester returns 2 for partial KB sync. For benchmark prewarm, keep
+        # the successful entries and continue so the task can still run.
+        inner = (
+            "set -o pipefail; "
+            f"{self._base_topchester_command()} kb sync{sync_args} "
+            f"2>&1 | tee {shlex.quote(output_path)}; "
+            'status="${PIPESTATUS[0]}"; '
+            'if [ "$status" -eq 2 ]; then exit 0; fi; '
+            'exit "$status"'
+        )
+        return f"bash -lc {shlex.quote(inner)}"
+
+    def _kb_inventory_guard_command(self) -> str:
+        output_path = shlex.quote(self._REMOTE_KB_INVENTORY_PATH.as_posix())
+        max_files = max(0, int(self._kb_max_files))
+        inner = f"""
+set -euo pipefail
+node <<'TOPCHESTER_KB_INVENTORY'
+const fs = require("node:fs");
+const path = require("node:path");
+
+const root = "/app";
+const outputPath = {json.dumps(self._REMOTE_KB_INVENTORY_PATH.as_posix())};
+const config = JSON.parse(fs.readFileSync({json.dumps(self._REMOTE_CONFIG_PATH.as_posix())}, "utf8"));
+const rules = config.ignore?.paths ?? [];
+const hardSkippedDirs = new Set([".git", "node_modules", "topchester-kb"]);
+
+function escapeRegExp(value) {{
+  return value.replace(/[|\\\\{{}}()[\\]^$+?.]/g, "\\\\$&");
+}}
+
+function expandBraces(pattern) {{
+  return pattern.replace(/\\{{([^{{}}]+)\\}}/g, (_, body) => `(${{body.split(",").map(escapeRegExp).join("|")}})`);
+}}
+
+function globToRegExp(pattern) {{
+  const expanded = expandBraces(pattern);
+  let source = "";
+  for (let i = 0; i < expanded.length; i += 1) {{
+    const char = expanded[i];
+    const next = expanded[i + 1];
+    if (char === "*" && next === "*") {{
+      const after = expanded[i + 2];
+      if (after === "/") {{
+        source += "(?:.*/)?";
+        i += 2;
+      }} else {{
+        source += ".*";
+        i += 1;
+      }}
+    }} else if (char === "*") {{
+      source += "[^/]*";
+    }} else if (char === "?") {{
+      source += "[^/]";
+    }} else if (char === "(" || char === ")" || char === "|") {{
+      source += char;
+    }} else {{
+      source += escapeRegExp(char);
+    }}
+  }}
+  return new RegExp(`^${{source}}$`);
+}}
+
+const compiledRules = rules.map((raw) => {{
+  const negated = raw.startsWith("!");
+  return {{ negated, regex: globToRegExp(negated ? raw.slice(1) : raw) }};
+}});
+
+function isIgnored(relativePath) {{
+  let ignored = false;
+  for (const rule of compiledRules) {{
+    if (rule.regex.test(relativePath)) ignored = !rule.negated;
+  }}
+  return ignored;
+}}
+
+function walk(dir, out) {{
+  for (const entry of fs.readdirSync(dir, {{ withFileTypes: true }})) {{
+    if (entry.isDirectory() && hardSkippedDirs.has(entry.name)) continue;
+    const absolute = path.join(dir, entry.name);
+    const relative = path.relative(root, absolute).split(path.sep).join("/");
+    if (entry.isDirectory()) {{
+      walk(absolute, out);
+    }} else if (entry.isFile() && !isIgnored(relative)) {{
+      out.push(relative);
+    }}
+  }}
+}}
+
+const files = [];
+walk(root, files);
+files.sort();
+fs.writeFileSync(outputPath, `${{files.join("\\n")}}${{files.length ? "\\n" : ""}}`);
+TOPCHESTER_KB_INVENTORY
+count="$(wc -l < {output_path} | tr -d ' ')"
+echo "KB inventory files: $count"
+if [ {max_files} -gt 0 ] && [ "$count" -gt {max_files} ]; then
+  echo "KB inventory exceeds kb_max_files={max_files}; refusing prewarm. Set --ak kb_max_files=0 to disable." >&2
+  sed -n '1,120p' {output_path} >&2
+  exit 42
+fi
+"""
+        return f"bash -lc {shlex.quote(inner)}"
 
     async def _collect_topchester_artifacts(self, environment: BaseEnvironment) -> None:
         command = (
@@ -293,6 +448,103 @@ class TopchesterAgent(BaseInstalledAgent):
 
 def _write_file_command(path: PurePosixPath, content: str) -> str:
     return f"cat > {shlex.quote(path.as_posix())} <<'TOPCHESTER_EOF'\n{content}\nTOPCHESTER_EOF\n"
+
+
+def _benchmark_instruction(instruction: str) -> str:
+    return f"""You are running inside an automated software engineering benchmark.
+
+Complete the task end-to-end in the repository at /app. Do not stop after analysis, do not ask for confirmation, and do not offer to continue later. Make the necessary code and test changes directly.
+
+Use the project knowledge base that has already been prepared. Inspect the repository as needed, modify files, and run focused validation when practical. If validation is too expensive or blocked, report exactly what you ran or why it could not be run.
+
+Your final response should be brief and must include:
+- files changed
+- tests or validation run
+- any known remaining issues
+
+Task:
+
+{instruction}"""
+
+
+CODE_ONLY_KB_IGNORE_PATHS = [
+    "**",
+    "!src/**",
+    "!lib/**",
+    "!app/**",
+    "!apps/**",
+    "!server/**",
+    "!client/**",
+    "!packages/*/src/**",
+    "!packages/@*/*/src/**",
+    "!crates/**",
+    "!cmd/**",
+    "!internal/**",
+    "!pkg/**",
+    "!scripts/**",
+    "!bin/**",
+    "!package.json",
+    "!package-lock.json",
+    "!packages/*/package.json",
+    "!packages/@*/*/package.json",
+    "!pnpm-workspace.yaml",
+    "!tsconfig*.json",
+    "!jsconfig*.json",
+    "!vite.config.*",
+    "!vitest.config.*",
+    "!jest.config.*",
+    "!eslint.config.*",
+    "!prettier.config.*",
+    "!rollup.config.*",
+    "!webpack.config.*",
+    "!rspack.config.*",
+    "!next.config.*",
+    "!nuxt.config.*",
+    "test/**",
+    "tests/**",
+    "__tests__/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/__tests__/**",
+    "**/.gitignore",
+    "**/.npmignore",
+    "**/.eslintignore",
+    "**/LICENSE",
+    "**/LICENCE",
+    "**/README*",
+    "**/CHANGELOG*",
+    "**/docs/**",
+    "**/examples/**",
+    "**/demo/**",
+    "**/benchmark/**",
+    "**/benchmarks/**",
+    "node_modules/**",
+    "packages/*/node_modules/**",
+    "packages/@*/*/node_modules/**",
+    "dist/**",
+    "**/dist/**",
+    "build/**",
+    "**/build/**",
+    "coverage/**",
+    "**/coverage/**",
+    "target/**",
+    ".next/**",
+    ".nuxt/**",
+    ".cache/**",
+    "tmp/**",
+    "temp/**",
+    "**/__snapshots__/**",
+    "**/snapshots/**",
+    "**/snapshot/**",
+    "**/fixtures/**",
+    "**/__fixtures__/**",
+    "**/testdata/**",
+    "**/generated/**",
+    "**/*.snap",
+    "**/*.map",
+    "**/*.min.*",
+    "**/*.lock",
+]
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
