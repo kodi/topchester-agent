@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { z } from "zod";
+import { type BenchmarkProfile } from "../benchmark-profile.js";
 import { formatWorkspaceRelativePath, resolveWorkspaceCwd } from "./process-runner.js";
 
 export const bashPermissionRuleSchema = z
@@ -51,6 +52,7 @@ export interface BashPolicyContext {
   workspaceRoot: string;
   permissions?: BashPermissionConfig;
   approvedCommands?: readonly string[];
+  benchmarkProfile?: BenchmarkProfile;
 }
 
 export interface BashApprovalCandidates {
@@ -70,7 +72,7 @@ export type BashPermissionDecision =
       policy: {
         allowed: true;
         reason: string;
-        kind: "allow_exact" | "allow_prefix" | "approved_exact";
+        kind: "allow_exact" | "allow_prefix" | "approved_exact" | "benchmark_terminal";
         commands: string[];
         matchedRule: string;
       };
@@ -121,13 +123,18 @@ export async function validateBashPolicy(
     return reject(command, `bash policy rejected '${command}' because it matches deny rule '${deniedRule}'.`, false);
   }
 
+  const shell = resolveBashShell(context.permissions?.shell);
+
+  if (context.benchmarkProfile === "terminal-bench") {
+    return allow(command, cwd.path, realWorkspaceRoot, shell, "benchmark_terminal", "terminal-bench");
+  }
+
   const destructive = getDestructiveReason(command);
 
   if (destructive) {
     return reject(command, `bash policy rejected '${command}' because it looks destructive: ${destructive}.`, false);
   }
 
-  const shell = resolveBashShell(context.permissions?.shell);
   const allowedExactRule = findExactBashRule(command, context.permissions?.allowExact ?? []);
 
   if (allowedExactRule) {
@@ -175,15 +182,17 @@ function allow(
   cwd: string,
   workspaceRoot: string,
   shell: string,
-  kind: "allow_exact" | "allow_prefix" | "approved_exact",
+  kind: "allow_exact" | "allow_prefix" | "approved_exact" | "benchmark_terminal",
   matchedRule: string
 ): Extract<BashPermissionDecision, { allowed: true }> {
   const reason =
     kind === "allow_exact"
       ? `bash exact command allowed by '${matchedRule}'`
-      : kind === "allow_prefix"
-        ? `bash command allowed by prefix '${matchedRule}'`
-        : `bash exact command approved by '${matchedRule}'`;
+      : kind === "benchmark_terminal"
+        ? `bash command allowed by benchmark profile '${matchedRule}'`
+        : kind === "allow_prefix"
+          ? `bash command allowed by prefix '${matchedRule}'`
+          : `bash exact command approved by '${matchedRule}'`;
 
   return {
     allowed: true,

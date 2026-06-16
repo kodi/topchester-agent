@@ -7,6 +7,7 @@ import { type ToolCall, type ToolContext, type ToolExecutionResult, type ToolRes
 import { type Logger } from "pino";
 import { type TaskPlanController } from "../task-plan.js";
 import { type TopchesterConfig } from "../../config/index.js";
+import { type BenchmarkProfile } from "../benchmark-profile.js";
 
 export interface ExecuteToolCallOptions {
   pathEnv?: string;
@@ -19,6 +20,7 @@ export interface ExecuteToolCallOptions {
   subagents?: SubagentManager;
   projectInstructions?: ToolContext["projectInstructions"];
   currentUserMessage?: string;
+  benchmarkProfile?: BenchmarkProfile;
   eventSink?: (event: AgentRuntimeEvent) => void | Promise<void>;
   abortSignal?: AbortSignal;
   toolCallId?: string;
@@ -53,6 +55,7 @@ export async function executeToolCall(
     subagents: options.subagents,
     projectInstructions: options.projectInstructions,
     currentUserMessage: options.currentUserMessage,
+    benchmarkProfile: options.benchmarkProfile,
     eventSink: options.eventSink,
     abortSignal: options.abortSignal,
     toolCallId: options.toolCallId,

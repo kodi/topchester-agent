@@ -5,6 +5,7 @@ import { type AgentProfile, type ToolPermissionView } from "../profiles.js";
 import { type SubagentManager } from "../subagents.js";
 import { type TopchesterConfig } from "../../config/index.js";
 import { type ProjectInstructionSource } from "../instructions.js";
+import { type BenchmarkProfile } from "../benchmark-profile.js";
 
 export interface ToolContext {
   workspaceRoot: string;
@@ -18,6 +19,7 @@ export interface ToolContext {
   subagents?: SubagentManager;
   projectInstructions?: ProjectInstructionToolState;
   currentUserMessage?: string;
+  benchmarkProfile?: BenchmarkProfile;
   eventSink?: (event: import("../events.js").AgentRuntimeEvent) => void | Promise<void>;
   abortSignal?: AbortSignal;
   toolCallId?: string;

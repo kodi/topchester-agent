@@ -2,6 +2,33 @@
 
 Benchmark scripts live here and are meant to be run from the repository root.
 
+## Terminal-Bench via Harbor
+
+`harbor_topchester_agent.py` integrates Topchester with Terminal-Bench through Harbor's custom installed-agent interface.
+
+Example:
+
+```sh
+harbor run \
+  -d terminal-bench/terminal-bench-2 \
+  -m openrouter/openai/gpt-5.4-mini \
+  --agent-import-path scripts.benchmark.harbor_topchester_agent:TopchesterAgent \
+  -n 1
+```
+
+Useful agent kwargs:
+
+| Kwarg               | Default          | Description                                                                 |
+| ------------------- | ---------------- | --------------------------------------------------------------------------- |
+| `benchmark_profile` | `terminal-bench` | Passed to `topchester run --benchmark-profile`.                             |
+| `kb_ignore_mode`    | `terminal-bench` | Uses broader Terminal-Bench KB indexing with binary/build output skips.     |
+| `kb_max_files`      | `500`            | Refuses KB prewarm above this file count. Set `0` to disable the guard.     |
+| `prewarm_kb`        | `true`           | Runs `topchester kb init` and `topchester kb sync` before the task.         |
+| `benchmark_prompt`  | `true`           | Wraps the task with Terminal-Bench-specific finish and validation guidance. |
+| `plan_todo_mode`    | `compact`        | Keeps planning overhead low during benchmark runs.                          |
+
+The adapter writes Topchester events, logs, KB prewarm stdout, metadata, and a best-effort ATIF `trajectory.json` into Harbor's agent artifact directory.
+
 ## L1 Search
 
 `l1-search.ts` measures the same L1 context-pack work as:

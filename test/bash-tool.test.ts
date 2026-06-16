@@ -362,6 +362,24 @@ describe("command policy", () => {
     });
   });
 
+  it("allows shell commands through the terminal benchmark profile", async () => {
+    const workspace = await createWorkspace({ scripts: {} });
+
+    await expect(
+      validateBashPolicy(
+        { command: "rm -rf dist && mkdir -p dist && printf ok > dist/result.txt" },
+        { workspaceRoot: workspace, benchmarkProfile: "terminal-bench" }
+      )
+    ).resolves.toMatchObject({
+      allowed: true,
+      approvalRequired: false,
+      policy: {
+        kind: "benchmark_terminal",
+        matchedRule: "terminal-bench",
+      },
+    });
+  });
+
   it("executes configured bash commands with shell syntax", async () => {
     const workspace = await createWorkspace({ scripts: {} });
     const bin = await mkdtemp(join(tmpdir(), "topchester-bash-bin-"));

@@ -1,4 +1,5 @@
 import { type AppContext } from "../../app/context.js";
+import { type BenchmarkProfile } from "../benchmark-profile.js";
 import { dryRunKnowledgeCompile, filterNonCleanKnowledgeCompileResult } from "../../knowledge/compiler/index.js";
 import { type KnowledgeProgressReporter } from "../../knowledge/progress.js";
 import { createL1ContextPack, formatL1ContextPackForPrompt } from "../../knowledge/search.js";
@@ -130,6 +131,7 @@ export interface AgentRuntimeSubmitMessageOptions {
   session?: SessionHandle;
   requestBashApproval?: (request: BashApprovalRequest) => Promise<BashApprovalDecision>;
   userApprovalMode?: UserApprovalMode;
+  benchmarkProfile?: BenchmarkProfile;
   steering?: RuntimeSteeringBuffer;
 }
 
@@ -634,6 +636,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                   subagents,
                   projectInstructions: projectInstructionToolState,
                   currentUserMessage: message,
+                  benchmarkProfile: options.benchmarkProfile,
                   abortSignal,
                   toolCallId: entry.toolCallId,
                   toolCatalog,
@@ -666,7 +669,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             )) {
               yield event;
             }
-            if (isSourceMutationResult(toolResult)) {
+            if (isSourceMutationResult(toolResult) || isBenchmarkMutationResult(toolResult, options.benchmarkProfile)) {
               hasSourceMutation = true;
             }
             yield agentEvent.toolCall(
@@ -765,6 +768,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 subagents,
                 projectInstructions: projectInstructionToolState,
                 currentUserMessage: message,
+                benchmarkProfile: options.benchmarkProfile,
                 abortSignal,
                 toolCallId: entry.toolCallId,
                 toolCatalog,
@@ -787,7 +791,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             )) {
               yield event;
             }
-            if (isSourceMutationResult(toolResult)) {
+            if (isSourceMutationResult(toolResult) || isBenchmarkMutationResult(toolResult, options.benchmarkProfile)) {
               hasSourceMutation = true;
             }
             yield agentEvent.toolCall(
@@ -927,6 +931,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 subagents,
                 projectInstructions: projectInstructionToolState,
                 currentUserMessage: message,
+                benchmarkProfile: options.benchmarkProfile,
                 abortSignal,
                 toolCallId: toolCall.id,
                 toolCatalog,
@@ -962,7 +967,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           }
         }
 
-        if (isSourceMutationResult(toolResult)) {
+        if (isSourceMutationResult(toolResult) || isBenchmarkMutationResult(toolResult, options.benchmarkProfile)) {
           hasSourceMutation = true;
         }
 
@@ -1336,6 +1341,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       workspaceRoot: this.context.workspaceRoot,
       permissions: this.context.config.tools?.bash,
       approvedCommands,
+      benchmarkProfile: options.benchmarkProfile,
     });
 
     if (decision.allowed) {
@@ -1715,6 +1721,17 @@ function isSourceMutationResult(result: ToolExecutionResult<ToolResult>): boolea
   }
 
   return false;
+}
+
+function isBenchmarkMutationResult(
+  result: ToolExecutionResult<ToolResult>,
+  benchmarkProfile: BenchmarkProfile | undefined
+): boolean {
+  if (benchmarkProfile !== "terminal-bench" || isToolErrorResult(result)) {
+    return false;
+  }
+
+  return result.tool === "bash" && "workspaceMayHaveChanged" in result && result.workspaceMayHaveChanged === true;
 }
 
 function isSourcePath(path: string | undefined): boolean {

@@ -1,6 +1,7 @@
 import { cwd } from "node:process";
 import { isAbsolute, resolve } from "node:path";
 import { Command } from "commander";
+import { parseBenchmarkProfile, type BenchmarkProfile } from "./agent/benchmark-profile.js";
 import { exchangeCodexAuthorizationCode, pollCodexDeviceAuthorization, requestCodexDeviceCode } from "./auth/codex.js";
 import { getAuthStoreStatus, setAuthProvider } from "./auth/store.js";
 import { createAppContext } from "./app/context.js";
@@ -190,6 +191,7 @@ function createTopchesterProgram(): Command {
     .option("--json", "write JSONL run events to stdout")
     .option("--output-json <path>", "write JSONL run events to a file")
     .option("--dangerously-auto-approve", "auto-approve prompt-gated tool calls for this non-interactive run")
+    .option("--benchmark-profile <profile>", "enable an explicit benchmark runtime profile", parseBenchmarkProfile)
     .action(
       async (
         promptParts: string[],
@@ -199,6 +201,7 @@ function createTopchesterProgram(): Command {
           json?: boolean;
           outputJson?: string;
           dangerouslyAutoApprove?: boolean;
+          benchmarkProfile?: BenchmarkProfile;
         }
       ) => {
         const context = createContextFromOptions(program);
@@ -213,6 +216,7 @@ function createTopchesterProgram(): Command {
             outputJson: options.outputJson,
             resume: globalOptions.resume,
             dangerouslyAutoApprove: options.dangerouslyAutoApprove,
+            benchmarkProfile: options.benchmarkProfile,
           });
         } catch (error) {
           console.error(formatStartupError(error));

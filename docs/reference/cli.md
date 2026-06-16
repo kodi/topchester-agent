@@ -108,6 +108,7 @@ topchester run "Read data.txt and summarize it."
 topchester run --json "Edit greeting.txt and change Hello to Goodbye."
 topchester run --output-json /tmp/topchester-events.jsonl "Run /kb status"
 topchester run --dangerously-auto-approve --json "Run the benchmark task."
+topchester run --dangerously-auto-approve --benchmark-profile terminal-bench --json "Run the Terminal-Bench task."
 topchester run /kb status
 ```
 
@@ -118,7 +119,10 @@ Options:
 - `--json` writes JSONL run events to stdout.
 - `--output-json <path>` writes JSONL run events to a file.
 - `--dangerously-auto-approve` auto-approves prompt-gated tool calls for this non-interactive run.
+- `--benchmark-profile <profile>` enables an explicit benchmark runtime profile. The supported profile is `terminal-bench`.
 
 `--dangerously-auto-approve` is intended for benchmarks and automation that cannot answer approval prompts. It only bypasses prompts that would otherwise ask the user, currently approval-required `bash` calls. Hard policy rejects, deny rules, destructive command detection, workspace boundary failures, profile/tool-catalog denial, and hook `block` or `stop` responses still apply. Auto-approved bash commands are approved only for the current tool execution and are not written to `topchester.jsonc`.
 
-Run JSON includes a per-run `runId`, `dangerouslyAutoApprove` in the `run.started` event, and `permission_auto_approved` runtime events when a permission prompt is bypassed.
+`--benchmark-profile terminal-bench` is for disposable Terminal-Bench containers. It keeps configured bash deny rules, but allows broad shell commands through the `bash` tool so tasks can create files, run services, build archives, configure local system state, or perform other terminal work inside the benchmark sandbox. It also lets successful workspace-changing bash calls satisfy the non-interactive finish gate for non-code tasks.
+
+Run JSON includes a per-run `runId`, `dangerouslyAutoApprove` and `benchmarkProfile` in the `run.started` event, and `permission_auto_approved` runtime events when a permission prompt is bypassed.

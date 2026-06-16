@@ -354,6 +354,71 @@ describe("agent runtime project instructions", () => {
     }
   });
 
+  it("allows terminal-bench finish after a workspace-changing bash command", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
+    const previous = process.env.TOPCHESTER_REQUIRE_FINISH_TASK;
+    process.env.TOPCHESTER_REQUIRE_FINISH_TASK = "1";
+
+    let step = 0;
+    const runtime = new TopchesterAgentRuntime({
+      ...createTestContext(workspace),
+      modelGateway: {
+        async generateText() {
+          step += 1;
+
+          if (step === 1) {
+            return {
+              text: JSON.stringify({
+                tool: "bash",
+                args: {
+                  command: "mkdir -p output && printf ok > output/result.txt",
+                  timeout_ms: 10000,
+                  description: "create benchmark output",
+                },
+              }),
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          }
+
+          return {
+            text: JSON.stringify({
+              tool: "finish_task",
+              args: {
+                final_response: "Created output/result.txt.",
+                files_changed: ["output/result.txt"],
+                validation: [],
+                remaining_issues: [],
+              },
+            }),
+            providerId: "fake",
+            modelId: "fake-agent",
+            purpose: "agent.primary" as const,
+          };
+        },
+      } as unknown as AppContext["modelGateway"],
+    });
+
+    try {
+      const events = await runtime.submitMessage([], "create the requested benchmark output", undefined, undefined, {
+        benchmarkProfile: "terminal-bench",
+      });
+
+      expect(await readFile(join(workspace, "output", "result.txt"), "utf8")).toBe("ok");
+      expect(events).toContainEqual(expect.objectContaining({ type: "tool_call", label: "finish_task" }));
+      expect(events).toContainEqual(
+        expect.objectContaining({ type: "message", role: "assistant", text: "Created output/result.txt." })
+      );
+    } finally {
+      if (previous === undefined) {
+        delete process.env.TOPCHESTER_REQUIRE_FINISH_TASK;
+      } else {
+        process.env.TOPCHESTER_REQUIRE_FINISH_TASK = previous;
+      }
+    }
+  });
+
   it("rejects finish_task with remaining issues when finish_task is required", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
     await mkdir(join(workspace, "src"), { recursive: true });
