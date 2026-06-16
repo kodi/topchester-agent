@@ -1597,6 +1597,10 @@ function readMaxToolCallsPerTurn(): number {
     return DEFAULT_MAX_TOOL_CALLS_PER_TURN;
   }
 
+  if (["0", "off", "false", "none", "unlimited", "disabled"].includes(raw.toLowerCase())) {
+    return Number.POSITIVE_INFINITY;
+  }
+
   const parsed = Number(raw);
   if (!Number.isInteger(parsed) || parsed <= 0) {
     return DEFAULT_MAX_TOOL_CALLS_PER_TURN;

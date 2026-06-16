@@ -2270,6 +2270,61 @@ describe("slash commands", () => {
     }
   });
 
+  it("disables the tool call limit when TOPCHESTER_MAX_TOOL_CALLS_PER_TURN is zero", async () => {
+    const previous = process.env.TOPCHESTER_MAX_TOOL_CALLS_PER_TURN;
+    process.env.TOPCHESTER_MAX_TOOL_CALLS_PER_TURN = "0";
+
+    try {
+      const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
+      let calls = 0;
+      const runtime = new TopchesterAgentRuntime({
+        ...createTestContext(workspace),
+        modelGateway: {
+          async generateAgentStep() {
+            calls += 1;
+
+            if (calls === 4) {
+              return fakeAgentStep("Done.", []);
+            }
+
+            return {
+              text: "",
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+              toolCalls: [
+                {
+                  id: `list-files-${calls}`,
+                  tool: "list_files",
+                  args: { path: ".", recursive: false, limit: 1 },
+                  source: "text-json",
+                },
+              ],
+              toolProtocol: "text-json" as const,
+              protocolAttempts: [],
+              providerRejectedTools: false,
+              warnings: [],
+              openRouterRoutingApplied: false,
+            };
+          },
+        } as unknown as AppContext["modelGateway"],
+      });
+
+      const events = await runtime.submitMessage([], "keep listing");
+
+      expect(events.filter((event) => event.type === "tool_call")).toHaveLength(3);
+      expect(calls).toBe(4);
+      expect(events.some((event) => event.type === "choice")).toBe(false);
+      expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: "message", text: "Done." })]));
+    } finally {
+      if (previous === undefined) {
+        delete process.env.TOPCHESTER_MAX_TOOL_CALLS_PER_TURN;
+      } else {
+        process.env.TOPCHESTER_MAX_TOOL_CALLS_PER_TURN = previous;
+      }
+    }
+  });
+
   it("rejects consecutive plan_todo calls", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     await writeFile(join(workspace, "data.txt"), "hello\n");

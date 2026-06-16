@@ -67,6 +67,34 @@ describe("agent tools", () => {
     });
   });
 
+  it("summarizes binary files instead of returning raw read_file contents", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await writeFile(join(workspace, "program.bin"), Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 1, 2, 3]));
+
+    const result = await readWorkspaceFile(workspace, "program.bin");
+
+    expect(result.skipped).toBe("binary");
+    expect(result.bytes).toBe(8);
+    expect(result.content).toContain("appears to be binary or non-UTF-8");
+    expect(result.content).toContain("first_8_bytes_hex: 7f 45 4c 46 00 01 02 03");
+    expect(result.content).not.toContain("\u0000");
+    expect(result.hash).toMatch(/^sha256:/);
+  });
+
+  it("summarizes oversized files instead of returning raw read_file contents", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await writeFile(join(workspace, "large.txt"), "a".repeat(512 * 1024 + 1));
+
+    const result = await readWorkspaceFile(workspace, "large.txt");
+
+    expect(result.skipped).toBe("too_large");
+    expect(result.bytes).toBe(512 * 1024 + 1);
+    expect(result.content).toContain("above the 524288 byte limit");
+    expect(result.content).toContain("Use shell inspection tools");
+    expect(result.content.length).toBeLessThan(2000);
+    expect(result.hash).toMatch(/^sha256:/);
+  });
+
   it("parses grep tool calls from JSON", () => {
     expect(parseToolCall('{"tool":"grep","args":{"pattern":"needle","path":"src"}}')).toEqual({
       tool: "grep",

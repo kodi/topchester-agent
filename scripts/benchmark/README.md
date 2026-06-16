@@ -18,14 +18,15 @@ harbor run \
 
 Useful agent kwargs:
 
-| Kwarg               | Default          | Description                                                                 |
-| ------------------- | ---------------- | --------------------------------------------------------------------------- |
-| `benchmark_profile` | `terminal-bench` | Passed to `topchester run --benchmark-profile`.                             |
-| `kb_ignore_mode`    | `terminal-bench` | Uses broader Terminal-Bench KB indexing with binary/build output skips.     |
-| `kb_max_files`      | `500`            | Refuses KB prewarm above this file count. Set `0` to disable the guard.     |
-| `prewarm_kb`        | `true`           | Runs `topchester kb init` and `topchester kb sync` before the task.         |
-| `benchmark_prompt`  | `true`           | Wraps the task with Terminal-Bench-specific finish and validation guidance. |
-| `plan_todo_mode`    | `compact`        | Keeps planning overhead low during benchmark runs.                          |
+| Kwarg                     | Default          | Description                                                                                                                                                               |
+| ------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `benchmark_profile`       | `terminal-bench` | Passed to `topchester run --benchmark-profile`.                                                                                                                           |
+| `kb_ignore_mode`          | `terminal-bench` | Uses broader Terminal-Bench KB indexing with binary/build output skips.                                                                                                   |
+| `kb_max_files`            | `500`            | Refuses KB prewarm above this file count. Set `0` to disable the guard.                                                                                                   |
+| `prewarm_kb`              | `true`           | Runs `topchester kb init` and `topchester kb sync` before the task.                                                                                                       |
+| `benchmark_prompt`        | `true`           | Wraps the task with Terminal-Bench-specific finish and validation guidance.                                                                                               |
+| `plan_todo_mode`          | `compact`        | Keeps planning overhead low during benchmark runs.                                                                                                                        |
+| `max_tool_calls_per_turn` | `5000000`        | Raises Topchester's per-turn tool-call cap for long Terminal-Bench tasks. Set `0` or `unlimited` to disable it on Topchester versions that include unlimited-cap support. |
 
 The adapter writes Topchester events, logs, KB prewarm stdout, metadata, and a best-effort ATIF `trajectory.json` into Harbor's agent artifact directory.
 

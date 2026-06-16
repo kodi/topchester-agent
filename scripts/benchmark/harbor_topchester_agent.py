@@ -45,6 +45,7 @@ class TopchesterAgent(BaseInstalledAgent):
         benchmark_prompt: bool = True,
         plan_todo_mode: str = "compact",
         max_plan_todo_updates: int | None = 3,
+        max_tool_calls_per_turn: int | str | None = 5000000,
         prewarm_kb: bool = True,
         prewarm_full: bool = True,
         dangerously_auto_approve_flag: str = "--dangerously-auto-approve",
@@ -65,6 +66,7 @@ class TopchesterAgent(BaseInstalledAgent):
         self._benchmark_prompt = benchmark_prompt
         self._plan_todo_mode = plan_todo_mode
         self._max_plan_todo_updates = max_plan_todo_updates
+        self._max_tool_calls_per_turn = max_tool_calls_per_turn
         self._prewarm_kb = prewarm_kb
         self._prewarm_full = prewarm_full
         self._dangerously_auto_approve_flag = dangerously_auto_approve_flag
@@ -185,14 +187,7 @@ class TopchesterAgent(BaseInstalledAgent):
             started = time.monotonic()
             await self.exec_as_agent(
                 environment,
-                command=(
-                    f"{self._base_topchester_command()} run "
-                    f"{shlex.quote(self._dangerously_auto_approve_flag)} "
-                    f"--benchmark-profile {shlex.quote(self._benchmark_profile)} "
-                    f"--json --output-json {shlex.quote(self._REMOTE_EVENTS_PATH.as_posix())} "
-                    f"\"$(cat {shlex.quote(self._REMOTE_INSTRUCTION_PATH.as_posix())})\" "
-                    f"2>&1 | tee {shlex.quote(self._REMOTE_RUN_STDOUT_PATH.as_posix())}"
-                ),
+                command=self._run_command(),
                 env=self._topchester_env(),
                 cwd="/app",
             )
@@ -210,6 +205,9 @@ class TopchesterAgent(BaseInstalledAgent):
                 "plan_todo": {
                     "mode": self._plan_todo_mode,
                     "max_updates_per_turn": self._max_plan_todo_updates,
+                },
+                "tool_calls": {
+                    "max_per_turn": self._max_tool_calls_per_turn,
                 },
                 "models": {
                     "agent": self.model_name,
@@ -231,13 +229,13 @@ class TopchesterAgent(BaseInstalledAgent):
         context.n_cache_tokens = _none_if_zero(usage["cache_tokens"])
         context.n_output_tokens = _none_if_zero(usage["output_tokens"])
         context.cost_usd = _none_if_zero_float(usage["cost_usd"])
-        context.n_agent_steps = n_agent_steps or None
         context.metadata = {
             "topchester": {
                 **self._run_metadata,
                 "usage_source": "topchester.log model_response events",
                 "log_event_count": len(log_events),
                 "run_event_count": len(run_events),
+                "n_agent_steps": n_agent_steps or None,
                 "model_response_usage": usage,
             }
         }
@@ -303,6 +301,8 @@ class TopchesterAgent(BaseInstalledAgent):
         )
         if self._max_plan_todo_updates is not None:
             env["TOPCHESTER_MAX_PLAN_TODO_UPDATES_PER_TURN"] = str(self._max_plan_todo_updates)
+        if self._max_tool_calls_per_turn is not None:
+            env["TOPCHESTER_MAX_TOOL_CALLS_PER_TURN"] = str(self._max_tool_calls_per_turn)
         if self._get_env("OPENROUTER_API_KEY"):
             env["OPENROUTER_API_KEY"] = self._get_env("OPENROUTER_API_KEY") or ""
         if self._get_env("OPENAI_API_KEY"):
@@ -358,6 +358,23 @@ fi
 """
         return f"bash -lc {shlex.quote(inner)}"
 
+    def _run_command(self) -> str:
+        events_path = self._REMOTE_EVENTS_PATH.as_posix()
+        stdout_path = self._REMOTE_RUN_STDOUT_PATH.as_posix()
+        inner = (
+            "set -o pipefail; "
+            f"{self._base_topchester_command()} run "
+            f"{shlex.quote(self._dangerously_auto_approve_flag)} "
+            f"--benchmark-profile {shlex.quote(self._benchmark_profile)} "
+            f"--json --output-json {shlex.quote(events_path)} "
+            f"\"$(cat {shlex.quote(self._REMOTE_INSTRUCTION_PATH.as_posix())})\" "
+            f"2>&1 | tee {shlex.quote(stdout_path)}; "
+            'status="${PIPESTATUS[0]}"; '
+            f"if [ -s {shlex.quote(events_path)} ]; then exit 0; fi; "
+            'exit "$status"'
+        )
+        return f"bash -lc {shlex.quote(inner)}"
+
     async def _collect_topchester_artifacts(self, environment: BaseEnvironment) -> None:
         command = (
             f"mkdir -p {shlex.quote(EnvironmentPaths.agent_dir.as_posix())}; "
@@ -384,6 +401,8 @@ def _terminal_bench_instruction(instruction: str) -> str:
 Complete the task end-to-end in the repository or terminal environment at /app. Do not stop after analysis, do not ask for confirmation, and do not offer to continue later. Make the required file, code, data, service, system, or shell changes directly.
 
 Use the project knowledge base that has already been prepared. Inspect the repository and environment as needed. Terminal-Bench tasks may require shell commands, generated files, certificates, archives, local services, package setup, or validation scripts; use the right terminal tools for the task.
+
+Inspect `/tests` when it exists and satisfy the verifier's exact file paths, names, and formats. If the task involves image or frame output and the expected path is unclear, create `/tmp/frame.bmp` in addition to any natural project output path.
 
 If validation is practical, run focused checks. If validation is too expensive or blocked, report exactly what you ran or why it could not be run.
 
