@@ -479,7 +479,7 @@ The only valid way to end this benchmark is to call finish_task. Call finish_tas
 - requested source changes are implemented
 - relevant validation was run, or you explain why it was blocked
 - files_changed lists the source files actually changed
-- remaining_issues is empty or explicitly describes known incomplete work
+- remaining_issues is empty
 
 Task:
 

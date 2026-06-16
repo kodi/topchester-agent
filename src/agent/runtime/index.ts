@@ -954,6 +954,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             hasSourceMutation,
             hasOpenPlan: planTodoMode === "normal" && hasOpenTaskPlan(this.taskPlan.get()),
             canUseSourceEditTool: canStillUseSourceEditTool(permissions),
+            requireFinishTask,
           });
 
           if (finishError) {
@@ -1731,6 +1732,7 @@ function validateFinishTaskResult(
     hasSourceMutation: boolean;
     hasOpenPlan: boolean;
     canUseSourceEditTool: boolean;
+    requireFinishTask: boolean;
   }
 ): string | undefined {
   if (isToolErrorResult(result) || result.tool !== "finish_task") {
@@ -1743,6 +1745,10 @@ function validateFinishTaskResult(
 
   if (state.implementationTask && state.canUseSourceEditTool && !state.hasSourceMutation) {
     return "finish_task rejected because this appears to be an implementation task but no successful source-file edit has occurred. Use edit_file, write_file, or apply_patch first, unless you can prove no code change is required.";
+  }
+
+  if (state.requireFinishTask && result.remainingIssues.length > 0) {
+    return "finish_task rejected because benchmark mode cannot finish with known remaining issues. Continue implementing or validating until remaining_issues is empty.";
   }
 
   return undefined;
