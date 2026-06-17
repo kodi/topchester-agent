@@ -275,6 +275,7 @@ async function verifyFixtures(): Promise<void> {
   const taskIds = [
     "task-000-basic-ts-transform",
     "api-001-todo-state-machine",
+    "react-001-filterable-todo-panel",
     "ts-001-json-schema-migrator",
     "db-001-sqlite-ledger-balances",
     "db-003-postgres-order-analytics",

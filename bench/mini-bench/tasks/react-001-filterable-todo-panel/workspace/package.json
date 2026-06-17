@@ -1,0 +1,22 @@
+{
+  "name": "react-001-filterable-todo-panel",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "vite": "^8.0.11",
+    "vitest": "^4.1.8"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "happy-dom": "^20.0.11",
+    "typescript": "^5.9.3"
+  }
+}

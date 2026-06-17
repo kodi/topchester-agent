@@ -1,6 +1,6 @@
 export type MiniBenchCommand = "list" | "run" | "verify-fixtures" | "up" | "down" | "clean" | "help";
 
-export type TaskCategory = "typescript" | "api" | "database" | "agent";
+export type TaskCategory = "typescript" | "api" | "database" | "react" | "agent";
 
 export interface TaskDefinition {
   id: string;
