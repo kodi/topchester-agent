@@ -17,6 +17,11 @@ export interface AgentRunResult {
   stderrTail: string;
   toolCalls: Record<string, number>;
   eventCount: number;
+  eventKinds: Record<string, number>;
+  messageRoles: Record<string, number>;
+  taskPlanCount: number;
+  todoUpdateCount: number;
+  statusCount: number;
 }
 
 export async function runTopchesterForTask(input: {
@@ -26,6 +31,7 @@ export async function runTopchesterForTask(input: {
   model?: string;
   config?: string;
   timeoutMs: number;
+  onProgress?: (message: string) => void;
 }): Promise<AgentRunResult> {
   const promptPath = resolve(input.task.taskPath, input.task.definition.prompt);
   const eventsPath = resolve(input.runPath, "topchester-events.jsonl");
@@ -43,6 +49,7 @@ export async function runTopchesterForTask(input: {
           timeoutMs: input.timeoutMs,
           eventsPath,
           prompt,
+          onProgress: input.onProgress,
         })
       : await runContainerTopchester({
           workspacePath: input.workspacePath,
@@ -51,6 +58,7 @@ export async function runTopchesterForTask(input: {
           model: input.model,
           timeoutMs: input.timeoutMs,
           prompt,
+          onProgress: input.onProgress,
         });
 
   await writeFile(stdoutPath, result.stdout);
@@ -93,6 +101,7 @@ async function runHostTopchester(input: {
   timeoutMs: number;
   eventsPath: string;
   prompt: string;
+  onProgress?: (message: string) => void;
 }): Promise<CommandResult> {
   const executable = await resolveTopchesterExecutable();
   const args = [
@@ -117,6 +126,8 @@ async function runHostTopchester(input: {
   return runCommand(executable.command, [...executable.args, ...args], {
     cwd: repoRoot,
     timeoutMs: input.timeoutMs + 10_000,
+    progressIntervalMs: 10_000,
+    onProgress: (elapsedMs) => input.onProgress?.(`agent still running (${formatDuration(elapsedMs)})`),
   });
 }
 
@@ -127,6 +138,7 @@ async function runContainerTopchester(input: {
   model?: string;
   timeoutMs: number;
   prompt: string;
+  onProgress?: (message: string) => void;
 }): Promise<CommandResult> {
   const configPath = await resolveContainerConfigPath(input.runPath, input.config);
   const packageSpec = process.env.MINI_BENCH_TOPCHESTER_NPM_SPEC ?? "topchester-ai@latest";
@@ -136,10 +148,13 @@ async function runContainerTopchester(input: {
     MINI_BENCH_TOPCHESTER_NPM_SPEC: packageSpec,
   };
 
+  input.onProgress?.(`building agent image (${packageSpec})`);
   const build = await runCommand("docker", ["compose", "-f", composeFilePath, "build", "agent"], {
     cwd: miniBenchRoot,
     env: composeEnv,
     timeoutMs: 300_000,
+    progressIntervalMs: 15_000,
+    onProgress: (elapsedMs) => input.onProgress?.(`agent image build still running (${formatDuration(elapsedMs)})`),
   });
 
   if (build.exitCode !== 0) {
@@ -191,10 +206,13 @@ async function runContainerTopchester(input: {
 
   args.push(input.prompt);
 
+  input.onProgress?.("starting Topchester in agent container");
   return runCommand("docker", args, {
     cwd: miniBenchRoot,
     env: composeEnv,
     timeoutMs: input.timeoutMs + 30_000,
+    progressIntervalMs: 10_000,
+    onProgress: (elapsedMs) => input.onProgress?.(`agent still running (${formatDuration(elapsedMs)})`),
   });
 }
 
@@ -222,11 +240,25 @@ export async function summarizeEvents(
   eventsPath: string,
   workspacePath?: string,
   preservedSessionEventPaths: string[] = []
-): Promise<{ toolCalls: Record<string, number>; eventCount: number; eventsSourcePath?: string }> {
+): Promise<{
+  toolCalls: Record<string, number>;
+  eventCount: number;
+  eventKinds: Record<string, number>;
+  messageRoles: Record<string, number>;
+  taskPlanCount: number;
+  todoUpdateCount: number;
+  statusCount: number;
+  eventsSourcePath?: string;
+}> {
   const toolCalls: Record<string, number> = {};
+  const eventKinds: Record<string, number> = {};
+  const messageRoles: Record<string, number> = {};
   const eventSource = await readEventSource(eventsPath, workspacePath, preservedSessionEventPaths);
   const source = eventSource?.content ?? "";
   let eventCount = 0;
+  let taskPlanCount = 0;
+  let todoUpdateCount = 0;
+  let statusCount = 0;
 
   for (const line of source.split("\n")) {
     if (!line.trim()) {
@@ -241,13 +273,81 @@ export async function summarizeEvents(
       continue;
     }
 
+    const kind = extractEventKind(event);
+    if (kind) {
+      eventKinds[kind] = (eventKinds[kind] ?? 0) + 1;
+      if (kind === "task_plan") {
+        taskPlanCount += 1;
+      }
+      if (kind === "status") {
+        statusCount += 1;
+      }
+    }
+
+    const role = extractMessageRole(event, kind);
+    if (role) {
+      messageRoles[role] = (messageRoles[role] ?? 0) + 1;
+    }
+
     const tool = extractToolName(event);
     if (tool) {
       toolCalls[tool] = (toolCalls[tool] ?? 0) + 1;
+      if (tool === "plan_todo") {
+        todoUpdateCount += 1;
+      }
     }
   }
 
-  return { toolCalls, eventCount, eventsSourcePath: eventSource?.path };
+  return {
+    toolCalls,
+    eventCount,
+    eventKinds,
+    messageRoles,
+    taskPlanCount,
+    todoUpdateCount,
+    statusCount,
+    eventsSourcePath: eventSource?.path,
+  };
+}
+
+function extractEventKind(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const event = value as {
+    event?: { type?: string };
+    kind?: string;
+    type?: string;
+  };
+
+  return event.type ?? event.kind ?? event.event?.type;
+}
+
+function extractMessageRole(value: unknown, kind?: string): string | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const event = value as {
+    event?: { role?: string; type?: string };
+    role?: string;
+    type?: string;
+  };
+
+  if (kind === "user.message") {
+    return "user";
+  }
+
+  if (typeof event.role === "string") {
+    return event.role;
+  }
+
+  if (kind === "message" && typeof event.event?.role === "string") {
+    return event.event.role;
+  }
+
+  return undefined;
 }
 
 function extractToolName(value: unknown): string | undefined {
@@ -373,6 +473,11 @@ async function findLatestSessionEvents(workspacePath: string): Promise<string | 
 
 function tail(value: string, maxChars = 4_000): string {
   return value.length <= maxChars ? value : value.slice(value.length - maxChars);
+}
+
+function formatDuration(ms: number): string {
+  const seconds = Math.max(1, Math.round(ms / 1000));
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
 async function resolveTopchesterExecutable(): Promise<{ command: string; args: string[] }> {

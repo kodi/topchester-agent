@@ -1,0 +1,18 @@
+id: db-001-sqlite-ledger-balances
+name: SQLite Ledger Balances
+category: database
+difficulty: medium
+prompt: prompt.md
+workspace: workspace
+bootstrap:
+  script: null
+services: []
+verifier:
+  command: pnpm exec tsx verifier/verify.ts
+timeoutMs: 300000
+agent:
+  cwd: /workspace
+  profile: mini-bench
+expected:
+  changedFiles:
+    - src/ledger.ts

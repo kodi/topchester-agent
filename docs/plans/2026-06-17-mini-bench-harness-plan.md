@@ -377,7 +377,7 @@ These tasks are the future suite. They should not be implemented as part of the 
 
 ### TypeScript Code Tasks
 
-1. `ts-001-json-schema-migrator`: Convert legacy JSON config files into a new schema while preserving unknown fields and reporting invalid records.
+1. `ts-001-json-schema-migrator`: Convert legacy JSON config files into a new schema while preserving unknown fields and reporting invalid records. Implemented as the first non-trivial TypeScript task after `task-000`.
 2. `ts-002-dependency-graph-planner`: Compute task/package execution order, detect cycles, and emit useful diagnostics.
 3. `ts-003-streaming-log-aggregator`: Process large NDJSON logs with streaming APIs and produce grouped session summaries.
 4. `ts-004-markdown-section-updater`: Update generated Markdown sections while preserving hand-written surrounding content.
@@ -393,7 +393,7 @@ These tasks are the future suite. They should not be implemented as part of the 
 
 ### SQLite/Postgres Tasks
 
-11. `db-001-sqlite-ledger-balances`: Implement double-entry ledger writes and balance queries.
+11. `db-001-sqlite-ledger-balances`: Implement double-entry ledger writes and balance queries. Implemented as the first service-free SQLite database task using Node's built-in SQLite module.
 12. `db-002-sqlite-migration-runner`: Implement migration discovery, checksums, and rollback on failed migrations.
 13. `db-003-postgres-job-queue`: Implement concurrent-safe job claim, complete, retry, and visibility timeout behavior.
 14. `db-004-postgres-analytics-rollup`: Build idempotent daily aggregates from raw events, including late-arriving data.

@@ -89,5 +89,10 @@ export interface RunReport {
     stderrTail: string;
     toolCalls: Record<string, number>;
     eventCount: number;
+    eventKinds: Record<string, number>;
+    messageRoles: Record<string, number>;
+    taskPlanCount: number;
+    todoUpdateCount: number;
+    statusCount: number;
   };
 }

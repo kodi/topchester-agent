@@ -1,0 +1,8 @@
+{
+  "name": "ts-001-json-schema-migrator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node src/migrate.test.ts"
+  }
+}

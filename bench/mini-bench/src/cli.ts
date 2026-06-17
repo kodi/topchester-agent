@@ -110,12 +110,14 @@ function addTaskId(options: RunOptions, taskId: string): void {
 
 async function listTasks(): Promise<void> {
   const tasks = await loadTasks();
+  const rows = tasks.map((task) => [
+    task.definition.id,
+    task.definition.category,
+    task.definition.difficulty,
+    task.definition.name,
+  ]);
 
-  for (const task of tasks) {
-    console.log(
-      `${task.definition.id}\t${task.definition.category}\t${task.definition.difficulty}\t${task.definition.name}`
-    );
-  }
+  printTable(["Task", "Category", "Difficulty", "Name"], rows);
 }
 
 async function runTasks(options: RunOptions): Promise<RunReport[]> {
@@ -127,14 +129,18 @@ async function runTasks(options: RunOptions): Promise<RunReport[]> {
 
   const reports: RunReport[] = [];
 
-  for (const taskId of taskIds) {
+  for (const [index, taskId] of taskIds.entries()) {
+    console.log("");
+    console.log(`${style("▶", "cyan")} ${style(`[${index + 1}/${taskIds.length}] ${taskId}`, "bold")}`);
     const report = await runTask({ ...options, taskId, taskIds: undefined });
     reports.push(report);
   }
 
   if (reports.length > 1) {
     const passed = reports.filter((report) => report.status === "passed").length;
-    console.log(`SUMMARY ${passed}/${reports.length} tasks passed`);
+    const color = passed === reports.length ? "green" : "red";
+    console.log(`${style("◇ SUMMARY", "cyan")} ${style(`${passed}/${reports.length}`, color)} tasks passed`);
+    printAggregateAgentSummary(reports);
   }
 
   if (reports.some((report) => report.status !== "passed")) {
@@ -146,17 +152,23 @@ async function runTasks(options: RunOptions): Promise<RunReport[]> {
 
 async function runTask(options: RunOptions): Promise<RunReport> {
   const task = await loadTask(options.taskId ?? "task-000-basic-ts-transform");
+  console.log(`${dim("├─ preparing workspace")}`);
   const prepared = await prepareWorkspace(task);
+  console.log(`${dim("│  workspace:")} ${prepared.workspacePath}`);
   const startedAt = Date.now();
   let candidatePath: string | undefined;
   let agent: RunReport["agent"] | undefined;
 
   try {
     if (options.candidate) {
+      console.log(`${dim("├─ overlaying candidate:")} ${options.candidate}`);
       candidatePath = await overlayCandidate(task, prepared.workspacePath, options.candidate);
     }
 
     if (!options.noAgent) {
+      console.log(
+        `${dim("├─ running Topchester agent")} ${dim(`timeout=${options.timeoutMs ?? task.definition.timeoutMs}ms`)}`
+      );
       const agentResult = await runTopchesterForTask({
         task,
         workspacePath: prepared.workspacePath,
@@ -164,6 +176,7 @@ async function runTask(options: RunOptions): Promise<RunReport> {
         model: options.model,
         config: options.config,
         timeoutMs: options.timeoutMs ?? task.definition.timeoutMs,
+        onProgress: (message) => console.log(`${dim("│  ")}${message}`),
       });
 
       agent = {
@@ -180,9 +193,16 @@ async function runTask(options: RunOptions): Promise<RunReport> {
         stderrTail: agentResult.stderrTail,
         toolCalls: agentResult.toolCalls,
         eventCount: agentResult.eventCount,
+        eventKinds: agentResult.eventKinds,
+        messageRoles: agentResult.messageRoles,
+        taskPlanCount: agentResult.taskPlanCount,
+        todoUpdateCount: agentResult.todoUpdateCount,
+        statusCount: agentResult.statusCount,
       };
+      console.log(`${dim("│  agent exit:")} ${agent.exitCode ?? "null"}${agent.timedOut ? " timed out" : ""}`);
     }
 
+    console.log(`${dim("├─ running hidden verifier")}`);
     const verifier = await runHiddenVerifier({
       task,
       workspacePath: prepared.workspacePath,
@@ -207,6 +227,7 @@ async function runTask(options: RunOptions): Promise<RunReport> {
       agent,
     };
 
+    console.log(`${dim("├─ writing report")}`);
     const reportPath = await writeRunReport(report, options.output);
     await writeFile(reportIndexPath(), `${JSON.stringify(report, null, 2)}\n`);
     printRunResult(report, reportPath);
@@ -224,45 +245,131 @@ async function runTask(options: RunOptions): Promise<RunReport> {
 }
 
 async function verifyFixtures(): Promise<void> {
-  const good = await runTask({
-    taskId: "task-000-basic-ts-transform",
-    noAgent: true,
-    candidate: "good",
-    keepRuns: true,
-  });
-  const bad = await runTask({
-    taskId: "task-000-basic-ts-transform",
-    noAgent: true,
-    candidate: "bad",
-    keepRuns: true,
-  });
+  const taskIds = ["task-000-basic-ts-transform", "ts-001-json-schema-migrator", "db-001-sqlite-ledger-balances"];
+  console.log(`${style("◇ Fixture verification", "cyan")} ${dim(`(${taskIds.length} tasks)`)}`);
 
-  if (!good.verifier.passed) {
-    throw new Error("Known-good task-000 fixture failed verifier");
-  }
+  for (const taskId of taskIds) {
+    console.log("");
+    console.log(`${style("▶", "cyan")} ${style(taskId, "bold")}`);
+    console.log(`${dim("  good fixture should pass")}`);
+    const good = await runTask({
+      taskId,
+      noAgent: true,
+      candidate: "good",
+      keepRuns: true,
+    });
 
-  if (bad.verifier.passed) {
-    throw new Error("Known-bad task-000 fixture unexpectedly passed verifier");
+    console.log(`${dim("  bad fixture should fail")}`);
+    const bad = await runTask({
+      taskId,
+      noAgent: true,
+      candidate: "bad",
+      keepRuns: true,
+    });
+
+    if (!good.verifier.passed) {
+      throw new Error(`Known-good ${taskId} fixture failed verifier`);
+    }
+
+    if (bad.verifier.passed) {
+      throw new Error(`Known-bad ${taskId} fixture unexpectedly passed verifier`);
+    }
   }
 
   process.exitCode = 0;
+  console.log("");
+  console.log(`${style("✓ Fixture verification passed", "green")}`);
 }
 
 async function clean(): Promise<void> {
   await rm(resolve(reportsRoot, "runs"), { recursive: true, force: true });
   await mkdir(reportsRoot, { recursive: true });
-  console.log("mini-bench reports cleaned");
+  console.log(`${style("✓", "green")} mini-bench reports cleaned`);
 }
 
 function printRunResult(report: RunReport, reportPath: string): void {
-  console.log(`${report.status.toUpperCase()} ${report.taskId} (${report.durationMs}ms)`);
-  console.log(`report: ${reportPath}`);
-  console.log(`workspace: ${report.workspacePath}`);
+  const passed = report.status === "passed";
+  const statusIcon = passed ? "✓" : report.status === "agent_timeout" ? "⏱" : "✗";
+  const statusColor = passed ? "green" : report.status === "agent_timeout" ? "yellow" : "red";
+
+  console.log(
+    `${style(statusIcon, statusColor)} ${style(report.status.toUpperCase(), statusColor)} ${style(report.taskId, "bold")} ${dim(`(${report.durationMs}ms)`)}`
+  );
+  console.log(`${dim("├─ report:")} ${reportPath}`);
+  console.log(`${dim("└─ workspace:")} ${report.workspacePath}`);
   for (const assertion of report.verifier.assertions) {
-    console.log(
-      `${assertion.passed ? "PASS" : "FAIL"} ${assertion.name}${assertion.message ? `: ${assertion.message}` : ""}`
-    );
+    const assertionIcon = assertion.passed ? style("✓", "green") : style("✗", "red");
+    console.log(`  ${assertionIcon} ${assertion.name}${assertion.message ? dim(`: ${assertion.message}`) : ""}`);
   }
+  if (report.agent) {
+    printAgentEventSummary(report.agent);
+  }
+}
+
+function printAgentEventSummary(agent: NonNullable<RunReport["agent"]>): void {
+  const toolTotal = Object.values(agent.toolCalls).reduce((sum, count) => sum + count, 0);
+  const messageTotal = Object.values(agent.messageRoles).reduce((sum, count) => sum + count, 0);
+  console.log(
+    `  ${style("◇", "cyan")} events: ${agent.eventCount}; tools: ${toolTotal}; messages: ${messageTotal}; plans: ${agent.taskPlanCount}; todos: ${agent.todoUpdateCount}; statuses: ${agent.statusCount}`
+  );
+  if (Object.keys(agent.toolCalls).length > 0) {
+    console.log(`    tools: ${formatCountMap(agent.toolCalls)}`);
+  }
+  if (Object.keys(agent.messageRoles).length > 0) {
+    console.log(`    messages: ${formatCountMap(agent.messageRoles)}`);
+  }
+  if (Object.keys(agent.eventKinds).length > 0) {
+    console.log(`    event kinds: ${formatCountMap(agent.eventKinds)}`);
+  }
+}
+
+function printAggregateAgentSummary(reports: RunReport[]): void {
+  const agents = reports
+    .map((report) => report.agent)
+    .filter((agent): agent is NonNullable<RunReport["agent"]> => Boolean(agent));
+  if (agents.length === 0) {
+    return;
+  }
+
+  const eventCount = agents.reduce((sum, agent) => sum + agent.eventCount, 0);
+  const toolCalls = mergeCountMaps(agents.map((agent) => agent.toolCalls));
+  const messageRoles = mergeCountMaps(agents.map((agent) => agent.messageRoles));
+  const eventKinds = mergeCountMaps(agents.map((agent) => agent.eventKinds));
+  const taskPlanCount = agents.reduce((sum, agent) => sum + agent.taskPlanCount, 0);
+  const todoUpdateCount = agents.reduce((sum, agent) => sum + agent.todoUpdateCount, 0);
+  const statusCount = agents.reduce((sum, agent) => sum + agent.statusCount, 0);
+  const toolTotal = Object.values(toolCalls).reduce((sum, count) => sum + count, 0);
+  const messageTotal = Object.values(messageRoles).reduce((sum, count) => sum + count, 0);
+
+  console.log(
+    `${style("◇ AGENT EVENTS", "cyan")} events: ${eventCount}; tools: ${toolTotal}; messages: ${messageTotal}; plans: ${taskPlanCount}; todos: ${todoUpdateCount}; statuses: ${statusCount}`
+  );
+  if (Object.keys(toolCalls).length > 0) {
+    console.log(`  tools: ${formatCountMap(toolCalls)}`);
+  }
+  if (Object.keys(messageRoles).length > 0) {
+    console.log(`  messages: ${formatCountMap(messageRoles)}`);
+  }
+  if (Object.keys(eventKinds).length > 0) {
+    console.log(`  event kinds: ${formatCountMap(eventKinds)}`);
+  }
+}
+
+function mergeCountMaps(maps: Array<Record<string, number>>): Record<string, number> {
+  const merged: Record<string, number> = {};
+  for (const map of maps) {
+    for (const [key, count] of Object.entries(map)) {
+      merged[key] = (merged[key] ?? 0) + count;
+    }
+  }
+  return merged;
+}
+
+function formatCountMap(map: Record<string, number>): string {
+  return Object.entries(map)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([key, count]) => `${key}=${count}`)
+    .join(", ");
 }
 
 function printHelp(): void {
@@ -277,6 +384,50 @@ function printHelp(): void {
   console.log("  pnpm mini-bench up");
   console.log("  pnpm mini-bench down");
   console.log("  pnpm mini-bench clean");
+}
+
+function printTable(headers: string[], rows: string[][]): void {
+  const widths = headers.map((header, index) => Math.max(header.length, ...rows.map((row) => row[index]?.length ?? 0)));
+  const line = (left: string, join: string, right: string) =>
+    `${left}${widths.map((width) => "─".repeat(width + 2)).join(join)}${right}`;
+  const row = (values: string[], color?: Color) =>
+    `│ ${values
+      .map((value, index) => {
+        const padded = value.padEnd(widths[index] ?? 0);
+        return color ? style(padded, color) : padded;
+      })
+      .join(" │ ")} │`;
+
+  console.log(line("┌", "┬", "┐"));
+  console.log(row(headers, "bold"));
+  console.log(line("├", "┼", "┤"));
+  for (const values of rows) {
+    console.log(row(values));
+  }
+  console.log(line("└", "┴", "┘"));
+}
+
+type Color = "bold" | "cyan" | "green" | "red" | "yellow" | "dim";
+
+function style(value: string, color: Color): string {
+  if (process.env.NO_COLOR) {
+    return value;
+  }
+
+  const codes: Record<Color, [number, number]> = {
+    bold: [1, 22],
+    cyan: [36, 39],
+    green: [32, 39],
+    red: [31, 39],
+    yellow: [33, 39],
+    dim: [2, 22],
+  };
+  const [open, close] = codes[color];
+  return `\u001B[${open}m${value}\u001B[${close}m`;
+}
+
+function dim(value: string): string {
+  return style(value, "dim");
 }
 
 function requireValue(args: string[], index: number, flag: string): string {

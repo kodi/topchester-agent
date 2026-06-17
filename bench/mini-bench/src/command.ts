@@ -14,7 +14,14 @@ export interface CommandResult {
 export async function runCommand(
   command: string,
   args: string[],
-  options: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number; input?: string } = {}
+  options: {
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+    timeoutMs?: number;
+    input?: string;
+    progressIntervalMs?: number;
+    onProgress?: (elapsedMs: number) => void;
+  } = {}
 ): Promise<CommandResult> {
   const startedAt = Date.now();
   const child = spawn(command, args, {
@@ -54,6 +61,10 @@ export async function runCommand(
             }
           }, 2_000).unref();
         }, options.timeoutMs);
+  const progress =
+    options.onProgress && options.progressIntervalMs
+      ? setInterval(() => options.onProgress?.(Date.now() - startedAt), options.progressIntervalMs)
+      : undefined;
 
   const exitCode = await new Promise<number | null>((resolve, reject) => {
     child.on("error", reject);
@@ -65,6 +76,9 @@ export async function runCommand(
 
   if (timeout) {
     clearTimeout(timeout);
+  }
+  if (progress) {
+    clearInterval(progress);
   }
 
   return {

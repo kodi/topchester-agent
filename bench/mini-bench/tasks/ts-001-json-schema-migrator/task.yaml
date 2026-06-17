@@ -1,0 +1,18 @@
+id: ts-001-json-schema-migrator
+name: JSON Schema Migrator
+category: typescript
+difficulty: medium
+prompt: prompt.md
+workspace: workspace
+bootstrap:
+  script: null
+services: []
+verifier:
+  command: pnpm exec tsx verifier/verify.ts
+timeoutMs: 300000
+agent:
+  cwd: /workspace
+  profile: mini-bench
+expected:
+  changedFiles:
+    - src/migrate.ts

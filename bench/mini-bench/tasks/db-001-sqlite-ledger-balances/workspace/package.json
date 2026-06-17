@@ -1,0 +1,8 @@
+{
+  "name": "db-001-sqlite-ledger-balances",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --disable-warning=ExperimentalWarning src/ledger.test.ts"
+  }
+}

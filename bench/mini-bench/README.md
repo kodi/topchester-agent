@@ -6,7 +6,12 @@ V0 intentionally contains one trivial task:
 
 - `task-000-basic-ts-transform`
 
-That task exists to prove the harness, not model quality. It is basic TypeScript arrays, objects, and strings. The harder 20-task suite is deferred until task-000 proves the runner, verifier boundary, reporting, Docker shape, and Topchester invocation path.
+That task exists to prove the harness, not model quality. It is basic TypeScript arrays, objects, and strings.
+
+The first non-trivial TypeScript task is also available:
+
+- `ts-001-json-schema-migrator`
+- `db-001-sqlite-ledger-balances`
 
 ## Commands
 
@@ -14,7 +19,7 @@ That task exists to prove the harness, not model quality. It is basic TypeScript
 pnpm mini-bench:list
 pnpm mini-bench:verify-fixtures
 pnpm mini-bench run --task task-000-basic-ts-transform --no-agent --candidate good
-pnpm mini-bench run --task task-000-basic-ts-transform --task another-task
+pnpm mini-bench run --task task-000-basic-ts-transform --task ts-001-json-schema-migrator --task db-001-sqlite-ledger-balances
 pnpm mini-bench run --task task-000-basic-ts-transform --config bench/mini-bench/config/openrouter-gpt-5.4-mini.jsonc
 pnpm mini-bench clean
 ```
@@ -62,6 +67,16 @@ For live Topchester runs, each per-task report also preserves Topchester's own r
 The report keeps stdout/stderr paths plus these copied `.agents/topchester` artifacts so agent behavior, hooks, model calls, tool calls, and timeout causes can be inspected after the run.
 
 Agent reports include the requested `--output-json` event path and, when needed, an `eventsSourcePath` fallback to the session events under the copied workspace. This keeps tool-call summaries useful even when Topchester solves the task but is killed during post-run shutdown hooks before writing the requested output JSON.
+
+Live agent runs also print and persist an event summary:
+
+- total event count,
+- event kinds,
+- message counts by role,
+- task-plan update count,
+- todo update count,
+- status event count,
+- tool-call breakdown by tool name.
 
 ## V0 Result Semantics
 

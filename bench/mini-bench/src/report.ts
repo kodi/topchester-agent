@@ -54,8 +54,17 @@ export function formatRunSummary(report: RunReport): string {
       lines.push(`- sessionEvents: ${report.agent.sessionEventPaths.join(", ")}`);
     }
     lines.push(`- eventCount: ${report.agent.eventCount}`);
+    lines.push(`- taskPlans: ${report.agent.taskPlanCount}`);
+    lines.push(`- todoUpdates: ${report.agent.todoUpdateCount}`);
+    lines.push(`- statuses: ${report.agent.statusCount}`);
     lines.push(
       `- toolCalls: ${Object.keys(report.agent.toolCalls).length > 0 ? JSON.stringify(report.agent.toolCalls) : "none"}`
+    );
+    lines.push(
+      `- messageRoles: ${Object.keys(report.agent.messageRoles).length > 0 ? JSON.stringify(report.agent.messageRoles) : "none"}`
+    );
+    lines.push(
+      `- eventKinds: ${Object.keys(report.agent.eventKinds).length > 0 ? JSON.stringify(report.agent.eventKinds) : "none"}`
     );
     if (report.agent.stdoutTail.trim()) {
       lines.push("", "### Stdout Tail", "", "```text", report.agent.stdoutTail.trimEnd(), "```");
