@@ -1,0 +1,18 @@
+id: api-001-todo-state-machine
+name: Todo State Machine API
+category: api
+difficulty: medium
+prompt: prompt.md
+workspace: workspace
+bootstrap:
+  script: pnpm install --ignore-workspace --frozen-lockfile
+services: []
+verifier:
+  command: pnpm exec tsx verifier/verify.ts
+timeoutMs: 300000
+agent:
+  cwd: /workspace
+  profile: mini-bench
+expected:
+  changedFiles:
+    - src/app.ts
