@@ -140,6 +140,11 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
           "- Keep edit_file old_text small but unique. Do not include line labels or grep prefixes in old_text; use exact file text only.",
         ]
       : []),
+    ...(canUseTool("apply_patch") && canUseTool("write_file") && canUseTool("read_file")
+      ? [
+          "- If apply_patch/edit_file fails twice on the same file, stop retrying equivalent patches. Read the current file and, when the intended change is broad, use write_file overwrite:true with the current read_file hash to replace the whole file.",
+        ]
+      : []),
     ...(canUseTool("edit_file") || canUseTool("write_file")
       ? [
           "- Use edit/write/patch tools when they are available and the user asks you to implement, fix, add, update, or refactor code.",
