@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { type BenchmarkProfile } from "../benchmark-profile.js";
 import { validateValidatorCommand, type ValidatorKind } from "./command-policy.js";
-import { runProcess } from "./process-runner.js";
+import { runProcess, TERMINAL_BENCH_MAX_OUTPUT_BYTES, TERMINAL_BENCH_MAX_OUTPUT_LINES } from "./process-runner.js";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
 
 export const validatorKindSchema = z.preprocess(
@@ -46,15 +47,29 @@ export const runValidatorTool = defineTool({
   argsSchema: runValidatorArgsSchema,
   requiresExclusiveWorkspace: true,
   execute: async (context, args) =>
-    runValidatorCommand(context.workspaceRoot, args, context.pathEnv, context.abortSignal),
+    runValidatorCommand(context.workspaceRoot, args, {
+      pathEnv: context.pathEnv,
+      abortSignal: context.abortSignal,
+      benchmarkProfile: context.benchmarkProfile,
+    }),
 });
 
 export async function runValidatorCommand(
   workspaceRoot: string,
   args: RunValidatorArgs,
-  pathEnv?: string,
-  abortSignal?: AbortSignal
+  pathEnvOrOptions?:
+    | string
+    | {
+        pathEnv?: string;
+        abortSignal?: AbortSignal;
+        benchmarkProfile?: BenchmarkProfile;
+      },
+  legacyAbortSignal?: AbortSignal
 ): Promise<RunValidatorToolResult> {
+  const options =
+    typeof pathEnvOrOptions === "string"
+      ? { pathEnv: pathEnvOrOptions, abortSignal: legacyAbortSignal, benchmarkProfile: undefined }
+      : (pathEnvOrOptions ?? {});
   const decision = await validateValidatorCommand(args, { workspaceRoot });
 
   if (!decision.allowed) {
@@ -65,9 +80,11 @@ export async function runValidatorCommand(
     executable: decision.plan.executable,
     args: decision.plan.args,
     cwd: decision.plan.cwd,
-    pathEnv,
+    pathEnv: options.pathEnv,
     timeoutMs: args.timeout_ms,
-    abortSignal,
+    abortSignal: options.abortSignal,
+    outputLimitBytes: options.benchmarkProfile === "terminal-bench" ? TERMINAL_BENCH_MAX_OUTPUT_BYTES : undefined,
+    outputLimitLines: options.benchmarkProfile === "terminal-bench" ? TERMINAL_BENCH_MAX_OUTPUT_LINES : undefined,
     env: {
       CI: "1",
       NO_COLOR: "1",

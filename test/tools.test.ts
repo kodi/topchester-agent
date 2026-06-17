@@ -24,6 +24,7 @@ import {
   parseNativeToolCall,
   resolveAgentProfile,
   readWorkspaceFile,
+  createReadFileCache,
   toAiSdkToolSet,
   writeWorkspaceFile,
   createTaskPlanController,
@@ -90,9 +91,53 @@ describe("agent tools", () => {
     expect(result.skipped).toBe("too_large");
     expect(result.bytes).toBe(512 * 1024 + 1);
     expect(result.content).toContain("above the 524288 byte limit");
-    expect(result.content).toContain("Use shell inspection tools");
+    expect(result.content).toContain("shell inspection tools");
     expect(result.content.length).toBeLessThan(2000);
     expect(result.hash).toMatch(/^sha256:/);
+  });
+
+  it("uses a tighter read_file limit in terminal-bench profile", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await writeFile(join(workspace, "large.txt"), "a".repeat(64 * 1024 + 1));
+
+    const result = await readWorkspaceFile(workspace, "large.txt", { benchmarkProfile: "terminal-bench" });
+
+    expect(result.skipped).toBe("too_large");
+    expect(result.bytes).toBe(64 * 1024 + 1);
+    expect(result.content).toContain("above the 65536 byte limit");
+    expect(result.content).toContain("Use read_file with offset and limit");
+  });
+
+  it("reads focused byte ranges from large files", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await writeFile(join(workspace, "large.txt"), "0123456789".repeat(10_000));
+
+    const result = await readWorkspaceFile(workspace, "large.txt", {
+      benchmarkProfile: "terminal-bench",
+      offset: 10,
+      limit: 8,
+    });
+
+    expect(result.skipped).toBeUndefined();
+    expect(result.offset).toBe(10);
+    expect(result.length).toBe(8);
+    expect(result.truncated).toBe(true);
+    expect(result.content).toContain("read_file range: large.txt bytes 10-18 of 100000 (truncated)");
+    expect(result.content).toContain("01234567");
+  });
+
+  it("dedupes repeated unchanged read_file ranges", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    await writeFile(join(workspace, "notes.txt"), "first line\nsecond line\n");
+    const cache = createReadFileCache();
+
+    const first = await readWorkspaceFile(workspace, "notes.txt", { cache });
+    const second = await readWorkspaceFile(workspace, "notes.txt", { cache });
+
+    expect(first.content).toBe("first line\nsecond line\n");
+    expect(second.deduped).toBe(true);
+    expect(second.content).toContain("exact unchanged file range was already shown");
+    expect(second.content).not.toContain("second line");
   });
 
   it("parses grep tool calls from JSON", () => {
@@ -801,7 +846,7 @@ describe("agent tools", () => {
     expect(getToolPromptLines()).toEqual([
       'task: delegate focused read-only research or isolated analysis to a child agent session. Use it when parallel context gathering would help. To use it, reply with only JSON: {"tool":"task","args":{"description":"Inspect runtime event flow","prompt":"Read the runtime and summarize how events are emitted.","subagent_type":"explore"}}',
       'plan_todo: replace the visible session task plan for genuinely multi-step work. Usually create it once after initial orientation, keep 2-6 short milestone items, exactly one in_progress item while work remains, and batch updates when milestones change. Do not call plan_todo twice in a row, after routine reads/searches, after failed edit attempts, for wording-only changes, or just to report completed work before a final answer. To use it, reply with only JSON: {"tool":"plan_todo","args":{"items":[{"text":"Inspect relevant files","status":"in_progress"},{"text":"Implement focused change","status":"pending"}]}}',
-      'read_file: read a UTF-8 file inside the workspace. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
+      'read_file: read a UTF-8 file inside the workspace. For large files, use offset and limit to read a focused byte range. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
       'list_files: list files and directories inside the workspace; top-level by default, recursive only when requested, with "/" after directory names. To use it, reply with only JSON: {"tool":"list_files","args":{"path":"src","recursive":false,"limit":500}}',
       'grep: search text inside file contents in the workspace; output lines are the files containing the matched text, and paths mentioned inside those lines are not confirmed files unless checked with find_file or read_file. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
       'find_file: find existing files by fuzzy path or filename inside the workspace; matches may appear in the middle of a filename, and results are file paths, not file contents. To use it, reply with only JSON: {"tool":"find_file","args":{"query":"runtime"}}',

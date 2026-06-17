@@ -67,6 +67,7 @@ import {
   stripSuppressiblePlanTodoPrefix,
 } from "./model.js";
 import {
+  createReadFileCache,
   executeToolCall,
   bashArgsSchema,
   isBashApprovalRequired,
@@ -376,6 +377,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     const requireFinishTask = isFinishTaskRequiredByEnv() && isToolAllowed(permissions, "finish_task");
     const projectInstructionToolState = { shownSourceKeys: new Set<string>() };
     const persistedProjectInstructionKeys = new Set<string>();
+    const readFileCache = createReadFileCache();
 
     try {
       for (let toolCalls = 0; toolCalls <= maxToolCallsPerTurn; toolCalls += 1) {
@@ -637,6 +639,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                   projectInstructions: projectInstructionToolState,
                   currentUserMessage: message,
                   benchmarkProfile: options.benchmarkProfile,
+                  readFileCache,
                   abortSignal,
                   toolCallId: entry.toolCallId,
                   toolCatalog,
@@ -769,6 +772,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 projectInstructions: projectInstructionToolState,
                 currentUserMessage: message,
                 benchmarkProfile: options.benchmarkProfile,
+                readFileCache,
                 abortSignal,
                 toolCallId: entry.toolCallId,
                 toolCatalog,
@@ -932,6 +936,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 projectInstructions: projectInstructionToolState,
                 currentUserMessage: message,
                 benchmarkProfile: options.benchmarkProfile,
+                readFileCache,
                 abortSignal,
                 toolCallId: toolCall.id,
                 toolCatalog,

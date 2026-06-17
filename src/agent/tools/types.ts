@@ -20,9 +20,21 @@ export interface ToolContext {
   projectInstructions?: ProjectInstructionToolState;
   currentUserMessage?: string;
   benchmarkProfile?: BenchmarkProfile;
+  readFileCache?: ReadFileCache;
   eventSink?: (event: import("../events.js").AgentRuntimeEvent) => void | Promise<void>;
   abortSignal?: AbortSignal;
   toolCallId?: string;
+}
+
+export interface ReadFileCache {
+  seen: Map<string, ReadFileCacheEntry>;
+}
+
+export interface ReadFileCacheEntry {
+  hash: string;
+  bytes: number;
+  offset: number;
+  length: number;
 }
 
 export interface ProjectInstructionToolState {

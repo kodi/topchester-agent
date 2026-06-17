@@ -21,6 +21,7 @@ export interface ExecuteToolCallOptions {
   projectInstructions?: ToolContext["projectInstructions"];
   currentUserMessage?: string;
   benchmarkProfile?: BenchmarkProfile;
+  readFileCache?: ToolContext["readFileCache"];
   eventSink?: (event: AgentRuntimeEvent) => void | Promise<void>;
   abortSignal?: AbortSignal;
   toolCallId?: string;
@@ -56,6 +57,7 @@ export async function executeToolCall(
     projectInstructions: options.projectInstructions,
     currentUserMessage: options.currentUserMessage,
     benchmarkProfile: options.benchmarkProfile,
+    readFileCache: options.readFileCache,
     eventSink: options.eventSink,
     abortSignal: options.abortSignal,
     toolCallId: options.toolCallId,

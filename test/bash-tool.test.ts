@@ -464,6 +464,34 @@ describe("command policy", () => {
     });
   });
 
+  it("uses tighter bash output truncation in terminal-bench profile", async () => {
+    const workspace = await createWorkspace({ scripts: {} });
+    const bin = await mkdtemp(join(tmpdir(), "topchester-bash-bin-"));
+    await writeExecutable(join(bin, "sh"), 'eval "$2"');
+    const call = parseToolCall(
+      `{"tool":"bash","args":{"command":"i=0; while [ $i -lt 25000 ]; do printf x; i=$((i + 1)); done","timeout_ms":10000}}`
+    );
+
+    if (!call) {
+      throw new Error("Expected bash tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call, {
+      pathEnv: bin,
+      benchmarkProfile: "terminal-bench",
+    });
+
+    expect(isToolErrorResult(result)).toBe(false);
+    expect(result).toMatchObject({
+      tool: "bash",
+      exitCode: 0,
+      truncated: true,
+      warning: "bash output was truncated.",
+    });
+    expect(result.content).toContain("[truncated]");
+    expect(result.content.length).toBeLessThan(22_000);
+  });
+
   it("returns a tool error for unapproved bash commands", async () => {
     const workspace = await createWorkspace({ scripts: {} });
     const call = parseToolCall('{"tool":"bash","args":{"command":"node scripts/unknown.mjs"}}');

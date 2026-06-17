@@ -173,7 +173,14 @@ export {
   type RuntimeToolDefinition,
   type ToolCatalog,
 } from "./tools/catalog.js";
-export { readFileTool, readWorkspaceFile, type ReadFileToolArgs, type ReadFileToolCall } from "./tools/read-file.js";
+export {
+  createReadFileCache,
+  readFileTool,
+  readWorkspaceFile,
+  type ReadFileToolArgs,
+  type ReadFileToolCall,
+  type ReadWorkspaceFileOptions,
+} from "./tools/read-file.js";
 export {
   AGENT_PROFILES,
   PRIMARY_AGENT_PROFILE,

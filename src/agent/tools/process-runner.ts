@@ -5,6 +5,8 @@ import { delimiter, isAbsolute, join, relative, resolve } from "node:path";
 
 const DEFAULT_MAX_OUTPUT_BYTES = 40_000;
 const DEFAULT_MAX_OUTPUT_LINES = 1_000;
+export const TERMINAL_BENCH_MAX_OUTPUT_BYTES = 20_000;
+export const TERMINAL_BENCH_MAX_OUTPUT_LINES = 500;
 
 export interface ProcessRunnerOptions {
   executable: string;
