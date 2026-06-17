@@ -54,6 +54,13 @@ export function formatRunSummary(report: RunReport): string {
       lines.push(`- sessionEvents: ${report.agent.sessionEventPaths.join(", ")}`);
     }
     lines.push(`- eventCount: ${report.agent.eventCount}`);
+    lines.push(`- turnCount: ${report.agent.turnCount}`);
+    lines.push(`- turnCountSource: ${report.agent.turnCountSource ?? "unknown"}`);
+    lines.push(`- costUsd: ${report.agent.usage.costUsd ?? "n/a"}`);
+    lines.push(
+      `- tokens: input=${report.agent.usage.inputTokens}, output=${report.agent.usage.outputTokens}, total=${report.agent.usage.totalTokens}, cacheRead=${report.agent.usage.cacheReadTokens}, cacheWrite=${report.agent.usage.cacheWriteTokens}`
+    );
+    lines.push(`- usageSource: ${report.agent.usage.source ?? "unknown"}`);
     lines.push(`- taskPlans: ${report.agent.taskPlanCount}`);
     lines.push(`- todoUpdates: ${report.agent.todoUpdateCount}`);
     lines.push(`- statuses: ${report.agent.statusCount}`);

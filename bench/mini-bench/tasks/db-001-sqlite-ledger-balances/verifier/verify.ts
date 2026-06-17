@@ -105,9 +105,31 @@ const verify: TaskVerifier = async (context) => {
       })
     );
 
-    assert.equal(countRows(db, "transactions"), 0);
-    assert.equal(countRows(db, "entries"), 0);
     assert.equal(imported.getAccountBalance?.(db, "cash"), 0);
+    assert.equal(imported.getAccountBalance?.(db, "revenue"), 0);
+    assert.equal(imported.getAccountBalance?.(db, "tax_payable"), 0);
+    assert.deepEqual(imported.listAccountBalances?.(db), [
+      { accountId: "cash", name: "Cash", normalBalance: "debit", balanceCents: 0 },
+      { accountId: "expense", name: "Expense", normalBalance: "debit", balanceCents: 0 },
+      { accountId: "revenue", name: "Revenue", normalBalance: "credit", balanceCents: 0 },
+      { accountId: "tax_payable", name: "Tax Payable", normalBalance: "credit", balanceCents: 0 },
+    ]);
+
+    assert.deepEqual(
+      imported.postTransaction?.(db, {
+        id: "bad-unknown-account",
+        entries: [
+          { accountId: "cash", side: "debit", amountCents: 1000 },
+          { accountId: "revenue", side: "credit", amountCents: 1000 },
+        ],
+      }),
+      {
+        id: "bad-unknown-account",
+        debitTotalCents: 1000,
+        creditTotalCents: 1000,
+        entryCount: 2,
+      }
+    );
   });
 
   runCase(assertions, "enforces duplicate transaction ids and entry validation", () => {
@@ -151,8 +173,8 @@ const verify: TaskVerifier = async (context) => {
       })
     );
 
-    assert.equal(countRows(db, "transactions"), 1);
-    assert.equal(countRows(db, "entries"), 2);
+    assert.equal(imported.getAccountBalance?.(db, "cash"), 500);
+    assert.equal(imported.getAccountBalance?.(db, "revenue"), 500);
     assert.throws(() => imported.getAccountBalance?.(db, "missing"));
   });
 
@@ -189,11 +211,6 @@ async function importSqlite(): Promise<typeof import("node:sqlite")> {
   } finally {
     process.emitWarning = emitWarning;
   }
-}
-
-function countRows(db: DatabaseSync, table: string): number {
-  const row = db.prepare(`select count(*) as count from ${table}`).get() as { count: number };
-  return row.count;
 }
 
 function runCase(assertions: AssertionResult[], name: string, fn: () => void): void {

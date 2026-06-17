@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { composeFilePath, miniBenchRoot, repoRoot } from "./paths.ts";
 import { runCommand, type CommandResult } from "./command.ts";
 import type { LoadedTask } from "./task-loader.ts";
+import type { AgentUsageSummary } from "./types.ts";
 
 export interface AgentRunResult {
   result: CommandResult;
@@ -22,6 +23,9 @@ export interface AgentRunResult {
   taskPlanCount: number;
   todoUpdateCount: number;
   statusCount: number;
+  turnCount: number;
+  turnCountSource?: string;
+  usage: AgentUsageSummary;
 }
 
 export async function runTopchesterForTask(input: {
@@ -64,7 +68,12 @@ export async function runTopchesterForTask(input: {
   await writeFile(stdoutPath, result.stdout);
   await writeFile(stderrPath, result.stderr);
   const artifacts = await preserveTopchesterArtifacts(input.workspacePath, input.runPath);
-  const eventSummary = await summarizeEvents(eventsPath, input.workspacePath, artifacts.sessionEventPaths);
+  const eventSummary = await summarizeEvents(
+    eventsPath,
+    input.workspacePath,
+    artifacts.sessionEventPaths,
+    artifacts.debugLogPath
+  );
 
   return {
     result,
@@ -125,6 +134,11 @@ async function runHostTopchester(input: {
 
   return runCommand(executable.command, [...executable.args, ...args], {
     cwd: repoRoot,
+    env: {
+      ...process.env,
+      TOPCHESTER_SHOW_TOKEN_USAGE: process.env.TOPCHESTER_SHOW_TOKEN_USAGE ?? "1",
+      TOPCHESTER_LOG_LEVEL: process.env.TOPCHESTER_LOG_LEVEL ?? "debug",
+    },
     timeoutMs: input.timeoutMs + 10_000,
     progressIntervalMs: 10_000,
     onProgress: (elapsedMs) => input.onProgress?.(`agent still running (${formatDuration(elapsedMs)})`),
@@ -184,6 +198,10 @@ async function runContainerTopchester(input: {
     "npm_config_store_dir=/tmp/pnpm-store",
     "--env",
     "TOPCHESTER_MINI_BENCH=1",
+    "--env",
+    "TOPCHESTER_SHOW_TOKEN_USAGE=1",
+    "--env",
+    "TOPCHESTER_LOG_LEVEL=debug",
     ...forwardedEnvArgs(["OPENROUTER_API_KEY"]),
     "agent",
     "topchester",
@@ -239,7 +257,8 @@ function forwardedEnvArgs(names: string[]): string[] {
 export async function summarizeEvents(
   eventsPath: string,
   workspacePath?: string,
-  preservedSessionEventPaths: string[] = []
+  preservedSessionEventPaths: string[] = [],
+  debugLogPath?: string
 ): Promise<{
   toolCalls: Record<string, number>;
   eventCount: number;
@@ -248,6 +267,9 @@ export async function summarizeEvents(
   taskPlanCount: number;
   todoUpdateCount: number;
   statusCount: number;
+  turnCount: number;
+  turnCountSource?: string;
+  usage: AgentUsageSummary;
   eventsSourcePath?: string;
 }> {
   const toolCalls: Record<string, number> = {};
@@ -259,6 +281,9 @@ export async function summarizeEvents(
   let taskPlanCount = 0;
   let todoUpdateCount = 0;
   let statusCount = 0;
+  let assistantMessageCount = 0;
+  let toolCallEventCount = 0;
+  const eventUsage = emptyUsageSummary();
 
   for (const line of source.split("\n")) {
     if (!line.trim()) {
@@ -282,12 +307,20 @@ export async function summarizeEvents(
       if (kind === "status") {
         statusCount += 1;
       }
+      if (kind === "tool_call") {
+        toolCallEventCount += 1;
+      }
     }
 
     const role = extractMessageRole(event, kind);
     if (role) {
       messageRoles[role] = (messageRoles[role] ?? 0) + 1;
+      if (role === "assistant") {
+        assistantMessageCount += 1;
+      }
     }
+
+    addUsageSummary(eventUsage, extractUsageFromEvent(event));
 
     const tool = extractToolName(event);
     if (tool) {
@@ -298,6 +331,14 @@ export async function summarizeEvents(
     }
   }
 
+  const logSummary = debugLogPath ? await summarizeLog(debugLogPath) : undefined;
+  const fallbackTurnCount = toolCallEventCount + assistantMessageCount;
+  const usage = hasUsage(logSummary?.usage) ? logSummary.usage : eventUsage;
+  const turnCount =
+    logSummary?.modelResponseCount && logSummary.modelResponseCount > 0
+      ? logSummary.modelResponseCount
+      : fallbackTurnCount;
+
   return {
     toolCalls,
     eventCount,
@@ -306,6 +347,14 @@ export async function summarizeEvents(
     taskPlanCount,
     todoUpdateCount,
     statusCount,
+    turnCount,
+    turnCountSource: logSummary?.modelResponseCount
+      ? "topchester.log model_response events"
+      : "events tool calls + assistant messages",
+    usage: {
+      ...usage,
+      source: hasUsage(logSummary?.usage) ? "topchester.log model_response events" : usage.source,
+    },
     eventsSourcePath: eventSource?.path,
   };
 }
@@ -348,6 +397,193 @@ function extractMessageRole(value: unknown, kind?: string): string | undefined {
   }
 
   return undefined;
+}
+
+function extractUsageFromEvent(value: unknown): AgentUsageSummary | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const event = value as {
+    event?: { meta?: string; usage?: unknown };
+    meta?: string;
+    usage?: unknown;
+  };
+  const payload = event.event ?? event;
+  const directUsage = usageFromObject(payload) ?? usageFromObject(payload.usage);
+  const meta =
+    typeof event.event?.meta === "string" ? event.event.meta : typeof event.meta === "string" ? event.meta : undefined;
+  const metaUsage = meta ? usageFromMeta(meta) : undefined;
+  const usage = emptyUsageSummary();
+  addUsageSummary(usage, directUsage);
+  addUsageSummary(usage, metaUsage);
+  usage.source = [directUsage?.source, metaUsage?.source].filter(Boolean).join(", ") || undefined;
+  return hasUsage(usage) ? usage : undefined;
+}
+
+async function summarizeLog(
+  debugLogPath: string
+): Promise<{ usage: AgentUsageSummary; modelResponseCount: number } | undefined> {
+  const source = await readFile(debugLogPath, "utf8").catch(() => undefined);
+  if (!source) {
+    return undefined;
+  }
+
+  const usage = emptyUsageSummary();
+  let modelResponseCount = 0;
+
+  for (const line of source.split("\n")) {
+    if (!line.trim()) {
+      continue;
+    }
+
+    let event: unknown;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    if (!event || typeof event !== "object" || (event as { event?: unknown }).event !== "model_response") {
+      continue;
+    }
+
+    modelResponseCount += 1;
+    const modelResponse = event as { usage?: unknown };
+    addUsageSummary(usage, usageFromObject(event) ?? usageFromObject(modelResponse.usage));
+  }
+
+  return modelResponseCount > 0 || hasUsage(usage) ? { usage, modelResponseCount } : undefined;
+}
+
+function usageFromObject(value: unknown): AgentUsageSummary | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const inputTokens = readNumber(value, ["inputTokens", "input_tokens", "prompt_tokens"]);
+  const outputTokens = readNumber(value, ["outputTokens", "output_tokens", "completion_tokens"]);
+  const totalTokens = readNumber(value, ["totalTokens", "total_tokens"]);
+  const cacheReadTokens = readNumber(value, ["cacheReadTokens", "cache_read_tokens", "cache_read_input_tokens"]);
+  const cacheWriteTokens = readNumber(value, ["cacheWriteTokens", "cache_write_tokens", "cache_write_input_tokens"]);
+  const costUsd = readNumber(value, ["costUsd", "cost_usd", "response_cost", "cost"]);
+
+  if (
+    inputTokens === undefined &&
+    outputTokens === undefined &&
+    totalTokens === undefined &&
+    cacheReadTokens === undefined &&
+    cacheWriteTokens === undefined &&
+    costUsd === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    inputTokens: inputTokens ?? 0,
+    outputTokens: outputTokens ?? 0,
+    totalTokens: totalTokens ?? (inputTokens ?? 0) + (outputTokens ?? 0),
+    cacheReadTokens: cacheReadTokens ?? 0,
+    cacheWriteTokens: cacheWriteTokens ?? 0,
+    ...(costUsd === undefined ? {} : { costUsd }),
+    source: "structured usage",
+  };
+}
+
+function usageFromMeta(meta: string): AgentUsageSummary | undefined {
+  const inputTokens = readFormattedInteger(meta.match(/([\d,]+)\s+input\b/)?.[1]);
+  const outputTokens = readFormattedInteger(meta.match(/([\d,]+)\s+output\b/)?.[1]);
+  const cacheReadTokens = readFormattedInteger(meta.match(/([\d,]+)\s+cache read\b/)?.[1]);
+  const cacheWriteTokens = readFormattedInteger(meta.match(/([\d,]+)\s+cache write\b/)?.[1]);
+  const costUsd = readFormattedFloat(meta.match(/\$([0-9]+(?:\.[0-9]+)?)/)?.[1]);
+
+  if (
+    inputTokens === undefined &&
+    outputTokens === undefined &&
+    cacheReadTokens === undefined &&
+    cacheWriteTokens === undefined &&
+    costUsd === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    inputTokens: inputTokens ?? 0,
+    outputTokens: outputTokens ?? 0,
+    totalTokens: (inputTokens ?? 0) + (outputTokens ?? 0),
+    cacheReadTokens: cacheReadTokens ?? 0,
+    cacheWriteTokens: cacheWriteTokens ?? 0,
+    ...(costUsd === undefined ? {} : { costUsd }),
+    source: "assistant message metadata",
+  };
+}
+
+function addUsageSummary(target: AgentUsageSummary, source: AgentUsageSummary | undefined): void {
+  if (!source) {
+    return;
+  }
+
+  target.inputTokens += source.inputTokens;
+  target.outputTokens += source.outputTokens;
+  target.totalTokens += source.totalTokens;
+  target.cacheReadTokens += source.cacheReadTokens;
+  target.cacheWriteTokens += source.cacheWriteTokens;
+  if (source.costUsd !== undefined) {
+    target.costUsd = (target.costUsd ?? 0) + source.costUsd;
+  }
+  target.source = [target.source, source.source].filter(Boolean).join(", ") || undefined;
+}
+
+function emptyUsageSummary(): AgentUsageSummary {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  };
+}
+
+function hasUsage(usage: AgentUsageSummary | undefined): usage is AgentUsageSummary {
+  return Boolean(
+    usage &&
+    (usage.inputTokens > 0 ||
+      usage.outputTokens > 0 ||
+      usage.totalTokens > 0 ||
+      usage.cacheReadTokens > 0 ||
+      usage.cacheWriteTokens > 0 ||
+      usage.costUsd !== undefined)
+  );
+}
+
+function readNumber(value: unknown, keys: string[]): number | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  for (const key of keys) {
+    const candidate = (value as Record<string, unknown>)[key];
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function readFormattedInteger(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(value.replace(/,/g, ""), 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function readFormattedFloat(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function extractToolName(value: unknown): string | undefined {

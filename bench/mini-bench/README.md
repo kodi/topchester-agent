@@ -70,6 +70,9 @@ Agent reports include the requested `--output-json` event path and, when needed,
 
 Live agent runs also print and persist an event summary:
 
+- turn count,
+- cost when Topchester/model-provider usage metadata is available,
+- token totals,
 - total event count,
 - event kinds,
 - message counts by role,
@@ -77,6 +80,8 @@ Live agent runs also print and persist an event summary:
 - todo update count,
 - status event count,
 - tool-call breakdown by tool name.
+
+The mini-bench runner enables `TOPCHESTER_SHOW_TOKEN_USAGE=1` and `TOPCHESTER_LOG_LEVEL=debug` for live runs so copied `topchester.log` files can be used for per-task cost and token summaries. Older reports, or providers that do not emit cost metadata, show `cost: n/a`.
 
 ## V0 Result Semantics
 

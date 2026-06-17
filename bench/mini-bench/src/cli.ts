@@ -6,7 +6,7 @@ import { reportsRoot } from "./paths.ts";
 import { writeRunReport, reportIndexPath } from "./report.ts";
 import { loadTask, loadTasks } from "./task-loader.ts";
 import { runTopchesterForTask } from "./topchester.ts";
-import type { MiniBenchCommand, RunOptions, RunReport } from "./types.ts";
+import type { AgentUsageSummary, MiniBenchCommand, RunOptions, RunReport } from "./types.ts";
 import { runHiddenVerifier } from "./verify.ts";
 import { changedFiles, overlayCandidate, prepareWorkspace, removeRun } from "./workspace.ts";
 
@@ -140,6 +140,7 @@ async function runTasks(options: RunOptions): Promise<RunReport[]> {
     const passed = reports.filter((report) => report.status === "passed").length;
     const color = passed === reports.length ? "green" : "red";
     console.log(`${style("◇ SUMMARY", "cyan")} ${style(`${passed}/${reports.length}`, color)} tasks passed`);
+    printAggregateRunSummary(reports);
     printAggregateAgentSummary(reports);
   }
 
@@ -198,6 +199,9 @@ async function runTask(options: RunOptions): Promise<RunReport> {
         taskPlanCount: agentResult.taskPlanCount,
         todoUpdateCount: agentResult.todoUpdateCount,
         statusCount: agentResult.statusCount,
+        turnCount: agentResult.turnCount,
+        turnCountSource: agentResult.turnCountSource,
+        usage: agentResult.usage,
       };
       console.log(`${dim("│  agent exit:")} ${agent.exitCode ?? "null"}${agent.timedOut ? " timed out" : ""}`);
     }
@@ -310,8 +314,9 @@ function printAgentEventSummary(agent: NonNullable<RunReport["agent"]>): void {
   const toolTotal = Object.values(agent.toolCalls).reduce((sum, count) => sum + count, 0);
   const messageTotal = Object.values(agent.messageRoles).reduce((sum, count) => sum + count, 0);
   console.log(
-    `  ${style("◇", "cyan")} events: ${agent.eventCount}; tools: ${toolTotal}; messages: ${messageTotal}; plans: ${agent.taskPlanCount}; todos: ${agent.todoUpdateCount}; statuses: ${agent.statusCount}`
+    `  ${style("◇", "cyan")} events: ${agent.eventCount}; turns: ${agent.turnCount}; cost: ${formatCostUsdForCli(agent.usage.costUsd)}; tools: ${toolTotal}; messages: ${messageTotal}; plans: ${agent.taskPlanCount}; todos: ${agent.todoUpdateCount}; statuses: ${agent.statusCount}`
   );
+  console.log(`    tokens: ${formatUsage(agent.usage)}`);
   if (Object.keys(agent.toolCalls).length > 0) {
     console.log(`    tools: ${formatCountMap(agent.toolCalls)}`);
   }
@@ -321,6 +326,32 @@ function printAgentEventSummary(agent: NonNullable<RunReport["agent"]>): void {
   if (Object.keys(agent.eventKinds).length > 0) {
     console.log(`    event kinds: ${formatCountMap(agent.eventKinds)}`);
   }
+}
+
+function printAggregateRunSummary(reports: RunReport[]): void {
+  const startedAt = Math.min(...reports.map((report) => Date.parse(report.startedAt)).filter(Number.isFinite));
+  const finishedAt = Math.max(...reports.map((report) => Date.parse(report.finishedAt)).filter(Number.isFinite));
+  const wallTimeMs = Number.isFinite(startedAt) && Number.isFinite(finishedAt) ? finishedAt - startedAt : undefined;
+  const taskTimeMs = reports.reduce((sum, report) => sum + report.durationMs, 0);
+  const totalAssertions = reports.reduce((sum, report) => sum + report.verifier.assertions.length, 0);
+  const passedAssertions = reports.reduce(
+    (sum, report) => sum + report.verifier.assertions.filter((assertion) => assertion.passed).length,
+    0
+  );
+  const changedFileCount = reports.reduce((sum, report) => sum + report.changedFiles.length, 0);
+  const timeoutCount = reports.filter((report) => report.status === "agent_timeout").length;
+  const agents = reports
+    .map((report) => report.agent)
+    .filter((agent): agent is NonNullable<RunReport["agent"]> => Boolean(agent));
+  const turnCount = agents.reduce((sum, agent) => sum + agent.turnCount, 0);
+  const usage = sumUsage(agents.map((agent) => agent.usage));
+
+  console.log(
+    `${style("◇ RUN TOTAL", "cyan")} wall: ${wallTimeMs === undefined ? "n/a" : formatDuration(wallTimeMs)}; task time: ${formatDuration(taskTimeMs)}; turns: ${turnCount}; cost: ${formatCostUsdForCli(usage.costUsd)}`
+  );
+  console.log(
+    `  assertions: ${passedAssertions}/${totalAssertions}; changed files: ${changedFileCount}; timeouts: ${timeoutCount}; tokens: ${formatUsage(usage)}`
+  );
 }
 
 function printAggregateAgentSummary(reports: RunReport[]): void {
@@ -338,12 +369,15 @@ function printAggregateAgentSummary(reports: RunReport[]): void {
   const taskPlanCount = agents.reduce((sum, agent) => sum + agent.taskPlanCount, 0);
   const todoUpdateCount = agents.reduce((sum, agent) => sum + agent.todoUpdateCount, 0);
   const statusCount = agents.reduce((sum, agent) => sum + agent.statusCount, 0);
+  const turnCount = agents.reduce((sum, agent) => sum + agent.turnCount, 0);
+  const usage = sumUsage(agents.map((agent) => agent.usage));
   const toolTotal = Object.values(toolCalls).reduce((sum, count) => sum + count, 0);
   const messageTotal = Object.values(messageRoles).reduce((sum, count) => sum + count, 0);
 
   console.log(
-    `${style("◇ AGENT EVENTS", "cyan")} events: ${eventCount}; tools: ${toolTotal}; messages: ${messageTotal}; plans: ${taskPlanCount}; todos: ${todoUpdateCount}; statuses: ${statusCount}`
+    `${style("◇ AGENT EVENTS", "cyan")} events: ${eventCount}; turns: ${turnCount}; cost: ${formatCostUsdForCli(usage.costUsd)}; tools: ${toolTotal}; messages: ${messageTotal}; plans: ${taskPlanCount}; todos: ${todoUpdateCount}; statuses: ${statusCount}`
   );
+  console.log(`  tokens: ${formatUsage(usage)}`);
   if (Object.keys(toolCalls).length > 0) {
     console.log(`  tools: ${formatCountMap(toolCalls)}`);
   }
@@ -363,6 +397,75 @@ function mergeCountMaps(maps: Array<Record<string, number>>): Record<string, num
     }
   }
   return merged;
+}
+
+function sumUsage(usages: AgentUsageSummary[]): AgentUsageSummary {
+  const total: AgentUsageSummary = {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  };
+
+  for (const usage of usages) {
+    total.inputTokens += usage.inputTokens;
+    total.outputTokens += usage.outputTokens;
+    total.totalTokens += usage.totalTokens;
+    total.cacheReadTokens += usage.cacheReadTokens;
+    total.cacheWriteTokens += usage.cacheWriteTokens;
+    if (usage.costUsd !== undefined) {
+      total.costUsd = (total.costUsd ?? 0) + usage.costUsd;
+    }
+  }
+
+  return total;
+}
+
+function formatUsage(usage: AgentUsageSummary): string {
+  return [
+    `input=${formatInteger(usage.inputTokens)}`,
+    `output=${formatInteger(usage.outputTokens)}`,
+    `total=${formatInteger(usage.totalTokens)}`,
+    `cacheRead=${formatInteger(usage.cacheReadTokens)}`,
+    `cacheWrite=${formatInteger(usage.cacheWriteTokens)}`,
+  ].join(", ");
+}
+
+function formatCostUsd(value: number | undefined): string {
+  if (value === undefined) {
+    return "n/a";
+  }
+
+  if (value === 0) {
+    return "$0.00";
+  }
+
+  return value < 0.01 ? `$${value.toFixed(6)}` : `$${value.toFixed(4)}`;
+}
+
+function formatCostUsdForCli(value: number | undefined): string {
+  const formatted = formatCostUsd(value);
+  return value === undefined ? dim(formatted) : style(formatted, "green");
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) {
+    return `${ms}ms`;
+  }
+
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return remainingSeconds === 0 ? `${minutes}m` : `${minutes}m ${remainingSeconds}s`;
+}
+
+function formatInteger(value: number): string {
+  return new Intl.NumberFormat("en-US").format(value);
 }
 
 function formatCountMap(map: Record<string, number>): string {

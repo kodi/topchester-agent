@@ -47,6 +47,16 @@ export interface VerifierContext {
 
 export type TaskVerifier = (context: VerifierContext) => Promise<VerifierResult> | VerifierResult;
 
+export interface AgentUsageSummary {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  costUsd?: number;
+  source?: string;
+}
+
 export interface RunOptions {
   taskId?: string;
   taskIds?: string[];
@@ -94,5 +104,8 @@ export interface RunReport {
     taskPlanCount: number;
     todoUpdateCount: number;
     statusCount: number;
+    turnCount: number;
+    turnCountSource?: string;
+    usage: AgentUsageSummary;
   };
 }
