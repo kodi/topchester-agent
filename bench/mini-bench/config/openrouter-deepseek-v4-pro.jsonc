@@ -1,0 +1,22 @@
+{
+  "$schema": "https://topchester.com/schemas/config.v1.json",
+  "models": {
+    "default": "openrouter/deepseek/deepseek-v4-pro",
+    "choices": ["openrouter/deepseek/deepseek-v4-pro"],
+  },
+  "providers": {
+    "openrouter": {
+      "type": "openai-compatible",
+      "baseURL": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "supportsStructuredOutputs": true,
+      "headers": {
+        "HTTP-Referer": "https://topchester.com",
+        "X-Title": "Topchester",
+      },
+    },
+  },
+  "hooks": {
+    "enabled": false,
+  },
+}

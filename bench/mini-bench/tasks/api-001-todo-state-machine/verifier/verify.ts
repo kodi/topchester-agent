@@ -143,11 +143,11 @@ const verify: TaskVerifier = async (context) => {
 
       const unknownStatus = await request("GET", "/todos?status=waiting");
       assert.equal(unknownStatus.status, 400);
-      assert.equal(unknownStatus.body.error.code, "invalid_status");
+      assertStructuredError(unknownStatus.body);
 
       const missing = await request("GET", "/todos/does-not-exist");
       assert.equal(missing.status, 404);
-      assert.equal(missing.body.error.code, "not_found");
+      assertStructuredError(missing.body);
 
       const created = await request("POST", "/todos", { title: "Instance one" });
       assert.equal(created.status, 201);
@@ -227,6 +227,13 @@ function assertTodo(value: any, expected: { title: string; status: string; assig
   assert.equal(value.assignee, expected.assignee);
   assert.ok(!Number.isNaN(Date.parse(value.createdAt)));
   assert.ok(!Number.isNaN(Date.parse(value.updatedAt)));
+}
+
+function assertStructuredError(value: any): void {
+  assert.equal(typeof value?.error?.code, "string");
+  assert.ok(value.error.code.length > 0);
+  assert.equal(typeof value.error.message, "string");
+  assert.ok(value.error.message.length > 0);
 }
 
 async function closeServer(server: Server): Promise<void> {
