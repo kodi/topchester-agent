@@ -1,0 +1,15 @@
+{
+  "name": "@topchester/mini-bench",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "mini-bench": "node src/cli.ts",
+    "list": "node src/cli.ts list",
+    "run": "node src/cli.ts run",
+    "up": "node src/cli.ts up",
+    "down": "node src/cli.ts down",
+    "clean": "node src/cli.ts clean",
+    "verify-fixtures": "node src/cli.ts verify-fixtures",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

@@ -1,0 +1,6 @@
+FROM node:24-bookworm-slim
+
+RUN corepack enable
+WORKDIR /bench
+
+CMD ["pnpm", "run", "list"]

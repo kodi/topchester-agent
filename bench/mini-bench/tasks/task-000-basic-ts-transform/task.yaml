@@ -1,0 +1,18 @@
+id: task-000-basic-ts-transform
+name: Basic TypeScript Transform
+category: typescript
+difficulty: trivial
+prompt: prompt.md
+workspace: workspace
+bootstrap:
+  script: null
+services: []
+verifier:
+  command: pnpm exec tsx verifier/verify.ts
+timeoutMs: 180000
+agent:
+  cwd: /workspace
+  profile: mini-bench
+expected:
+  changedFiles:
+    - src/summary.ts

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://topchester.com/schemas/config.v1.json",
+  "models": {
+    "default": "openrouter/openai/gpt-5.4-mini",
+    "choices": ["openrouter/openai/gpt-5.4-mini"],
+  },
+  "providers": {
+    "openrouter": {
+      "type": "openai-compatible",
+      "baseURL": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "supportsStructuredOutputs": true,
+      "headers": {
+        "HTTP-Referer": "https://topchester.com",
+        "X-Title": "Topchester",
+      },
+    },
+  },
+  "hooks": {
+    "enabled": false,
+  },
+}

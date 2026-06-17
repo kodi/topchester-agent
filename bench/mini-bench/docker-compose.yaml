@@ -1,0 +1,14 @@
+services:
+  agent:
+    build:
+      context: ../..
+      dockerfile: bench/mini-bench/Dockerfile.agent
+      args:
+        TOPCHESTER_NPM_SPEC: ${MINI_BENCH_TOPCHESTER_NPM_SPEC:-topchester-ai@latest}
+    working_dir: /workspace
+    volumes:
+      - type: bind
+        source: ${MINI_BENCH_WORKSPACE:-./reports/.empty-workspace}
+        target: /workspace
+    environment:
+      TOPCHESTER_MINI_BENCH: "1"

@@ -406,6 +406,8 @@ Inspect `/tests` when it exists and satisfy the verifier's exact file paths, nam
 
 If validation is practical, run focused checks. If validation is too expensive or blocked, report exactly what you ran or why it could not be run.
 
+Favor an early working artifact over extended up-front analysis: once you have enough context for a plausible first attempt, create or modify the required files and iterate from runtime or verifier feedback. The artifact must be an honest implementation attempt for the requested behavior, not a placeholder, stub, hard-coded verifier artifact, or synthetic substitute. Use task only for narrow read-only questions about a specific file, symbol, or behavior; do not use it to explore whole repositories, directories, test suites, binaries, or large source trees.
+
 Use todo/plan updates sparingly in this benchmark. A short initial plan is fine for complex tasks, but prioritize completing the environment and preserving evidence.
 
 You cannot finish this benchmark with a normal assistant message. A normal assistant message is only a progress note, and the runtime will continue the task after it.
@@ -415,6 +417,7 @@ The only valid way to end this benchmark is to call finish_task. Call finish_tas
 - relevant validation was run, or you explain why it was blocked
 - files_changed lists files actually created or changed when applicable
 - remaining_issues is empty
+- the solution is not a placeholder, stub, hard-coded verifier artifact, or synthetic substitute for the requested behavior
 
 Task:
 

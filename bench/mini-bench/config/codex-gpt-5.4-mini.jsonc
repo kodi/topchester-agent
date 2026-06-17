@@ -1,0 +1,10 @@
+{
+  "$schema": "https://topchester.com/schemas/config.v1.json",
+  "models": {
+    "default": "codex/gpt-5.4-mini",
+    "choices": ["codex/gpt-5.4-mini"],
+  },
+  "hooks": {
+    "enabled": false,
+  },
+}
