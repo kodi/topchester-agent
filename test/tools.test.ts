@@ -842,9 +842,39 @@ describe("agent tools", () => {
     expect(isToolAllowed(permissions, "grep")).toBe(true);
   });
 
+  it("rejects task prompts that ask read-only subagents to execute shell commands", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
+    const call = parseToolCall(
+      JSON.stringify({
+        tool: "task",
+        args: {
+          description: "Inspect binary",
+          prompt: "Use bash to run xxd /app/doomgeneric_mips and report output.",
+          subagent_type: "explore",
+        },
+      })
+    );
+
+    if (!call) {
+      throw new Error("Expected task tool call to parse.");
+    }
+
+    const result = await executeToolCall(workspace, call, {
+      subagents: {
+        async runTask() {
+          throw new Error("subagent should not run");
+        },
+      } as any,
+    });
+
+    expect(isToolErrorResult(result)).toBe(true);
+    expect(result.content).toContain('task subagent "explore" cannot run bash');
+    expect(result.content).toContain("Use the parent bash/run_validator tools directly");
+  });
+
   it("gets model prompt lines from the tool registry", () => {
     expect(getToolPromptLines()).toEqual([
-      'task: delegate focused read-only research or isolated analysis to a child agent session. Use it when parallel context gathering would help. To use it, reply with only JSON: {"tool":"task","args":{"description":"Inspect runtime event flow","prompt":"Read the runtime and summarize how events are emitted.","subagent_type":"explore"}}',
+      'task: delegate read-only file/search/git research to a child agent. Do not use task for shell commands, bash, Python/Node scripts, validators, edits, writes, finish_task, or other execution work; use parent tools directly. To use it, reply with only JSON: {"tool":"task","args":{"description":"Inspect runtime event flow","prompt":"Read the runtime and summarize how events are emitted.","subagent_type":"explore"}}',
       'plan_todo: replace the visible session task plan for genuinely multi-step work. Usually create it once after initial orientation, keep 2-6 short milestone items, exactly one in_progress item while work remains, and batch updates when milestones change. Do not call plan_todo twice in a row, after routine reads/searches, after failed edit attempts, for wording-only changes, or just to report completed work before a final answer. To use it, reply with only JSON: {"tool":"plan_todo","args":{"items":[{"text":"Inspect relevant files","status":"in_progress"},{"text":"Implement focused change","status":"pending"}]}}',
       'read_file: read a UTF-8 file inside the workspace. For large files, use offset and limit to read a focused byte range. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
       'list_files: list files and directories inside the workspace; top-level by default, recursive only when requested, with "/" after directory names. To use it, reply with only JSON: {"tool":"list_files","args":{"path":"src","recursive":false,"limit":500}}',
