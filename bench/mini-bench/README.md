@@ -14,9 +14,12 @@ That task exists to prove the harness, not model quality. It is basic TypeScript
 pnpm mini-bench:list
 pnpm mini-bench:verify-fixtures
 pnpm mini-bench run --task task-000-basic-ts-transform --no-agent --candidate good
+pnpm mini-bench run --task task-000-basic-ts-transform --task another-task
 pnpm mini-bench run --task task-000-basic-ts-transform --config bench/mini-bench/config/openrouter-gpt-5.4-mini.jsonc
 pnpm mini-bench clean
 ```
+
+Multiple `--task` flags run sequentially in one process. Each task still writes its own per-task report. The overall command exits non-zero if any task fails.
 
 Live agent runs default to the Docker `agent` service. The image installs Topchester from npm inside the container, so benchmark runs do not depend on the host checkout's `dist/`, `node_modules`, `HOME`, or user config.
 

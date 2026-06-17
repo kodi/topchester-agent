@@ -49,6 +49,7 @@ export type TaskVerifier = (context: VerifierContext) => Promise<VerifierResult>
 
 export interface RunOptions {
   taskId?: string;
+  taskIds?: string[];
   noAgent: boolean;
   candidate?: string;
   model?: string;

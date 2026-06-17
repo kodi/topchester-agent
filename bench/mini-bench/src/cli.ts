@@ -18,7 +18,7 @@ async function main(): Promise<void> {
       await listTasks();
       return;
     case "run":
-      await runTask(parseRunOptions(args));
+      await runTasks(parseRunOptions(args));
       return;
     case "verify-fixtures":
       await verifyFixtures();
@@ -67,7 +67,7 @@ function parseRunOptions(args: string[]): RunOptions {
 
     switch (arg) {
       case "--task":
-        options.taskId = requireValue(args, ++index, "--task");
+        addTaskId(options, requireValue(args, ++index, "--task"));
         break;
       case "--no-agent":
         options.noAgent = true;
@@ -92,8 +92,8 @@ function parseRunOptions(args: string[]): RunOptions {
         options.keepRuns = false;
         break;
       default:
-        if (!options.taskId && !arg.startsWith("-")) {
-          options.taskId = arg;
+        if (!arg.startsWith("-")) {
+          addTaskId(options, arg);
           break;
         }
         throw new Error(`Unknown run argument '${arg}'`);
@@ -101,6 +101,11 @@ function parseRunOptions(args: string[]): RunOptions {
   }
 
   return options;
+}
+
+function addTaskId(options: RunOptions, taskId: string): void {
+  options.taskIds = [...(options.taskIds ?? []), taskId];
+  options.taskId ??= taskId;
 }
 
 async function listTasks(): Promise<void> {
@@ -111,6 +116,32 @@ async function listTasks(): Promise<void> {
       `${task.definition.id}\t${task.definition.category}\t${task.definition.difficulty}\t${task.definition.name}`
     );
   }
+}
+
+async function runTasks(options: RunOptions): Promise<RunReport[]> {
+  const taskIds =
+    options.taskIds && options.taskIds.length > 0 ? options.taskIds : [options.taskId ?? "task-000-basic-ts-transform"];
+  if (options.output && taskIds.length > 1) {
+    throw new Error("--output can only be used with a single task run");
+  }
+
+  const reports: RunReport[] = [];
+
+  for (const taskId of taskIds) {
+    const report = await runTask({ ...options, taskId, taskIds: undefined });
+    reports.push(report);
+  }
+
+  if (reports.length > 1) {
+    const passed = reports.filter((report) => report.status === "passed").length;
+    console.log(`SUMMARY ${passed}/${reports.length} tasks passed`);
+  }
+
+  if (reports.some((report) => report.status !== "passed")) {
+    process.exitCode = 1;
+  }
+
+  return reports;
 }
 
 async function runTask(options: RunOptions): Promise<RunReport> {
@@ -240,6 +271,7 @@ function printHelp(): void {
   console.log("Usage:");
   console.log("  pnpm mini-bench:list");
   console.log("  pnpm mini-bench run --task task-000-basic-ts-transform --no-agent --candidate good");
+  console.log("  pnpm mini-bench run --task task-000-basic-ts-transform --task another-task");
   console.log("  pnpm mini-bench run --task task-000-basic-ts-transform --model <model>");
   console.log("  pnpm mini-bench:verify-fixtures");
   console.log("  pnpm mini-bench up");
