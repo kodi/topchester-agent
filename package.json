@@ -30,7 +30,7 @@
     "format:check": "pnpm format-check",
     "lint": "oxlint",
     "smoke": "tsx scripts/smoke/run-smoke.ts",
-    "test": "vitest run",
+    "test": "vitest run --dir test",
     "typecheck": "tsgo --noEmit",
     "check": "pnpm typecheck && pnpm format-check && pnpm lint && pnpm test",
     "prepublishOnly": "pnpm build"
