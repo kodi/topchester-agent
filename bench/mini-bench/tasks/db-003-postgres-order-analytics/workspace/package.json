@@ -1,0 +1,14 @@
+{
+  "name": "db-003-postgres-order-analytics",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node src/analytics.test.ts"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.6"
+  }
+}

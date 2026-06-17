@@ -72,7 +72,7 @@ function parseTaskDefinition(source: string, configPath: string): TaskDefinition
     bootstrap: {
       script: readBlockScalar(source, "bootstrap", "script"),
     },
-    services: [],
+    services: readTopLevelList(source, "services"),
     verifier: {
       command: verifierCommand,
     },
@@ -115,6 +115,20 @@ function readBlockScalar(source: string, block: string, field: string): string |
     new RegExp(`^${escapeRegex(block)}:\\s*\\n(?:  .+\\n)*?  ${escapeRegex(field)}:\\s*(.+?)\\s*$`, "m")
   );
   return normalizeScalar(match?.[1]);
+}
+
+function readTopLevelList(source: string, field: string): string[] {
+  const match = source.match(new RegExp(`^${escapeRegex(field)}:\\s*\\n((?:  - .+\\n?)+)`, "m"));
+  if (!match?.[1]) {
+    return [];
+  }
+
+  return match[1]
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("- "))
+    .map((line) => normalizeScalar(line.slice(2)))
+    .filter((value): value is string => Boolean(value));
 }
 
 function readBlockList(source: string, block: string, field: string): string[] {

@@ -12,3 +12,17 @@ services:
         target: /workspace
     environment:
       TOPCHESTER_MINI_BENCH: "1"
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: mini_bench
+      POSTGRES_USER: mini_bench
+      POSTGRES_PASSWORD: mini_bench
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mini_bench -d mini_bench"]
+      interval: 2s
+      timeout: 5s
+      retries: 30

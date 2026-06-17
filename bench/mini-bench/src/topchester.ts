@@ -1,5 +1,6 @@
 import { access, cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { containerPostgresDatabaseUrl, hostPostgresDatabaseUrl } from "./docker.ts";
 import { composeFilePath, miniBenchRoot, repoRoot } from "./paths.ts";
 import { runCommand, type CommandResult } from "./command.ts";
 import type { LoadedTask } from "./task-loader.ts";
@@ -138,6 +139,7 @@ async function runHostTopchester(input: {
       ...process.env,
       TOPCHESTER_SHOW_TOKEN_USAGE: process.env.TOPCHESTER_SHOW_TOKEN_USAGE ?? "1",
       TOPCHESTER_LOG_LEVEL: process.env.TOPCHESTER_LOG_LEVEL ?? "debug",
+      DATABASE_URL: process.env.DATABASE_URL ?? hostPostgresDatabaseUrl,
     },
     timeoutMs: input.timeoutMs + 10_000,
     progressIntervalMs: 10_000,
@@ -202,6 +204,8 @@ async function runContainerTopchester(input: {
     "TOPCHESTER_SHOW_TOKEN_USAGE=1",
     "--env",
     "TOPCHESTER_LOG_LEVEL=debug",
+    "--env",
+    `DATABASE_URL=${containerPostgresDatabaseUrl}`,
     ...forwardedEnvArgs(["OPENROUTER_API_KEY"]),
     "agent",
     "topchester",

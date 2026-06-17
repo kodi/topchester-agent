@@ -1,11 +1,12 @@
 #!/usr/bin/env tsx
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { dockerCompose } from "./docker.ts";
+import { dockerCompose, startTaskServices } from "./docker.ts";
 import { reportsRoot } from "./paths.ts";
 import { writeRunReport, reportIndexPath } from "./report.ts";
 import { loadTask, loadTasks } from "./task-loader.ts";
 import { runTopchesterForTask } from "./topchester.ts";
+import { runCommand } from "./command.ts";
 import type { AgentUsageSummary, MiniBenchCommand, RunOptions, RunReport } from "./types.ts";
 import { runHiddenVerifier } from "./verify.ts";
 import { changedFiles, overlayCandidate, prepareWorkspace, removeRun } from "./workspace.ts";
@@ -161,6 +162,28 @@ async function runTask(options: RunOptions): Promise<RunReport> {
   let agent: RunReport["agent"] | undefined;
 
   try {
+    if (task.definition.services.length > 0) {
+      console.log(`${dim("├─ starting services:")} ${task.definition.services.join(", ")}`);
+      await startTaskServices(task.definition.services);
+    }
+
+    if (task.definition.bootstrap?.script) {
+      console.log(`${dim("├─ bootstrapping workspace:")} ${task.definition.bootstrap.script}`);
+      const bootstrap = await runCommand("sh", ["-lc", task.definition.bootstrap.script], {
+        cwd: prepared.workspacePath,
+        timeoutMs: 120_000,
+        progressIntervalMs: 10_000,
+        onProgress: (elapsedMs) => console.log(`${dim("│  ")}bootstrap still running (${formatDuration(elapsedMs)})`),
+      });
+      if (bootstrap.exitCode !== 0) {
+        throw new Error(
+          [`bootstrap failed with exit code ${bootstrap.exitCode}`, bootstrap.stdout.trim(), bootstrap.stderr.trim()]
+            .filter(Boolean)
+            .join("\n")
+        );
+      }
+    }
+
     if (options.candidate) {
       console.log(`${dim("├─ overlaying candidate:")} ${options.candidate}`);
       candidatePath = await overlayCandidate(task, prepared.workspacePath, options.candidate);
@@ -249,7 +272,12 @@ async function runTask(options: RunOptions): Promise<RunReport> {
 }
 
 async function verifyFixtures(): Promise<void> {
-  const taskIds = ["task-000-basic-ts-transform", "ts-001-json-schema-migrator", "db-001-sqlite-ledger-balances"];
+  const taskIds = [
+    "task-000-basic-ts-transform",
+    "ts-001-json-schema-migrator",
+    "db-001-sqlite-ledger-balances",
+    "db-003-postgres-order-analytics",
+  ];
   console.log(`${style("◇ Fixture verification", "cyan")} ${dim(`(${taskIds.length} tasks)`)}`);
 
   for (const taskId of taskIds) {

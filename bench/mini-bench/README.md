@@ -12,6 +12,7 @@ The first non-trivial TypeScript task is also available:
 
 - `ts-001-json-schema-migrator`
 - `db-001-sqlite-ledger-balances`
+- `db-003-postgres-order-analytics`
 
 ## Commands
 
@@ -27,6 +28,8 @@ pnpm mini-bench clean
 Multiple `--task` flags run sequentially in one process. Each task still writes its own per-task report. The overall command exits non-zero if any task fails.
 
 Live agent runs default to the Docker `agent` service. The image installs Topchester from npm inside the container, so benchmark runs do not depend on the host checkout's `dist/`, `node_modules`, `HOME`, or user config.
+
+Tasks may declare compose services in `task.yaml`. `db-003-postgres-order-analytics` starts the bundled `postgres` service and exposes `DATABASE_URL` to the agent container. Running fixture verification now exercises that Postgres path.
 
 The default npm spec is:
 
@@ -152,7 +155,7 @@ For HTTP tasks, the runner should own candidate server startup, port allocation,
 
 For SQLite tasks, verifiers should create temp databases inside the run directory and reset them per assertion group.
 
-For Postgres tasks, Compose should provide the service, while the runner owns readiness, per-task schema/database reset, and deterministic seed data. The agent should receive only connection details needed by the task, never hidden verifier SQL or expected rows.
+For Postgres tasks, Compose provides the service, while the runner owns readiness and verifiers own per-task schema reset plus deterministic seed data. The agent receives only `DATABASE_URL`, never hidden verifier SQL or expected rows.
 
 ## Maintenance
 

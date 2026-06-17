@@ -12,7 +12,7 @@ export interface TaskDefinition {
   bootstrap?: {
     script?: string | null;
   };
-  services?: string[];
+  services: string[];
   verifier: {
     command: string;
   };
