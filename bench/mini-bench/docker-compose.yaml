@@ -1,5 +1,6 @@
 services:
   agent:
+    image: mini-bench-agent:latest
     build:
       context: ../..
       dockerfile: bench/mini-bench/Dockerfile.agent

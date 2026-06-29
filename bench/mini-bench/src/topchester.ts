@@ -63,6 +63,7 @@ export async function runTopchesterForTask(input: {
           model: input.model,
           timeoutMs: input.timeoutMs,
           prompt,
+          services: input.task.definition.services,
           onProgress: input.onProgress,
         });
 
@@ -154,6 +155,7 @@ async function runContainerTopchester(input: {
   model?: string;
   timeoutMs: number;
   prompt: string;
+  services: string[];
   onProgress?: (message: string) => void;
 }): Promise<CommandResult> {
   const configPath = await resolveContainerConfigPath(input.runPath, input.config);
@@ -182,12 +184,28 @@ async function runContainerTopchester(input: {
   }
 
   const containerEventsPath = "/run/topchester-events.jsonl";
-  const args = [
-    "compose",
-    "-f",
-    composeFilePath,
+  const topchesterArgs = [
+    "topchester",
+    "--workspace",
+    "/workspace",
+    "--config",
+    "/bench/topchester-config.jsonc",
     "run",
-    "--rm",
+    "--dangerously-auto-approve",
+    "--timeout",
+    String(input.timeoutMs),
+    "--json",
+    "--output-json",
+    containerEventsPath,
+  ];
+
+  if (input.model) {
+    topchesterArgs.push("--model", input.model);
+  }
+
+  topchesterArgs.push(input.prompt);
+
+  const commonVolumeAndEnvArgs = [
     "--volume",
     `${input.runPath}:/run`,
     "--volume",
@@ -207,26 +225,20 @@ async function runContainerTopchester(input: {
     "--env",
     `DATABASE_URL=${containerPostgresDatabaseUrl}`,
     ...forwardedEnvArgs(["OPENROUTER_API_KEY"]),
-    "agent",
-    "topchester",
-    "--workspace",
-    "/workspace",
-    "--config",
-    "/bench/topchester-config.jsonc",
-    "run",
-    "--dangerously-auto-approve",
-    "--timeout",
-    String(input.timeoutMs),
-    "--json",
-    "--output-json",
-    containerEventsPath,
   ];
 
-  if (input.model) {
-    args.push("--model", input.model);
-  }
-
-  args.push(input.prompt);
+  const args =
+    input.services.length === 0
+      ? [
+          "run",
+          "--rm",
+          "--volume",
+          `${input.workspacePath}:/workspace`,
+          ...commonVolumeAndEnvArgs,
+          "mini-bench-agent:latest",
+          ...topchesterArgs,
+        ]
+      : ["compose", "-f", composeFilePath, "run", "--rm", ...commonVolumeAndEnvArgs, "agent", ...topchesterArgs];
 
   input.onProgress?.("starting Topchester in agent container");
   return runCommand("docker", args, {
