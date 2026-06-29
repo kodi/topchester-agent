@@ -64,3 +64,14 @@ Never expose a user's full home directory path in user-facing docs, examples, co
 Use ONLY mise tasks for repo checks and automation; never run pnpm tasks directly. Eg never run `pnpm exec oxfmt` use mise tasks.
 
 Use the fff MCP tools for all file search operations instead of default tools.
+
+## Cursor Cloud specific instructions
+
+Toolchain comes from `mise` (`.mise.toml` pins Node 24 + pnpm 11). `mise` lives at `~/.local/bin/mise` and is activated in `~/.bashrc`, so interactive shells already have Node 24 and the repo tasks on PATH. The startup update script keeps dependencies fresh; you should not need to reinstall anything by hand. Run repo checks via mise tasks (`mise run lint`, `mise run typecheck`, `mise run format-check`, `mise run test`), per the rule above.
+
+Running the agent live needs `OPENROUTER_API_KEY` (the default in `config/example.jsonc`). To exercise the full agent loop end to end without any key, use `mise run smoke` — it runs all scenarios against a deterministic fake model (`--fake-api`). KB output folders (`topchester-kb/`, `.agents/topchester/`) are gitignored, so `kb init`/`kb sync` against the real repo will not show up in `git status`.
+
+Two test caveats specific to running here:
+
+- `mise run test` runs `vitest` across the whole repo, which picks up the `bench/mini-bench/tasks/*/workspace/*.test.ts` fixtures. Those are intentionally-incomplete benchmark task workspaces (missing deps like `express`/`pg`/`react`, or stubbed implementations), so they fail and are NOT part of the product suite. The product suite is the `test/` directory only — run `node_modules/.bin/vitest run --dir test` (this is what `pnpm test` scopes to) to check product tests.
+- `test/skills.test.ts > builds skill roots in low-to-high precedence order` fails ONLY because the repo is checked out at `/workspace`, which is itself a git root. That test hardcodes `workspaceRoot: "/workspace/project"`, and `buildSkillRoots` walks up to find `/workspace/.git`, adding an extra workspace scope root and doubling the `workspace-compat` entries (gives 17 roots instead of 11). It passes in any checkout not located under a `/workspace` git root. This is a checkout-location artifact, not a product bug — do not change product code to "fix" it.
