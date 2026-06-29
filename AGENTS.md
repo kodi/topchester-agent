@@ -75,3 +75,18 @@ Two test caveats specific to running here:
 
 - `mise run test` runs `vitest` across the whole repo, which picks up the `bench/mini-bench/tasks/*/workspace/*.test.ts` fixtures. Those are intentionally-incomplete benchmark task workspaces (missing deps like `express`/`pg`/`react`, or stubbed implementations), so they fail and are NOT part of the product suite. The product suite is the `test/` directory only — run `node_modules/.bin/vitest run --dir test` (this is what `pnpm test` scopes to) to check product tests.
 - `test/skills.test.ts > builds skill roots in low-to-high precedence order` fails ONLY because the repo is checked out at `/workspace`, which is itself a git root. That test hardcodes `workspaceRoot: "/workspace/project"`, and `buildSkillRoots` walks up to find `/workspace/.git`, adding an extra workspace scope root and doubling the `workspace-compat` entries (gives 17 roots instead of 11). It passes in any checkout not located under a `/workspace` git root. This is a checkout-location artifact, not a product bug — do not change product code to "fix" it.
+
+### Docker (for `bench/mini-bench`)
+
+Docker is installed by the startup update script and is only needed for the `bench/mini-bench` harness (it builds agent/runner images and runs a Postgres compose service for `db-003-postgres-order-analytics`). The main product, the unit tests, and the fake-API smoke run do NOT need Docker.
+
+The Docker daemon does not auto-start here (no systemd in the VM). Start it once per session before any mini-bench Docker work, then check it is up:
+
+```sh
+sudo dockerd > /tmp/dockerd.log 2>&1 &
+docker ps   # if "permission denied", run: sudo chmod 666 /var/run/docker.sock
+```
+
+The daemon is configured (`/etc/docker/daemon.json`) for `fuse-overlayfs` with `containerd-snapshotter` disabled, which Docker 29 needs to work in this VM; do not switch the storage driver.
+
+The Postgres mini-bench path publishes host port `55432`. The harness leaves `mini-bench-postgres-1` running after a run, so a later run fails with `address already in use` on `55432`. Always tear the service down between runs: `node bench/mini-bench/src/cli.ts down` (or `docker rm -f mini-bench-postgres-1`). Verify Docker end to end without any API key using `mise run mini-bench-verify-fixtures` (exercises the Postgres compose path); live agent benchmark runs still need `OPENROUTER_API_KEY`.
