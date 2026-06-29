@@ -27,7 +27,9 @@ pnpm mini-bench clean
 
 Multiple `--task` flags run sequentially in one process. Each task still writes its own per-task report. The overall command exits non-zero if any task fails.
 
-Live agent runs default to the Docker `agent` service. The image installs Topchester from npm inside the container, so benchmark runs do not depend on the host checkout's `dist/`, `node_modules`, `HOME`, or user config.
+Live agent runs default to the Docker `agent` image. The image installs Topchester from npm inside the container, so benchmark runs do not depend on the host checkout's `dist/`, `node_modules`, `HOME`, or user config.
+
+Tasks without declared services run the agent image with plain `docker run` on Docker's default bridge network. Tasks that declare services still use `docker compose run` so the agent can reach those service containers by name. This keeps normal local Docker behavior while avoiding custom Compose bridge network failures in nested cloud Docker environments for no-service tasks.
 
 Tasks may declare compose services in `task.yaml`. `db-003-postgres-order-analytics` starts the bundled `postgres` service and exposes `DATABASE_URL` to the agent container. Running fixture verification now exercises that Postgres path.
 
