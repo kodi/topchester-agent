@@ -11,6 +11,8 @@ That task exists to prove the harness, not model quality. It is basic TypeScript
 The first non-trivial TypeScript task is also available:
 
 - `ts-001-json-schema-migrator`
+- `api-001-todo-state-machine`
+- `react-001-filterable-todo-panel`
 - `db-001-sqlite-ledger-balances`
 - `db-003-postgres-order-analytics`
 

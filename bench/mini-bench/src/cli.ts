@@ -171,6 +171,7 @@ async function runTask(options: RunOptions): Promise<RunReport> {
       console.log(`${dim("├─ bootstrapping workspace:")} ${task.definition.bootstrap.script}`);
       const bootstrap = await runCommand("sh", ["-lc", task.definition.bootstrap.script], {
         cwd: prepared.workspacePath,
+        env: { ...process.env, CI: "true" },
         timeoutMs: 120_000,
         progressIntervalMs: 10_000,
         onProgress: (elapsedMs) => console.log(`${dim("│  ")}bootstrap still running (${formatDuration(elapsedMs)})`),

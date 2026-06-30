@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import type { AssertionResult, TaskVerifier } from "../../../src/types.ts";
 import { runCommand } from "../../../src/command.ts";
 
+const ciEnv = { ...process.env, CI: "true" };
+
 const verify: TaskVerifier = async (context) => {
   const assertions: AssertionResult[] = [];
   const hiddenDir = resolve(context.workspacePath, ".agents", "mini-bench-hidden");
@@ -10,6 +12,7 @@ const verify: TaskVerifier = async (context) => {
 
   const install = await runCommand("pnpm", ["install", "--ignore-workspace", "--frozen-lockfile"], {
     cwd: context.workspacePath,
+    env: ciEnv,
     timeoutMs: 120_000,
   });
 
@@ -32,6 +35,7 @@ const verify: TaskVerifier = async (context) => {
 
   const result = await runCommand("pnpm", ["exec", "vitest", "run", hiddenTestPath], {
     cwd: context.workspacePath,
+    env: ciEnv,
     timeoutMs: 120_000,
   });
 
