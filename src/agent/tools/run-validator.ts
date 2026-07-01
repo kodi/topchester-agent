@@ -43,7 +43,7 @@ export const runValidatorTool = defineTool({
   name: "run_validator",
   description: "Run a strictly validated test, lint, typecheck, build, check, or smoke command inside the workspace.",
   prompt:
-    'run_validator: run a strict verification command after edits, such as tests, lint, typecheck, build, check, format-check, or smoke; format means check-only commands such as pnpm format-check, not mutating formatter commands such as pnpm format; failed exits are useful evidence and should be inspected before retrying. To use it, reply with only JSON: {"tool":"run_validator","args":{"command":"pnpm test test/tools.test.ts","validator":"test","workdir":".","timeout_ms":120000}}',
+    'run_validator: run a strict verification command after edits, such as pnpm test, go test ./..., cargo test, node --test, local npx tsx --test, lint, typecheck, build, check, format-check, or smoke; format means check-only commands such as pnpm format-check, not mutating formatter commands such as pnpm format; failed exits are useful evidence and should be inspected before retrying. To use it, reply with only JSON: {"tool":"run_validator","args":{"command":"pnpm test test/tools.test.ts","validator":"test","workdir":".","timeout_ms":120000}}',
   argsSchema: runValidatorArgsSchema,
   requiresExclusiveWorkspace: true,
   execute: async (context, args) =>

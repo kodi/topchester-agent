@@ -61,9 +61,15 @@ describe("command policy", () => {
   });
 
   it("accepts direct validator executables", async () => {
-    const workspace = await createWorkspace({ scripts: {} });
+    const workspace = await createWorkspace({ scripts: {}, devDependencies: { tsx: "^4.0.0" } });
 
     for (const [command, validator] of [
+      ["go test ./...", "test"],
+      ["go test -count=1 -race -v ./...", "test"],
+      ["cargo test", "test"],
+      ["cargo test --test integration", "test"],
+      ["npx tsx --test test/pool.test.ts", "test"],
+      ["npx --no-install tsx --test test/pool.test.ts", "test"],
       ["vitest run test/tools.test.ts", "test"],
       ["node --test test/node.test.mjs", "test"],
       ["eslint src", "lint"],
@@ -100,11 +106,22 @@ describe("command policy", () => {
       "cd packages/app",
       "pnpm test > out.txt",
       "pnpm test *.ts",
+      "go test -c",
+      "go test -exec /tmp/runner ./...",
+      "cargo build",
+      "npx vitest run",
+      "npx --yes tsx --test test/pool.test.ts",
     ]) {
       const decision = await validateValidatorCommand({ command }, { workspaceRoot: workspace });
 
       expect(decision, command).toMatchObject({ allowed: false });
     }
+  });
+
+  it("rejects npx tsx validators when tsx is not declared locally", async () => {
+    const workspace = await createWorkspace({ scripts: {} });
+
+    await expectDenied(workspace, "npx tsx --test test/pool.test.ts", "does not declare tsx");
   });
 
   it("rejects package commands that are not validator scripts", async () => {
@@ -541,6 +558,10 @@ async function expectDenied(workspace: string, command: string, reason: string):
 async function createWorkspace(packageJson: {
   packageManager?: string;
   scripts: Record<string, string>;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
 }): Promise<string> {
   const workspace = await mkdtemp(join(tmpdir(), "topchester-command-policy-"));
   await writePackageJson(workspace, packageJson);
@@ -549,7 +570,14 @@ async function createWorkspace(packageJson: {
 
 async function writePackageJson(
   dir: string,
-  packageJson: { packageManager?: string; scripts: Record<string, string> }
+  packageJson: {
+    packageManager?: string;
+    scripts: Record<string, string>;
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    optionalDependencies?: Record<string, string>;
+    peerDependencies?: Record<string, string>;
+  }
 ): Promise<void> {
   await writeFile(join(dir, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`);
 }

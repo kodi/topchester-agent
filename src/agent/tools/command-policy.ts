@@ -60,6 +60,7 @@ interface PackageMetadata {
   path: string;
   dir: string;
   scripts: Record<string, string>;
+  dependencies: Set<string>;
   packageManager?: PackageManager;
 }
 
@@ -73,8 +74,6 @@ const DANGEROUS_EXECUTABLES = new Set([
   "git",
   "kubectl",
   "mv",
-  "npx",
-  "pnpx",
   "rm",
   "rmdir",
   "scp",
@@ -384,18 +383,37 @@ async function findNearestPackageMetadata(workspaceRoot: string, cwd: string): P
 async function readPackageMetadata(path: string): Promise<PackageMetadata> {
   const raw = JSON.parse(await readFile(path, "utf8")) as {
     scripts?: Record<string, unknown>;
+    dependencies?: Record<string, unknown>;
+    devDependencies?: Record<string, unknown>;
+    optionalDependencies?: Record<string, unknown>;
+    peerDependencies?: Record<string, unknown>;
     packageManager?: unknown;
   };
   const scripts = Object.fromEntries(
     Object.entries(raw.scripts ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === "string")
   );
+  const dependencies = new Set([
+    ...getPackageDependencyNames(raw.dependencies),
+    ...getPackageDependencyNames(raw.devDependencies),
+    ...getPackageDependencyNames(raw.optionalDependencies),
+    ...getPackageDependencyNames(raw.peerDependencies),
+  ]);
 
   return {
     path,
     dir: dirname(path),
     scripts,
+    dependencies,
     packageManager: parsePackageManager(raw.packageManager) ?? (await detectPackageManagerFromLockfiles(dirname(path))),
   };
+}
+
+function getPackageDependencyNames(value: unknown): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return [];
+  }
+
+  return Object.keys(value);
 }
 
 function parsePackageManager(value: unknown): PackageManager | undefined {
@@ -438,7 +456,35 @@ function classifyValidator(
     return classifyPackageManagerCommand(command, metadata);
   }
 
+  if (command.executable === "npx" || command.executable === "pnpx") {
+    return classifyPackageExecutorCommand(command, metadata);
+  }
+
   return classifyDirectValidator(command);
+}
+
+function classifyPackageExecutorCommand(
+  command: SimpleCommand,
+  metadata: PackageMetadata | undefined
+): { allowed: true; validator: ValidatorKind } | { allowed: false; reason: string } {
+  const args = command.args[0] === "--no-install" ? command.args.slice(1) : command.args;
+  const executable = args[0];
+
+  if (executable !== "tsx") {
+    return {
+      allowed: false,
+      reason: `command policy rejected '${command.executable}' because only local tsx validators are allowed.`,
+    };
+  }
+
+  if (!metadata?.dependencies.has("tsx")) {
+    return {
+      allowed: false,
+      reason: `command policy rejected '${command.executable} tsx' because package.json does not declare tsx.`,
+    };
+  }
+
+  return classifyDirectValidator({ executable, args: args.slice(1) });
 }
 
 function classifyPackageManagerCommand(
@@ -545,6 +591,14 @@ function classifyDirectValidator(
   command: SimpleCommand
 ): { allowed: true; validator: ValidatorKind } | { allowed: false; reason: string } {
   switch (command.executable) {
+    case "go":
+      return classifyGoValidator(command);
+    case "cargo":
+      return classifyCargoValidator(command);
+    case "tsx":
+      return command.args[0] === "--test" || command.args.includes("--test")
+        ? { allowed: true, validator: "test" }
+        : { allowed: false, reason: "command policy rejected 'tsx' because only 'tsx --test' is a validator." };
     case "vitest":
     case "jest":
     case "mocha":
@@ -586,6 +640,36 @@ function classifyDirectValidator(
     allowed: false,
     reason: `command policy rejected '${command.executable}' because it is not a known validator.`,
   };
+}
+
+function classifyGoValidator(
+  command: SimpleCommand
+): { allowed: true; validator: ValidatorKind } | { allowed: false; reason: string } {
+  if (command.args[0] !== "test") {
+    return { allowed: false, reason: "command policy rejected 'go' because only 'go test' is a validator." };
+  }
+
+  if (
+    command.args.includes("-c") ||
+    command.args.some((arg) => arg.startsWith("-exec") || arg.startsWith("-toolexec"))
+  ) {
+    return {
+      allowed: false,
+      reason: "command policy rejected 'go test' because compile-only or custom tool execution flags are not allowed.",
+    };
+  }
+
+  return { allowed: true, validator: "test" };
+}
+
+function classifyCargoValidator(
+  command: SimpleCommand
+): { allowed: true; validator: ValidatorKind } | { allowed: false; reason: string } {
+  if (command.args[0] !== "test") {
+    return { allowed: false, reason: "command policy rejected 'cargo' because only 'cargo test' is a validator." };
+  }
+
+  return { allowed: true, validator: "test" };
 }
 
 function classifyScriptName(scriptName: string): ValidatorKind | undefined {
