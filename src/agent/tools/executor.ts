@@ -180,6 +180,14 @@ function summarizeToolArgs(call: ToolCall<string, any>): unknown {
   }
 
   if (call.tool !== "edit_file") {
+    if (call.tool === "web_fetch") {
+      return {
+        url: call.args.url,
+        format: call.args.format,
+        timeoutSeconds: call.args.timeout_seconds,
+      };
+    }
+
     if (call.tool === "bash") {
       return {
         command: call.args.command,
@@ -215,6 +223,18 @@ function summarizeToolResult(result: any): Record<string, unknown> {
       itemCount: result.plan.items.length,
       activeItem: result.currentItem,
       completedCount: result.completedCount,
+    };
+  }
+
+  if (result.tool === "web_fetch") {
+    return {
+      url: result.url,
+      finalUrl: result.finalUrl,
+      status: result.status,
+      contentType: result.contentType,
+      truncated: result.truncated,
+      redirectedTo: result.redirectedTo,
+      bytes: result.bytes,
     };
   }
 

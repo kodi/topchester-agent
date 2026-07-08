@@ -34,6 +34,17 @@ ready · my-project · qwen/qwen3-coder [openrouter] · kb: ready
 
 Topchester renders inline instead of using the terminal alternate screen, so terminal scrollback remains available.
 
+## Tool visibility
+
+Tool calls appear as compact rows in the thread so you can see what the agent is reading, editing, running, or fetching. Web reads use `web_fetch: <url>` before completion and include the HTTP status plus byte or truncation state afterward, for example:
+
+```text
+web_fetch: https://example.com/docs (200, 12,480 bytes)
+web_fetch: https://example.com/large-doc (200, truncated)
+```
+
+`web_fetch` is for public HTTP(S) pages. It blocks localhost and private-network addresses, strips URL credentials, stops at cross-host redirects, rejects raw bodies over 5 MB, and marks returned text that was capped at 40,000 characters.
+
 ## Busy input
 
 While a chat turn is running, the prompt stays editable. Pressing `Enter` on normal text queues it as the next follow-up turn. Queued prompts are local to the running TUI process and are not saved as user messages until they actually start.

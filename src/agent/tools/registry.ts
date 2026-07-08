@@ -13,6 +13,7 @@ import { runValidatorTool } from "./run-validator.js";
 import { skillViewTool, skillsListTool } from "./skills.js";
 import { taskTool } from "./task.js";
 import { type ToolCallForDefinition, type ToolResultForDefinition } from "./types.js";
+import { webFetchTool } from "./web-fetch.js";
 import { writeFileTool } from "./write-file.js";
 
 export const toolRegistry = {
@@ -33,6 +34,7 @@ export const toolRegistry = {
   [inspectCommandTool.name]: inspectCommandTool,
   [runValidatorTool.name]: runValidatorTool,
   [bashTool.name]: bashTool,
+  [webFetchTool.name]: webFetchTool,
   [finishTaskTool.name]: finishTaskTool,
   [skillsListTool.name]: skillsListTool,
   [skillViewTool.name]: skillViewTool,

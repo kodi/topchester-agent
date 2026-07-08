@@ -10,6 +10,12 @@ public: true
 
 Topchester changes grouped by day. This file is the source of truth for the public changelog.
 
+## 2026-07-08
+
+### Features
+
+- Added `web_fetch` so the agent can read public HTTP(S) docs, changelogs, API references, issue pages, and package notes with private-network blocking, redirect visibility, size caps, and truncation markers.
+
 ## 2026-06-04
 
 ### Features

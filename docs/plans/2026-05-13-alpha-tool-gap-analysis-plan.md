@@ -18,6 +18,7 @@ Topchester currently exposes these workspace-scoped agent tools:
 - `write_file` — create new UTF-8 files by default, with guarded whole-file overwrite support.
 - `git_status`, `git_diff`, `git_log`, `git_add`, and `git_commit` — inspect Git state and perform guarded explicit staging/commit operations.
 - `inspect_command` — run a small allowlisted set of read-only discovery commands.
+- `web_fetch` — fetch public HTTP(S) pages with private-network blocking, redirect visibility, size caps, and markdown/text/html output.
 - `plan_todo` — keep a visible session-only task plan for multi-step work.
 
 Important limits:
@@ -25,7 +26,7 @@ Important limits:
 - No general command execution.
 - No test, lint, typecheck, or build runner.
 - No directory creation tool.
-- No web fetch or web search tool.
+- No web search tool.
 - No browser automation.
 - No external MCP/custom tool support beyond the KB architecture.
 
@@ -119,6 +120,8 @@ Why third:
 
 Weight: `15`
 
+Status: `web_fetch` shipped in the `2026-07-08-web-fetch-tool-v0-plan.md` implementation. `web_search` remains open.
+
 Coding agents regularly need current docs, changelogs, API references, issue pages, package behavior, and public examples.
 
 Suggested scope:
@@ -161,7 +164,7 @@ Why fifth:
 1. Ship `run_command` / `run_validator`.
 2. Ship `write_file` and directory creation.
 3. Ship structured git read tools, then guarded git mutation tools.
-4. Ship web fetch/search.
+4. Ship web fetch/search. `web_fetch` shipped; `web_search` remains open.
 5. Ship visible planning/todo state. `[x]`
 
 ## Just Outside The Top 5

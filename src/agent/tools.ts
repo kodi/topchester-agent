@@ -118,6 +118,29 @@ export {
   type BashToolResult,
 } from "./tools/bash.js";
 export {
+  convertFetchedContent,
+  convertHtmlToMarkdown,
+  extractTextFromHtml,
+  fetchWebContent,
+  webFetchArgsSchema,
+  webFetchTool,
+  type FetchWebContentOptions,
+  type WebFetchFormat,
+  type WebFetchToolArgs,
+  type WebFetchToolCall,
+  type WebFetchToolResult,
+} from "./tools/web-fetch.js";
+export {
+  assertWebFetchUrlAllowed,
+  validateWebFetchUrl,
+  type WebFetchDnsAddress,
+  type WebFetchUrlAccepted,
+  type WebFetchUrlPolicyOptions,
+  type WebFetchUrlRejected,
+  type WebFetchUrlRejectionCode,
+  type WebFetchUrlValidation,
+} from "./tools/web-fetch-policy.js";
+export {
   bashPermissionConfigSchema,
   bashPermissionRuleSchema,
   getBashApprovalCandidates,

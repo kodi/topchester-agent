@@ -71,6 +71,24 @@ export function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult
     return [`Tool result from ${result.tool}:`, result.content].join("\n");
   }
 
+  if (result.tool === "web_fetch") {
+    return [
+      `Tool result from ${result.tool}:`,
+      `url: ${result.url}`,
+      result.finalUrl && result.finalUrl !== result.url ? `final_url: ${result.finalUrl}` : "",
+      result.redirectedTo ? `redirected_to: ${result.redirectedTo}` : "",
+      `status: ${result.status}`,
+      result.contentType ? `content_type: ${result.contentType}` : "",
+      `bytes: ${result.bytes}`,
+      `truncated: ${result.truncated}`,
+      "```",
+      result.content,
+      "```",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
   if (result.tool === "edit_file" && "diff" in result) {
     return [
       `Tool result from ${result.tool}${path}:`,
@@ -437,6 +455,8 @@ export function formatToolCallMessage(call: ToolCall, result?: ToolExecutionResu
       return `write_file: ${call.args.path}${formatWriteFileChangeSummary(result)}`;
     case "finish_task":
       return "finish_task";
+    case "web_fetch":
+      return `web_fetch: ${call.args.url}${formatWebFetchResultSummary(result)}`;
     case "git_status":
       return `git_status: ${result?.tool === "git_status" ? `${result.files.length} changed` : call.args.path}`;
     case "git_diff":
@@ -560,6 +580,18 @@ function formatApplyPatchChangeSummary(result: ToolExecutionResult<ToolResult> |
   }
 
   return ` (${result.changedFiles.length} files)`;
+}
+
+function formatWebFetchResultSummary(result: ToolExecutionResult<ToolResult> | undefined): string {
+  if (result?.tool !== "web_fetch" || isToolErrorResult(result)) {
+    return "";
+  }
+
+  if (result.redirectedTo) {
+    return ` (${result.status}, redirected)`;
+  }
+
+  return ` (${result.status}, ${result.truncated ? "truncated" : `${formatInteger(result.bytes)} bytes`})`;
 }
 
 function formatDiffForPrompt(diff: string): string {

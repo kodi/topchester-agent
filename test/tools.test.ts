@@ -30,6 +30,7 @@ import {
   createTaskPlanController,
   defineTool,
 } from "../src/agent/tools.js";
+import { formatToolCallMessage, formatToolResultForPrompt } from "../src/agent/runtime/format.js";
 import { toolRegistry } from "../src/agent/tools/registry.js";
 import { editFileArgsSchema } from "../src/agent/tools/edit-file.js";
 import { writeFileArgsSchema } from "../src/agent/tools/write-file.js";
@@ -299,6 +300,28 @@ describe("agent tools", () => {
         command: "node scripts/check-fixtures.mjs",
         workdir: ".",
         timeout_ms: 120_000,
+      },
+    });
+  });
+
+  it("parses web_fetch tool calls from JSON", () => {
+    expect(parseToolCall('{"tool":"web_fetch","args":{"url":"https://example.com/docs"}}')).toEqual({
+      tool: "web_fetch",
+      args: {
+        url: "https://example.com/docs",
+        format: "markdown",
+      },
+    });
+    expect(
+      parseToolCall(
+        '{"tool":"web_fetch","args":{"url":"https://example.com/docs","format":"text","timeout_seconds":5}}'
+      )
+    ).toEqual({
+      tool: "web_fetch",
+      args: {
+        url: "https://example.com/docs",
+        format: "text",
+        timeout_seconds: 5,
       },
     });
   });
@@ -795,6 +818,43 @@ describe("agent tools", () => {
     ]);
   });
 
+  it("allows web_fetch for primary and general profiles but not explore", () => {
+    const primary = createToolPermissionView(resolveAgentProfile("primary"));
+    const general = createToolPermissionView(resolveAgentProfile("general"));
+    const explore = createToolPermissionView(resolveAgentProfile("explore"));
+
+    expect(isToolAllowed(primary, "web_fetch")).toBe(true);
+    expect(isToolAllowed(general, "web_fetch")).toBe(true);
+    expect(isToolAllowed(explore, "web_fetch")).toBe(false);
+    expect(createProfileToolCatalog(primary).isParallelSafe("web_fetch")).toBe(true);
+  });
+
+  it("formats web_fetch calls and results for the TUI and prompt", () => {
+    const call = {
+      tool: "web_fetch",
+      args: {
+        url: "https://example.com/docs",
+        format: "markdown",
+      },
+    } as const;
+    const result = {
+      tool: "web_fetch",
+      url: "https://example.com/docs",
+      finalUrl: "https://example.com/docs",
+      status: 200,
+      contentType: "text/html",
+      truncated: false,
+      bytes: 128,
+      content: "# Docs",
+    } as const;
+
+    expect(formatToolCallMessage(call)).toBe("web_fetch: https://example.com/docs");
+    expect(formatToolCallMessage(call, result)).toBe("web_fetch: https://example.com/docs (200, 128 bytes)");
+    expect(formatToolResultForPrompt(result)).toContain("status: 200");
+    expect(formatToolResultForPrompt(result)).toContain("truncated: false");
+    expect(formatToolResultForPrompt(result)).toContain("# Docs");
+  });
+
   it("rejects denied tools at execution time", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
     const permissions = createToolPermissionView(resolveAgentProfile("explore"));
@@ -891,6 +951,7 @@ describe("agent tools", () => {
       'inspect_command: run a safe read-only discovery command inside the workspace for quick repo orientation; prefer read_file, list_files, grep, and find_file for exact file tasks, and do not use it for builds, tests, installs, network, shell scripts, edits, or user-requested specific commands such as node --version, which node, or pnpm --version. To use it, reply with only JSON: {"tool":"inspect_command","args":{"command":"pwd && rg --files docs/plans | head -20","workdir":".","timeout_ms":10000}}',
       'run_validator: run a strict verification command after edits, such as pnpm test, go test ./..., cargo test, node --test, local npx tsx --test, lint, typecheck, build, check, format-check, or smoke; format means check-only commands such as pnpm format-check, not mutating formatter commands such as pnpm format; failed exits are useful evidence and should be inspected before retrying. To use it, reply with only JSON: {"tool":"run_validator","args":{"command":"pnpm test test/tools.test.ts","validator":"test","workdir":".","timeout_ms":120000}}',
       'bash: run an approval-gated shell command for terminal work that needs shell syntax, one-off user-requested commands, package manager commands, scripts, pipelines, redirects, or chaining. Use run_validator, not bash, for tests and checks that fit strict validator shapes such as pnpm test, go test, cargo test, node --test, local npx tsx --test, lint, typecheck, build, check, format-check, and smoke. To use it, reply with only JSON: {"tool":"bash","args":{"command":"printf hi | wc -c","workdir":".","timeout_ms":120000,"description":"count bytes"}}',
+      'web_fetch: fetch a public HTTP(S) URL for current docs, changelogs, API references, issue pages, or package behavior; private network and localhost URLs are blocked. Prefer this over bash curl/wget. To use it, reply with only JSON: {"tool":"web_fetch","args":{"url":"https://example.com/docs","format":"markdown","timeout_seconds":30}}',
       'finish_task: complete the task with a brief final response only after tool results prove the work is done. In benchmark or require-finish mode, this is the only valid terminal action; normal assistant messages are progress notes and do not finish the task, and remaining_issues must be empty. For implementation tasks, do not call finish_task until source files were changed by edit_file, write_file, apply_patch, or another mutating tool, unless no code change is truly required. Example: {"tool":"finish_task","args":{"final_response":"Changed src/foo.ts and ran pnpm test foo.test.ts.","files_changed":["src/foo.ts"],"validation":["pnpm test foo.test.ts"],"remaining_issues":[]}}',
       'skills_list: List available on-demand skills without loading full skill bodies. Args: {}. Example: {"tool":"skills_list","args":{}}',
       'skill_view: Load full SKILL.md content for one skill by name. Args: {"name":"skill-name"}. Example: {"tool":"skill_view","args":{"name":"code-review"}}',
@@ -952,6 +1013,7 @@ describe("agent tools", () => {
     expect(prompt).toContain("Prefer dedicated tools for file reads, file writes, edits, Git inspection, and searches");
     expect(prompt).toContain("Use bash for arbitrary shell syntax");
     expect(prompt).toContain("Do not use bash for file reads, file writes, Git inspection");
+    expect(prompt).toContain("Use web_fetch, not bash curl or wget");
   });
 
   it("tells the model inspect_command is only for read-only orientation", () => {

@@ -93,6 +93,11 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
           "- Do not use inspect_command for tests, builds, lint, typecheck, format checks, or smoke checks. Use run_validator for verification.",
         ].filter(Boolean)
       : []),
+    ...(canUseTool("web_fetch")
+      ? [
+          "- Use web_fetch, not bash curl or wget, when you need to read public web pages such as docs, changelogs, API references, or issue pages.",
+        ]
+      : []),
     ...(canUseTool("bash")
       ? [
           "- When the user explicitly asks to run a command or asks for command output, use bash unless a more specific tool is clearly the right fit.",
