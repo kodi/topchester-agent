@@ -14,12 +14,96 @@ Topchester changes grouped by day. This file is the source of truth for the publ
 
 ### Features
 
-- Added `web_fetch` so the agent can read public HTTP(S) docs, changelogs, API references, issue pages, and package notes with private-network blocking, redirect visibility, size caps, and truncation markers.
+- Added `web_fetch` so the agent can read public HTTP(S) docs, changelogs, API references, issue pages, and package notes with private-network blocking, redirect visibility, size caps, and truncation markers ([58a591e](https://github.com/kodi/topchester-agent/commit/58a591e4ea8ad8a7d4abe3936522641e0e5a2026)).
+
+### Releases
+
+- Release topchester-ai v0.72.0 ([c4139f6](https://github.com/kodi/topchester-agent/commit/c4139f650c9a084f912774dc9136cf428ab30988)).
+
+## 2026-07-01
+
+### Benchmarks
+
+- Added more mini-bench tasks and improved CI environment handling for benchmark runs ([96a4cf2](https://github.com/kodi/topchester-agent/commit/96a4cf2c75bac84ef6d74d1ff2e93b7c2a1d2fc9)).
+
+### Docs and config
+
+- Added SanityHarness agent comparison follow-up planning notes ([c8deaeb](https://github.com/kodi/topchester-agent/commit/c8deaeb8bb2e1f1b76f85988b8d356be553e83eb)).
+
+### Releases
+
+- Release topchester-ai v0.71.0 ([7f49aaf](https://github.com/kodi/topchester-agent/commit/7f49aaf4c076fc64035c69bab42f3f2bcfca5468)).
+
+## 2026-06-30
+
+### Fixes and polish
+
+- Avoided creating Docker Compose networks for no-service mini-bench tasks ([54dd12d](https://github.com/kodi/topchester-agent/commit/54dd12d37975e5b647d59cd7577067bda2faa085)).
+
+### Docs and config
+
+- Added Cursor Cloud setup notes to `AGENTS.md` ([605bd76](https://github.com/kodi/topchester-agent/commit/605bd76a590ecdb62e4c9f6cada8e202c0cff882)).
+
+## 2026-06-17
+
+### Features
+
+- Restricted task subagents to read-only research tools so implementation changes stay with the primary agent ([fdabe0b](https://github.com/kodi/topchester-agent/commit/fdabe0b5f08f38f9f197c26e46fc24a04e7ef0df)).
+- Added offset/limit reads and caching to the `read_file` tool ([814b2cb](https://github.com/kodi/topchester-agent/commit/814b2cbb331d75e8bfc38ef710e94b203f03a4de)).
+- Added `max_tool_calls_per_turn` support and improved large-file read handling ([0da1746](https://github.com/kodi/topchester-agent/commit/0da17460765ccc7c024dfd940226d7fba656f0df)).
+- Added `--benchmark-profile terminal-bench` for disposable benchmark containers ([4ff98a9](https://github.com/kodi/topchester-agent/commit/4ff98a9d07238f595902d6ee3fa8506a80549094)).
+
+### Benchmarks
+
+- Added the mini-bench local harness, reporting, and the first TypeScript transform task ([9934903](https://github.com/kodi/topchester-agent/commit/99349036bff3722e8ccc90b614d5a709723ae571)).
+- Added sequential task runs, token usage, cost, and turn-count extraction to mini-bench reports ([55d9edf](https://github.com/kodi/topchester-agent/commit/55d9edfb7ec2e9c5784c121279ca7c6cd7637fc1), [14dc241](https://github.com/kodi/topchester-agent/commit/14dc241691c803e0dfa83df6dfd21a7c737ab377)).
+- Added SQLite, JSON schema migrator, Postgres analytics, React todo panel, OpenRouter DeepSeek, and Gemini benchmark coverage ([dd544fa](https://github.com/kodi/topchester-agent/commit/dd544fa3c110d1564cc6319136c399069cfbc2a3), [7aa4daf](https://github.com/kodi/topchester-agent/commit/7aa4daf0fc2e562afd8320e5dae88b4121a4284a), [474ab0e](https://github.com/kodi/topchester-agent/commit/474ab0edfd374e7e43ed91ba74b2c6877e09bb78), [0e16ff8](https://github.com/kodi/topchester-agent/commit/0e16ff8aaaf86f96f9ffcec4aa1ee5376b5cd963), [ef87f10](https://github.com/kodi/topchester-agent/commit/ef87f10ba26c4f1bda9effa6d842d90da91bd336)).
+
+### Fixes and polish
+
+- Refined task tool instructions and fallback guidance for failed edits ([dc617dc](https://github.com/kodi/topchester-agent/commit/dc617dc1322a5994bea4ce698ace357c7d23c12a)).
+- Scoped product tests away from benchmark fixture workspaces ([23c2c75](https://github.com/kodi/topchester-agent/commit/23c2c75b195da54442f7cc8a040489f72845c6cf)).
+
+### Releases
+
+- Release topchester-ai v0.70.0 ([7914351](https://github.com/kodi/topchester-agent/commit/791435190d48bfb3212ad66f21e4443fd57cfa08)).
+- Release topchester-ai v0.69.0 ([812e754](https://github.com/kodi/topchester-agent/commit/812e7548baf5739adf17bf44d769c67892f0c5d7)).
+- Release topchester-ai v0.68.0 ([14a1ba1](https://github.com/kodi/topchester-agent/commit/14a1ba14ae5a110c0f1ace430b8a20d17fdb5289)).
+- Release topchester-ai v0.67.0 ([ac6d914](https://github.com/kodi/topchester-agent/commit/ac6d9148f2395af46085357c4e29bfd0647fb987)).
+
+## 2026-06-12
+
+### Features
+
+- Added `--dangerously-auto-approve` for benchmark automation while recording auto-approved commands in session events ([52ec300](https://github.com/kodi/topchester-agent/commit/52ec300276fcdcd65773ff99912371460399a8fc)).
+- Added KB inventory validation and configurable benchmark-agent options ([d6149e8](https://github.com/kodi/topchester-agent/commit/d6149e84641c2aa8fbff3749486cc30a78024228)).
+- Added implementation-task validation with source mutation tracking ([69411c5](https://github.com/kodi/topchester-agent/commit/69411c56c2eb8b95e7527e8fe670ff04c60ce4b6)).
+- Added `plan_todo` mode configuration and constraints ([136bfe4](https://github.com/kodi/topchester-agent/commit/136bfe4f43ebd82049978b5b640acdf3ab2229cb)).
+- Replaced pnpm-wrapper benchmark execution with direct tool execution and added a required `finish_task` mode ([119cd44](https://github.com/kodi/topchester-agent/commit/119cd446f928776b1f4b20c1c542fd83c7c9a177)).
+
+### Docs and config
+
+- Added `topchester mcp add` command documentation ([dc99d62](https://github.com/kodi/topchester-agent/commit/dc99d6238ffe6de2e9320b50b66a3cda0421f6b1)).
+
+### Releases
+
+- Release topchester-ai v0.65.0 ([d8d0f84](https://github.com/kodi/topchester-agent/commit/d8d0f8412fb45c0f9cfd8bba37db0a077f425588)).
+- Release topchester-ai v0.64.0 ([1156adc](https://github.com/kodi/topchester-agent/commit/1156adcc017106f5e8a23c5e792251f0eca93fc7)).
+- Release topchester-ai v0.63.0 ([38492dc](https://github.com/kodi/topchester-agent/commit/38492dcdf58dfc1b22f8994f57924eed885d8c86)).
+- Release topchester-ai v0.62.0 ([1036cc3](https://github.com/kodi/topchester-agent/commit/1036cc3adc2df895980706acb71c81199ecb42dd)).
+- Release topchester-ai v0.61.0 ([207c12e](https://github.com/kodi/topchester-agent/commit/207c12e74be0c1fe51dfb7e8f3d29c016090db1d)).
+
+## 2026-06-05
+
+### Fixes and polish
+
+- Removed integrations and hook stop commands that were superseded by the current command surface ([390eceb](https://github.com/kodi/topchester-agent/commit/390eceb29bfa8b1c00958378062723a6a6830942)).
 
 ## 2026-06-04
 
 ### Features
 
+- Added reasoning effort configuration, `/effort` slash command support, autocomplete suggestions, and model-result logging for provider reasoning effort ([87e49e6](https://github.com/kodi/topchester-agent/commit/87e49e6e1e926918f79fa12f321ea732bdee2554), [f458974](https://github.com/kodi/topchester-agent/commit/f458974917753c06920584f32f4bb4dce4ea9d5c), [2869653](https://github.com/kodi/topchester-agent/commit/2869653ad688e5fa85ca940ef714efe323a238e3)).
 - Added TUI queued follow-up prompts, `/queue`, and `/steer` active-turn guidance.
 - Added `/effort` and `/reasoning` commands for durable provider reasoning effort.
 - Added Codex device auth flow and global auth store ([28c0b17](https://github.com/kodi/topchester-agent/commit/28c0b17fb10c865d064944be39181ff21604b450))
@@ -40,6 +124,10 @@ Topchester changes grouped by day. This file is the source of truth for the publ
 
 ### Releases
 
+- Release topchester-ai v0.60.0 ([c5ff3ab](https://github.com/kodi/topchester-agent/commit/c5ff3abd742c7284e7e9bb27bc5f43b3b504c091)).
+- Release topchester-ai v0.59.0 ([b0024e1](https://github.com/kodi/topchester-agent/commit/b0024e14ce7ddd194376fa721fb4959a42b5a324)).
+- Release topchester-ai v0.58.0 ([faa5cad](https://github.com/kodi/topchester-agent/commit/faa5cad0320683974913e0be72a90207a7da11e5)).
+- Release topchester-ai v0.57.0 ([a5fe758](https://github.com/kodi/topchester-agent/commit/a5fe758d042e213f51fe379c3af8f59a12499e58)).
 - Release topchester-ai v0.56.0 ([8152224](https://github.com/kodi/topchester-agent/commit/81522240fd6e7ad40ec8ddd533a4c520f19c7f77))
 - Release topchester-ai v0.55.0 ([9d7f372](https://github.com/kodi/topchester-agent/commit/9d7f372132cadf9e6973267fee148e4d6986274b))
 - Release topchester-ai v0.54.0 ([5225a49](https://github.com/kodi/topchester-agent/commit/5225a496decc9d05b510c08127063f215edd0d26))
