@@ -4,6 +4,11 @@ export interface ActiveMention {
   query: string;
 }
 
+export interface MentionRange {
+  start: number;
+  end: number;
+}
+
 export function findActiveMention(value: string, cursor: number): ActiveMention | undefined {
   const safeCursor = Math.max(0, Math.min(cursor, value.length));
   const tokenStart = findTokenStart(value, safeCursor);
@@ -23,6 +28,27 @@ export function findActiveMention(value: string, cursor: number): ActiveMention 
     end: tokenEnd,
     query: value.slice(tokenStart + 1, safeCursor),
   };
+}
+
+export function findMentionRanges(value: string): MentionRange[] {
+  const ranges: MentionRange[] = [];
+  let index = 0;
+
+  while (index < value.length) {
+    if (value[index] !== "@" || (index > 0 && !isWhitespace(value[index - 1] ?? ""))) {
+      index += 1;
+      continue;
+    }
+
+    const end = findTokenEnd(value, index + 1);
+    if (end > index + 1) {
+      ranges.push({ start: index, end });
+    }
+
+    index = Math.max(index + 1, end);
+  }
+
+  return ranges;
 }
 
 export function applyMentionCompletion(

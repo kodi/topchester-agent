@@ -3,6 +3,8 @@ import { ui } from "../cli/ui.js";
 import { type ToolCall } from "../agent/tools.js";
 import { type HookEventName } from "../config/index.js";
 import { renderUnifiedDiff } from "./diff.js";
+import { findMentionRanges } from "./file-mentions.js";
+import { renderMentionStyles } from "./mention-styles.js";
 import { renderMarkdown } from "./markdown.js";
 
 export type ChatMessageKind =
@@ -161,14 +163,14 @@ export function renderChatMessage(message: ChatMessage, options: RenderChatMessa
     return [""];
   }
 
+  if (message.kind === "user") {
+    return renderUserMessage(renderUserMessageLines(message.text));
+  }
+
   const lines =
     message.kind === "agent" && options.width !== undefined
       ? renderMarkdown(message.text, Math.max(1, options.width - getPrefix(message.kind).length))
       : message.text.split("\n");
-
-  if (message.kind === "user") {
-    return renderUserMessage(lines);
-  }
 
   if (message.kind === "system") {
     return renderSystemMessage(lines);
@@ -193,6 +195,19 @@ function renderUserMessage(lines: string[]): string[] {
   const rendered = lines.map((line) => `${border} ${line}`);
 
   return [`${border} `, ...rendered, `${border} `];
+}
+
+function renderUserMessageLines(text: string): string[] {
+  const ranges = findMentionRanges(text);
+  const lines: string[] = [];
+  let offset = 0;
+
+  for (const line of text.split("\n")) {
+    lines.push(renderMentionStyles(line, offset, ranges));
+    offset += line.length + 1;
+  }
+
+  return lines;
 }
 
 function renderSystemMessage(lines: string[]): string[] {

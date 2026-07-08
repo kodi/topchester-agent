@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyMentionCompletion, findActiveMention } from "../src/tui/file-mentions.js";
+import { applyMentionCompletion, findActiveMention, findMentionRanges } from "../src/tui/file-mentions.js";
 
 describe("file mention parsing", () => {
   it("finds an @ mention at the start of the prompt", () => {
@@ -30,6 +30,10 @@ describe("file mention parsing", () => {
 
   it("returns no mention when the cursor is outside the token", () => {
     expect(findActiveMention("inspect @layout now", 19)).toBeUndefined();
+  });
+
+  it("finds display ranges for mention tokens without matching email addresses", () => {
+    expect(findMentionRanges("read @src/tui/layout.ts and mail me@example.com")).toEqual([{ start: 5, end: 23 }]);
   });
 
   it("completes files with a trailing space and updates the cursor", () => {

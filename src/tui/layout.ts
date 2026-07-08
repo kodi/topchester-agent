@@ -35,8 +35,9 @@ import {
 import { PromptHistory } from "./prompt-history.js";
 import { formatKnowledgeFooterStatus, formatStatusLine } from "./status.js";
 import { padLines, padThreadLine, stripAnsi } from "./text.js";
-import { applyMentionCompletion, findActiveMention, type ActiveMention } from "./file-mentions.js";
+import { applyMentionCompletion, findActiveMention, findMentionRanges, type ActiveMention } from "./file-mentions.js";
 import { type FileMentionProvider, type FileMentionSuggestion } from "./file-mention-provider.js";
+import { isIndexInMentionRange, renderMentionStyles, styleMentionText } from "./mention-styles.js";
 
 const PROMPT_VISIBLE_CONTENT_LINES = 5;
 const SLASH_SUGGESTION_VISIBLE_ROWS = 6;
@@ -502,7 +503,7 @@ export class ChatLayout implements Component, Focusable {
     const value = this.promptValue;
 
     if (!value.includes("\n")) {
-      return [this.renderPromptLineWithCursor(value, this.promptCursor, innerWidth)];
+      return [this.renderPromptLineWithCursor(value, this.promptCursor, innerWidth, 0)];
     }
 
     const rows = this.getPromptRows(innerWidth);
@@ -513,10 +514,10 @@ export class ChatLayout implements Component, Focusable {
 
     return visibleRows.map((row) => {
       if (this.promptCursor >= row.start && this.promptCursor <= row.end) {
-        return this.renderPromptLineWithCursor(row.text, this.promptCursor - row.start, innerWidth);
+        return this.renderPromptLineWithCursor(row.text, this.promptCursor - row.start, innerWidth, row.start);
       }
 
-      return truncateToWidth(row.text.length === 0 ? " " : row.text, innerWidth, "…", true);
+      return this.renderPromptLine(row.text.length === 0 ? " " : row.text, row.start, innerWidth);
     });
   }
 
@@ -540,17 +541,41 @@ export class ChatLayout implements Component, Focusable {
     return rows.length > 0 ? rows : [{ text: "", start: 0, end: 0 }];
   }
 
-  private renderPromptLineWithCursor(text: string, cursor: number, width: number): string {
+  private renderPromptLine(text: string, absoluteStart: number, width: number): string {
+    return truncateToWidth(
+      renderMentionStyles(text, absoluteStart, findMentionRanges(this.promptValue)),
+      width,
+      "…",
+      true
+    );
+  }
+
+  private renderPromptLineWithCursor(text: string, cursor: number, width: number, absoluteStart: number): string {
     const safeCursor = Math.max(0, Math.min(cursor, text.length));
     const windowStart = safeCursor >= width ? safeCursor - width + 1 : 0;
     const visibleText = text.slice(windowStart, windowStart + width);
     const visibleCursor = safeCursor - windowStart;
-    const beforeCursor = visibleText.slice(0, visibleCursor);
+    const visibleAbsoluteStart = absoluteStart + windowStart;
+    const mentionRanges = findMentionRanges(this.promptValue);
+    const beforeCursor = renderMentionStyles(visibleText.slice(0, visibleCursor), visibleAbsoluteStart, mentionRanges);
     const cursorChar = visibleText[visibleCursor] ?? " ";
-    const afterCursor = visibleText.slice(visibleCursor + cursorChar.length);
+    const cursorAbsoluteIndex = visibleAbsoluteStart + visibleCursor;
+    const styledCursorChar = isIndexInMentionRange(cursorAbsoluteIndex, mentionRanges)
+      ? styleMentionText(cursorChar)
+      : cursorChar;
+    const afterCursor = renderMentionStyles(
+      visibleText.slice(visibleCursor + cursorChar.length),
+      cursorAbsoluteIndex + cursorChar.length,
+      mentionRanges
+    );
     const marker = this.inputFocused ? CURSOR_MARKER : "";
 
-    return truncateToWidth(`${beforeCursor}${marker}\u001b[7m${cursorChar}\u001b[27m${afterCursor}`, width, "…", true);
+    return truncateToWidth(
+      `${beforeCursor}${marker}\u001b[7m${styledCursorChar}\u001b[27m${afterCursor}`,
+      width,
+      "…",
+      true
+    );
   }
 
   private renderTaskPlan(width: number): string[] {
@@ -610,7 +635,7 @@ export class ChatLayout implements Component, Focusable {
         const marker = windowStart + index === this.activeMentionSuggestionIndex ? ">" : " ";
         const suffix = suggestion.isDirectory ? "/" : "";
 
-        return truncateToWidth(`${marker} @${suggestion.path}${suffix}`, Math.max(1, width - 4), "…", true);
+        return truncateToWidth(`${marker} ${suggestion.path}${suffix}`, Math.max(1, width - 4), "…", true);
       }),
       ui.label("Tab complete · ↑↓ choose · Esc dismiss"),
     ];

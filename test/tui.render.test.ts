@@ -1577,7 +1577,7 @@ describe("TUI rendering", () => {
     const output = stripAnsi(app.render(80).join("\n"));
 
     expect(output).toContain("file mentions");
-    expect(output).toContain("> @src/tui/layout.ts");
+    expect(output).toContain("> src/tui/layout.ts");
     expect(output).toContain("Tab complete · ↑↓ choose · Esc dismiss");
   });
 
@@ -1607,7 +1607,7 @@ describe("TUI rendering", () => {
     app.handleInput("\t");
     const output = stripAnsi(app.render(80).join("\n"));
 
-    expect(output).toContain("> @src/tui/");
+    expect(output).toContain("> src/tui/");
     expect(output).toContain("file mentions");
   });
 
@@ -1624,6 +1624,27 @@ describe("TUI rendering", () => {
 
     expect(output).toContain("> @lay");
     expect(output).not.toContain("file mentions");
+  });
+
+  it("styles file mention tokens in the prompt without changing submitted text", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 14;
+    const app = new ChatLayout(terminal, [], "repo", "model [provider]");
+    const submitted: string[] = [];
+    app.setSubmitMessage((message) => {
+      submitted.push(message);
+    });
+    app.setInputValue("read @src/tui/layout.ts file");
+
+    const output = app.render(80).join("\n");
+
+    expect(output).toContain("\u001b[1m\u001b[96m@src/tui/layout.ts\u001b[39m\u001b[22m");
+    expect(stripAnsi(output)).toContain("read @src/tui/layout.ts file");
+
+    app.handleInput("\n");
+
+    expect(submitted).toEqual(["read @src/tui/layout.ts file"]);
+    expect(app.render(80).join("\n")).toContain("\u001b[1m\u001b[96m@src/tui/layout.ts\u001b[39m\u001b[22m");
   });
 
   it("submits with Enter when no file mention popup is open", () => {
