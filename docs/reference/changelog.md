@@ -14,6 +14,7 @@ Topchester changes grouped by day. This file is the source of truth for the publ
 
 ### Features
 
+- Added TUI `@file` path autocomplete for workspace files and folders.
 - Added `web_fetch` so the agent can read public HTTP(S) docs, changelogs, API references, issue pages, and package notes with private-network blocking, redirect visibility, size caps, and truncation markers ([58a591e](https://github.com/kodi/topchester-agent/commit/58a591e4ea8ad8a7d4abe3936522641e0e5a2026)).
 
 ### Releases

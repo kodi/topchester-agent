@@ -35,9 +35,12 @@ import {
 import { PromptHistory } from "./prompt-history.js";
 import { formatKnowledgeFooterStatus, formatStatusLine } from "./status.js";
 import { padLines, padThreadLine, stripAnsi } from "./text.js";
+import { applyMentionCompletion, findActiveMention, type ActiveMention } from "./file-mentions.js";
+import { type FileMentionProvider, type FileMentionSuggestion } from "./file-mention-provider.js";
 
 const PROMPT_VISIBLE_CONTENT_LINES = 5;
 const SLASH_SUGGESTION_VISIBLE_ROWS = 6;
+const MENTION_SUGGESTION_VISIBLE_ROWS = 6;
 const PASTE_PREVIEW_MIN_LINES = 6;
 const PASTE_PREVIEW_MIN_CHARS = 500;
 const BRACKETED_PASTE_START = "\u001b[200~";
@@ -47,6 +50,7 @@ export interface ChatLayoutOptions {
   exitAgent?: () => void;
   requestRender?: () => void;
   transcriptMode?: "viewport" | "inline";
+  mentionProvider?: FileMentionProvider;
 }
 
 export interface TemporaryLineOptions {
@@ -90,6 +94,9 @@ export class ChatLayout implements Component, Focusable {
   private sessionPickerCancelHandler: (() => void) | undefined;
   private activeModalActionIndex = 0;
   private activeSlashSuggestionIndex = 0;
+  private activeMentionSuggestionIndex = 0;
+  private activeMentionKey: string | undefined;
+  private dismissedMentionKey: string | undefined;
   private threadScrollOffset = 0;
   private pasteBuffer: string | undefined;
   private pasteCounter = 0;
@@ -98,6 +105,7 @@ export class ChatLayout implements Component, Focusable {
   private readonly exitAgent: () => void;
   private readonly requestRender: () => void;
   private readonly transcriptMode: "viewport" | "inline";
+  private readonly mentionProvider: FileMentionProvider | undefined;
   private temporaryLineExpireTimer: NodeJS.Timeout | undefined;
 
   constructor(
@@ -110,6 +118,7 @@ export class ChatLayout implements Component, Focusable {
     this.exitAgent = typeof options === "function" ? options : (options.exitAgent ?? (() => {}));
     this.requestRender = typeof options === "function" ? () => {} : (options.requestRender ?? (() => {}));
     this.transcriptMode = typeof options === "function" ? "viewport" : (options.transcriptMode ?? "viewport");
+    this.mentionProvider = typeof options === "function" ? undefined : options.mentionProvider;
   }
 
   addMessage(message: ChatMessage): void {
@@ -271,6 +280,9 @@ export class ChatLayout implements Component, Focusable {
     this.sessionPickerCancelHandler = undefined;
     this.activeModalActionIndex = 0;
     this.activeSlashSuggestionIndex = 0;
+    this.activeMentionSuggestionIndex = 0;
+    this.activeMentionKey = undefined;
+    this.dismissedMentionKey = undefined;
     this.threadScrollOffset = 0;
     this.pasteBuffer = undefined;
     this.pasteCounter = 0;
@@ -322,6 +334,10 @@ export class ChatLayout implements Component, Focusable {
     }
 
     if (this.handleSlashSuggestionInput(data)) {
+      return;
+    }
+
+    if (this.handleMentionSuggestionInput(data)) {
       return;
     }
 
@@ -455,6 +471,7 @@ export class ChatLayout implements Component, Focusable {
 
   private renderPrompt(width: number): string[] {
     const slashSuggestions = this.sessionPicker ? [] : this.getSlashSuggestions();
+    const mentionState = slashSuggestions.length > 0 ? undefined : this.getMentionSuggestionState();
     const top = `┌${"─".repeat(Math.max(0, width - 2))}┐`;
     const bottom = `└${"─".repeat(Math.max(0, width - 2))}┘`;
     const prefix = "> ";
@@ -472,6 +489,7 @@ export class ChatLayout implements Component, Focusable {
 
     return [
       ...this.renderSlashSuggestions(width, slashSuggestions),
+      ...this.renderMentionSuggestions(width, mentionState),
       ...this.renderTaskPlan(width),
       top,
       ...inputLines.map((line, index) => `│ ${index === 0 ? prefix : "  "}${padPromptInputLine(line, innerWidth)} │`),
@@ -550,7 +568,6 @@ export class ChatLayout implements Component, Focusable {
 
     this.activeSlashSuggestionIndex = Math.min(this.activeSlashSuggestionIndex, suggestions.length - 1);
 
-    const innerWidth = Math.max(1, width - 4);
     const windowStart = getVisibleSuggestionWindowStart(
       suggestions.length,
       this.activeSlashSuggestionIndex,
@@ -563,20 +580,42 @@ export class ChatLayout implements Component, Focusable {
         const marker = windowStart + index === this.activeSlashSuggestionIndex ? ">" : " ";
         const text = `${marker} ${suggestion.value} — ${suggestion.description}`;
 
-        return truncateToWidth(text, innerWidth, "…", true);
+        return truncateToWidth(text, Math.max(1, width - 4), "…", true);
       }),
       ui.label("Tab complete · ↑↓ choose"),
     ];
-    const maxLineWidth = Math.max(...lines.map(stripAnsi).map((line) => line.length), 1);
-    const boxWidth = Math.min(innerWidth, maxLineWidth);
-    const top = `╭${"─".repeat(boxWidth + 2)}╮`;
-    const bottom = `╰${"─".repeat(boxWidth + 2)}╯`;
 
-    return [
-      top,
-      ...lines.map((line) => `│ ${line}${" ".repeat(Math.max(0, boxWidth - stripAnsi(line).length))} │`),
-      bottom,
+    return renderSuggestionBox(width, lines);
+  }
+
+  private renderMentionSuggestions(
+    width: number,
+    state: { mention: ActiveMention; suggestions: FileMentionSuggestion[] } | undefined
+  ): string[] {
+    if (!state || state.suggestions.length === 0 || this.promptHint) {
+      return [];
+    }
+
+    this.activeMentionSuggestionIndex = Math.min(this.activeMentionSuggestionIndex, state.suggestions.length - 1);
+
+    const windowStart = getVisibleSuggestionWindowStart(
+      state.suggestions.length,
+      this.activeMentionSuggestionIndex,
+      MENTION_SUGGESTION_VISIBLE_ROWS
+    );
+    const visibleSuggestions = state.suggestions.slice(windowStart, windowStart + MENTION_SUGGESTION_VISIBLE_ROWS);
+    const lines = [
+      ui.label("file mentions"),
+      ...visibleSuggestions.map((suggestion, index) => {
+        const marker = windowStart + index === this.activeMentionSuggestionIndex ? ">" : " ";
+        const suffix = suggestion.isDirectory ? "/" : "";
+
+        return truncateToWidth(`${marker} @${suggestion.path}${suffix}`, Math.max(1, width - 4), "…", true);
+      }),
+      ui.label("Tab complete · ↑↓ choose · Esc dismiss"),
     ];
+
+    return renderSuggestionBox(width, lines);
   }
 
   private renderModalHelp(width: number): string[] {
@@ -1101,6 +1140,86 @@ export class ChatLayout implements Component, Focusable {
     return getSlashCommandSuggestions(this.promptValue);
   }
 
+  private handleMentionSuggestionInput(data: string): boolean {
+    const state = this.getMentionSuggestionState();
+
+    if (!state || state.suggestions.length === 0) {
+      this.activeMentionSuggestionIndex = 0;
+      return false;
+    }
+
+    if (isUpKey(data)) {
+      this.activeMentionSuggestionIndex =
+        (this.activeMentionSuggestionIndex - 1 + state.suggestions.length) % state.suggestions.length;
+      return true;
+    }
+
+    if (isDownKey(data)) {
+      this.activeMentionSuggestionIndex = (this.activeMentionSuggestionIndex + 1) % state.suggestions.length;
+      return true;
+    }
+
+    if (isTabKey(data) || isEnterKey(data)) {
+      this.completeMentionSuggestion(state.mention, state.suggestions);
+      return true;
+    }
+
+    if (matchesKey(data, "escape")) {
+      this.dismissedMentionKey = this.getMentionKey(state.mention);
+      return true;
+    }
+
+    return false;
+  }
+
+  private completeMentionSuggestion(mention: ActiveMention, suggestions: FileMentionSuggestion[]): void {
+    const suggestion = suggestions[this.activeMentionSuggestionIndex];
+    if (!suggestion) {
+      return;
+    }
+
+    const next = applyMentionCompletion(this.promptValue, mention, suggestion.path, suggestion.isDirectory);
+    this.promptValue = next.value;
+    this.promptCursor = next.cursor;
+    this.promptHistory.resetBrowsing();
+    this.dismissedMentionKey = undefined;
+    this.activeMentionKey = undefined;
+    this.activeMentionSuggestionIndex = 0;
+  }
+
+  private getMentionSuggestionState(): { mention: ActiveMention; suggestions: FileMentionSuggestion[] } | undefined {
+    if (!this.mentionProvider || this.promptHint || this.sessionPicker || this.getActiveModal()) {
+      this.activeMentionKey = undefined;
+      this.dismissedMentionKey = undefined;
+      return undefined;
+    }
+
+    const mention = findActiveMention(this.promptValue, this.promptCursor);
+    if (!mention) {
+      this.activeMentionKey = undefined;
+      this.dismissedMentionKey = undefined;
+      return undefined;
+    }
+
+    const key = this.getMentionKey(mention);
+    if (this.activeMentionKey !== key) {
+      this.activeMentionKey = key;
+      this.activeMentionSuggestionIndex = 0;
+    }
+
+    if (this.dismissedMentionKey === key) {
+      return undefined;
+    }
+
+    const suggestions = this.mentionProvider.getSuggestions(mention.query, 20);
+
+    return suggestions.length > 0 ? { mention, suggestions } : undefined;
+  }
+
+  private getMentionKey(mention: ActiveMention): string {
+    return `${mention.start}:${mention.end}:${mention.query}`;
+  }
+
   private getActiveModal(): Extract<ChatMessage, { kind: "modal" }> | undefined {
     return this.messages[this.getActiveModalIndex()] as Extract<ChatMessage, { kind: "modal" }> | undefined;
   }
@@ -1164,6 +1283,20 @@ function getVisibleSuggestionWindowStart(total: number, activeIndex: number, vis
   }
 
   return Math.max(0, Math.min(activeIndex - visibleRows + 1, total - visibleRows));
+}
+
+function renderSuggestionBox(width: number, lines: string[]): string[] {
+  const innerWidth = Math.max(1, width - 4);
+  const maxLineWidth = Math.max(...lines.map(stripAnsi).map((line) => line.length), 1);
+  const boxWidth = Math.min(innerWidth, maxLineWidth);
+  const top = `╭${"─".repeat(boxWidth + 2)}╮`;
+  const bottom = `╰${"─".repeat(boxWidth + 2)}╯`;
+
+  return [
+    top,
+    ...lines.map((line) => `│ ${line}${" ".repeat(Math.max(0, boxWidth - stripAnsi(line).length))} │`),
+    bottom,
+  ];
 }
 
 function formatSessionPickerRow(item: SessionPickerItem, selected: boolean, width: number): string {

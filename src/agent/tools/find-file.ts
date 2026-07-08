@@ -27,7 +27,7 @@ interface FileMatch {
   score: number;
 }
 
-const ignoredDirectories = new Set([
+export const ignoredDirectories = new Set([
   ".git",
   ".agents",
   ".cache",
@@ -37,6 +37,7 @@ const ignoredDirectories = new Set([
   "coverage",
   "dist",
   "node_modules",
+  "topchester-kb",
 ]);
 
 export const findFileTool = defineTool({
@@ -96,7 +97,7 @@ export async function findWorkspaceFilesByName(
   };
 }
 
-async function collectWorkspaceFiles(
+export async function collectWorkspaceFiles(
   workspaceRoot: string,
   startPath: string,
   relativeStartPath: string,
@@ -304,7 +305,7 @@ function normalizeCommandFilePath(workspaceRoot: string, path: string): string |
   return relativePath;
 }
 
-function scoreFileMatch(query: string, path: string): number {
+export function scoreFileMatch(query: string, path: string): number {
   const normalizedQuery = normalize(query);
   const normalizedPath = normalize(path);
   const normalizedName = normalize(basename(path));

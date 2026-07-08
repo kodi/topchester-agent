@@ -46,6 +46,7 @@ import {
 import { BusyIndicator } from "./busy.js";
 import { formatPlainError } from "./errors.js";
 import { createExitConfirmationInputListener } from "./exit-confirmation.js";
+import { createFileMentionProvider } from "./file-mention-provider.js";
 import { ChatLayout } from "./layout.js";
 import { type ChatMessage, systemMessage, userMessage } from "./messages.js";
 import {
@@ -187,6 +188,13 @@ export class TopchesterTuiShell implements TuiShell {
       requestRender: () => {
         tui.requestRender();
       },
+      mentionProvider: createFileMentionProvider({
+        workspaceRoot: this.context.workspaceRoot,
+        logger: this.context.logger,
+        onUpdate: () => {
+          tui.requestRender();
+        },
+      }),
       exitAgent: () => {
         exit();
         process.exit(0);

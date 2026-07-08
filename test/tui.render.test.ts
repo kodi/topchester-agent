@@ -88,6 +88,29 @@ class FakeTerminal implements Terminal {
   setProgress(): void {}
 }
 
+function createFakeMentionProvider() {
+  return {
+    getSuggestions(query: string) {
+      switch (query) {
+        case "lay":
+          return [
+            { path: "src/tui/layout.ts", isDirectory: false },
+            { path: "src/agent/runtime-layout.ts", isDirectory: false },
+          ];
+        case "sr":
+          return [{ path: "src", isDirectory: true }];
+        case "src/":
+          return [
+            { path: "src/tui", isDirectory: true },
+            { path: "src/agent", isDirectory: true },
+          ];
+        default:
+          return [];
+      }
+    },
+  };
+}
+
 describe("TUI rendering", () => {
   it("formats session durations for the exit banner", () => {
     expect(formatDuration(0)).toBe("0 seconds");
@@ -1541,6 +1564,99 @@ describe("TUI rendering", () => {
 
     expect(output).toContain(`> ${selectedSuggestion?.value} — ${selectedSuggestion?.description}`);
     expect(output).not.toContain("/model — choose from configured model choices");
+  });
+
+  it("shows file mention suggestions while typing an @ path", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 14;
+    const app = new ChatLayout(terminal, [], "repo", "model [provider]", {
+      mentionProvider: createFakeMentionProvider(),
+    });
+    app.setInputValue("@lay");
+
+    const output = stripAnsi(app.render(80).join("\n"));
+
+    expect(output).toContain("file mentions");
+    expect(output).toContain("> @src/tui/layout.ts");
+    expect(output).toContain("Tab complete · ↑↓ choose · Esc dismiss");
+  });
+
+  it("completes the active file mention suggestion with Tab", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 14;
+    const app = new ChatLayout(terminal, [], "repo", "model [provider]", {
+      mentionProvider: createFakeMentionProvider(),
+    });
+    app.setInputValue("@lay");
+
+    app.handleInput("\t");
+    const output = stripAnsi(app.render(80).join("\n"));
+
+    expect(output).toContain("> @src/tui/layout.ts");
+    expect(output).not.toContain("file mentions");
+  });
+
+  it("keeps file mention suggestions open after completing a directory", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 14;
+    const app = new ChatLayout(terminal, [], "repo", "model [provider]", {
+      mentionProvider: createFakeMentionProvider(),
+    });
+    app.setInputValue("@sr");
+
+    app.handleInput("\t");
+    const output = stripAnsi(app.render(80).join("\n"));
+
+    expect(output).toContain("> @src/tui/");
+    expect(output).toContain("file mentions");
+  });
+
+  it("dismisses file mention suggestions with Esc without clearing the prompt", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 14;
+    const app = new ChatLayout(terminal, [], "repo", "model [provider]", {
+      mentionProvider: createFakeMentionProvider(),
+    });
+    app.setInputValue("@lay");
+
+    app.handleInput("\u001b");
+    const output = stripAnsi(app.render(80).join("\n"));
+
+    expect(output).toContain("> @lay");
+    expect(output).not.toContain("file mentions");
+  });
+
+  it("submits with Enter when no file mention popup is open", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 14;
+    const app = new ChatLayout(terminal, [], "repo", "model [provider]", {
+      mentionProvider: createFakeMentionProvider(),
+    });
+    const submitted: string[] = [];
+    app.setSubmitMessage((message) => {
+      submitted.push(message);
+    });
+    app.setInputValue("read @missing");
+
+    app.handleInput("\n");
+
+    expect(submitted).toEqual(["read @missing"]);
+  });
+
+  it("keeps prompt history arrows working when no file mention is active", () => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 14;
+    const app = new ChatLayout(terminal, [], "repo", "model [provider]", {
+      mentionProvider: createFakeMentionProvider(),
+    });
+    app.setInputValue("remembered");
+    app.handleInput("\n");
+    app.setInputValue("draft");
+
+    app.handleInput("\u001b[A");
+    const output = stripAnsi(app.render(80).join("\n"));
+
+    expect(output).toContain("> remembered");
   });
 
   it("renders user messages with top and bottom padding", () => {

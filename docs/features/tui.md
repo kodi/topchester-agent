@@ -28,6 +28,7 @@ ready · my-project · qwen/qwen3-coder [openrouter] · kb: ready
 - `Enter` sends a message.
 - `Shift+Enter` adds a new prompt line in terminals that report it distinctly.
 - `/` opens slash command suggestions.
+- Type `@` plus part of a file name to search project files; `Tab` completes the selected path.
 - `Up` and `Down` browse prompt history or slash suggestions, depending on focus.
 - `Tab` completes the selected slash suggestion.
 - `Ctrl-C` once asks for confirmation; `Ctrl-C` again exits.

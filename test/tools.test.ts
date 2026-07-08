@@ -964,6 +964,12 @@ describe("agent tools", () => {
     );
   });
 
+  it("tells the model how to handle user-picked @ file mentions", () => {
+    expect(getChatSystemPrompt()).toContain(
+      "User-message tokens like @src/file.ts are workspace-relative paths the user picked deliberately"
+    );
+  });
+
   it("tells the model when to use plan_todo", () => {
     const prompt = getChatSystemPrompt();
 
