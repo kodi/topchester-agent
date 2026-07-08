@@ -14,11 +14,14 @@ Topchester changes grouped by day. This file is the source of truth for the publ
 
 ### Features
 
-- Added TUI `@file` path autocomplete for workspace files and folders.
+- Added mention styling and range detection for file mentions in TUI input and rendered messages ([9e2c19d](https://github.com/kodi/topchester-agent/commit/9e2c19da11d72322370aad2bc105eed2553a8043)).
+- Added TUI `@file` path autocomplete for workspace files and folders ([05882c2](https://github.com/kodi/topchester-agent/commit/05882c2415867879fd6603ce13fbc4093ffb7040)).
 - Added `web_fetch` so the agent can read public HTTP(S) docs, changelogs, API references, issue pages, and package notes with private-network blocking, redirect visibility, size caps, and truncation markers ([58a591e](https://github.com/kodi/topchester-agent/commit/58a591e4ea8ad8a7d4abe3936522641e0e5a2026)).
 
 ### Releases
 
+- Release topchester-ai v0.74.0 ([3fcaa8b](https://github.com/kodi/topchester-agent/commit/3fcaa8b95969337f0625c7c5350211b5008936be)).
+- Release topchester-ai v0.73.0 ([cc84daf](https://github.com/kodi/topchester-agent/commit/cc84daffaf9dfc95e6d08ba83ac76cf8777fae57)).
 - Release topchester-ai v0.72.0 ([c4139f6](https://github.com/kodi/topchester-agent/commit/c4139f650c9a084f912774dc9136cf428ab30988)).
 
 ## 2026-07-01
