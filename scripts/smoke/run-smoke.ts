@@ -189,6 +189,15 @@ try {
     throw new Error("--config cannot be combined with --fake-api because fake API runs generate their own config.");
   }
 
+  if (options.configPath) {
+    const configPath = resolve(repoRoot, options.configPath);
+    const configStat = await stat(configPath).catch(() => undefined);
+
+    if (!configStat?.isFile()) {
+      throw new Error(`Smoke config file not found: ${configPath}`);
+    }
+  }
+
   if (options.fakeApi) {
     fakeApi = await startFakeApi();
   }

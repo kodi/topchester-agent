@@ -39,5 +39,5 @@ jobs:
       - name: Run smoke suite
         run: |
           pnpm exec tsx scripts/smoke/run-smoke.ts \
-            --config config/gemini.yaml \
+            --config config/gemini.jsonc \
             --retries 3
