@@ -27,13 +27,13 @@
     "mini-bench": "node bench/mini-bench/src/cli.ts",
     "mini-bench:list": "node bench/mini-bench/src/cli.ts list",
     "mini-bench:verify-fixtures": "node bench/mini-bench/src/cli.ts verify-fixtures",
-    "format:check": "pnpm format-check",
+    "format:check": "vp fmt . --check",
     "lint": "vp lint",
     "smoke": "tsx scripts/smoke/run-smoke.ts",
     "test": "vp test run --dir test",
-    "typecheck": "tsgo --noEmit",
-    "check": "pnpm typecheck && pnpm format-check && pnpm lint && pnpm test",
-    "prepublishOnly": "pnpm build"
+    "typecheck": "vp check --no-fmt --no-lint",
+    "check": "vp check && vp test run --dir test",
+    "prepublishOnly": "vp run build"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.48",

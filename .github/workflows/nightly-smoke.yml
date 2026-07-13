@@ -20,24 +20,23 @@ jobs:
 
     env:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      VITE_GIT_HOOKS: "0"
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 24
-
-      - name: Enable pnpm
-        run: corepack enable
+          node-version: "24"
+          cache: true
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Run smoke suite
         run: |
-          pnpm exec tsx scripts/smoke/run-smoke.ts \
+          vp run smoke \
             --config config/gemini.jsonc \
             --retries 3

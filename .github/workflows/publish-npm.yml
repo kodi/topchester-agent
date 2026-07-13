@@ -24,6 +24,8 @@ jobs:
   publish:
     name: Bump version and publish
     runs-on: ubuntu-latest
+    env:
+      VITE_GIT_HOOKS: "0"
 
     steps:
       - name: Check out repository
@@ -38,23 +40,23 @@ jobs:
           git checkout -B main origin/main
           git pull --ff-only origin main
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
-
-      - name: Enable pnpm
-        run: corepack enable
+          node-version: "24"
+          cache: true
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
-      - name: Run checks
-        run: pnpm check
+      - name: Run static checks
+        run: vp check
+
+      - name: Run tests
+        run: vp test run --dir test
 
       - name: Build package
-        run: pnpm build
+        run: vp run build
 
       - name: Configure git author
         run: |

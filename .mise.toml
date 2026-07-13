@@ -7,47 +7,51 @@ _.file = ".env"
 
 [tasks.typecheck]
 dir = "{{config_root}}"
-run = "node_modules/.bin/tsgo --noEmit"
+run = "vp check --no-fmt --no-lint"
 
 [tasks.format]
 dir = "{{config_root}}"
-run = "node_modules/.bin/oxfmt ."
+run = "vp fmt ."
 
 [tasks.format-check]
 dir = "{{config_root}}"
-run = "node_modules/.bin/oxfmt . --check"
+run = "vp fmt . --check"
 
 [tasks.lint]
 dir = "{{config_root}}"
-run = "node_modules/.bin/oxlint"
+run = "vp lint"
 
 [tasks.test]
 dir = "{{config_root}}"
-run = "node_modules/.bin/vitest run"
+run = "vp test run --dir test"
 
 [tasks.smoke]
 dir = "{{config_root}}"
-run = "node_modules/.bin/tsx scripts/smoke/run-smoke.ts --fake-api --trials {{arg(name='trials', default='1')}}"
+run = "vp run smoke --fake-api --trials {{arg(name='trials', default='1')}}"
 
 [tasks.smoke-scenario]
 dir = "{{config_root}}"
-run = "node_modules/.bin/tsx scripts/smoke/run-smoke.ts --fake-api --scenario {{arg(name='scenario')}} --trials {{arg(name='trials', default='1')}} --keep-workspaces"
+run = "vp run smoke --fake-api --scenario {{arg(name='scenario')}} --trials {{arg(name='trials', default='1')}} --keep-workspaces"
 
 [tasks.smoke-live]
 dir = "{{config_root}}"
-run = "config=\"{{arg(name='config')}}\"; trials=\"{{arg(name='trials', default='1')}}\"; model=\"{{arg(name='model', default='')}}\"; timeout_ms=\"{{arg(name='timeout_ms', default='120000')}}\"; if [ -n \"$model\" ] && [ \"$model\" != \"''\" ]; then node_modules/.bin/tsx scripts/smoke/run-smoke.ts --config \"$config\" --trials \"$trials\" --model \"$model\" --timeout \"$timeout_ms\"; else node_modules/.bin/tsx scripts/smoke/run-smoke.ts --config \"$config\" --trials \"$trials\" --timeout \"$timeout_ms\"; fi"
+run = "config=\"{{arg(name='config')}}\"; trials=\"{{arg(name='trials', default='1')}}\"; model=\"{{arg(name='model', default='')}}\"; timeout_ms=\"{{arg(name='timeout_ms', default='120000')}}\"; if [ -n \"$model\" ] && [ \"$model\" != \"''\" ]; then vp run smoke --config \"$config\" --trials \"$trials\" --model \"$model\" --timeout \"$timeout_ms\"; else vp run smoke --config \"$config\" --trials \"$trials\" --timeout \"$timeout_ms\"; fi"
 
 [tasks.mini-bench-list]
 dir = "{{config_root}}"
-run = "node bench/mini-bench/src/cli.ts list"
+run = "vp run mini-bench:list"
 
 [tasks.mini-bench-one]
 dir = "{{config_root}}"
-run = "node bench/mini-bench/src/cli.ts run --task {{arg(name='task', default='task-000-basic-ts-transform')}}"
+run = "vp run mini-bench run --task {{arg(name='task', default='task-000-basic-ts-transform')}}"
 
 [tasks.mini-bench-verify-fixtures]
 dir = "{{config_root}}"
-run = "node bench/mini-bench/src/cli.ts verify-fixtures"
+run = "vp run mini-bench:verify-fixtures"
+
+[tasks.check]
+dir = "{{config_root}}"
+run = "vp check"
 
 [tasks.local-ci]
-depends = ["typecheck", "format-check", "lint"]
+depends = ["check"]
