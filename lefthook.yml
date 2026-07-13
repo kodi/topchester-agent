@@ -1,6 +1,0 @@
-pre-commit:
-  commands:
-    vite-plus-fmt:
-      glob: "*.{js,jsx,ts,tsx,json,jsonc,css,html,yml,yaml}"
-      run: vp fmt {staged_files}
-      stage_fixed: true
