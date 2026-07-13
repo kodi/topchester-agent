@@ -1,7 +1,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { CODEX_BACKEND_RESPONSES_URL, CODEX_ISSUER } from "../src/auth/codex.js";
 import { readAuthStore, writeAuthStore } from "../src/auth/store.js";
 import { ModelGateway } from "../src/model/index.js";
@@ -10,6 +10,18 @@ import { rewriteCodexRequestUrl } from "../src/model/codex.js";
 interface CapturedRequest {
   url: string;
   init: RequestInit;
+}
+
+function requestUrl(input: string | URL | Request): string {
+  return typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+}
+
+function parseJsonBody(init: RequestInit): unknown {
+  if (typeof init.body !== "string") {
+    throw new TypeError("Expected a string request body.");
+  }
+
+  return JSON.parse(init.body);
 }
 
 async function createAuthPath(): Promise<string> {
@@ -119,7 +131,7 @@ describe("Codex provider adapter", () => {
     const authStorePath = await createAuthPath();
     const requests: CapturedRequest[] = [];
     const fetch = (async (url: string | URL | Request, init?: RequestInit) => {
-      requests.push({ url: String(url), init: init ?? {} });
+      requests.push({ url: requestUrl(url), init: init ?? {} });
       return createCodexSseResponse();
     }) as typeof globalThis.fetch;
 
@@ -152,21 +164,21 @@ describe("Codex provider adapter", () => {
     expect(headers.get("Authorization")).toBe("Bearer stored-access-token");
     expect(headers.get("ChatGPT-Account-Id")).toBe("account-1");
     expect(headers.get("X-Test")).toBe("kept");
-    expect(JSON.parse(String(requests[0]?.init.body))).toMatchObject({
+    expect(parseJsonBody(requests[0]!.init)).toMatchObject({
       model: "gpt-5.5",
       instructions: "You are a helpful assistant.",
       stream: true,
       store: false,
       input: [{ role: "user", content: [{ type: "input_text", text: "hello" }] }],
     });
-    expect(JSON.parse(String(requests[0]?.init.body))).not.toHaveProperty("reasoning");
+    expect(parseJsonBody(requests[0]!.init)).not.toHaveProperty("reasoning");
   });
 
   it("adds configured Codex reasoning effort to Responses requests", async () => {
     const authStorePath = await createAuthPath();
     const requests: CapturedRequest[] = [];
     const fetch = (async (url: string | URL | Request, init?: RequestInit) => {
-      requests.push({ url: String(url), init: init ?? {} });
+      requests.push({ url: requestUrl(url), init: init ?? {} });
       return createCodexSseResponse("Reasoning request worked.");
     }) as typeof globalThis.fetch;
 
@@ -192,7 +204,7 @@ describe("Codex provider adapter", () => {
       prompt: "hello",
     });
 
-    expect(JSON.parse(String(requests[0]?.init.body))).toMatchObject({
+    expect(parseJsonBody(requests[0]!.init)).toMatchObject({
       reasoning: { effort: "high", summary: "auto" },
     });
   });
@@ -202,9 +214,10 @@ describe("Codex provider adapter", () => {
     const requests: CapturedRequest[] = [];
     const refreshedIdToken = jwtWithClaims({ chatgpt_account_id: "account-refreshed" });
     const fetch = (async (url: string | URL | Request, init?: RequestInit) => {
-      requests.push({ url: String(url), init: init ?? {} });
+      const resolvedUrl = requestUrl(url);
+      requests.push({ url: resolvedUrl, init: init ?? {} });
 
-      if (String(url) === `${CODEX_ISSUER}/oauth/token`) {
+      if (resolvedUrl === `${CODEX_ISSUER}/oauth/token`) {
         return new Response(
           JSON.stringify({
             id_token: refreshedIdToken,
@@ -272,7 +285,7 @@ describe("Codex provider adapter", () => {
   it("leaves non-Codex providers on the normal OpenAI-compatible path", async () => {
     const requests: CapturedRequest[] = [];
     const fetch = (async (url: string | URL | Request, init?: RequestInit) => {
-      requests.push({ url: String(url), init: init ?? {} });
+      requests.push({ url: requestUrl(url), init: init ?? {} });
       return createChatResponse("Normal provider worked.");
     }) as typeof globalThis.fetch;
     const originalFetch = globalThis.fetch;

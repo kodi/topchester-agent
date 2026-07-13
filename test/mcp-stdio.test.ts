@@ -1,7 +1,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { McpManager } from "../src/agent/mcp/manager.js";
 import { createMcpToolDefinitions, toMcpModelToolName } from "../src/agent/mcp/tools.js";
 import { createToolCatalog, executeToolCall } from "../src/agent/tools.js";

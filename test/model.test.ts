@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { ModelGateway, type OpenAICompatibleProviderConfig } from "../src/model/index.js";
 import { readFileTool } from "../src/agent/tools/read-file.js";
 

@@ -1249,7 +1249,11 @@ function sumModelResponseTokens(modelResponses: Array<Record<string, unknown>>):
   costUsd?: number;
 } {
   let costUsd: number | undefined;
-  const tokens = modelResponses.reduce(
+  const tokens = modelResponses.reduce<{
+    inputTokenCount: number;
+    outputTokenCount: number;
+    totalTokenCount: number;
+  }>(
     (total, event) => {
       const eventCostUsd = readCostUsd(event.costUsd);
 
@@ -1346,7 +1350,7 @@ async function readTaskPlanJsonEvents(outputDir: string): Promise<Array<{ items:
   return events
     .map((event) => event.event?.plan)
     .filter((plan): plan is { items: TaskPlanJsonItem[] } => {
-      return Boolean(plan) && Array.isArray(plan.items) && plan.items.every(isTaskPlanJsonItem);
+      return plan !== undefined && Array.isArray(plan.items) && plan.items.every(isTaskPlanJsonItem);
     });
 }
 

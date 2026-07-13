@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, stat, writeFile } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { CODEX_CLIENT_ID, CODEX_ISSUER } from "../src/auth/codex.js";
 import { writeAuthStore } from "../src/auth/store.js";
 import { runTopchesterCli } from "../src/cli.js";
@@ -756,9 +756,10 @@ describe("CLI integration", () => {
     const idToken = jwtWithClaims({ chatgpt_account_id: "account-1" });
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
-      requests.push({ url: String(url), init: init ?? {} });
+      const resolvedUrl = typeof url === "string" ? url : url instanceof URL ? url.href : url.url;
+      requests.push({ url: resolvedUrl, init: init ?? {} });
 
-      if (String(url).endsWith("/api/accounts/deviceauth/usercode")) {
+      if (resolvedUrl.endsWith("/api/accounts/deviceauth/usercode")) {
         return new Response(
           JSON.stringify({
             device_auth_id: "device-1",
@@ -770,7 +771,7 @@ describe("CLI integration", () => {
         );
       }
 
-      if (String(url).endsWith("/api/accounts/deviceauth/token")) {
+      if (resolvedUrl.endsWith("/api/accounts/deviceauth/token")) {
         return new Response(
           JSON.stringify({
             authorization_code: "authorization-code",
@@ -780,7 +781,7 @@ describe("CLI integration", () => {
         );
       }
 
-      if (String(url).endsWith("/oauth/token")) {
+      if (resolvedUrl.endsWith("/oauth/token")) {
         return new Response(
           JSON.stringify({
             id_token: idToken,
@@ -792,7 +793,7 @@ describe("CLI integration", () => {
         );
       }
 
-      throw new Error(`Unexpected fetch: ${String(url)}`);
+      throw new Error(`Unexpected fetch: ${resolvedUrl}`);
     }) as typeof globalThis.fetch;
 
     try {

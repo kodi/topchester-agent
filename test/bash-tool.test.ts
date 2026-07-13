@@ -1,7 +1,7 @@
 import { chmod, mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { executeToolCall, isToolErrorResult, parseToolCall } from "../src/agent/tools.js";
 import { validateBashPolicy } from "../src/agent/tools/bash-policy.js";
 import { validateValidatorCommand } from "../src/agent/tools/command-policy.js";

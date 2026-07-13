@@ -1252,14 +1252,14 @@ export class TopchesterAgentRuntime implements AgentRuntime {
   private resolveModelMetadata(
     purpose: ModelPurpose
   ): ReturnType<AppContext["modelGateway"]["resolveModel"]> | undefined {
-    const resolveModel = this.context.modelGateway.resolveModel;
+    const gateway = this.context.modelGateway;
 
-    if (typeof resolveModel !== "function") {
+    if (typeof gateway.resolveModel !== "function") {
       return undefined;
     }
 
     try {
-      return resolveModel.call(this.context.modelGateway, purpose);
+      return gateway.resolveModel(purpose);
     } catch (error) {
       this.context.logger.debug(
         {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { applyMentionCompletion, findActiveMention, findMentionRanges } from "../src/tui/file-mentions.js";
 
 describe("file mention parsing", () => {

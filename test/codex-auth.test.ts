@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import {
   CODEX_CLIENT_ID,
   CODEX_ISSUER,
@@ -26,6 +26,10 @@ function createJsonResponse(body: unknown, init: ResponseInit = {}): Response {
   });
 }
 
+function requestUrl(input: string | URL | Request): string {
+  return typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+}
+
 function createFetchQueue(responses: Response[]): {
   fetch: typeof fetch;
   requests: CapturedRequest[];
@@ -35,10 +39,11 @@ function createFetchQueue(responses: Response[]): {
   return {
     requests,
     fetch: (async (url: string | URL | Request, init?: RequestInit) => {
-      requests.push({ url: String(url), init: init ?? {} });
+      const resolvedUrl = requestUrl(url);
+      requests.push({ url: resolvedUrl, init: init ?? {} });
       const response = responses.shift();
       if (!response) {
-        throw new Error(`Unexpected fetch: ${String(url)}`);
+        throw new Error(`Unexpected fetch: ${resolvedUrl}`);
       }
       return response;
     }) as typeof fetch,

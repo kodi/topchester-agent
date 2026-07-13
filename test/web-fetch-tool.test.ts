@@ -1,7 +1,7 @@
 import dns from "node:dns/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { type AddressInfo } from "node:net";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   convertHtmlToMarkdown,
   executeToolCall,

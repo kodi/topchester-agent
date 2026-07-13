@@ -1358,8 +1358,12 @@ function isPrintableInput(data: string): boolean {
     return false;
   }
 
-  return [...data].every((char) => {
+  for (const char of data) {
     const code = char.charCodeAt(0);
-    return code >= 32 && code !== 127 && (code < 128 || code > 159);
-  });
+    if (code < 32 || code === 127 || (code >= 128 && code <= 159)) {
+      return false;
+    }
+  }
+
+  return true;
 }

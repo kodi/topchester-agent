@@ -701,7 +701,7 @@ function formatUnknownToolArgs(args: unknown): string {
 
     return formatted && formatted.length <= 120 ? formatted : `${formatted?.slice(0, 117) ?? ""}...`;
   } catch {
-    return String(args);
+    return "[unserializable tool arguments]";
   }
 }
 

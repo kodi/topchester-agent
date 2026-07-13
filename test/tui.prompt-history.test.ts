@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { type Terminal } from "@earendil-works/pi-tui";
 import { ChatLayout } from "../src/tui/layout.js";
 import { modalMessage, systemMessage } from "../src/tui/messages.js";

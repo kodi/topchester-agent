@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { validateWebFetchUrl, type WebFetchDnsAddress } from "../src/agent/tools.js";
 
 describe("web_fetch URL policy", () => {

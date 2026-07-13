@@ -101,7 +101,7 @@ export class McpManager {
         client,
         transport,
         tools: listed.tools,
-        stderr: stderr.read,
+        stderr: () => stderr.read(),
       };
 
       this.#servers.set(serverName, connected);

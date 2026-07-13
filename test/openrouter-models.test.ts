@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import {
   fallbackOpenRouterStarterChoices,
   fetchOpenRouterModelChoices,
@@ -6,12 +6,17 @@ import {
   selectOpenRouterStarterChoices,
 } from "../src/model/openrouter.js";
 
+function requestUrl(input: URL | RequestInfo): string {
+  return typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+}
+
 describe("OpenRouter model catalog", () => {
   it("maps OpenRouter model ids to Topchester model refs", async () => {
     const fetchImpl = async (url: URL | RequestInfo, init?: RequestInit) => {
-      expect(String(url)).toContain("https://openrouter.ai/api/v1/models?");
-      expect(String(url)).toContain("output_modalities=text");
-      expect(String(url)).toContain("supported_parameters=tools");
+      const resolvedUrl = requestUrl(url);
+      expect(resolvedUrl).toContain("https://openrouter.ai/api/v1/models?");
+      expect(resolvedUrl).toContain("output_modalities=text");
+      expect(resolvedUrl).toContain("supported_parameters=tools");
       expect(init?.headers).toEqual({});
 
       return new Response(
@@ -42,7 +47,7 @@ describe("OpenRouter model catalog", () => {
 
   it("uses user-filtered OpenRouter models when an API key is present", async () => {
     const fetchImpl = async (url: URL | RequestInfo, init?: RequestInit) => {
-      expect(String(url)).toContain("https://openrouter.ai/api/v1/models/user?");
+      expect(requestUrl(url)).toContain("https://openrouter.ai/api/v1/models/user?");
       expect(init?.headers).toEqual({ Authorization: "Bearer test-key" });
 
       return new Response(JSON.stringify({ data: [{ id: "anthropic/claude-sonnet-4.5" }] }));
