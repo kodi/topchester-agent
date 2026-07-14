@@ -40,6 +40,7 @@ import {
   runtimeEventToSessionPayload,
   slashCommandToSessionPayload,
 } from "../src/tui/shell.js";
+import { createBusyReasoningSink } from "../src/tui/shell-helpers.js";
 import { stripAnsi } from "../src/tui/text.js";
 import {
   agentMessage,
@@ -2082,6 +2083,38 @@ describe("TUI rendering", () => {
 
     expect(lines).toContain("   Planning file search");
     expect(lines).toContain(" ⠋ Inspecting workflow files · press Esc to stop");
+  });
+
+  it("mutes every streamed thinking row independently", async () => {
+    const previousForceColor = process.env.FORCE_COLOR;
+    const previousNoColor = process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+    delete process.env.NO_COLOR;
+
+    try {
+      const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+      const busy = new BusyIndicator(app, { requestRender() {} }, { status: "thinking", activities: ["Thinking..."] });
+      const reasoning = createBusyReasoningSink(busy);
+
+      await reasoning.sink({ type: "delta", text: "**Planning file search**" });
+      await reasoning.sink({ type: "delta", text: "**Inspecting workflow files**" });
+      const output = app.render(60).join("\n");
+
+      expect(output).toContain("\u001b[90mPlanning file search\u001b[0m");
+      expect(output).toContain("\u001b[90mInspecting workflow files\u001b[0m");
+    } finally {
+      if (previousForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = previousForceColor;
+      }
+
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
   });
 
   it("reads the streamed reasoning env flag", () => {

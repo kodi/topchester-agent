@@ -43,7 +43,12 @@ export function createBusyReasoningSink(busy: BusyIndicator): {
         return;
       }
 
-      busy.setActivity(ui.muted(text));
+      busy.setActivity(
+        text
+          .split("\n")
+          .map((line) => ui.muted(line))
+          .join("\n")
+      );
     },
   };
 }
