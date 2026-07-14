@@ -187,7 +187,7 @@ The TUI shows temporary progress while work is running:
 - The prompt may show `press Esc to stop` while startup or runtime work is active.
 - Temporary thread lines can be set with an optional `expireAfterMs` timeout. Hook `statusMessage` feedback uses this path so busy spinner updates and model completion rows do not clear it before the timeout.
 
-Set `TOPCHESTER_STREAM_REASONING=1` before starting the interactive TUI to show provider-exposed reasoning text while the agent works. This is provider-dependent: models that stream reasoning show dim wrapped thinking text, models that only expose a final reasoning summary may show that summary, and unsupported providers keep the normal spinner text. When the answer arrives, the thinking text stays visible above the final answer for that turn. It is not saved in session history, JSON run output, model conversation history, or KB data.
+Set `TOPCHESTER_STREAM_REASONING=1` before starting the interactive TUI to show provider-exposed reasoning text while the agent works. This is provider-dependent: models that stream reasoning show recent thinking updates as separate dim rows, models that only expose a final reasoning summary may show that summary, and unsupported providers keep the normal spinner text. Markdown-style bold headings are shown as plain status text instead of raw `**` markers. The spinner and stop hint stay beside the newest update. When the answer arrives, the thinking text stays visible above the final answer for that turn. It is not saved in session history, JSON run output, model conversation history, or KB data.
 
 This flag only affects interactive `topchester` chat turns. It does not make `topchester run` print reasoning, and it does not apply to startup checks or slash commands.
 

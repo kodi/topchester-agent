@@ -83,8 +83,12 @@ export class BusyIndicator {
 
   private formatActivityLine(activity: string): string {
     const hint = this.options.activityHint ? ` · ${this.options.activityHint}` : "";
+    const lines = activity.split("\n");
+    const activeLineIndex = lines.length - 1;
 
-    return `${this.frames[this.index]} ${activity}${hint}`;
+    return lines
+      .map((line, index) => (index === activeLineIndex ? `${this.frames[this.index]} ${line}${hint}` : `  ${line}`))
+      .join("\n");
   }
 }
 
@@ -92,35 +96,33 @@ export class ReasoningTailBuffer {
   private text = "";
 
   get hasText(): boolean {
-    return this.text.length > 0;
+    return this.value.length > 0;
   }
 
   get value(): string {
-    return this.text;
+    return formatReasoningText(this.text);
   }
 
   append(delta: string): string | undefined {
-    const normalized = normalizeReasoningText(`${this.text}${delta}`);
+    this.text += delta;
+    const formatted = this.value;
 
-    if (!normalized) {
+    if (!formatted) {
       return undefined;
     }
 
-    this.text = normalized;
-
-    return this.text;
+    return formatted;
   }
 
   replace(summary: string): string | undefined {
-    const normalized = normalizeReasoningText(summary);
+    this.text = summary;
+    const formatted = this.value;
 
-    if (!normalized) {
+    if (!formatted) {
       return undefined;
     }
 
-    this.text = normalized;
-
-    return this.text;
+    return formatted;
   }
 
   clear(): void {
@@ -128,6 +130,33 @@ export class ReasoningTailBuffer {
   }
 }
 
-function normalizeReasoningText(text: string): string {
-  return text.replace(/\s+/gu, " ").trim();
+const MAX_VISIBLE_REASONING_UPDATES = 6;
+const boldHeadingBoundary = /\*\*\s*(?=\*\*)/gu;
+
+function formatReasoningText(text: string): string {
+  const hasHeadingSequence = /\*\*\s*(?=\*\*)/u.test(text);
+
+  if (!hasHeadingSequence) {
+    return stripWrappingBold(text.replace(/\s+/gu, " ").trim());
+  }
+
+  const updates = text
+    .replace(boldHeadingBoundary, "**\n")
+    .split(/\n+/u)
+    .map((line) => stripWrappingBold(line.replace(/\s+/gu, " ").trim()))
+    .filter(Boolean);
+
+  if (updates.length <= MAX_VISIBLE_REASONING_UPDATES) {
+    return updates.join("\n");
+  }
+
+  return ["… earlier thinking updates", ...updates.slice(-MAX_VISIBLE_REASONING_UPDATES)].join("\n");
+}
+
+function stripWrappingBold(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/gu, "$1")
+    .replace(/^\*\*\s*/u, "")
+    .replace(/\s*\*\*$/u, "")
+    .trim();
 }

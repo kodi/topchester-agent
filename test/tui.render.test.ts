@@ -1027,6 +1027,17 @@ describe("TUI rendering", () => {
     expect(output).toContain("code");
   });
 
+  it("renders multi-line ephemeral activity as separate rows", () => {
+    const app = new ChatLayout(new FakeTerminal(), [systemMessage("Welcome")], "repo", "model [provider]");
+    app.setEphemeralLine("  Planning file search\n⠋ Inspecting workflow files · press Esc to stop");
+
+    const output = stripAnsi(app.render(60).join("\n"));
+    const lines = output.split("\n").map((line) => line.trimEnd());
+
+    expect(lines).toContain("   Planning file search");
+    expect(lines).toContain(" ⠋ Inspecting workflow files · press Esc to stop");
+  });
+
   it("renders exit notice separately from busy ephemeral rows", () => {
     const app = new ChatLayout(new FakeTerminal(), [systemMessage("Welcome")], "repo", "model [provider]");
     app.setEphemeralLine("⠋ Calling agent.fast...");
@@ -2017,12 +2028,60 @@ describe("TUI rendering", () => {
     expect(clearedOutput).not.toContain("checking files");
   });
 
-  it("normalizes and caps transient reasoning tails", () => {
+  it("normalizes plain transient reasoning text", () => {
     const buffer = new ReasoningTailBuffer();
 
     expect(buffer.append("checking\n")).toBe("checking");
     expect(buffer.append("  local\tfiles before editing")).toBe("checking local files before editing");
     expect(buffer.replace("final\nsummary")).toBe("final summary");
+  });
+
+  it("formats streamed bold thinking updates as a rolling list", () => {
+    const buffer = new ReasoningTailBuffer();
+
+    expect(buffer.append("**Planning file search**")).toBe("Planning file search");
+    expect(buffer.append("**Inspecting workflow files**")).toBe("Planning file search\nInspecting workflow files");
+    expect(buffer.append("  **Checking package manager**")).toBe(
+      "Planning file search\nInspecting workflow files\nChecking package manager"
+    );
+
+    for (const update of ["Checking lockfile", "Editing workflow", "Running checks", "Inspecting diff"]) {
+      buffer.append(`**${update}**`);
+    }
+
+    expect(buffer.value).toBe(
+      [
+        "… earlier thinking updates",
+        "Inspecting workflow files",
+        "Checking package manager",
+        "Checking lockfile",
+        "Editing workflow",
+        "Running checks",
+        "Inspecting diff",
+      ].join("\n")
+    );
+  });
+
+  it("keeps the spinner and stop hint on the newest thinking row", () => {
+    const app = new ChatLayout(new FakeTerminal(), [], "repo", "model [provider]");
+    const busy = new BusyIndicator(
+      app,
+      { requestRender() {} },
+      {
+        status: "thinking",
+        activityHint: "press Esc to stop",
+        activities: ["Thinking..."],
+      }
+    );
+
+    busy.start();
+    busy.setActivity("Planning file search\nInspecting workflow files");
+    const output = stripAnsi(app.render(60).join("\n"));
+    const lines = output.split("\n").map((line) => line.trimEnd());
+    busy.stop();
+
+    expect(lines).toContain("   Planning file search");
+    expect(lines).toContain(" ⠋ Inspecting workflow files · press Esc to stop");
   });
 
   it("reads the streamed reasoning env flag", () => {

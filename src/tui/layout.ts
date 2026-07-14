@@ -428,7 +428,8 @@ export class ChatLayout implements Component, Focusable {
     }
 
     if (this.ephemeralLine) {
-      lines.push(...this.renderThreadMessageLines([` ${this.ephemeralLine}`], innerWidth, width, false));
+      const ephemeralLines = this.ephemeralLine.split("\n").map((line) => ` ${line}`);
+      lines.push(...this.renderThreadMessageLines(ephemeralLines, innerWidth, width, false));
     }
 
     if (this.temporaryLine) {
