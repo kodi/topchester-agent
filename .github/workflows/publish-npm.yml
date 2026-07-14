@@ -64,7 +64,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Bump package version
-        run: pnpm version ${{ inputs.release }} --no-git-tag-version
+        run: npm version ${{ inputs.release }} --no-git-tag-version
 
       - name: Read package version
         id: package
