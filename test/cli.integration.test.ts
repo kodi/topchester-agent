@@ -344,7 +344,7 @@ describe("CLI integration", () => {
     await session.append({
       kind: "runtime_config",
       activeModel: { name: "runtime-model", provider: "openrouter" },
-      reasoningEffortByProvider: { openrouter: "high" },
+      reasoningEffortByProvider: { openrouter: "max" },
     });
 
     const { stdout } = await runCli(
@@ -352,7 +352,7 @@ describe("CLI integration", () => {
       fixture.root
     );
 
-    expect(stdout).toContain("runtime-model [openrouter] · effort high");
+    expect(stdout).toContain("runtime-model [openrouter] · effort max");
     expect(stdout).toContain("runtime row");
   });
 

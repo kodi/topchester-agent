@@ -44,11 +44,11 @@ describe("slash commands", () => {
       },
       {
         value: "/effort",
-        description: "show or set reasoning effort (none, minimal, low, medium, high, xhigh, clear)",
+        description: "show or set reasoning effort (none, minimal, low, medium, high, xhigh, max, clear)",
       },
       {
         value: "/reasoning",
-        description: "show or set reasoning effort (none, minimal, low, medium, high, xhigh, clear)",
+        description: "show or set reasoning effort (none, minimal, low, medium, high, xhigh, max, clear)",
       },
       {
         value: "/kb status",
@@ -134,13 +134,13 @@ describe("slash commands", () => {
     expect(getSlashCommandSuggestions("/e")).toEqual([
       {
         value: "/effort",
-        description: "show or set reasoning effort (none, minimal, low, medium, high, xhigh, clear)",
+        description: "show or set reasoning effort (none, minimal, low, medium, high, xhigh, max, clear)",
       },
     ]);
     expect(getSlashCommandSuggestions("/r")).toEqual([
       {
         value: "/reasoning",
-        description: "show or set reasoning effort (none, minimal, low, medium, high, xhigh, clear)",
+        description: "show or set reasoning effort (none, minimal, low, medium, high, xhigh, max, clear)",
       },
       {
         value: "/restore",
@@ -271,6 +271,10 @@ describe("slash commands", () => {
         description: "set reasoning effort to xhigh",
       },
       {
+        value: "/effort max",
+        description: "set reasoning effort to max",
+      },
+      {
         value: "/effort clear",
         description: "use provider default reasoning effort",
       },
@@ -309,6 +313,10 @@ describe("slash commands", () => {
       {
         value: "/reasoning xhigh",
         description: "set reasoning effort to xhigh",
+      },
+      {
+        value: "/reasoning max",
+        description: "set reasoning effort to max",
       },
       {
         value: "/reasoning clear",

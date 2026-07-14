@@ -137,15 +137,15 @@ describe("ModelGateway agent tool protocol", () => {
         ],
       };
     });
-    const gateway = createGateway(api.baseURL, "openrouter", { reasoningEffort: "high" });
+    const gateway = createGateway(api.baseURL, "openrouter", { reasoningEffort: "max" });
 
     const result = await gateway.generateText({ purpose: "agent.primary", prompt: "hello" });
 
     expect(requestBody).toMatchObject({
-      reasoning: { effort: "high" },
+      reasoning: { effort: "max" },
     });
     expect(requestBody).not.toHaveProperty("reasoning_effort");
-    expect(result.reasoningEffort).toBe("high");
+    expect(result.reasoningEffort).toBe("max");
   });
 
   it("sends generic OpenAI-compatible reasoning effort as reasoning_effort", async () => {
@@ -162,15 +162,15 @@ describe("ModelGateway agent tool protocol", () => {
         ],
       };
     });
-    const gateway = createGateway(api.baseURL, "proxy", { reasoningEffort: "medium" });
+    const gateway = createGateway(api.baseURL, "proxy", { reasoningEffort: "max" });
 
     const result = await gateway.generateText({ purpose: "agent.primary", prompt: "hello" });
 
     expect(requestBody).toMatchObject({
-      reasoning_effort: "medium",
+      reasoning_effort: "max",
     });
     expect(requestBody).not.toHaveProperty("reasoning");
-    expect(result.reasoningEffort).toBe("medium");
+    expect(result.reasoningEffort).toBe("max");
   });
 
   it("returns LiteLLM response cost from response headers", async () => {

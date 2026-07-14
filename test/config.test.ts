@@ -1099,7 +1099,7 @@ describe("Topchester config loading", () => {
             service_tier: "flex",
             toolProtocol: "auto",
             openRouterToolRouting: "force",
-            reasoningEffort: "high",
+            reasoningEffort: "max",
             headers: { "X-Test": "custom" },
           },
           ollama: {
@@ -1135,7 +1135,7 @@ describe("Topchester config loading", () => {
       service_tier: "flex",
       toolProtocol: "auto",
       openRouterToolRouting: "force",
-      reasoningEffort: "high",
+      reasoningEffort: "max",
       headers: {
         "HTTP-Referer": "https://topchester.com",
         "X-Title": "Topchester",

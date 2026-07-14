@@ -50,7 +50,9 @@ Each provider supports:
 
 `promptCaching` defaults to `true` for OpenAI-compatible providers. Set it to `false` for providers or proxies that reject prompt-cache fields.
 
-`reasoningEffort` is optional. Accepted values are `none`, `minimal`, `low`, `medium`, `high`, and `xhigh`. When it is omitted, the provider or model default applies. `none` is an explicit configured value and is different from clearing the field.
+`reasoningEffort` is optional. Accepted values are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. `max` is the highest effort level. When the field is omitted, the provider or model default applies. `none` is an explicit configured value and is different from clearing the field.
+
+OpenRouter's [reasoning guide](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens) defines `max` above `xhigh`. Its live [model catalog](https://openrouter.ai/api/v1/models) reports `max` support for GPT-5.6 Sol, Terra, and Luna. Models expose their accepted values through `reasoning.supported_efforts`; unsupported values may be mapped or rejected by the provider.
 
 Topchester maps the generic config field at the provider edge:
 

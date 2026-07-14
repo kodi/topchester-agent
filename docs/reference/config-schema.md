@@ -56,7 +56,7 @@ interface ModelProviderConfig {
   promptCaching?: boolean;
   toolProtocol?: "auto" | "native" | "text-json" | "text-xml";
   openRouterToolRouting?: "auto" | "force" | "off";
-  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 }
 ```
 

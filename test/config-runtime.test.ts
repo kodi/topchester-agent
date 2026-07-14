@@ -54,14 +54,14 @@ describe("config runtime overrides", () => {
 
     const effective = applyRuntimeConfigOverrides(baseConfig, {
       activeModel: { name: "runtime", provider: "local" },
-      reasoningEffortByProvider: { local: "high" },
+      reasoningEffortByProvider: { local: "max" },
     });
 
     expect(effective.models?.assignments?.["agent.primary"]).toEqual({ name: "runtime", provider: "local" });
     expect(effective.models?.assignments?.fallback).toEqual({ name: "runtime", provider: "local" });
     expect(effective.models?.assignments?.["agent.fast"]).toEqual({ name: "fast", provider: "local" });
     expect(effective.models?.assignments?.["kb.summarize"]).toEqual({ name: "summary", provider: "local" });
-    expect(effective.providers?.local).toMatchObject({ reasoningEffort: "high" });
+    expect(effective.providers?.local).toMatchObject({ reasoningEffort: "max" });
     expect(baseConfig.models?.assignments?.["agent.primary"]?.name).toBe("base");
     expect(baseConfig.providers?.local).toMatchObject({ reasoningEffort: "low" });
   });

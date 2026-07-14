@@ -16,6 +16,7 @@ Topchester changes grouped by day. This file is the source of truth for the publ
 
 - Made TUI model and reasoning-effort selection session-scoped, with resume, restore, fork, and new-session lifecycle support.
 - Added one selected config profile slot: `--config` now shadows `TOPCHESTER_CONFIG` instead of merging both files.
+- Added the `max` reasoning effort supported by OpenRouter and GPT-5.6 Sol, Terra, and Luna across config, session overrides, slash commands, and provider requests.
 
 ### Fixes and polish
 

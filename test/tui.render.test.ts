@@ -3040,20 +3040,20 @@ describe("TUI rendering", () => {
       ).selectModelChoice(app, { requestRender() {} }, "openai/gpt-next");
       await (
         shell as unknown as {
-          updateReasoningEffort(app: ChatLayout, effort: "high" | undefined): Promise<void>;
+          updateReasoningEffort(app: ChatLayout, effort: "max" | undefined): Promise<void>;
         }
-      ).updateReasoningEffort(app, "high");
+      ).updateReasoningEffort(app, "max");
 
       expect(context.config.models?.assignments?.["agent.primary"]).toMatchObject({
         name: "gpt-next",
         provider: "openai",
       });
-      expect(context.config.providers?.openai).toMatchObject({ reasoningEffort: "high" });
+      expect(context.config.providers?.openai).toMatchObject({ reasoningEffort: "max" });
       expect(await readFile(profile, "utf8")).toBe(profileText);
       const rehydrated = rehydrateSession((await loadSession(workspace, session.sessionId)).events);
       expect(rehydrated.runtimeConfigOverrides).toEqual({
         activeModel: { name: "gpt-next", provider: "openai" },
-        reasoningEffortByProvider: { openai: "high" },
+        reasoningEffortByProvider: { openai: "max" },
       });
 
       await (

@@ -16,7 +16,7 @@ Common commands:
 - `/model all [search]` browses OpenRouter models, adds one to the global choices catalog, and selects it for the current session.
 - `/connect` connects a model provider.
 - `/effort` shows the current reasoning effort and accepted values.
-- `/effort <none|minimal|low|medium|high|xhigh>` sets a session override for the active model provider.
+- `/effort <none|minimal|low|medium|high|xhigh|max>` sets a session override for the active model provider.
 - `/effort clear` or `/effort default` removes the session override so the configured effort or provider default applies.
 - `/reasoning` is an alias for `/effort`.
 - `/new` clears the terminal and starts a fresh project-local session.

@@ -136,7 +136,7 @@ describe("session store", () => {
     await session.append({
       kind: "runtime_config",
       activeModel: { name: "second", provider: "openrouter" },
-      reasoningEffortByProvider: { openrouter: "high" },
+      reasoningEffortByProvider: { openrouter: "max" },
     });
 
     const loaded = await loadSession(workspace, session.sessionId);
@@ -144,7 +144,7 @@ describe("session store", () => {
       messages: [{ kind: "user", text: "hello" }],
       runtimeConfigOverrides: {
         activeModel: { name: "second", provider: "openrouter" },
-        reasoningEffortByProvider: { openrouter: "high" },
+        reasoningEffortByProvider: { openrouter: "max" },
       },
     });
 

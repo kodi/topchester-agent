@@ -199,13 +199,13 @@ describe("Codex provider adapter", () => {
       { path: authStorePath }
     );
 
-    await createGateway(authStorePath, fetch, 0, { reasoningEffort: "high" }).generateText({
+    await createGateway(authStorePath, fetch, 0, { reasoningEffort: "max" }).generateText({
       purpose: "agent.primary",
       prompt: "hello",
     });
 
     expect(parseJsonBody(requests[0]!.init)).toMatchObject({
-      reasoning: { effort: "high", summary: "auto" },
+      reasoning: { effort: "max", summary: "auto" },
     });
   });
 

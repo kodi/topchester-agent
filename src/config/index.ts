@@ -8,7 +8,7 @@ import { CODEX_BACKEND_BASE_URL } from "../auth/codex.js";
 const modelPurposeSchema = z.enum(["agent.primary", "agent.fast", "kb.summarize", "fallback"]);
 
 const toolProtocolSchema = z.enum(["auto", "native", "text-json", "text-xml"]);
-export const reasoningEfforts = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
+export const reasoningEfforts = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export const reasoningEffortSchema = z.enum(reasoningEfforts);
 const openRouterAttributionHeaders = {
   "HTTP-Referer": "https://topchester.com",
