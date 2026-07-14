@@ -744,6 +744,9 @@ describe("agent hooks", () => {
 function createHookTestContext(workspaceRoot: string, config: TopchesterConfig): AppContext {
   return {
     workspaceRoot,
+    configLoadSpec: { workspaceRoot },
+    baseConfig: config,
+    runtimeConfigOverrides: { reasoningEffortByProvider: {} },
     config,
     devFlags: new Set(),
     modelGateway: {} as AppContext["modelGateway"],

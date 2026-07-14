@@ -8,10 +8,8 @@ import {
   addProjectBashAllowExactRule,
   configureCodexGlobalProvider,
   configureOpenRouterGlobalProvider,
-  getConfiguredReasoningEffort,
+  getTopchesterConfigSources,
   loadTopchesterConfig,
-  setGlobalDefaultModel,
-  setGlobalReasoningEffort,
 } from "../src/config/index.js";
 
 const envKeys = ["HOME", "TOPCHESTER_CONFIG", "TOPCHESTER_LOG_LEVEL"] as const;
@@ -148,18 +146,34 @@ describe("Topchester config loading", () => {
       name: "google/project-fast",
       provider: "openrouter",
     });
-    expect(config.models?.assignments?.["kb.summarize"]).toEqual({
-      name: "google/gemini-3.1-pro",
-      provider: "openrouter",
-    });
-    expect(config.ignore?.paths).toEqual(["project/**", "user/**", "env/**", "cli/**", "!cli/keep/**"]);
+    expect(config.models?.assignments?.["kb.summarize"]).toBeUndefined();
+    expect(config.ignore?.paths).toEqual(["project/**", "user/**", "cli/**", "!cli/keep/**"]);
     expect(config.tools?.bash?.allow).toEqual([
       "node scripts/project-check.mjs",
       "node scripts/user-check.mjs",
       "node scripts/cli-check.mjs",
     ]);
     expect(config.tools?.bash?.allowExact).toEqual(["node --project", "node --user"]);
-    expect(config.tools?.bash?.deny).toEqual(["npm publish", "pnpm publish", "yarn publish"]);
+    expect(config.tools?.bash?.deny).toEqual(["npm publish", "pnpm publish"]);
+  });
+
+  it("uses --config as the one selected profile and reports TOPCHESTER_CONFIG as shadowed", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-profile-slot-"));
+    const envConfig = join(workspace, "broken-env.jsonc");
+    const cliConfig = join(workspace, "cli.jsonc");
+    process.env.TOPCHESTER_CONFIG = envConfig;
+    await writeFile(envConfig, "not valid jsonc");
+    await writeFile(cliConfig, '{ "models": { "default": "openrouter/cli-model" } }\n');
+
+    expect(
+      loadTopchesterConfig({ workspaceRoot: workspace, configPath: cliConfig }).models?.assignments?.["agent.primary"]
+    ).toMatchObject({ name: "cli-model", provider: "openrouter" });
+    expect(getTopchesterConfigSources({ workspaceRoot: workspace, configPath: cliConfig })).toMatchObject([
+      { label: "workspace", state: "base" },
+      { label: "user", state: "base" },
+      { label: "env", path: envConfig, state: "shadowed" },
+      { label: "cli", path: cliConfig, state: "active" },
+    ]);
   });
 
   it("normalizes provider-qualified model choices", async () => {
@@ -267,8 +281,7 @@ describe("Topchester config loading", () => {
     await expect(configureOpenRouterGlobalProvider()).resolves.toMatchObject({
       path: join(home, ".config", "topchester", "config.jsonc"),
     });
-    await addGlobalModelChoices(["openrouter/qwen/qwen3-coder"]);
-    await setGlobalDefaultModel("openrouter/anthropic/claude-sonnet-4.5");
+    await addGlobalModelChoices(["openrouter/qwen/qwen3-coder", "openrouter/anthropic/claude-sonnet-4.5"]);
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
     const written = await readFile(join(home, ".config", "topchester", "config.jsonc"), "utf8");
@@ -281,13 +294,10 @@ describe("Topchester config loading", () => {
       toolProtocol: "auto",
       openRouterToolRouting: "off",
     });
-    expect(config.models?.assignments?.["agent.primary"]).toEqual({
-      provider: "openrouter",
-      name: "anthropic/claude-sonnet-4.5",
-    });
+    expect(config.models?.assignments?.["agent.primary"]).toBeUndefined();
     expect(config.models?.choices).toEqual([
-      { provider: "openrouter", name: "anthropic/claude-sonnet-4.5" },
       { provider: "openrouter", name: "qwen/qwen3-coder" },
+      { provider: "openrouter", name: "anthropic/claude-sonnet-4.5" },
     ]);
     expect(written).toContain('"OPENROUTER_API_KEY"');
   });
@@ -343,7 +353,7 @@ describe("Topchester config loading", () => {
       "openrouter/anthropic/claude-sonnet-4.5",
       "openrouter/google/gemini-3.1-flash-lite",
     ]);
-    await setGlobalDefaultModel("openrouter/google/gemini-3.1-flash-lite");
+    await addGlobalModelChoices(["openrouter/google/gemini-3.1-flash-lite"], { prioritize: true });
 
     const config = loadTopchesterConfig({ workspaceRoot: workspace });
 
@@ -1154,31 +1164,6 @@ describe("Topchester config loading", () => {
     );
 
     expect(() => loadTopchesterConfig({ workspaceRoot: workspace })).toThrow("providers.openrouter.reasoningEffort");
-  });
-
-  it("sets, overwrites, and clears global provider reasoning effort", async () => {
-    await configureOpenRouterGlobalProvider();
-    await setGlobalDefaultModel("openrouter/openai/gpt-5");
-
-    await expect(setGlobalReasoningEffort("openrouter", "low")).resolves.toMatchObject({
-      providerId: "openrouter",
-      reasoningEffort: "low",
-    });
-    await expect(setGlobalReasoningEffort("openrouter", "xhigh")).resolves.toMatchObject({
-      providerId: "openrouter",
-      reasoningEffort: "xhigh",
-    });
-
-    let config = loadTopchesterConfig({ workspaceRoot: await mkdtemp(join(tmpdir(), "topchester-workspace-")) });
-    expect(getConfiguredReasoningEffort(config)).toBe("xhigh");
-
-    await expect(setGlobalReasoningEffort("openrouter", undefined)).resolves.toMatchObject({
-      providerId: "openrouter",
-    });
-    const written = await readFile(join(process.env.HOME!, ".config", "topchester", "config.jsonc"), "utf8");
-    expect(written).not.toContain("reasoningEffort");
-    config = loadTopchesterConfig({ workspaceRoot: await mkdtemp(join(tmpdir(), "topchester-workspace-")) });
-    expect(getConfiguredReasoningEffort(config)).toBeUndefined();
   });
 
   it("accepts JSONC shorthand config with comments and trailing commas", async () => {

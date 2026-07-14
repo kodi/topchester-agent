@@ -50,7 +50,7 @@ Set the API key in your shell:
 export OPENROUTER_API_KEY=...
 ```
 
-You can also start the TUI and run `/connect`, then `/model`, to create and choose a user model config interactively.
+You can also start the TUI and run `/connect` to provision a user provider and model choices, then `/model` to select a model for the current session. Edit JSONC when you want a durable default.
 
 ## Start a project
 

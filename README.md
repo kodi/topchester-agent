@@ -115,12 +115,13 @@ You can also use a stronger model for chat and a cheaper model for KB summaries:
 
 Do not commit API keys. Put keys in environment variables, a user config file, or an uncommitted local config.
 
-Topchester reads config in this order, with later entries overriding earlier ones:
+Topchester reads workspace config, user config, and one optional selected profile in this order:
 
 1. `topchester.jsonc`
 2. `~/.config/topchester/config.jsonc`
-3. `TOPCHESTER_CONFIG`
-4. `--config <path>`
+3. `--config <path>` when supplied, otherwise `TOPCHESTER_CONFIG`
+
+`--config` and `TOPCHESTER_CONFIG` are two ways to select the same profile slot. If both are set, `--config` wins and the environment-selected file is not merged.
 
 On first startup, Topchester creates `~/.config/topchester/config.jsonc` with a commented minimal example. Uncomment it to set your personal default model, or keep shared project policy in `topchester.jsonc`.
 

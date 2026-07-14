@@ -1,10 +1,28 @@
 import { ModelGateway, type ModelGatewayConfig } from "../model/index.js";
-import { ensureGlobalTopchesterConfigFile, loadTopchesterConfig, type TopchesterConfig } from "../config/index.js";
+import {
+  ensureGlobalTopchesterConfigFile,
+  loadTopchesterConfigFromSpec,
+  resolveConfigLoadSpec,
+  type ConfigLoadSpec,
+  type ModelChoiceConfig,
+  type ReasoningEffort,
+  type TopchesterConfig,
+} from "../config/index.js";
+import {
+  applyRuntimeConfigOverrides,
+  cloneRuntimeConfigOverrides,
+  emptyRuntimeConfigOverrides,
+  validateRuntimeConfigOverrides,
+  type RuntimeConfigOverrides,
+} from "../config/runtime.js";
 import { createTopchesterLogger } from "../logging/index.js";
 import { type Logger } from "pino";
 
 export interface AppContext {
   workspaceRoot: string;
+  configLoadSpec: ConfigLoadSpec;
+  baseConfig: TopchesterConfig;
+  runtimeConfigOverrides: RuntimeConfigOverrides;
   config: TopchesterConfig;
   modelGateway: ModelGateway;
   devFlags: Set<string>;
@@ -15,23 +33,82 @@ export interface AppContext {
 export interface CreateAppContextOptions {
   workspaceRoot: string;
   configPath?: string;
+  envConfigPath?: string;
   devFlags?: string[];
 }
 
 export function createAppContext(options: CreateAppContextOptions): AppContext {
   ensureGlobalTopchesterConfigFile();
-  const config = loadTopchesterConfig(options);
+  const configLoadSpec = resolveConfigLoadSpec(options);
+  const baseConfig = loadTopchesterConfigFromSpec(configLoadSpec);
+  const runtimeConfigOverrides = emptyRuntimeConfigOverrides();
+  const config = applyRuntimeConfigOverrides(baseConfig, runtimeConfigOverrides);
   const modelGateway = createModelGatewayFromConfig(config);
   const loggerInfo = createTopchesterLogger(options.workspaceRoot);
 
   return {
     workspaceRoot: options.workspaceRoot,
+    configLoadSpec,
+    baseConfig,
+    runtimeConfigOverrides,
     config,
     modelGateway,
     devFlags: new Set(options.devFlags ?? []),
     logger: loggerInfo.logger,
     logFilePath: loggerInfo.logFilePath,
   };
+}
+
+export function setRuntimeConfigOverrides(context: AppContext, overrides: RuntimeConfigOverrides): void {
+  const nextOverrides = cloneRuntimeConfigOverrides(overrides);
+  const nextConfig = applyRuntimeConfigOverrides(context.baseConfig, nextOverrides);
+  const nextGateway = createModelGatewayFromConfig(nextConfig);
+
+  context.runtimeConfigOverrides = nextOverrides;
+  context.config = nextConfig;
+  context.modelGateway = nextGateway;
+}
+
+export function restoreRuntimeConfigOverrides(context: AppContext, overrides: RuntimeConfigOverrides): string[] {
+  const validated = validateRuntimeConfigOverrides(context.baseConfig, overrides);
+  setRuntimeConfigOverrides(context, validated.overrides);
+  return validated.warnings;
+}
+
+export function setRuntimeActiveModel(context: AppContext, activeModel: ModelChoiceConfig | undefined): void {
+  const { activeModel: _currentActiveModel, ...remainingOverrides } = context.runtimeConfigOverrides;
+  setRuntimeConfigOverrides(context, {
+    ...remainingOverrides,
+    ...(activeModel === undefined ? {} : { activeModel }),
+  });
+}
+
+export function setRuntimeReasoningEffort(
+  context: AppContext,
+  providerId: string,
+  effort: ReasoningEffort | undefined
+): void {
+  const reasoningEffortByProvider = { ...context.runtimeConfigOverrides.reasoningEffortByProvider };
+  if (effort === undefined) {
+    delete reasoningEffortByProvider[providerId];
+  } else {
+    reasoningEffortByProvider[providerId] = effort;
+  }
+  setRuntimeConfigOverrides(context, { ...context.runtimeConfigOverrides, reasoningEffortByProvider });
+}
+
+export function resetRuntimeConfigOverrides(context: AppContext): void {
+  setRuntimeConfigOverrides(context, emptyRuntimeConfigOverrides());
+}
+
+export function reloadAppBaseConfig(context: AppContext): void {
+  const nextBaseConfig = loadTopchesterConfigFromSpec(context.configLoadSpec);
+  const nextConfig = applyRuntimeConfigOverrides(nextBaseConfig, context.runtimeConfigOverrides);
+  const nextGateway = createModelGatewayFromConfig(nextConfig);
+
+  context.baseConfig = nextBaseConfig;
+  context.config = nextConfig;
+  context.modelGateway = nextGateway;
 }
 
 export function createModelGatewayFromConfig(config: TopchesterConfig): ModelGateway {

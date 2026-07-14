@@ -9,7 +9,14 @@ import {
   type BashApprovalRequest,
   type RuntimeSteeringBuffer,
 } from "../agent/runtime/index.js";
-import { createModelGatewayFromConfig, type AppContext } from "../app/context.js";
+import {
+  reloadAppBaseConfig,
+  resetRuntimeConfigOverrides,
+  restoreRuntimeConfigOverrides,
+  setRuntimeActiveModel,
+  setRuntimeReasoningEffort,
+  type AppContext,
+} from "../app/context.js";
 import {
   addGlobalModelChoices,
   configureOpenRouterGlobalProvider,
@@ -17,10 +24,8 @@ import {
   getActiveModelProviderId,
   getConfiguredModelChoices,
   getConfiguredReasoningEffort,
-  loadTopchesterConfig,
   reasoningEfforts,
-  setGlobalDefaultModel,
-  setGlobalReasoningEffort,
+  resolveModelChoice,
   type ReasoningEffort,
 } from "../config/index.js";
 import { fallbackOpenRouterStarterChoices, selectOpenRouterStarterChoices } from "../model/openrouter.js";
@@ -108,6 +113,7 @@ export interface TuiShellOptions {
   session?: SessionHandle;
   initialMessages?: ChatMessage[];
   initialTaskPlan?: TaskPlanState;
+  runtimeConfigWarnings?: string[];
 }
 
 const HOOK_STATUS_EXPIRE_AFTER_MS = 2000;
@@ -153,6 +159,9 @@ export class TopchesterTuiShell implements TuiShell {
     const isResumed = this.options.session !== undefined;
 
     const messages = this.options.initialMessages ?? getStartupThreadMessages(this.context);
+    for (const warning of this.options.runtimeConfigWarnings ?? []) {
+      messages.push(systemMessage(`Session config warning: ${warning}`));
+    }
     if (!isResumed) {
       await persistMessagesWithWarning(session, messages, messages);
     }
@@ -925,13 +934,14 @@ export class TopchesterTuiShell implements TuiShell {
         return;
       }
 
-      const result = await setGlobalReasoningEffort(providerId, effort);
-      this.reloadModelConfig(app);
+      setRuntimeReasoningEffort(this.context, providerId, effort);
+      app.setModelLabel(getModelLabel(this.context));
+      await this.persistRuntimeConfigWithWarning(app);
       app.addMessage(
         systemMessage(
           effort === undefined
-            ? `Reasoning effort cleared; provider defaults will apply.\nconfig: ${formatHomeRelativePath(result.path)}`
-            : `Reasoning effort set to ${effort}.\nconfig: ${formatHomeRelativePath(result.path)}`
+            ? "Session reasoning override cleared; the configured provider effort now applies."
+            : `Reasoning effort set to ${effort} for this session.`
         )
       );
       app.setStatus("ready");
@@ -1022,14 +1032,16 @@ export class TopchesterTuiShell implements TuiShell {
       app.setModalActionHandler((action) => {
         const value = action.value;
         if (value?.startsWith("model:")) {
-          this.startBackgroundTask(app, tui, "Model", () => this.selectModelChoice(app, tui, value.slice(6)));
+          this.startBackgroundTask(app, tui, "Model", () =>
+            this.selectModelChoice(app, tui, value.slice(6), { persistChoice: true })
+          );
         }
       });
       app.addMessage({
         kind: "modal",
         tone: "info",
         title: "OpenRouter models",
-        body: "Picking one adds it to choices and makes it the default model.",
+        body: "Picking one adds it to the global choices catalog and selects it for this session.",
         actions: [
           ...matches.map((choice) => ({
             label: `${formatModelPickerLabel(choice.ref)}  ${choice.description}`,
@@ -1068,11 +1080,12 @@ export class TopchesterTuiShell implements TuiShell {
 
       await addGlobalModelChoices(starterChoices, { prioritize: true });
 
+      reloadAppBaseConfig(this.context);
       if (!this.context.config.models?.assignments?.["agent.primary"] && starterChoices[0]) {
-        await setGlobalDefaultModel(starterChoices[0]);
+        setRuntimeActiveModel(this.context, resolveModelChoice(this.context.config, starterChoices[0]));
+        await this.persistRuntimeConfigWithWarning(app);
       }
-
-      this.reloadModelConfig(app);
+      app.setModelLabel(getModelLabel(this.context));
       await this.refreshKnowledgeFooter(app);
       app.addMessage(
         systemMessage(
@@ -1096,12 +1109,23 @@ export class TopchesterTuiShell implements TuiShell {
     }
   }
 
-  private async selectModelChoice(app: ChatLayout, tui: TUI, modelRef: string): Promise<void> {
+  private async selectModelChoice(
+    app: ChatLayout,
+    tui: TUI,
+    modelRef: string,
+    options: { persistChoice?: boolean } = {}
+  ): Promise<void> {
     try {
-      const result = await setGlobalDefaultModel(modelRef);
-      this.reloadModelConfig(app);
+      if (options.persistChoice) {
+        await configureOpenRouterGlobalProvider();
+        await addGlobalModelChoices([modelRef], { prioritize: true });
+        reloadAppBaseConfig(this.context);
+      }
+      setRuntimeActiveModel(this.context, resolveModelChoice(this.context.config, modelRef));
+      app.setModelLabel(getModelLabel(this.context));
+      await this.persistRuntimeConfigWithWarning(app);
       await this.refreshKnowledgeFooter(app);
-      app.addMessage(systemMessage(`Model set to ${modelRef}.\nconfig: ${formatHomeRelativePath(result.path)}`));
+      app.addMessage(systemMessage(`Model set to ${modelRef} for this session.`));
       app.setStatus("ready");
     } catch (error) {
       app.addMessage(systemMessage(`Model change failed: ${formatPlainError(error)}`));
@@ -1109,14 +1133,6 @@ export class TopchesterTuiShell implements TuiShell {
     } finally {
       tui.requestRender();
     }
-  }
-
-  private reloadModelConfig(app: ChatLayout): void {
-    this.context.config = loadTopchesterConfig({
-      workspaceRoot: this.context.workspaceRoot,
-    });
-    this.context.modelGateway = createModelGatewayFromConfig(this.context.config);
-    app.setModelLabel(getModelLabel(this.context));
   }
 
   private startKnowledgeStatusRefresh(app: ChatLayout, tui: TUI): void {
@@ -1168,6 +1184,7 @@ export class TopchesterTuiShell implements TuiShell {
       this.taskPlanNoticeTimer = undefined;
     }
 
+    resetRuntimeConfigOverrides(this.context);
     const session = await createSession(this.context.workspaceRoot);
     const droppedQueuedNotice = this.clearQueuedChatMessages(app);
     const messages = getStartupThreadMessages(this.context);
@@ -1186,6 +1203,7 @@ export class TopchesterTuiShell implements TuiShell {
     );
     await this.appendStartupRuntimeEvents(session, messages, (await this.runtime.checkProjectInstructions?.()) ?? []);
     app.resetForNewSession(messages);
+    app.setModelLabel(getModelLabel(this.context));
     app.setStartupHintLine(STARTUP_PROMPT_HINT);
     tui.requestRender();
     await this.checkAgent(app, tui);
@@ -1207,11 +1225,13 @@ export class TopchesterTuiShell implements TuiShell {
     const fork = await forkSession(this.context.workspaceRoot, sourceSession.sessionId);
     const loaded = await loadSession(this.context.workspaceRoot, fork.sessionId);
     const rehydrated = rehydrateSession(loaded.events);
+    const runtimeConfigWarnings = restoreRuntimeConfigOverrides(this.context, rehydrated.runtimeConfigOverrides);
     const forkNoticeText = `Forked session from ${sourceSession.sessionId.slice(0, 8)}.`;
     const forkNotice = systemMessage(forkNoticeText);
     const droppedQueuedNotice = this.clearQueuedChatMessages(app);
     const resetMessages = [
       ...rehydrated.messages,
+      ...runtimeConfigWarnings.map((warning) => systemMessage(`Session config warning: ${warning}`)),
       forkNotice,
       ...(droppedQueuedNotice ? [systemMessage(droppedQueuedNotice)] : []),
     ];
@@ -1231,6 +1251,7 @@ export class TopchesterTuiShell implements TuiShell {
     }
 
     app.resetForNewSession(resetMessages);
+    app.setModelLabel(getModelLabel(this.context));
     app.setTaskPlan(rehydrated.taskPlan);
     if (rehydrated.status) {
       app.setStatus(rehydrated.status);
@@ -1286,12 +1307,14 @@ export class TopchesterTuiShell implements TuiShell {
       restoredSession = await loadSessionForAppend(this.context.workspaceRoot, sessionId);
       const loaded = await loadSession(this.context.workspaceRoot, sessionId);
       const rehydrated = rehydrateSession(loaded.events);
+      const runtimeConfigWarnings = restoreRuntimeConfigOverrides(this.context, rehydrated.runtimeConfigOverrides);
       restoredTaskPlan = rehydrated.taskPlan;
       restoredStatus = rehydrated.status;
       const noticeText = `Restored session ${sessionId.slice(0, 8)}.`;
       const droppedQueuedNotice = this.clearQueuedChatMessages(app);
       restoredMessages = [
         ...rehydrated.messages,
+        ...runtimeConfigWarnings.map((warning) => systemMessage(`Session config warning: ${warning}`)),
         systemMessage(noticeText),
         ...(droppedQueuedNotice ? [systemMessage(droppedQueuedNotice)] : []),
       ];
@@ -1323,6 +1346,7 @@ export class TopchesterTuiShell implements TuiShell {
 
     app.closeSessionPicker();
     app.resetForNewSession(restoredMessages);
+    app.setModelLabel(getModelLabel(this.context));
     app.setTaskPlan(restoredTaskPlan);
     if (restoredStatus) {
       app.setStatus(restoredStatus);
@@ -1426,6 +1450,16 @@ export class TopchesterTuiShell implements TuiShell {
     } catch (error) {
       app.addMessage(systemMessage(`Session save failed: ${formatPlainError(error)}`));
     }
+  }
+
+  private async persistRuntimeConfigWithWarning(app: ChatLayout): Promise<void> {
+    await this.persistPayloadWithWarning(app, {
+      kind: "runtime_config",
+      ...(this.context.runtimeConfigOverrides.activeModel === undefined
+        ? {}
+        : { activeModel: this.context.runtimeConfigOverrides.activeModel }),
+      reasoningEffortByProvider: { ...this.context.runtimeConfigOverrides.reasoningEffortByProvider },
+    });
   }
 
   private printExitBannerForCurrentSession(fallbackSession: SessionHandle): void {

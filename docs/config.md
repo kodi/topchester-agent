@@ -8,12 +8,15 @@ Topchester loads config in this order. Later files override earlier files.
 
 1. `topchester.jsonc`
 2. `~/.config/topchester/config.jsonc`
-3. `TOPCHESTER_CONFIG=/path/to/config.jsonc`
-4. `--config <path>`
+3. One selected profile: `--config <path>` when supplied, otherwise `TOPCHESTER_CONFIG=/path/to/config.jsonc`
+
+The CLI flag and environment variable select the same profile slot. If both are supplied, `--config` wins and Topchester does not parse or merge the environment-selected file. Relative `TOPCHESTER_CONFIG` paths are resolved from the workspace; relative CLI paths are resolved from the invocation directory.
 
 Use `topchester.jsonc` for team-shared project policy. Use `~/.config/topchester/config.jsonc` for personal provider setup, model choices, and default model preferences. `.topchester/` is for state, sessions, and caches, not config.
 
 On first startup, Topchester creates `~/.config/topchester/config.jsonc` with a commented minimal OpenRouter example. Uncomment it when you want to set a personal default model.
+
+Loaded JSONC is immutable for the lifetime of an interactive session. `/model`, `/models`, `/effort`, and `/reasoning` change session runtime state and do not edit a config file. Runtime choices are saved in the project-local session log, restored by `--resume`, `/restore`, and `/fork`, and cleared by `/new`. To change a durable model or effort default, edit the intended JSONC file.
 
 ## Model Slots
 

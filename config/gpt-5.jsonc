@@ -2,7 +2,7 @@
   "$schema": "https://topchester.com/schemas/config.v1.json",
   "models": {
     "default": {
-      "name": "gpt-5.5(low)",
+      "name": "gpt-5.5(high)",
       "provider": "openai",
     },
   },

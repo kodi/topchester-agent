@@ -10,6 +10,18 @@ public: true
 
 Topchester changes grouped by day. This file is the source of truth for the public changelog.
 
+## 2026-07-14
+
+### Features
+
+- Made TUI model and reasoning-effort selection session-scoped, with resume, restore, fork, and new-session lifecycle support.
+- Added one selected config profile slot: `--config` now shadows `TOPCHESTER_CONFIG` instead of merging both files.
+
+### Fixes and polish
+
+- Retained the selected config profile across runtime rebuilds, including providers defined only in `--config` or `TOPCHESTER_CONFIG`.
+- Kept `/connect` provider provisioning separate from the current session's active model.
+
 ## 2026-07-08
 
 ### Features

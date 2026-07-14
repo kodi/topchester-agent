@@ -4,7 +4,7 @@ import { Command } from "commander";
 import { parseBenchmarkProfile, type BenchmarkProfile } from "./agent/benchmark-profile.js";
 import { exchangeCodexAuthorizationCode, pollCodexDeviceAuthorization, requestCodexDeviceCode } from "./auth/codex.js";
 import { getAuthStoreStatus, setAuthProvider } from "./auth/store.js";
-import { createAppContext } from "./app/context.js";
+import { createAppContext, restoreRuntimeConfigOverrides } from "./app/context.js";
 import { ui } from "./cli/ui.js";
 import { type L1FileScanStatus } from "./knowledge/compiler/l1-entry.js";
 import {
@@ -74,11 +74,13 @@ function createTopchesterProgram(): Command {
         const loaded = await loadSession(context.workspaceRoot, options.resume);
         const session = await loadSessionForAppend(context.workspaceRoot, loaded.sessionId);
         const rehydrated = rehydrateSession(loaded.events);
+        const runtimeConfigWarnings = restoreRuntimeConfigOverrides(context, rehydrated.runtimeConfigOverrides);
 
         await new TopchesterTuiShell(context, undefined, {
           session,
           initialMessages: rehydrated.messages,
           initialTaskPlan: rehydrated.taskPlan,
+          runtimeConfigWarnings,
         }).render();
         return;
       }
@@ -561,11 +563,13 @@ async function openForkedSession(context: ReturnType<typeof createContextFromOpt
   const loaded = await loadSession(context.workspaceRoot, fork.sessionId);
   const session = await loadSessionForAppend(context.workspaceRoot, loaded.sessionId);
   const rehydrated = rehydrateSession(loaded.events);
+  const runtimeConfigWarnings = restoreRuntimeConfigOverrides(context, rehydrated.runtimeConfigOverrides);
 
   await new TopchesterTuiShell(context, undefined, {
     session,
     initialMessages: rehydrated.messages,
     initialTaskPlan: rehydrated.taskPlan,
+    runtimeConfigWarnings,
   }).render();
 }
 

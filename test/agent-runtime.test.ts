@@ -721,6 +721,9 @@ describe("agent runtime project instructions", () => {
 function createTestContext(workspaceRoot: string): AppContext {
   return {
     workspaceRoot,
+    configLoadSpec: { workspaceRoot },
+    baseConfig: {},
+    runtimeConfigOverrides: { reasoningEffortByProvider: {} },
     config: {},
     modelGateway: {
       async generateText() {

@@ -58,7 +58,7 @@ Topchester maps the generic config field at the provider edge:
 - OpenRouter requests receive `reasoning: { "effort": "<value>" }`.
 - Other OpenAI-compatible providers receive `reasoning_effort` as best-effort pass-through.
 
-In the TUI, `/effort <value>` and `/reasoning <value>` set the active model provider's `reasoningEffort` in the global user config. `/effort clear`, `/effort default`, `/reasoning clear`, and `/reasoning default` remove the field so provider defaults apply again.
+In the TUI, `/effort <value>` and `/reasoning <value>` override the active model provider for the current session. `/effort clear`, `/effort default`, `/reasoning clear`, and `/reasoning default` remove only the session override, revealing the effort configured in JSONC or the provider default. Session overrides survive resume, restore, and fork. They do not edit JSONC; edit the intended config file to set a durable default.
 
 ## Codex ChatGPT OAuth
 

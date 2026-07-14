@@ -56,8 +56,13 @@ interface ModelProviderConfig {
   promptCaching?: boolean;
   toolProtocol?: "auto" | "native" | "text-json" | "text-xml";
   openRouterToolRouting?: "auto" | "force" | "off";
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 }
 ```
+
+Workspace config and user config are followed by at most one selected profile. CLI `--config` takes precedence over `TOPCHESTER_CONFIG`; the two selectors do not create separate merge layers. Arrays concatenate only across the active layers.
+
+This schema describes immutable JSONC input. Session runtime model and reasoning overrides are stored in project-local session events and are not additional config fields.
 
 The known `codex` provider is OAuth-backed. Its config stays non-secret:
 

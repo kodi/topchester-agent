@@ -37,7 +37,16 @@ export async function collectTopchesterInfo(options: InfoCommandOptions): Promis
         return row(formatConfigSourceLabel(source.label), status("unset", "muted"));
       }
 
-      return row(formatConfigSourceLabel(source.label), `${formatInfoPath(source.path)} ${statusBadge(source.exists)}`);
+      const selection =
+        source.state === "active"
+          ? ` ${status("active", "good")}`
+          : source.state === "shadowed"
+            ? ` ${status("shadowed by --config", "warn")}`
+            : "";
+      return row(
+        formatConfigSourceLabel(source.label),
+        `${formatInfoPath(source.path)} ${statusBadge(source.exists)}${selection}`
+      );
     }),
   ];
 

@@ -48,13 +48,14 @@ V0 loads config in this order. Later entries override earlier entries.
 1. Built-in defaults.
 2. Project config: `topchester.jsonc` at the workspace root.
 3. User config: `~/.config/topchester/config.jsonc`.
-4. Explicit config path: `TOPCHESTER_CONFIG=/path/to/config.jsonc`.
-5. CLI flags.
+4. One selected profile: CLI `--config <path>` when supplied, otherwise `TOPCHESTER_CONFIG=/path/to/config.jsonc`.
+
+The CLI flag and environment variable select the same profile slot. They do not stack; CLI selection shadows the environment path.
 
 Rationale:
 
 - `topchester.jsonc` is visible at the repo root, easy to review, and appropriate for team-shared policy such as ignore rules, command approvals, and optional project model recommendations.
-- `~/.config/topchester/config.jsonc` follows the XDG-style pattern used by OpenCode and other terminal tools. It is the default write target for `/connect` and `/model` because those commands change personal provider and model preferences.
+- `~/.config/topchester/config.jsonc` follows the XDG-style pattern used by OpenCode and other terminal tools. `/connect` provisions providers and model choices there. `/model` and `/effort` are session runtime controls and do not edit JSONC.
 - `.topchester/` is for state, sessions, and caches. It is not a config layer.
 - API keys should not be committed. Config should reference environment variables or future secret-store entries.
 
@@ -297,7 +298,7 @@ Rules are workspace-relative POSIX glob patterns. Absolute paths and `..` traver
 
 Config ignores are applied after built-in safety exclusions and `.gitignore`. Negation cannot re-include default excluded folders such as `.git/`, `node_modules/`, `.agents/topchester/`, `.agents/topchester-kb-cache/`, or `topchester-kb/`.
 
-`ignore.paths` arrays concatenate across config layers in load order: project config, user config, `TOPCHESTER_CONFIG`, then CLI `--config`. Later entries win inside the effective ignore rule list.
+`ignore.paths` arrays concatenate across active config layers in load order: project config, user config, then the one selected profile. Later entries win inside the effective ignore rule list.
 
 ## Bash Permissions
 

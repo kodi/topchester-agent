@@ -30,7 +30,11 @@ Use `/restore` in the TUI to pick a previous project-local session without leavi
 
 Use `/fork` in the TUI to clone the active session into a fresh top-level session and switch to it. Use `topchester fork --last` or `topchester fork <session-id>` to fork a saved project-local session before opening the fork.
 
-Events are append-only JSONL. They include user messages, assistant messages, tool calls, runtime events, task-plan state, and child-session lifecycle events.
+Events are append-only JSONL. They include user messages, assistant messages, tool calls, runtime events, task-plan state, runtime model/effort snapshots, and child-session lifecycle events. Runtime config events contain only model references and effort enum values; provider definitions, URLs, headers, API keys, and auth records stay out of session logs.
+
+`/model`, `/models`, `/effort`, and `/reasoning` update the current session's runtime snapshot. `--resume` and `/restore` apply the latest valid snapshot before rendering or sending a model request. A fork inherits its source snapshot and can then diverge independently. `/new` starts with empty overrides and the currently loaded JSONC defaults. Old sessions without runtime config events continue to load with empty overrides.
+
+If a saved provider no longer exists in the currently selected profile, Topchester drops only the invalid saved entries, keeps any valid entries, and shows a warning instead of making the session impossible to open.
 
 Fork metadata records the source session ID and source root session ID. The source log is not changed by a successful fork. Forks do not copy child `task` session folders in V0; copied parent transcript rows can still include historical child-session lifecycle events.
 

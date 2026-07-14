@@ -279,6 +279,9 @@ describe("logging", () => {
       const loggerInfo = createTopchesterLogger(workspace);
       const runtime = new TopchesterAgentRuntime({
         workspaceRoot: workspace,
+        configLoadSpec: { workspaceRoot: workspace },
+        baseConfig: {},
+        runtimeConfigOverrides: { reasoningEffortByProvider: {} },
         config: {},
         devFlags: new Set(),
         logger: loggerInfo.logger,

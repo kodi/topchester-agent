@@ -32,7 +32,7 @@ topchester kb reset
 
 These options can be used with the top-level command and subcommands:
 
-- `-c, --config <path>` — use an explicit config file.
+- `-c, --config <path>` — select an explicit profile after workspace and user config. It shadows `TOPCHESTER_CONFIG` instead of stacking with it.
 - `--workspace <path>` — use this workspace root. Defaults to the current working directory.
 - `--resume <session>` — resume a project-local session from `.agents/topchester/sessions/`. Use `latest` or an exact lowercase session ID.
 - `--dev <flag>` — enable a development-only UI or runtime flag. Can be repeated.
@@ -168,7 +168,7 @@ Shows a local lite doctor report without opening the TUI.
 
 Current behavior:
 
-- Reports config layers and whether each configured path exists.
+- Reports config layers, whether each path exists, the active selected profile, and an environment profile shadowed by `--config`.
 - Validates the effective merged config and exits nonzero when it is invalid.
 - Shows configured model slots, providers, provider API key env presence, MCP server command presence, hook counts, and local session/log/knowledge paths.
 - Does not contact model providers.

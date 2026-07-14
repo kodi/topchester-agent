@@ -4,6 +4,7 @@ import { uuidv7 } from "uuidv7";
 import { ZodError } from "zod";
 import { getTopchesterSessionsPath } from "../app/paths.js";
 import { type HookEventName } from "../config/index.js";
+import { emptyRuntimeConfigOverrides, type RuntimeConfigOverrides } from "../config/runtime.js";
 import { type TaskPlanState } from "../agent/task-plan.js";
 import { type ToolCall } from "../agent/tools.js";
 import { hookStatusMessage, toolCallMessage, type ChatMessage } from "../tui/messages.js";
@@ -60,6 +61,7 @@ export interface RehydratedSession {
   messages: ChatMessage[];
   status?: string;
   taskPlan?: TaskPlanState;
+  runtimeConfigOverrides: RuntimeConfigOverrides;
 }
 
 export interface CreateChildSessionOptions {
@@ -382,6 +384,7 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
   const messages: ChatMessage[] = [];
   let status: string | undefined;
   let taskPlan: TaskPlanState | undefined;
+  let runtimeConfigOverrides = emptyRuntimeConfigOverrides();
   let visibleOnlyActionValues = new Set<string>();
 
   for (const event of events) {
@@ -418,6 +421,12 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
         break;
       case "knowledge_status":
         break;
+      case "runtime_config":
+        runtimeConfigOverrides = {
+          ...(event.activeModel === undefined ? {} : { activeModel: event.activeModel }),
+          reasoningEffortByProvider: { ...event.reasoningEffortByProvider },
+        };
+        break;
       case "subagent_started":
       case "subagent_event":
       case "subagent_completed":
@@ -443,7 +452,7 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
     }
   }
 
-  return { messages, status, ...(taskPlan === undefined ? {} : { taskPlan }) };
+  return { messages, status, ...(taskPlan === undefined ? {} : { taskPlan }), runtimeConfigOverrides };
 }
 
 function buildHandle(sessionDir: string, metadata: SessionMetadata): SessionHandle {

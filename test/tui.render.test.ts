@@ -53,13 +53,19 @@ import {
   userMessage,
 } from "../src/tui/messages.js";
 import { type Terminal } from "@earendil-works/pi-tui";
-import { type AppContext } from "../src/app/context.js";
+import {
+  createAppContext,
+  setRuntimeActiveModel,
+  setRuntimeReasoningEffort,
+  type AppContext,
+} from "../src/app/context.js";
 import { getTopchesterSessionsPath } from "../src/app/paths.js";
 import { ABORT_CHOICE_VALUE, agentEvent } from "../src/agent/events.js";
 import { slashCommandSuggestions } from "../src/agent/commands.js";
-import { TopchesterAgentRuntime } from "../src/agent/runtime/index.js";
+import { TopchesterAgentRuntime, type AgentRuntime } from "../src/agent/runtime/index.js";
 import { executeRunCommand } from "../src/cli/run.js";
 import { type SessionEventPayload } from "../src/session/events.js";
+import { topchesterConfigSchema } from "../src/config/index.js";
 import { createSession, forkSession, loadSession, rehydrateSession, type SessionHandle } from "../src/session/store.js";
 
 // fake terminal for testing - 2
@@ -195,6 +201,9 @@ describe("TUI rendering", () => {
   it("adds two top and bottom padding lines around the startup banner", () => {
     const [message] = getStartupThreadMessages({
       workspaceRoot: "/repo",
+      configLoadSpec: { workspaceRoot: "/repo" },
+      baseConfig: {},
+      runtimeConfigOverrides: { reasoningEffortByProvider: {} },
       config: {},
       devFlags: new Set(),
       modelGateway: {} as AppContext["modelGateway"],
@@ -2932,6 +2941,15 @@ describe("TUI rendering", () => {
 
     try {
       const context = createTestContext(workspace);
+      context.baseConfig = context.config = topchesterConfigSchema.parse({
+        providers: {
+          default: "openrouter",
+          openrouter: {
+            type: "openai-compatible",
+            baseURL: "https://openrouter.ai/api/v1",
+          },
+        },
+      });
       const app = new ChatLayout(new FakeTerminal(), [], "repo", "not set");
       const shell = new TopchesterTuiShell(context, {
         async checkAgent() {
@@ -2981,6 +2999,287 @@ describe("TUI rendering", () => {
       } else {
         process.env.HOME = previousHome;
       }
+    }
+  });
+
+  it("changes model and reasoning effort only in the current session and persists snapshots", async () => {
+    const previousHome = process.env.HOME;
+    const previousLogLevel = process.env.TOPCHESTER_LOG_LEVEL;
+    const root = await mkdtemp(join(tmpdir(), "topchester-session-config-"));
+    const home = join(root, "home");
+    const workspace = join(root, "workspace");
+    const profile = join(root, "profile.jsonc");
+    process.env.HOME = home;
+    process.env.TOPCHESTER_LOG_LEVEL = "silent";
+    await mkdir(workspace, { recursive: true });
+    const profileText = JSON.stringify({
+      models: {
+        default: "openai/gpt-base",
+        choices: ["openai/gpt-base", "openai/gpt-next"],
+      },
+      providers: {
+        openai: {
+          type: "openai-compatible",
+          baseURL: "http://127.0.0.1:8317/v1",
+          reasoningEffort: "low",
+        },
+      },
+    });
+    await writeFile(profile, profileText);
+
+    try {
+      const context = createAppContext({ workspaceRoot: workspace, configPath: profile });
+      const session = await createSession(workspace);
+      const app = new ChatLayout(new FakeTerminal(), [], "repo", getModelLabel(context));
+      const shell = new TopchesterTuiShell(context, createIdleRuntime(), { session });
+
+      await (
+        shell as unknown as {
+          selectModelChoice(app: ChatLayout, tui: { requestRender(): void }, modelRef: string): Promise<void>;
+        }
+      ).selectModelChoice(app, { requestRender() {} }, "openai/gpt-next");
+      await (
+        shell as unknown as {
+          updateReasoningEffort(app: ChatLayout, effort: "high" | undefined): Promise<void>;
+        }
+      ).updateReasoningEffort(app, "high");
+
+      expect(context.config.models?.assignments?.["agent.primary"]).toMatchObject({
+        name: "gpt-next",
+        provider: "openai",
+      });
+      expect(context.config.providers?.openai).toMatchObject({ reasoningEffort: "high" });
+      expect(await readFile(profile, "utf8")).toBe(profileText);
+      const rehydrated = rehydrateSession((await loadSession(workspace, session.sessionId)).events);
+      expect(rehydrated.runtimeConfigOverrides).toEqual({
+        activeModel: { name: "gpt-next", provider: "openai" },
+        reasoningEffortByProvider: { openai: "high" },
+      });
+
+      await (
+        shell as unknown as {
+          updateReasoningEffort(app: ChatLayout, effort: undefined): Promise<void>;
+        }
+      ).updateReasoningEffort(app, undefined);
+      expect(context.config.providers?.openai).toMatchObject({ reasoningEffort: "low" });
+      expect(app.render(100).join("\n")).toContain("configured provider effort now applies");
+    } finally {
+      restoreTestEnv("HOME", previousHome);
+      restoreTestEnv("TOPCHESTER_LOG_LEVEL", previousLogLevel);
+    }
+  });
+
+  it("switches runtime snapshots for fork and restore, then clears them for /new", async () => {
+    const previousHome = process.env.HOME;
+    const previousLogLevel = process.env.TOPCHESTER_LOG_LEVEL;
+    const root = await mkdtemp(join(tmpdir(), "topchester-session-lifecycle-config-"));
+    const workspace = join(root, "workspace");
+    process.env.HOME = join(root, "home");
+    process.env.TOPCHESTER_LOG_LEVEL = "silent";
+    await mkdir(workspace, { recursive: true });
+    await writeFile(join(workspace, "topchester.jsonc"), '{ "models": { "default": "openrouter/base" } }');
+
+    try {
+      const context = createAppContext({ workspaceRoot: workspace });
+      const source = await createSession(workspace);
+      await source.append({
+        kind: "runtime_config",
+        activeModel: { name: "source", provider: "openrouter" },
+        reasoningEffortByProvider: { openrouter: "high" },
+      });
+      setRuntimeActiveModel(context, { name: "source", provider: "openrouter" });
+      setRuntimeReasoningEffort(context, "openrouter", "high");
+
+      const app = new ChatLayout(new FakeTerminal(), [], "repo", getModelLabel(context));
+      const shell = new TopchesterTuiShell(context, createIdleRuntime(), { session: source });
+      const tui = { requestRender() {} };
+      await (
+        shell as unknown as {
+          forkCurrentSession(app: ChatLayout, tui: { requestRender(): void }): Promise<void>;
+        }
+      ).forkCurrentSession(app, tui);
+      expect(context.runtimeConfigOverrides).toEqual({
+        activeModel: { name: "source", provider: "openrouter" },
+        reasoningEffortByProvider: { openrouter: "high" },
+      });
+
+      const target = await createSession(workspace);
+      await target.append({
+        kind: "runtime_config",
+        activeModel: { name: "target", provider: "openrouter" },
+        reasoningEffortByProvider: { openrouter: "minimal" },
+      });
+      await (
+        shell as unknown as {
+          restoreSelectedSession(app: ChatLayout, tui: { requestRender(): void }, sessionId: string): Promise<void>;
+        }
+      ).restoreSelectedSession(app, tui, target.sessionId);
+      expect(context.runtimeConfigOverrides).toEqual({
+        activeModel: { name: "target", provider: "openrouter" },
+        reasoningEffortByProvider: { openrouter: "minimal" },
+      });
+
+      await (
+        shell as unknown as {
+          startNewSession(app: ChatLayout, tui: { requestRender(): void }): Promise<void>;
+        }
+      ).startNewSession(app, tui);
+      expect(context.runtimeConfigOverrides).toEqual({ reasoningEffortByProvider: {} });
+      expect(context.config.models?.assignments?.["agent.primary"]?.name).toBe("base");
+    } finally {
+      restoreTestEnv("HOME", previousHome);
+      restoreTestEnv("TOPCHESTER_LOG_LEVEL", previousLogLevel);
+    }
+  });
+
+  it("keeps a CLI-selected profile active after /connect openrouter provisioning", async () => {
+    const previousHome = process.env.HOME;
+    const previousLogLevel = process.env.TOPCHESTER_LOG_LEVEL;
+    const root = await mkdtemp(join(tmpdir(), "topchester-connect-profile-"));
+    const workspace = join(root, "workspace");
+    const profile = join(root, "profile.jsonc");
+    process.env.HOME = join(root, "home");
+    process.env.TOPCHESTER_LOG_LEVEL = "silent";
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      profile,
+      JSON.stringify({
+        models: { default: "openai/profile-model", choices: ["openai/profile-model"] },
+        providers: {
+          default: "openai",
+          openai: { type: "openai-compatible", baseURL: "http://127.0.0.1:8317/v1" },
+        },
+      })
+    );
+    vi.stubGlobal(
+      "fetch",
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "qwen/qwen3-coder:free",
+                supported_parameters: ["tools"],
+                architecture: { output_modalities: ["text"] },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+    );
+
+    try {
+      const context = createAppContext({ workspaceRoot: workspace, configPath: profile });
+      const app = new ChatLayout(new FakeTerminal(), [], "repo", getModelLabel(context));
+      const shell = new TopchesterTuiShell(context, createIdleRuntime());
+      await (
+        shell as unknown as {
+          connectOpenRouter(app: ChatLayout, tui: { requestRender(): void }): Promise<void>;
+        }
+      ).connectOpenRouter(app, { requestRender() {} });
+
+      expect(context.configLoadSpec.selectedProfile).toEqual({ source: "cli", path: profile });
+      expect(context.config.models?.assignments?.["agent.primary"]).toMatchObject({
+        name: "profile-model",
+        provider: "openai",
+      });
+      expect(context.runtimeConfigOverrides).toEqual({ reasoningEffortByProvider: {} });
+
+      await (
+        shell as unknown as {
+          selectModelChoice(
+            app: ChatLayout,
+            tui: { requestRender(): void },
+            modelRef: string,
+            options: { persistChoice: true }
+          ): Promise<void>;
+        }
+      ).selectModelChoice(app, { requestRender() {} }, "openrouter/qwen/qwen3-coder:free", {
+        persistChoice: true,
+      });
+      expect(context.baseConfig.models?.choices).toEqual([{ name: "profile-model", provider: "openai" }]);
+      expect(context.runtimeConfigOverrides.activeModel).toEqual({
+        name: "qwen/qwen3-coder:free",
+        provider: "openrouter",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      restoreTestEnv("HOME", previousHome);
+      restoreTestEnv("TOPCHESTER_LOG_LEVEL", previousLogLevel);
+    }
+  });
+
+  it("provisions OpenRouter when /model all selects a catalog model before /connect", async () => {
+    const previousHome = process.env.HOME;
+    const previousLogLevel = process.env.TOPCHESTER_LOG_LEVEL;
+    const root = await mkdtemp(join(tmpdir(), "topchester-model-all-provision-"));
+    const workspace = join(root, "workspace");
+    process.env.HOME = join(root, "home");
+    process.env.TOPCHESTER_LOG_LEVEL = "silent";
+    await mkdir(workspace, { recursive: true });
+
+    try {
+      const context = createAppContext({ workspaceRoot: workspace });
+      const app = new ChatLayout(new FakeTerminal(), [], "repo", getModelLabel(context));
+      const shell = new TopchesterTuiShell(context, createIdleRuntime());
+      await (
+        shell as unknown as {
+          selectModelChoice(
+            app: ChatLayout,
+            tui: { requestRender(): void },
+            modelRef: string,
+            options: { persistChoice: true }
+          ): Promise<void>;
+        }
+      ).selectModelChoice(app, { requestRender() {} }, "openrouter/qwen/qwen3-coder:free", {
+        persistChoice: true,
+      });
+
+      expect(context.config.providers?.openrouter).toMatchObject({
+        baseURL: "https://openrouter.ai/api/v1",
+        apiKeyEnv: "OPENROUTER_API_KEY",
+      });
+      expect(context.runtimeConfigOverrides.activeModel).toEqual({
+        name: "qwen/qwen3-coder:free",
+        provider: "openrouter",
+      });
+    } finally {
+      restoreTestEnv("HOME", previousHome);
+      restoreTestEnv("TOPCHESTER_LOG_LEVEL", previousLogLevel);
+    }
+  });
+
+  it("keeps a runtime effort change active when its session snapshot cannot be saved", async () => {
+    const previousHome = process.env.HOME;
+    const previousLogLevel = process.env.TOPCHESTER_LOG_LEVEL;
+    const root = await mkdtemp(join(tmpdir(), "topchester-runtime-save-warning-"));
+    const workspace = join(root, "workspace");
+    process.env.HOME = join(root, "home");
+    process.env.TOPCHESTER_LOG_LEVEL = "silent";
+    await mkdir(workspace, { recursive: true });
+    await writeFile(join(workspace, "topchester.jsonc"), '{ "models": { "default": "openrouter/base" } }');
+
+    try {
+      const context = createAppContext({ workspaceRoot: workspace });
+      const session = await createSession(workspace);
+      session.append = async () => {
+        throw new Error("disk is full");
+      };
+      const app = new ChatLayout(new FakeTerminal(), [], "repo", getModelLabel(context));
+      const shell = new TopchesterTuiShell(context, createIdleRuntime(), { session });
+      await (
+        shell as unknown as {
+          updateReasoningEffort(app: ChatLayout, effort: "high"): Promise<void>;
+        }
+      ).updateReasoningEffort(app, "high");
+
+      expect(context.runtimeConfigOverrides.reasoningEffortByProvider).toEqual({ openrouter: "high" });
+      const output = app.render(100).join("\n");
+      expect(output).toContain("Session save failed: disk is full");
+      expect(output).toContain("Reasoning effort set to high for this session");
+    } finally {
+      restoreTestEnv("HOME", previousHome);
+      restoreTestEnv("TOPCHESTER_LOG_LEVEL", previousLogLevel);
     }
   });
 
@@ -4158,6 +4457,9 @@ describe("TUI rendering", () => {
 function createTestContext(workspaceRoot: string): AppContext {
   return {
     workspaceRoot,
+    configLoadSpec: { workspaceRoot },
+    baseConfig: {},
+    runtimeConfigOverrides: { reasoningEffortByProvider: {} },
     config: {},
     devFlags: new Set(),
     modelGateway: {
@@ -4186,6 +4488,34 @@ function createTestContext(workspaceRoot: string): AppContext {
 async function readSessionDirs(workspace: string): Promise<string[]> {
   const { readdir } = await import("node:fs/promises");
   return (await readdir(getTopchesterSessionsPath(workspace))).sort();
+}
+
+function createIdleRuntime(): AgentRuntime {
+  return {
+    async checkAgent() {
+      return [];
+    },
+    async checkKnowledgeBase() {
+      return [];
+    },
+    async submitSlashCommand() {
+      return [];
+    },
+    async *submitMessageStream() {
+      yield agentEvent.assistantMessage("unused");
+    },
+    async submitMessage() {
+      return [];
+    },
+  };
+}
+
+function restoreTestEnv(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+  } else {
+    process.env[key] = value;
+  }
 }
 
 async function readSessionLines(workspace: string, sessionId: string): Promise<Array<Record<string, unknown>>> {

@@ -10,10 +10,9 @@ Put hook config in any Topchester config file:
 
 1. `topchester.jsonc` in the workspace root for project-shared hooks.
 2. `~/.config/topchester/config.jsonc` for personal user hooks.
-3. A custom file selected with `TOPCHESTER_CONFIG=/path/to/config.jsonc`.
-4. A custom file selected with `--config <path>`.
+3. One custom profile selected with `--config <path>` when supplied, otherwise `TOPCHESTER_CONFIG=/path/to/config.jsonc`.
 
-Topchester loads those sources in that order. Later files override scalar values and hook arrays concatenate across config layers.
+Topchester loads those sources in that order. `--config` and `TOPCHESTER_CONFIG` select the same profile slot; if both are present, the CLI selection wins and the environment file is not merged. Later active files override scalar values and hook arrays concatenate across config layers.
 
 ```json
 {

@@ -9,7 +9,7 @@ const modelPurposeSchema = z.enum(["agent.primary", "agent.fast", "kb.summarize"
 
 const toolProtocolSchema = z.enum(["auto", "native", "text-json", "text-xml"]);
 export const reasoningEfforts = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
-const reasoningEffortSchema = z.enum(reasoningEfforts);
+export const reasoningEffortSchema = z.enum(reasoningEfforts);
 const openRouterAttributionHeaders = {
   "HTTP-Referer": "https://topchester.com",
   "X-Title": "Topchester",
@@ -36,7 +36,7 @@ const modelAssignmentSchema = z.object({
   toolProtocol: toolProtocolSchema.optional(),
 });
 
-const modelChoiceAssignmentSchema = modelAssignmentSchema.extend({
+export const modelChoiceAssignmentSchema = modelAssignmentSchema.extend({
   provider: z.string().min(1),
 });
 
@@ -325,12 +325,23 @@ export type ReasoningEffort = (typeof reasoningEfforts)[number];
 export interface ConfigLoadOptions {
   workspaceRoot: string;
   configPath?: string;
+  envConfigPath?: string;
+}
+
+export interface ConfigLoadSpec {
+  workspaceRoot: string;
+  selectedProfile?: {
+    source: "env" | "cli";
+    path: string;
+  };
+  environmentProfilePath?: string;
 }
 
 export interface ConfigSource {
   label: "workspace" | "user" | "env" | "cli";
   path?: string;
   exists: boolean;
+  state: "base" | "active" | "shadowed" | "unset";
 }
 
 export interface ProjectBashAllowRuleResult {
@@ -343,12 +354,6 @@ export interface ModelConfigUpdateResult {
   path: string;
   choices: string[];
   defaultModel?: string;
-}
-
-export interface ReasoningEffortUpdateResult {
-  path: string;
-  providerId: string;
-  reasoningEffort?: ReasoningEffort;
 }
 
 export interface McpStdioServerUpdateResult {
@@ -381,49 +386,80 @@ export function ensureGlobalTopchesterConfigFile(): string {
   return configPath;
 }
 
+export function resolveConfigLoadSpec(options: ConfigLoadOptions): ConfigLoadSpec {
+  const environmentProfilePath = (options.envConfigPath ?? process.env.TOPCHESTER_CONFIG) || undefined;
+  const selectedProfile = options.configPath
+    ? { source: "cli" as const, path: resolveConfigPath(options.workspaceRoot, options.configPath) }
+    : environmentProfilePath
+      ? { source: "env" as const, path: resolveConfigPath(options.workspaceRoot, environmentProfilePath) }
+      : undefined;
+
+  return {
+    workspaceRoot: options.workspaceRoot,
+    ...(selectedProfile === undefined ? {} : { selectedProfile }),
+    ...(environmentProfilePath === undefined
+      ? {}
+      : { environmentProfilePath: resolveConfigPath(options.workspaceRoot, environmentProfilePath) }),
+  };
+}
+
 export function loadTopchesterConfig(options: ConfigLoadOptions): TopchesterConfig {
-  const paths = getTopchesterConfigSources(options)
+  return loadTopchesterConfigFromSpec(resolveConfigLoadSpec(options));
+}
+
+export function loadTopchesterConfigFromSpec(spec: ConfigLoadSpec): TopchesterConfig {
+  const paths = getTopchesterConfigSourcesFromSpec(spec)
+    .filter((source) => source.state === "base" || source.state === "active")
     .map((source) => source.path)
     .filter((path): path is string => Boolean(path));
 
   let merged: TopchesterConfigFile = {};
 
   for (const path of paths) {
-    const resolvedPath = isAbsolute(path) ? path : resolve(options.workspaceRoot, path);
-
-    if (!existsSync(resolvedPath)) {
+    if (!existsSync(path)) {
       continue;
     }
 
-    const parsed = readConfigFile(resolvedPath);
-    merged = deepMerge(merged, parseConfigFile(resolvedPath, parsed));
+    const parsed = readConfigFile(path);
+    merged = deepMerge(merged, parseConfigFile(path, parsed));
   }
 
   return topchesterConfigSchema.parse(merged);
 }
 
 export function getTopchesterConfigSources(options: ConfigLoadOptions): ConfigSource[] {
-  const sources: Array<{ label: ConfigSource["label"]; path?: string }> = [
-    { label: "workspace", path: join(options.workspaceRoot, "topchester.jsonc") },
-    { label: "user", path: getGlobalTopchesterConfigPath() },
-    { label: "env", path: process.env.TOPCHESTER_CONFIG || undefined },
-    { label: "cli", path: options.configPath },
+  return getTopchesterConfigSourcesFromSpec(resolveConfigLoadSpec(options));
+}
+
+export function getTopchesterConfigSourcesFromSpec(spec: ConfigLoadSpec): ConfigSource[] {
+  const cliSelected = spec.selectedProfile?.source === "cli";
+  const envPath =
+    spec.environmentProfilePath ?? (spec.selectedProfile?.source === "env" ? spec.selectedProfile.path : undefined);
+  const cliPath = cliSelected ? spec.selectedProfile?.path : undefined;
+
+  return [
+    configSource("workspace", join(spec.workspaceRoot, "topchester.jsonc"), "base"),
+    configSource("user", getGlobalTopchesterConfigPath(), "base"),
+    configSource("env", envPath, envPath ? (cliSelected ? "shadowed" : "active") : "unset"),
+    configSource("cli", cliPath, cliPath ? "active" : "unset"),
   ];
+}
 
-  return sources.map((source) => {
-    const resolvedPath =
-      source.path === undefined
-        ? undefined
-        : isAbsolute(source.path)
-          ? source.path
-          : resolve(options.workspaceRoot, source.path);
+function configSource(
+  label: ConfigSource["label"],
+  path: string | undefined,
+  state: ConfigSource["state"]
+): ConfigSource {
+  return {
+    label,
+    ...(path === undefined ? {} : { path }),
+    exists: path === undefined ? false : existsSync(path),
+    state,
+  };
+}
 
-    return {
-      label: source.label,
-      ...(resolvedPath === undefined ? {} : { path: resolvedPath }),
-      exists: resolvedPath === undefined ? false : existsSync(resolvedPath),
-    };
-  });
+function resolveConfigPath(workspaceRoot: string, path: string): string {
+  return isAbsolute(path) ? path : resolve(workspaceRoot, path);
 }
 
 export const openRouterProviderDefaults = {
@@ -532,60 +568,6 @@ export async function addGlobalModelChoices(
   };
 }
 
-export async function setGlobalDefaultModel(modelRef: string): Promise<ModelConfigUpdateResult> {
-  const normalizedModelRef = modelRef.trim();
-  const configPath = getGlobalTopchesterConfigPath();
-  const config = readConfigObject(configPath);
-  const models = ensurePlainObjectProperty(config, "models");
-  const choices = ensureStringArrayProperty(models, "choices");
-
-  models.choices = [normalizedModelRef, ...choices.filter((choice) => choice !== normalizedModelRef)];
-
-  models.default = normalizedModelRef;
-  const updatedChoices = ensureStringArrayProperty(models, "choices");
-  await writeGlobalConfig(configPath, config);
-
-  return {
-    path: configPath,
-    choices: updatedChoices,
-    defaultModel: normalizedModelRef,
-  };
-}
-
-export async function setGlobalReasoningEffort(
-  providerId: string,
-  effort: ReasoningEffort | undefined
-): Promise<ReasoningEffortUpdateResult> {
-  const normalizedProviderId = providerId.trim();
-
-  if (!normalizedProviderId) {
-    throw new Error("No provider configured for the active model.");
-  }
-
-  const configPath = getGlobalTopchesterConfigPath();
-  const config = readConfigObject(configPath);
-  const providers = ensurePlainObjectProperty(config, "providers");
-  const provider = providers[normalizedProviderId];
-
-  if (!isPlainObject(provider)) {
-    throw new Error(`No provider configured for model provider "${normalizedProviderId}".`);
-  }
-
-  if (effort === undefined) {
-    delete provider.reasoningEffort;
-  } else {
-    provider.reasoningEffort = effort;
-  }
-
-  await writeGlobalConfig(configPath, config);
-
-  return {
-    path: configPath,
-    providerId: normalizedProviderId,
-    ...(effort === undefined ? {} : { reasoningEffort: effort }),
-  };
-}
-
 export function getActiveModelProviderId(config: TopchesterConfig): string | undefined {
   const purpose = config.models?.defaultPurpose ?? "agent.primary";
   const model =
@@ -612,6 +594,31 @@ export function getConfiguredReasoningEffort(
 
 export function formatModelRef(model: { name: string; provider?: string }): string {
   return model.provider ? `${model.provider}/${model.name}` : model.name;
+}
+
+export function resolveModelChoice(config: TopchesterConfig, modelRef: string): ModelChoiceConfig {
+  const exactChoice = getConfiguredModelChoices(config).find((choice) => formatModelRef(choice) === modelRef);
+  if (exactChoice) {
+    return exactChoice;
+  }
+
+  const providers = config.providers ?? {};
+  const normalized = normalizeModelRef(
+    modelRef.trim(),
+    typeof providers.default === "string" ? providers.default : undefined,
+    getKnownModelProviders(providers)
+  );
+
+  if (!normalized?.provider || !normalized.model) {
+    throw new Error(`Could not resolve a provider for model "${modelRef}".`);
+  }
+
+  const provider = providers[normalized.provider];
+  if (typeof provider !== "object" || provider === null) {
+    throw new Error(`No provider configured for model provider "${normalized.provider}".`);
+  }
+
+  return modelChoiceAssignmentSchema.parse(modelRefToAssignment(normalized));
 }
 
 export function getConfiguredModelChoices(config: TopchesterConfig): ModelChoiceConfig[] {

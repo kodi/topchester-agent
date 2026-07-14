@@ -15,12 +15,15 @@ Topchester loads config in this order. Later files override earlier files.
 1. Built-in defaults.
 2. `topchester.jsonc` in the workspace root.
 3. `~/.config/topchester/config.jsonc`.
-4. `TOPCHESTER_CONFIG=/path/to/config.jsonc`.
-5. `--config <path>`.
+4. One selected profile: `--config <path>` when supplied, otherwise `TOPCHESTER_CONFIG=/path/to/config.jsonc`.
+
+`--config` and `TOPCHESTER_CONFIG` select the same optional profile slot. If both are present, `--config` is active and the environment-selected file is reported as shadowed by `topchester info`; it is not parsed or merged. Relative environment paths are workspace-relative. Relative CLI paths are resolved from the directory where Topchester was invoked.
 
 Use `topchester.jsonc` for shared project policy. Use `~/.config/topchester/config.jsonc` for personal provider setup, model choices, and default model preferences.
 
 `.topchester/` is for state, sessions, and caches. It is not a config layer.
+
+Config files are immutable inputs while the TUI is running. Model and reasoning changes made with slash commands are session runtime overrides, not config writes. Edit the intended JSONC file when you want a durable default.
 
 ## Minimal user config
 

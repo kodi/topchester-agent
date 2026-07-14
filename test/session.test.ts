@@ -124,6 +124,47 @@ describe("session store", () => {
     expect(metadata.updatedAt >= firstMetadata.updatedAt).toBe(true);
   });
 
+  it("rehydrates the latest runtime config snapshot without adding transcript messages", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+    await session.append({ kind: "message", role: "user", text: "hello" });
+    await session.append({
+      kind: "runtime_config",
+      activeModel: { name: "first", provider: "openrouter" },
+      reasoningEffortByProvider: { openrouter: "low" },
+    });
+    await session.append({
+      kind: "runtime_config",
+      activeModel: { name: "second", provider: "openrouter" },
+      reasoningEffortByProvider: { openrouter: "high" },
+    });
+
+    const loaded = await loadSession(workspace, session.sessionId);
+    expect(rehydrateSession(loaded.events)).toMatchObject({
+      messages: [{ kind: "user", text: "hello" }],
+      runtimeConfigOverrides: {
+        activeModel: { name: "second", provider: "openrouter" },
+        reasoningEffortByProvider: { openrouter: "high" },
+      },
+    });
+
+    const fork = await forkSession(workspace, session.sessionId);
+    const forked = await loadSession(workspace, fork.sessionId);
+    expect(rehydrateSession(forked.events).runtimeConfigOverrides).toEqual(
+      rehydrateSession(loaded.events).runtimeConfigOverrides
+    );
+  });
+
+  it("rehydrates old sessions with empty runtime config overrides", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+    await session.append({ kind: "message", role: "user", text: "old" });
+
+    expect(rehydrateSession((await loadSession(workspace, session.sessionId)).events).runtimeConfigOverrides).toEqual({
+      reasoningEffortByProvider: {},
+    });
+  });
+
   it("preserves old JSONL bytes exactly when loading and appending later events", async () => {
     const workspace = await tempWorkspace();
     const session = await createSession(workspace);

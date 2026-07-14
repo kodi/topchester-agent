@@ -12,12 +12,12 @@ Slash commands run inside the TUI before a message is sent to the model.
 
 Common commands:
 
-- `/model` chooses from configured model choices.
-- `/model all [search]` browses OpenRouter models and adds one to choices.
+- `/model` chooses a model for the current session from configured choices.
+- `/model all [search]` browses OpenRouter models, adds one to the global choices catalog, and selects it for the current session.
 - `/connect` connects a model provider.
 - `/effort` shows the current reasoning effort and accepted values.
-- `/effort <none|minimal|low|medium|high|xhigh>` sets reasoning effort for the active model provider.
-- `/effort clear` or `/effort default` removes the configured effort so provider defaults apply.
+- `/effort <none|minimal|low|medium|high|xhigh>` sets a session override for the active model provider.
+- `/effort clear` or `/effort default` removes the session override so the configured effort or provider default applies.
 - `/reasoning` is an alias for `/effort`.
 - `/new` clears the terminal and starts a fresh project-local session.
 - `/fork` clones the current session into a new project-local session and switches to it.
@@ -34,7 +34,7 @@ Common commands:
 - `/kb init` creates Topchester project knowledge folders.
 - `/kb reset` deletes the local knowledge base and cache.
 
-`none` is an explicit reasoning effort value. Use `clear` or `default` when you want to remove the config field instead.
+`none` is an explicit reasoning effort value. Use `clear` or `default` when you want to remove the session override instead. Model and effort overrides survive resume, restore, and fork; `/new` returns to JSONC defaults.
 
 Type `/effort ` or `/reasoning ` with a trailing space to list all accepted effort values in the suggestion panel. Continue typing to narrow the list, then press `Tab` to complete the selected value.
 

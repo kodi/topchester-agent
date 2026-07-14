@@ -1,4 +1,4 @@
-import { type AppContext } from "../app/context.js";
+import { reloadAppBaseConfig, type AppContext } from "../app/context.js";
 import { ui } from "../cli/ui.js";
 import { addProjectBashAllowExactRule } from "../config/index.js";
 import { type ModelReasoningEvent, type ModelReasoningSink } from "../model/index.js";
@@ -58,17 +58,7 @@ export function formatAgentCheckSetupHint(message: string, context: AppContext):
 
 export async function persistBashApproval(context: AppContext, command: string): Promise<void> {
   await addProjectBashAllowExactRule(context.workspaceRoot, command);
-  context.config.tools ??= {};
-  const bash = (context.config.tools.bash ??= {
-    allow: [],
-    allowExact: [],
-    deny: [],
-  });
-  bash.allowExact ??= [];
-
-  if (!bash.allowExact.includes(command)) {
-    bash.allowExact.push(command);
-  }
+  reloadAppBaseConfig(context);
 }
 
 export function printExitBanner(sessionId: string, durationMs: number): void {

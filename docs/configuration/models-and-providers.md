@@ -60,3 +60,30 @@ Use this shape for OpenAI-compatible endpoints such as OpenRouter, LiteLLM, vLLM
 ```
 
 Prefer `apiKeyEnv` over `apiKey` so secrets stay out of config files.
+
+## Interactive selection
+
+`/model` and `/models` select the primary model for the current session. `/effort` and `/reasoning` set a provider-level effort override for the current session. These controls work with providers loaded from workspace, user, `TOPCHESTER_CONFIG`, or `--config` profiles and never write the effective merged config back to disk.
+
+Session model and effort selections survive `--resume`, `/restore`, and `/fork`. `/new` starts from the loaded JSONC defaults. For durable defaults, edit `models.default` or the provider's `reasoningEffort` in the intended JSONC file.
+
+For a local OpenAI-compatible proxy, including VibeProxy, a selected profile can contain:
+
+```jsonc
+{
+  "models": {
+    "default": { "name": "gpt-5.5(low)", "provider": "openai" },
+    "choices": ["openai/gpt-5.5(low)", "openai/gpt-5.5(high)"],
+  },
+  "providers": {
+    "default": "openai",
+    "openai": {
+      "type": "openai-compatible",
+      "baseURL": "http://127.0.0.1:8317/v1",
+      "apiKey": "dummy-not-used",
+    },
+  },
+}
+```
+
+Start it with `topchester --config ./vibeproxy.jsonc`. A model-id effort suffix remains part of the model name; a Topchester `/effort` override is also shown separately in the status line, and proxy-specific precedence remains the proxy's responsibility.

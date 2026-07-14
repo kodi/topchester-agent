@@ -338,6 +338,24 @@ describe("CLI integration", () => {
     expect(await readSessionEvents(fixture.workspace, other.sessionId)).toContain("other unique row");
   });
 
+  it("applies resumed runtime model and effort before static rendering", async () => {
+    const fixture = await makeFixture();
+    const session = await seedSession(fixture.workspace, "runtime row");
+    await session.append({
+      kind: "runtime_config",
+      activeModel: { name: "runtime-model", provider: "openrouter" },
+      reasoningEffortByProvider: { openrouter: "high" },
+    });
+
+    const { stdout } = await runCli(
+      ["--config", fixture.config, "--workspace", fixture.workspace, "--resume", session.sessionId],
+      fixture.root
+    );
+
+    expect(stdout).toContain("runtime-model [openrouter] · effort high");
+    expect(stdout).toContain("runtime row");
+  });
+
   it("forks an exact saved session and opens the fork in static mode", async () => {
     const fixture = await makeFixture();
     const source = await seedSession(fixture.workspace, "source unique row");
@@ -612,6 +630,23 @@ describe("CLI integration", () => {
     expect(stdout).toContain("commands:");
     expect(stdout).toContain(`sessions: ${join(fixture.workspace, ".agents", "topchester", "sessions")}`);
     expect(stdout).toContain(`knowledge: ${join(fixture.workspace, "topchester-kb")} [missing]`);
+  });
+
+  it("reports TOPCHESTER_CONFIG as shadowed when --config selects the active profile", async () => {
+    const fixture = await makeFixture();
+    const envConfig = join(fixture.root, "env-broken.jsonc");
+    await writeFile(envConfig, "not valid jsonc");
+
+    const { stdout, stderr } = await runCli(
+      ["--config", fixture.config, "--workspace", fixture.workspace, "info"],
+      fixture.root,
+      { TOPCHESTER_CONFIG: envConfig }
+    );
+
+    expect(stderr).toBe("");
+    expect(stdout).toContain(`env TOPCHESTER_CONFIG: ${envConfig} [ok] shadowed by --config`);
+    expect(stdout).toContain(`cli --config: ${fixture.config} [ok] active`);
+    expect(stdout).toContain("status: valid");
   });
 
   it("adds a stdio MCP server to the selected config file", async () => {

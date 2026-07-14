@@ -36,7 +36,7 @@ topchester kb reset
 
 ## Global options
 
-- `-c, --config <path>` uses an explicit config file.
+- `-c, --config <path>` selects an explicit profile after workspace and user config. It shadows `TOPCHESTER_CONFIG` rather than stacking with it.
 - `--workspace <path>` uses this workspace root. Defaults to the current working directory.
 - `--resume <session>` resumes a project-local session from `.agents/topchester/sessions/`. Use `latest` or an exact lowercase session ID.
 - `--dev <flag>` enables a development-only UI or runtime flag. Can be repeated.
@@ -67,7 +67,7 @@ topchester kb reset
 
 `topchester info` is a lite doctor command. It does not open the TUI, contact model providers, start MCP servers, or create project state folders.
 
-Reports config layers, whether the effective config is valid, configured model/provider hints, provider API key env presence, MCP server command presence, hook counts, and local session/log/knowledge paths.
+Reports config layers, the active selected profile and any environment profile shadowed by `--config`, whether the effective config is valid, configured model/provider hints, provider API key env presence, MCP server command presence, hook counts, and local session/log/knowledge paths.
 
 If config is invalid, it prints the config error and exits nonzero.
 
