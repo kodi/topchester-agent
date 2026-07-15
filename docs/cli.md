@@ -88,7 +88,7 @@ Current behavior:
 - In non-interactive output, the command prints a static version of the layout.
 - The coding loop can use workspace-scoped file and command tools: `read_file`, `list_files`, `grep`, `find_file`, `edit_file`, `write_file`, `inspect_command`, `run_validator`, and `bash`.
 - The coding loop can use `web_fetch` to read public HTTP(S) pages such as docs, changelogs, API references, and issue pages. It blocks localhost and private-network targets, strips URL credentials, refuses cross-host redirects until the agent makes a fresh visible call, errors on raw bodies over 5 MB, and truncates returned text at 40,000 characters with a marker. It is available to the primary agent and general subagents, but not the explore subagent.
-- The coding loop can use read-only skill tools: `skills_list` lists compact skill metadata, and `skill_view` loads one full `SKILL.md` on demand.
+- The coding loop can use read-only skill tools: `skills_list` lists compact skill metadata, `skill_view` loads one full `SKILL.md` on demand, and `skill_read` reads one linked skill file with containment and size limits.
 - If `AGENTS.md` or `AGENTS.override.md` exists in the workspace, Topchester loads matching files as live project instructions. `AGENTS.md` is loaded before `AGENTS.override.md` at the same scope. Nested instruction files are loaded when a tool works inside their folder. Config can opt into other filenames.
 - The coding loop can use structured Git tools: `git_status`, `git_diff`, `git_log`, `git_add`, and `git_commit`.
 - The primary coding loop can use tools from configured local stdio MCP servers. MCP tools are named `mcp_<server>_<tool>` after sanitization, such as `mcp_everything_echo`.

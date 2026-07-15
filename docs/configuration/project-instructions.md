@@ -16,7 +16,7 @@ You can change the instruction filenames in project config:
 
 ```jsonc
 {
-  "projectInstructions": {
+  "instructions": {
     "enabled": true,
     "files": ["AGENTS.md", "AGENTS.override.md"],
     "fallbackFiles": [],

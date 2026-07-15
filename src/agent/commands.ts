@@ -12,6 +12,7 @@ import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
 import { formatKnowledgeResetResult, resetKnowledgeBase } from "../knowledge/reset.js";
 import { type KnowledgeStatus } from "../knowledge/status.js";
 import { type L1FileScanStatus } from "../knowledge/compiler/l1-entry.js";
+import { formatKnowledgeSources, getKnowledgeSourceDescriptors } from "../knowledge/sources/index.js";
 import { ui } from "../cli/ui.js";
 import {
   createSkillsService,
@@ -70,6 +71,10 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
   {
     value: "/reasoning",
     description: `show or set reasoning effort (${reasoningEfforts.join(", ")}, clear)`,
+  },
+  {
+    value: "/kb sources",
+    description: "show project and built-in knowledge sources",
   },
   {
     value: "/kb status",
@@ -426,6 +431,11 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
     };
   }
 
+  if (subcommand === "sources") {
+    if (args.length > 1) return { messages: ["Usage: /kb sources"] };
+    return { messages: formatKnowledgeSources(await getKnowledgeSourceDescriptors(context.workspaceRoot)) };
+  }
+
   if (subcommand === "init") {
     return { messages: formatKnowledgeInitResult(await initializeKnowledgeBase(context.workspaceRoot)) };
   }
@@ -460,7 +470,7 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
     return { messages: formatKnowledgeResetResult(await resetKnowledgeBase(context.workspaceRoot)) };
   }
 
-  return { messages: ["Usage: /kb init, /kb sync [--full], /kb reset, or /kb status"] };
+  return { messages: ["Usage: /kb init, /kb sync [--full], /kb reset, /kb status, or /kb sources"] };
 }
 
 function executeNewCommand(): SlashCommandResult {

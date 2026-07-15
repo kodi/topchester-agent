@@ -1,0 +1,31 @@
+{
+  "$schema": "../schema/file-entry.v1.json",
+  "id": "file:docs/getting-started/installation.md",
+  "layer": "L1",
+  "type": "file",
+  "path": "docs/getting-started/installation.md",
+  "language": "markdown",
+  "content_hash": "sha256:74e21fe946d4f2b917dae347dee8e2cb7bab5122ec52925bd0f9ad940c142fb0",
+  "size_bytes": 676,
+  "last_scanned_at": "2026-07-15T10:14:45.831Z",
+  "scan_status": "current",
+  "file_role": "doc",
+  "summary": "Install and update the Topchester CLI.",
+  "responsibilities": ["Update"],
+  "symbols": [],
+  "imports": [],
+  "exports": [],
+  "module_ids": [],
+  "feature_ids": [],
+  "test_ids": [],
+  "declared_test_targets": [],
+  "likely_test_targets": [],
+  "tested_by": [],
+  "evidence": [
+    {
+      "kind": "path",
+      "value": "docs/getting-started/installation.md"
+    }
+  ],
+  "confidence": "high"
+}

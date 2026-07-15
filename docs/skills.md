@@ -153,5 +153,6 @@ The model can use two read-only tools:
 
 - `skills_list` returns compact active and shadowed skill metadata.
 - `skill_view` loads the full `SKILL.md` for one active skill.
+- `skill_read` safely reads one linked `references`, `templates`, `scripts`, or `assets` file named by that skill, capped at 64 KiB.
 
 Full skill bodies are not injected into the base system prompt.

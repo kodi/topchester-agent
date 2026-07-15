@@ -37,6 +37,15 @@ import {
 } from "./cli/self-update.js";
 import { collectTopchesterInfo } from "./cli/info.js";
 import {
+  createSelectedKnowledgeContext,
+  formatKnowledgeSources,
+  formatKnowledgeSourcesJson,
+  formatKnowledgeSourcesSearchResult,
+  getKnowledgeSourceDescriptors,
+  searchKnowledgeSources,
+  type KnowledgeSourceSelection,
+} from "./knowledge/sources/index.js";
+import {
   addMcpStdioServerConfig,
   configureCodexGlobalProvider,
   getGlobalTopchesterConfigPath,
@@ -265,6 +274,16 @@ function createTopchesterProgram(): Command {
   const kbCommand = program.command("kb").description("knowledge base commands");
 
   kbCommand
+    .command("sources")
+    .description("show available project and built-in knowledge sources")
+    .option("--json", "write structured source diagnostics to stdout")
+    .action(async (options: { json?: boolean }) => {
+      const context = createContextFromOptions(program);
+      const sources = await getKnowledgeSourceDescriptors(context.workspaceRoot);
+      console.log(options.json ? formatKnowledgeSourcesJson(sources) : formatKnowledgeSources(sources).join("\n"));
+    });
+
+  kbCommand
     .command("init")
     .description("initialize a project knowledge base")
     .action(async () => {
@@ -318,6 +337,7 @@ function createTopchesterProgram(): Command {
     .description("search compiled L1 knowledge entries")
     .argument("<query...>", "search query")
     .option("--limit <count>", "maximum number of matches", parsePositiveInteger)
+    .option("--source <source>", "knowledge source: project, topchester, or all", parseKnowledgeSourceSelection)
     .option("--json", "write full JSON search result to stdout")
     .action(async (queryParts: string[], options: KbSearchCommandOptions) => {
       await executeKbSearchCommand(program, queryParts, options);
@@ -329,6 +349,7 @@ function createTopchesterProgram(): Command {
     .argument("<query...>", "context query")
     .option("--limit <count>", "maximum number of relevant files", parsePositiveInteger)
     .option("--min-score <score>", "minimum match score", parseNonNegativeNumber)
+    .option("--source <source>", "knowledge source: project, topchester, or all", parseKnowledgeSourceSelection)
     .option("--json", "write JSON context pack to stdout")
     .option("--full-l1", "include full raw L1 entries in JSON output")
     .action(async (queryParts: string[], options: KbContextCommandOptions) => {
@@ -599,6 +620,7 @@ function getWritableConfigPathFromProgram(program: Command): string {
 interface KbSearchCommandOptions {
   limit?: number;
   json?: boolean;
+  source?: KnowledgeSourceSelection;
 }
 
 interface KbContextCommandOptions {
@@ -606,11 +628,19 @@ interface KbContextCommandOptions {
   minScore?: number;
   json?: boolean;
   fullL1?: boolean;
+  source?: KnowledgeSourceSelection;
 }
 
 async function executeKbSearchCommand(program: Command, queryParts: string[], options: KbSearchCommandOptions) {
   const context = createContextFromOptions(program);
   const query = queryParts.join(" ");
+  if (options.source && options.source !== "project") {
+    const result = await searchKnowledgeSources(context.workspaceRoot, query, options.source, { limit: options.limit });
+    console.log(
+      options.json ? formatKnowledgeSourcesJson(result) : formatKnowledgeSourcesSearchResult(result).join("\n")
+    );
+    return;
+  }
   const result = options.json
     ? await searchL1Knowledge(context.workspaceRoot, query, { limit: options.limit })
     : await ui.spinner("Searching L1 knowledge entries...", () =>
@@ -633,6 +663,34 @@ async function executeKbContextCommand(program: Command, queryParts: string[], o
     minScore: options.minScore,
     includeFullL1: options.fullL1,
   };
+  if (options.source && options.source !== "project") {
+    const result = await createSelectedKnowledgeContext(
+      context.workspaceRoot,
+      query,
+      options.source,
+      contextPackOptions
+    );
+    if (!result.contextPack) {
+      const warning =
+        result.warnings.length > 0 ? result.warnings.join(" ") : "No L1 entries met the context pack score threshold.";
+      if (options.json) {
+        console.log(formatKnowledgeSourcesJson(result));
+      } else {
+        console.log(`KB context\nsource selection: ${options.source}\nwarning: ${warning}\nrelevant files: 0`);
+      }
+      return;
+    }
+    console.log(
+      options.json
+        ? formatKnowledgeSourcesJson({
+            ...result.contextPack,
+            sourceSelection: options.source,
+            sourceWarnings: result.warnings,
+          })
+        : formatL1ContextPackResult(result.contextPack).join("\n")
+    );
+    return;
+  }
   const result = options.json
     ? await createL1ContextPack(context.workspaceRoot, query, contextPackOptions)
     : await ui.spinner("Creating L1 context pack...", () =>
@@ -699,6 +757,11 @@ function parseNonNegativeNumber(value: string): number {
   }
 
   return parsed;
+}
+
+function parseKnowledgeSourceSelection(value: string): KnowledgeSourceSelection {
+  if (value === "project" || value === "topchester" || value === "all") return value;
+  throw new Error('Expected --source to be "project", "topchester", or "all".');
 }
 
 function formatYesNo(value: boolean): "yes" | "no" {

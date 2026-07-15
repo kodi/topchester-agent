@@ -14,6 +14,7 @@
   "files": [
     "dist",
     "skills",
+    "resources/knowledge",
     "agents.json"
   ],
   "type": "module",
@@ -33,7 +34,10 @@
     "test": "vp test run --dir test",
     "typecheck": "vp check --no-fmt --no-lint",
     "check": "vp check && vp test run --dir test",
-    "prepublishOnly": "vp run build"
+    "prepublishOnly": "vp run knowledge-product-check && vp run package-check && vp run build",
+    "knowledge-product-sync": "node --import tsx scripts/knowledge/build-topchester-pack.ts",
+    "knowledge-product-check": "node --import tsx scripts/knowledge/check-topchester-pack.ts",
+    "package-check": "node --import tsx scripts/package/check-package-contents.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.48",

@@ -1,0 +1,31 @@
+{
+  "$schema": "../schema/file-entry.v1.json",
+  "id": "file:docs/hooks/events.md",
+  "layer": "L1",
+  "type": "file",
+  "path": "docs/hooks/events.md",
+  "language": "markdown",
+  "content_hash": "sha256:864192ac1e3d80a56033df19a25a169827e66edb4f03a11b2a8e441a320ab6c0",
+  "size_bytes": 1591,
+  "last_scanned_at": "2026-07-15T10:14:45.831Z",
+  "scan_status": "current",
+  "file_role": "doc",
+  "summary": "Supported Topchester hook events and aliases.",
+  "responsibilities": [],
+  "symbols": [],
+  "imports": [],
+  "exports": [],
+  "module_ids": [],
+  "feature_ids": [],
+  "test_ids": [],
+  "declared_test_targets": [],
+  "likely_test_targets": [],
+  "tested_by": [],
+  "evidence": [
+    {
+      "kind": "path",
+      "value": "docs/hooks/events.md"
+    }
+  ],
+  "confidence": "high"
+}

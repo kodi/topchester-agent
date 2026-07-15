@@ -10,7 +10,7 @@ import { listFilesTool } from "./list-files.js";
 import { planTodoTool } from "./plan-todo.js";
 import { readFileTool } from "./read-file.js";
 import { runValidatorTool } from "./run-validator.js";
-import { skillViewTool, skillsListTool } from "./skills.js";
+import { skillReadTool, skillViewTool, skillsListTool } from "./skills.js";
 import { taskTool } from "./task.js";
 import { type ToolCallForDefinition, type ToolResultForDefinition } from "./types.js";
 import { webFetchTool } from "./web-fetch.js";
@@ -38,6 +38,7 @@ export const toolRegistry = {
   [finishTaskTool.name]: finishTaskTool,
   [skillsListTool.name]: skillsListTool,
   [skillViewTool.name]: skillViewTool,
+  [skillReadTool.name]: skillReadTool,
 } as const;
 
 export type ToolName = keyof typeof toolRegistry;

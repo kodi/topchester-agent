@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { buildSkillRoots, type BuildSkillRootsOptions } from "./roots.js";
 import { resolveSkillCandidates } from "./resolve.js";
@@ -16,6 +16,14 @@ export type SkillLinkedFileGroup = keyof SkillLinkedFiles;
 export interface SkillsServiceOptions extends BuildSkillRootsOptions {
   roots?: SkillRoot[];
 }
+
+export interface LinkedSkillFileRead {
+  content: string;
+  bytes: number;
+  truncated: boolean;
+}
+
+export const MAX_LINKED_SKILL_FILE_BYTES = 64 * 1024;
 
 export class SkillsService {
   private cache: { candidates: DiscoveredSkillCandidate[]; resolved: ResolvedSkills } | undefined;
@@ -39,7 +47,7 @@ export class SkillsService {
     };
   }
 
-  async readLinkedFile(name: string, group: SkillLinkedFileGroup, relativePath: string): Promise<string> {
+  async readLinkedFile(name: string, group: SkillLinkedFileGroup, relativePath: string): Promise<LinkedSkillFileRead> {
     const candidate = await this.findActiveCandidate(name);
     const groupRoot = resolve(candidate.skillDir, group);
     const path = resolve(groupRoot, relativePath);
@@ -52,7 +60,23 @@ export class SkillsService {
       throw new Error(`Linked skill file not found: ${group}/${relativePath}`);
     }
 
-    return readFile(path, "utf8");
+    const [realGroupRoot, realFilePath] = await Promise.all([realpath(groupRoot), realpath(path)]);
+    if (!isInsidePath(realGroupRoot, realFilePath)) {
+      throw new Error(`Linked skill file path stays outside ${group}.`);
+    }
+
+    const content = await readFile(realFilePath, "utf8");
+    const bytes = Buffer.byteLength(content);
+
+    if (bytes <= MAX_LINKED_SKILL_FILE_BYTES) {
+      return { content, bytes, truncated: false };
+    }
+
+    return {
+      content: Buffer.from(content).subarray(0, MAX_LINKED_SKILL_FILE_BYTES).toString("utf8"),
+      bytes,
+      truncated: true,
+    };
   }
 
   reload(): void {

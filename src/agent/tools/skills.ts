@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { createSkillsService, type LoadedSkill, type ResolvedSkills } from "../../skills/index.js";
+import {
+  createSkillsService,
+  type LoadedSkill,
+  type ResolvedSkills,
+  type SkillLinkedFileGroup,
+} from "../../skills/index.js";
 import { defineTool, type ToolResult } from "./types.js";
 
 export interface SkillsListToolResult extends ToolResult<"skills_list"> {
@@ -10,11 +15,26 @@ export interface SkillViewToolResult extends ToolResult<"skill_view"> {
   skill: LoadedSkill;
 }
 
+export interface SkillReadToolResult extends ToolResult<"skill_read"> {
+  group: SkillLinkedFileGroup;
+  relativePath: string;
+  bytes: number;
+  truncated: boolean;
+}
+
 export const skillViewArgsSchema = z.object({
   name: z.string().trim().min(1),
 });
 
 export type SkillViewToolArgs = z.infer<typeof skillViewArgsSchema>;
+
+export const skillReadArgsSchema = z.object({
+  name: z.string().trim().min(1),
+  group: z.enum(["references", "templates", "scripts", "assets"]),
+  path: z.string().trim().min(1),
+});
+
+export type SkillReadToolArgs = z.infer<typeof skillReadArgsSchema>;
 
 export type SkillsListToolCall = {
   tool: "skills_list";
@@ -24,6 +44,11 @@ export type SkillsListToolCall = {
 export type SkillViewToolCall = {
   tool: "skill_view";
   args: SkillViewToolArgs;
+};
+
+export type SkillReadToolCall = {
+  tool: "skill_read";
+  args: SkillReadToolArgs;
 };
 
 export const skillsListTool = defineTool({
@@ -59,6 +84,37 @@ export const skillViewTool = defineTool({
       path: skill.skillFile,
       content: formatLoadedSkill(skill),
       skill,
+    };
+  },
+});
+
+export const skillReadTool = defineTool({
+  name: "skill_read",
+  description: "Read one linked file named by an available Topchester skill.",
+  prompt:
+    'skill_read: Read a linked reference, template, script, or asset named by skill_view. Args: {"name":"skill-name","group":"references|templates|scripts|assets","path":"relative/path"}. Example: {"tool":"skill_read","args":{"name":"topchester","group":"references","path":"configuration.md"}}',
+  argsSchema: skillReadArgsSchema,
+  parallelSafe: true,
+  async execute(context, args): Promise<SkillReadToolResult> {
+    const result = await createSkillsService({ workspaceRoot: context.workspaceRoot }).readLinkedFile(
+      args.name,
+      args.group,
+      args.path
+    );
+
+    return {
+      tool: "skill_read",
+      content: [
+        `Skill: ${args.name}`,
+        `Linked file: ${args.group}/${args.path}`,
+        `Bytes: ${result.bytes}${result.truncated ? " (truncated)" : ""}`,
+        "",
+        result.content,
+      ].join("\n"),
+      group: args.group,
+      relativePath: args.path,
+      bytes: result.bytes,
+      truncated: result.truncated,
     };
   },
 });

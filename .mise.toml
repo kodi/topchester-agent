@@ -54,4 +54,16 @@ dir = "{{config_root}}"
 run = "vp check"
 
 [tasks.local-ci]
-depends = ["check"]
+depends = ["check", "knowledge-product-check", "package-check"]
+
+[tasks.knowledge-product-sync]
+dir = "{{config_root}}"
+run = "vp run knowledge-product-sync"
+
+[tasks.knowledge-product-check]
+dir = "{{config_root}}"
+run = "vp run knowledge-product-check"
+
+[tasks.package-check]
+dir = "{{config_root}}"
+run = "vp run package-check"

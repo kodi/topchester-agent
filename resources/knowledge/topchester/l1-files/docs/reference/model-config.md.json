@@ -1,0 +1,31 @@
+{
+  "$schema": "../schema/file-entry.v1.json",
+  "id": "file:docs/reference/model-config.md",
+  "layer": "L1",
+  "type": "file",
+  "path": "docs/reference/model-config.md",
+  "language": "markdown",
+  "content_hash": "sha256:f243de0e098eabc4ead198b949023673df991ae403c0b7e883ee49603f2fb5ac",
+  "size_bytes": 4185,
+  "last_scanned_at": "2026-07-15T10:14:45.831Z",
+  "scan_status": "current",
+  "file_role": "doc",
+  "summary": "Detailed model provider and tool protocol options.",
+  "responsibilities": ["Codex ChatGPT OAuth"],
+  "symbols": [],
+  "imports": [],
+  "exports": [],
+  "module_ids": [],
+  "feature_ids": [],
+  "test_ids": [],
+  "declared_test_targets": [],
+  "likely_test_targets": [],
+  "tested_by": [],
+  "evidence": [
+    {
+      "kind": "path",
+      "value": "docs/reference/model-config.md"
+    }
+  ],
+  "confidence": "high"
+}

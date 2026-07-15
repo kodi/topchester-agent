@@ -1,0 +1,31 @@
+{
+  "$schema": "../schema/file-entry.v1.json",
+  "id": "file:skills/topchester/references/troubleshooting.md",
+  "layer": "L1",
+  "type": "file",
+  "path": "skills/topchester/references/troubleshooting.md",
+  "language": "markdown",
+  "content_hash": "sha256:2c1ae28a831e3a6743244461546b5ec434a7b8d09e50694fdda216c3ba7a6de4",
+  "size_bytes": 406,
+  "last_scanned_at": "2026-07-15T10:14:45.831Z",
+  "scan_status": "current",
+  "file_role": "doc",
+  "summary": "Troubleshooting",
+  "responsibilities": [],
+  "symbols": [],
+  "imports": [],
+  "exports": [],
+  "module_ids": [],
+  "feature_ids": [],
+  "test_ids": [],
+  "declared_test_targets": [],
+  "likely_test_targets": [],
+  "tested_by": [],
+  "evidence": [
+    {
+      "kind": "path",
+      "value": "skills/topchester/references/troubleshooting.md"
+    }
+  ],
+  "confidence": "high"
+}

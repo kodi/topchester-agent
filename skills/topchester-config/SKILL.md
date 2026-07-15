@@ -27,13 +27,14 @@ Prefer the current code and tests over older docs if they disagree, then update 
 
 ## File Locations
 
-Topchester loads config in this order. Later files override earlier files:
+Topchester loads the base config files in this order. Later base files override earlier files:
 
 1. Built-in defaults.
 2. `topchester.jsonc`
 3. `~/.config/topchester/config.jsonc`
-4. `TOPCHESTER_CONFIG`
-5. `--config <path>`
+4. One selected profile: `--config <path>` when supplied, otherwise `TOPCHESTER_CONFIG`.
+
+`--config` and `TOPCHESTER_CONFIG` select the same optional profile slot. If both are set, the CLI path is active and the environment path is shadowed rather than parsed or merged.
 
 Use `topchester.jsonc` for team-shared project policy such as ignore paths, hooks, instruction filenames, and command policy. Use `~/.config/topchester/config.jsonc` for personal provider setup, model choices, and API-key environment names.
 
@@ -78,20 +79,20 @@ Topchester exposes these model slots:
 
 Model refs can be provider-qualified strings such as `openrouter/anthropic/claude-sonnet-4.5`, or objects with `name`, optional `provider`, and optional `toolProtocol`.
 
-Provider config lives under `models.providers`:
+Provider config lives in the top-level `providers` object:
 
 ```jsonc
 {
   "models": {
     "default": "anthropic/claude-sonnet-4.5",
-    "providers": {
-      "default": "openrouter",
-      "openrouter": {
-        "type": "openai-compatible",
-        "baseURL": "https://openrouter.ai/api/v1",
-        "apiKeyEnv": "OPENROUTER_API_KEY",
-        "supportsStructuredOutputs": true,
-      },
+  },
+  "providers": {
+    "default": "openrouter",
+    "openrouter": {
+      "type": "openai-compatible",
+      "baseURL": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "supportsStructuredOutputs": true,
     },
   },
 }
@@ -159,7 +160,7 @@ Instruction filenames must be single filenames, not paths.
 After config changes, run the narrowest relevant check:
 
 ```sh
-pnpm test test/config.test.ts
+mise run test
 ```
 
 For docs-only config guidance, confirm examples match `src/config/index.ts` and `test/config.test.ts`.

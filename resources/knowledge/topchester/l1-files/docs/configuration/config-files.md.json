@@ -1,0 +1,31 @@
+{
+  "$schema": "../schema/file-entry.v1.json",
+  "id": "file:docs/configuration/config-files.md",
+  "layer": "L1",
+  "type": "file",
+  "path": "docs/configuration/config-files.md",
+  "language": "markdown",
+  "content_hash": "sha256:e523a33342f9a9e029706b4191abf9be2e107da2a8e90b76b4793849e3416a4e",
+  "size_bytes": 1914,
+  "last_scanned_at": "2026-07-15T10:14:45.831Z",
+  "scan_status": "current",
+  "file_role": "doc",
+  "summary": "Where Topchester configuration lives and how overrides are applied.",
+  "responsibilities": ["Minimal user config"],
+  "symbols": [],
+  "imports": [],
+  "exports": [],
+  "module_ids": [],
+  "feature_ids": [],
+  "test_ids": [],
+  "declared_test_targets": [],
+  "likely_test_targets": [],
+  "tested_by": [],
+  "evidence": [
+    {
+      "kind": "path",
+      "value": "docs/configuration/config-files.md"
+    }
+  ],
+  "confidence": "high"
+}

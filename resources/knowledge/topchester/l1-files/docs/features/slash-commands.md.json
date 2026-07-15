@@ -1,0 +1,31 @@
+{
+  "$schema": "../schema/file-entry.v1.json",
+  "id": "file:docs/features/slash-commands.md",
+  "layer": "L1",
+  "type": "file",
+  "path": "docs/features/slash-commands.md",
+  "language": "markdown",
+  "content_hash": "sha256:5664480a12aedeb55269deb153b7904d4b6b2637997f655954b2e3d713870e8f",
+  "size_bytes": 2402,
+  "last_scanned_at": "2026-07-15T10:14:45.831Z",
+  "scan_status": "current",
+  "file_role": "doc",
+  "summary": "Built-in TUI commands for models, skills, sessions, and the knowledge base.",
+  "responsibilities": [],
+  "symbols": [],
+  "imports": [],
+  "exports": [],
+  "module_ids": [],
+  "feature_ids": [],
+  "test_ids": [],
+  "declared_test_targets": [],
+  "likely_test_targets": [],
+  "tested_by": [],
+  "evidence": [
+    {
+      "kind": "path",
+      "value": "docs/features/slash-commands.md"
+    }
+  ],
+  "confidence": "high"
+}

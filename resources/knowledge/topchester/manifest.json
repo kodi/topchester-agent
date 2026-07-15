@@ -1,0 +1,144 @@
+{
+  "formatVersion": 1,
+  "sourceId": "topchester",
+  "sourceKind": "builtin-product",
+  "productVersion": "0.76.0",
+  "compiler": {
+    "name": "topchester-knowledge-compiler",
+    "version": 1
+  },
+  "generatedAt": "2026-07-15T10:14:45.831Z",
+  "packSpecHash": "sha256:8d279afcd49f232730a090bab4b795486cfc819732a23f2d9d207e410dc8f7cd",
+  "sourceFileCount": 32,
+  "entryCount": 32,
+  "sourceFiles": [
+    {
+      "path": "agents.json",
+      "contentHash": "sha256:4aad5a41bc05622a159d5bc794dea91e9a42d8c3df8b5262ad7d98b29ca76cc9"
+    },
+    {
+      "path": "docs/configuration/bash-permissions.md",
+      "contentHash": "sha256:73c9d21fd3fdbf36117339150194d2c3a26147015f9910f552e074d912d3ffd6"
+    },
+    {
+      "path": "docs/configuration/config-files.md",
+      "contentHash": "sha256:e523a33342f9a9e029706b4191abf9be2e107da2a8e90b76b4793849e3416a4e"
+    },
+    {
+      "path": "docs/configuration/ignore-paths.md",
+      "contentHash": "sha256:d67b3ff188b8233142c6dfa084aa0f818c47b054df01fb2db94be603382bec04"
+    },
+    {
+      "path": "docs/configuration/models-and-providers.md",
+      "contentHash": "sha256:fae54fae4a8a6d62400c916492902f8e5d020722760a37f2689406aab5ab1185"
+    },
+    {
+      "path": "docs/configuration/project-instructions.md",
+      "contentHash": "sha256:bc4d5dec8caa56aa1948ae548a5db319fa7437a088f69c81243910d5e22f3af8"
+    },
+    {
+      "path": "docs/features/knowledge-base.md",
+      "contentHash": "sha256:20befa53a42915bbc6579b522ea0c9f4baa0e565cf0059c306f152827f97f807"
+    },
+    {
+      "path": "docs/features/sessions.md",
+      "contentHash": "sha256:37f72430094b091e8560e3032ff942345cbbb9261d531488ab6a2fc8cc85bf79"
+    },
+    {
+      "path": "docs/features/skills.md",
+      "contentHash": "sha256:6841d1b0309b799826bb5a9ce430483599c39b90c055de3fe6c08022a3e6ba76"
+    },
+    {
+      "path": "docs/features/slash-commands.md",
+      "contentHash": "sha256:5664480a12aedeb55269deb153b7904d4b6b2637997f655954b2e3d713870e8f"
+    },
+    {
+      "path": "docs/features/tui.md",
+      "contentHash": "sha256:dd891aef1c4225d4f7e46996ee7fdb90bf2ca10e40e5d861d0503be22a897506"
+    },
+    {
+      "path": "docs/getting-started/first-project.md",
+      "contentHash": "sha256:ec846f0fd69e02284f5747bda9948295354c1c3b46514d16a64bf03f72e76cf0"
+    },
+    {
+      "path": "docs/getting-started/installation.md",
+      "contentHash": "sha256:74e21fe946d4f2b917dae347dee8e2cb7bab5122ec52925bd0f9ad940c142fb0"
+    },
+    {
+      "path": "docs/getting-started/quickstart.md",
+      "contentHash": "sha256:6793706739111911606b9b7f076f0f0ac409db15a03649f5333d95856df83ba9"
+    },
+    {
+      "path": "docs/hooks/events.md",
+      "contentHash": "sha256:864192ac1e3d80a56033df19a25a169827e66edb4f03a11b2a8e441a320ab6c0"
+    },
+    {
+      "path": "docs/hooks/examples.md",
+      "contentHash": "sha256:e7c75ff65844747e2b82a4f712403f635462daf4b1287f171374070d4c9322d9"
+    },
+    {
+      "path": "docs/hooks/overview.md",
+      "contentHash": "sha256:782c0f9f018bf883334926dd89d940105408aad51d42749138979bf771a2b982"
+    },
+    {
+      "path": "docs/hooks/payloads.md",
+      "contentHash": "sha256:eea0e76954f97cdf14265b32ae491cc723c6fc7dfcd68a54d1b7f9b2e24c63dc"
+    },
+    {
+      "path": "docs/mcp/examples.md",
+      "contentHash": "sha256:292d8160eca44e744127365f1a5262da5feabc72d9a53a8cb1af2787b2c7b3e8"
+    },
+    {
+      "path": "docs/mcp/overview.md",
+      "contentHash": "sha256:98213203fb81fbde16c728e19912af41f041f7148c3bf3b216f62e70ee68e6e8"
+    },
+    {
+      "path": "docs/mcp/stdio-servers.md",
+      "contentHash": "sha256:19ee8a48dbabb812f8eae96902032ebdef1c3c041be60cbeb49e23f1c39f47ac"
+    },
+    {
+      "path": "docs/reference/changelog.md",
+      "contentHash": "sha256:559a3555c5e686bc1b4e9749fbea38e6328d172f1f210126d017df7debe828a3"
+    },
+    {
+      "path": "docs/reference/cli.md",
+      "contentHash": "sha256:0ed8d56353d24dc71d227828dc4dd435377b4070b68c13899efb44f419fe901c"
+    },
+    {
+      "path": "docs/reference/config-schema.md",
+      "contentHash": "sha256:5da1998c9ab6d5623da6acf8dc8f98af1eff3bf7701f5a9af86d52c8e2a0f344"
+    },
+    {
+      "path": "docs/reference/model-config.md",
+      "contentHash": "sha256:f243de0e098eabc4ead198b949023673df991ae403c0b7e883ee49603f2fb5ac"
+    },
+    {
+      "path": "docs/reference/troubleshooting.md",
+      "contentHash": "sha256:69fffc857c90ba121f68239ed7443fd443c3f2eabadc103e53e6777c5dd907b9"
+    },
+    {
+      "path": "skills/topchester-config/SKILL.md",
+      "contentHash": "sha256:8bb6ec1a66ec5cb20393b46cc5bc084c9fbf67145c263b90807cd360a9d2e2f4"
+    },
+    {
+      "path": "skills/topchester/SKILL.md",
+      "contentHash": "sha256:8ead8db5ece4091887d90e536e22a0b7388325f8aa8ecb01d19b9fc1ec0fd977"
+    },
+    {
+      "path": "skills/topchester/references/commands.md",
+      "contentHash": "sha256:836db766c4b722bc3f0f39f3d345ea8ce005af85604ca8e0a4f98bf47b50c5c4"
+    },
+    {
+      "path": "skills/topchester/references/configuration.md",
+      "contentHash": "sha256:bdd5ef9add23b1e090a5b5f26b8cdd1d12ebb89cb8181b0a70f2927a95b91c4c"
+    },
+    {
+      "path": "skills/topchester/references/knowledge-base.md",
+      "contentHash": "sha256:1877f407a79ccc58530da564b14f52eb869300d61a9a7de490e5a6bfb26d20d8"
+    },
+    {
+      "path": "skills/topchester/references/troubleshooting.md",
+      "contentHash": "sha256:2c1ae28a831e3a6743244461546b5ec434a7b8d09e50694fdda216c3ba7a6de4"
+    }
+  ]
+}

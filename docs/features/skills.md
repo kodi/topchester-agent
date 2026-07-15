@@ -16,6 +16,10 @@ They are different from project instructions and generated knowledge:
 - `skills/*/SKILL.md` provides reusable workflows that activate only when selected or mentioned.
 - `topchester-kb/` and `.agents/topchester-kb-cache/` are generated project knowledge, not skill files.
 
+Topchester ships a built-in `topchester` skill for product help and a focused `topchester-config` skill for configuration work. Workspace and user skills can still shadow built-ins with the same name.
+
+The `topchester` skill routes explicit product-help requests and names compact linked references. Automatic product knowledge retrieval is independent of skill precedence, so shadowing the skill does not hide the matching read-only product source.
+
 ## Activate skills
 
 Use the TUI:
@@ -34,3 +38,5 @@ You can also mention active skills in normal prompts:
 ```
 
 Unknown mentions stay normal text. Multiple skill mentions are applied in mention order.
+
+Skills may list files under `references`, `templates`, `scripts`, or `assets`. The agent can read a named linked file with its read-only `skill_read` tool after inspecting or activating the skill. Reads stay inside the selected linked-file group and are capped at 64 KiB.

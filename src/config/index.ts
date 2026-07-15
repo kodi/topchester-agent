@@ -795,7 +795,7 @@ function readConfigFile(path: string): unknown {
   }
 }
 
-function parseJsonc(source: string): unknown {
+export function parseJsonc(source: string): unknown {
   const stripped = stripJsoncSyntax(source);
   return stripped.trim() ? JSON.parse(stripped) : {};
 }

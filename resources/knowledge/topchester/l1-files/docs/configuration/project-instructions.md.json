@@ -1,0 +1,31 @@
+{
+  "$schema": "../schema/file-entry.v1.json",
+  "id": "file:docs/configuration/project-instructions.md",
+  "layer": "L1",
+  "type": "file",
+  "path": "docs/configuration/project-instructions.md",
+  "language": "markdown",
+  "content_hash": "sha256:bc4d5dec8caa56aa1948ae548a5db319fa7437a088f69c81243910d5e22f3af8",
+  "size_bytes": 943,
+  "last_scanned_at": "2026-07-15T10:14:45.831Z",
+  "scan_status": "current",
+  "file_role": "doc",
+  "summary": "Control how Topchester reads AGENTS.md and related instruction files.",
+  "responsibilities": [],
+  "symbols": [],
+  "imports": [],
+  "exports": [],
+  "module_ids": [],
+  "feature_ids": [],
+  "test_ids": [],
+  "declared_test_targets": [],
+  "likely_test_targets": [],
+  "tested_by": [],
+  "evidence": [
+    {
+      "kind": "path",
+      "value": "docs/configuration/project-instructions.md"
+    }
+  ],
+  "confidence": "high"
+}

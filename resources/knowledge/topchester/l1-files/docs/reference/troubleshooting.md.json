@@ -1,0 +1,37 @@
+{
+  "$schema": "../schema/file-entry.v1.json",
+  "id": "file:docs/reference/troubleshooting.md",
+  "layer": "L1",
+  "type": "file",
+  "path": "docs/reference/troubleshooting.md",
+  "language": "markdown",
+  "content_hash": "sha256:69fffc857c90ba121f68239ed7443fd443c3f2eabadc103e53e6777c5dd907b9",
+  "size_bytes": 1317,
+  "last_scanned_at": "2026-07-15T10:14:45.831Z",
+  "scan_status": "current",
+  "file_role": "doc",
+  "summary": "Common Topchester setup and runtime problems.",
+  "responsibilities": [
+    "Model config is missing",
+    "Codex auth needs relogin",
+    "Knowledge base is missing",
+    "A command needs approval every time",
+    "An MCP server exposes too much"
+  ],
+  "symbols": [],
+  "imports": [],
+  "exports": [],
+  "module_ids": [],
+  "feature_ids": [],
+  "test_ids": [],
+  "declared_test_targets": [],
+  "likely_test_targets": [],
+  "tested_by": [],
+  "evidence": [
+    {
+      "kind": "path",
+      "value": "docs/reference/troubleshooting.md"
+    }
+  ],
+  "confidence": "high"
+}

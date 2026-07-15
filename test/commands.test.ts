@@ -51,6 +51,10 @@ describe("slash commands", () => {
         description: "show or set reasoning effort (none, minimal, low, medium, high, xhigh, max, clear)",
       },
       {
+        value: "/kb sources",
+        description: "show project and built-in knowledge sources",
+      },
+      {
         value: "/kb status",
         description: "show non-clean knowledge files",
       },
@@ -149,6 +153,10 @@ describe("slash commands", () => {
     ]);
     expect(getSlashCommandSuggestions("/k")).toEqual([
       {
+        value: "/kb sources",
+        description: "show project and built-in knowledge sources",
+      },
+      {
         value: "/kb status",
         description: "show non-clean knowledge files",
       },
@@ -232,6 +240,10 @@ describe("slash commands", () => {
       },
     ]);
     expect(getSlashCommandSuggestions("/kb s")).toEqual([
+      {
+        value: "/kb sources",
+        description: "show project and built-in knowledge sources",
+      },
       {
         value: "/kb status",
         description: "show non-clean knowledge files",
@@ -468,8 +480,18 @@ describe("slash commands", () => {
 
   it("reports /kb usage for unknown KB subcommands", async () => {
     await expect(executeSlashCommand("/kb nope", { workspaceRoot: "/repo" })).resolves.toEqual({
-      messages: ["Usage: /kb init, /kb sync [--full], /kb reset, or /kb status"],
+      messages: ["Usage: /kb init, /kb sync [--full], /kb reset, /kb status, or /kb sources"],
     });
+  });
+
+  it("reports project and built-in sources through /kb sources", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-sources-"));
+    const result = await executeSlashCommand("/kb sources", { workspaceRoot: workspace });
+
+    expect(result.messages.join("\n")).toContain("Knowledge sources");
+    expect(result.messages.join("\n")).toContain("project\tworkspace\tunavailable\twritable");
+    expect(result.messages.join("\n")).toContain("topchester\tbuiltin-product\tready\tread-only\t0.76.0");
+    expect(result.messages.join("\n")).toContain("path: resources/knowledge/topchester");
   });
 
   it("executes /kb init and creates project folders", async () => {
@@ -1303,6 +1325,35 @@ describe("slash commands", () => {
     expect(prompts[0]).toContain("Topchester KB context pack:");
     expect(prompts[0]).toContain("src/tui/status.ts");
     expect(prompts[0]).toContain("Conversation:\nUser: status bar");
+  });
+
+  it("injects versioned product context when the project KB is missing", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-product-runtime-"));
+    const prompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime(
+      {
+        ...createTestContext(workspace),
+        modelGateway: {
+          async generateText(request: { prompt: string }) {
+            prompts.push(request.prompt);
+            return {
+              text: "Use top-level providers.",
+              providerId: "fake",
+              modelId: "fake-agent",
+              purpose: "agent.primary" as const,
+            };
+          },
+        } as unknown as AppContext["modelGateway"],
+      },
+      { disableL1Context: false }
+    );
+
+    await runtime.submitMessage([], "How does Topchester configuration work?");
+
+    expect(prompts[0]).toContain("Topchester KB context pack:");
+    expect(prompts[0]).toContain('"sourceId":"topchester"');
+    expect(prompts[0]).toContain('"sourceVersion":"0.76.0"');
+    expect(prompts[0]).toContain("docs/configuration/");
   });
 
   it("skips L1 context pack injection when disabled by env", async () => {

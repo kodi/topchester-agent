@@ -992,6 +992,63 @@ describe("CLI integration", () => {
     expect(stdout).toContain("----\ntotal non-clean files: 0");
   });
 
+  it("reports project and version-matched built-in knowledge sources", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout } = await runCli(["--workspace", fixture.workspace, "kb", "sources"], fixture.root);
+
+    expect(stdout).toContain("Knowledge sources");
+    expect(stdout).toContain("project\tworkspace\tunavailable\twritable");
+    expect(stdout).toContain("topchester\tbuiltin-product\tready\tread-only\t0.76.0");
+    expect(stdout).toContain("path: resources/knowledge/topchester");
+    expect(stdout).not.toContain(join(process.cwd(), "resources", "knowledge", "topchester"));
+  });
+
+  it("prints structured knowledge source diagnostics as JSON", async () => {
+    const fixture = await makeFixture();
+    const { stdout } = await runCli(["--workspace", fixture.workspace, "kb", "sources", "--json"], fixture.root);
+    const sources = JSON.parse(stdout) as Array<{ id: string; ready: boolean; rootPath: string; pathLabel: string }>;
+
+    expect(sources).toHaveLength(2);
+    expect(sources.find((source) => source.id === "project")).toMatchObject({ ready: false });
+    expect(sources.find((source) => source.id === "topchester")).toMatchObject({
+      ready: true,
+      pathLabel: "resources/knowledge/topchester",
+    });
+    expect(sources.find((source) => source.id === "topchester")?.rootPath).toContain("resources/knowledge/topchester");
+  });
+
+  it("searches the built-in product source without a project KB", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout } = await runCli(
+      ["--workspace", fixture.workspace, "kb", "search", "--source", "topchester", "ignore", "paths"],
+      fixture.root
+    );
+
+    expect(stdout).toContain("source selection: topchester");
+    expect(stdout).toContain("topchester:docs/configuration/ignore-paths.md");
+    expect(stdout).toContain("matches:");
+  });
+
+  it("returns merged context with an unavailable project warning", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout } = await runCli(
+      ["--workspace", fixture.workspace, "kb", "context", "--source", "all", "--json", "Topchester", "configuration"],
+      fixture.root
+    );
+    const result = JSON.parse(stdout) as {
+      relevantFiles: Array<{ sourceId: string; sourceVersion?: string }>;
+      sourceWarnings: string[];
+    };
+
+    expect(result.relevantFiles.length).toBeGreaterThan(0);
+    expect(result.relevantFiles.every((file) => file.sourceId === "topchester")).toBe(true);
+    expect(result.relevantFiles.every((file) => file.sourceVersion === "0.76.0")).toBe(true);
+    expect(result.sourceWarnings.join(" ")).toContain("project knowledge failed");
+  });
+
   it("searches compiled L1 knowledge entries from the CLI", async () => {
     const fixture = await makeFixture();
     const entryPath = join(fixture.workspace, "topchester-kb", "l1-files", "src", "posts", "post-service.ts.json");

@@ -17,8 +17,8 @@ interface TopchesterConfig {
     "fast"?: string | ModelSlotConfig;
     "kb.summarize"?: string | ModelSlotConfig;
     "choices"?: string[];
-    "providers"?: Record<string, ModelProviderConfig> & { default?: string };
   };
+  providers?: Record<string, ModelProviderConfig> & { default?: string };
   ignore?: {
     paths?: string[];
   };
@@ -29,7 +29,7 @@ interface TopchesterConfig {
       deny?: string[][];
     };
   };
-  projectInstructions?: {
+  instructions?: {
     enabled?: boolean;
     files?: string[];
     fallbackFiles?: string[];

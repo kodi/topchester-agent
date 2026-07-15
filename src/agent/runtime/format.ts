@@ -483,6 +483,8 @@ export function formatToolCallMessage(call: ToolCall, result?: ToolExecutionResu
         : "skills_list";
     case "skill_view":
       return `skill_view: ${call.args.name}`;
+    case "skill_read":
+      return `skill_read: ${call.args.name} ${call.args.group}/${call.args.path}`;
   }
 
   const runtimeCall = call as { tool: string; args: unknown };

@@ -40,6 +40,7 @@ const READ_ONLY_TOOLS = [
   "git_log",
   "skills_list",
   "skill_view",
+  "skill_read",
 ] as const satisfies readonly ToolName[];
 
 export const PRIMARY_AGENT_PROFILE: AgentProfile = {

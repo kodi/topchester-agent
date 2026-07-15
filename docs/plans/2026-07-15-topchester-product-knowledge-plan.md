@@ -416,7 +416,7 @@ Likely changes:
 
 ### Slice 1: Correct And Pin Product Guidance
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Reconcile confirmed config, instruction, and verification-command drift before those files become product-pack inputs.
 
@@ -449,7 +449,7 @@ Dependencies: none.
 
 ### Slice 2: Cross-Repo Topchester Skill And Linked-File Tool
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Ship an immediately usable built-in `topchester` skill with safe access to its curated references.
 
@@ -491,7 +491,7 @@ Dependencies: Slice 1.
 
 ### Slice 3: Knowledge Source Contract With Project-Only Parity
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Introduce source-aware loading/search/context types while preserving current project-only behavior.
 
@@ -526,7 +526,7 @@ Dependencies: Slice 2, so the source refactor does not overlap the skill/tool pr
 
 ### Slice 4: Portable Product Pack Builder And Package Resource
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Generate, validate, commit, and package a portable Topchester L1 product source.
 
@@ -576,7 +576,7 @@ Dependencies: Slices 1 and 3. The packaged artifact remains unused by runtime un
 
 ### Slice 5: Built-In Source Loading And Automatic Runtime Retrieval
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Load the matching packaged product source and inject relevant Topchester context automatically alongside project context.
 
@@ -617,7 +617,7 @@ Dependencies: Slices 3 and 4.
 
 ### Slice 6: Source Diagnostics And Explicit CLI Selection
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Make source availability and source-specific search inspectable without changing existing command defaults.
 
@@ -661,7 +661,7 @@ Dependencies: Slice 5.
 
 ### Slice 7: Release Gate, Smoke Coverage, And Cleanup
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Prove the packaged feature end to end and make stale or omitted product knowledge fail before release.
 
@@ -731,6 +731,27 @@ Manual acceptance:
 - Reassess whether a public enable/disable config is needed after real use. Do not add it preemptively in V0.
 
 ## Progress Log
+
+### 2026-07-15: Slices 3 through 7 completed
+
+- Added source-aware loading and context contracts while keeping the existing project-only search/context wrappers and CLI defaults intact.
+- Added a portable product manifest, explicit allowlisted pack specification, staged deterministic builder, model-free freshness checker, committed L1 product entries, package inclusion, and built-in workspace inventory exclusion.
+- Added version-checked installed-layout source discovery, runtime-lifetime product index caching, deterministic product-intent routing, independent source search, source-aware collision handling, and provenance-bearing merged prompt context.
+- Added `topchester kb sources`, `/kb sources`, and `--source project|topchester|all` for KB search/context, with text and JSON diagnostics and package-relative product paths in text output.
+- Added local CI/publication gates, built-tarball runtime validation, product-only/combined/failure/collision/disable coverage, and smoke scenario `21-product-knowledge-no-project-kb`.
+- Product pack measurement: 32 source files and entries, 32,747 bytes. Representative three-entry product prompt context: 2,611 bytes. No size follow-up is needed.
+- Verified `mise run knowledge-product-check`, `mise run package-check`, `mise run typecheck`, `mise run lint`, and `mise run format-check`.
+- Verified the full product suite with `mise run test -- --reporter=verbose` (35 files, 752 tests).
+- Verified `mise run smoke` (21 passed, 0 failed), including the no-project-KB product retrieval scenario.
+- Verified `mise run local-ci`: formatting, lint, type checking, product-pack freshness, package contents, and packed-CLI product-source loading/search all passed.
+
+### 2026-07-15: Slices 1 and 2 completed
+
+- Corrected product guidance to use top-level `providers`, the `instructions` config key, and the single selected-profile precedence contract.
+- Recorded the first pack inputs through the allowlisted product-pack specification planned for Slice 4: public getting-started, configuration, feature, hook, MCP, and reference docs; `skills/topchester*/**`; and `agents.json`.
+- Added the built-in `topchester` router skill with curated configuration, knowledge-base, command, and troubleshooting references.
+- Added read-only `skill_read` support with linked-group containment, missing-file errors, a 64 KiB limit, prompt guidance, read-only profile access, and tool/discovery tests.
+- Verified with `mise run test` (33 files, 736 tests), `mise run typecheck`, and `mise run format-check`.
 
 ### 2026-07-15: Plan created
 

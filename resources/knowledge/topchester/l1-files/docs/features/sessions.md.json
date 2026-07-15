@@ -1,0 +1,31 @@
+{
+  "$schema": "../schema/file-entry.v1.json",
+  "id": "file:docs/features/sessions.md",
+  "layer": "L1",
+  "type": "file",
+  "path": "docs/features/sessions.md",
+  "language": "markdown",
+  "content_hash": "sha256:37f72430094b091e8560e3032ff942345cbbb9261d531488ab6a2fc8cc85bf79",
+  "size_bytes": 2769,
+  "last_scanned_at": "2026-07-15T10:14:45.831Z",
+  "scan_status": "current",
+  "file_role": "doc",
+  "summary": "Understand project-local session storage, resume behavior, and child sessions.",
+  "responsibilities": [],
+  "symbols": [],
+  "imports": [],
+  "exports": [],
+  "module_ids": [],
+  "feature_ids": [],
+  "test_ids": [],
+  "declared_test_targets": [],
+  "likely_test_targets": [],
+  "tested_by": [],
+  "evidence": [
+    {
+      "kind": "path",
+      "value": "docs/features/sessions.md"
+    }
+  ],
+  "confidence": "high"
+}

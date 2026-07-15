@@ -1,0 +1,31 @@
+{
+  "$schema": "../schema/file-entry.v1.json",
+  "id": "file:docs/features/tui.md",
+  "layer": "L1",
+  "type": "file",
+  "path": "docs/features/tui.md",
+  "language": "markdown",
+  "content_hash": "sha256:dd891aef1c4225d4f7e46996ee7fdb90bf2ca10e40e5d861d0503be22a897506",
+  "size_bytes": 3678,
+  "last_scanned_at": "2026-07-15T10:14:45.831Z",
+  "scan_status": "current",
+  "file_role": "doc",
+  "summary": "Use the interactive terminal UI, prompt box, status line, and startup checks.",
+  "responsibilities": ["Everyday controls", "Tool visibility", "Busy input", "Startup checks"],
+  "symbols": [],
+  "imports": [],
+  "exports": [],
+  "module_ids": [],
+  "feature_ids": [],
+  "test_ids": [],
+  "declared_test_targets": [],
+  "likely_test_targets": [],
+  "tested_by": [],
+  "evidence": [
+    {
+      "kind": "path",
+      "value": "docs/features/tui.md"
+    }
+  ],
+  "confidence": "high"
+}

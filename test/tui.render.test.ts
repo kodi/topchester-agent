@@ -1551,7 +1551,7 @@ describe("TUI rendering", () => {
     const output = app.render(80).join("\n");
 
     expect(output).toContain("slash commands");
-    expect(output).toContain("> /kb status — show non-clean knowledge files");
+    expect(output).toContain("> /kb sources — show project and built-in knowledge sources");
     expect(output).toContain("Tab complete · ↑↓ choose");
   });
 
@@ -1564,9 +1564,9 @@ describe("TUI rendering", () => {
     app.handleInput("\t");
     const output = app.render(80).join("\n");
 
-    expect(output).toContain("│ > /kb status");
-    expect(output).toContain("/kb status\u001b[7m");
-    expect(output).not.toContain("/\u001b[7mkb status");
+    expect(output).toContain("│ > /kb sources");
+    expect(output).toContain("/kb sources\u001b[7m");
+    expect(output).not.toContain("/\u001b[7mkb sources");
   });
 
   it("scrolls slash command suggestions to keep the selected command visible", () => {

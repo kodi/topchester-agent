@@ -26,10 +26,13 @@ topchester mcp add filesystem -- npx -y @modelcontextprotocol/server-filesystem 
 topchester mcp add github --env GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx -- npx -y @modelcontextprotocol/server-github
 
 topchester kb init
+topchester kb sources
 topchester kb sync
 topchester kb status
 topchester kb search "post author update error"
 topchester kb context "status bar" --json
+topchester kb search --source topchester "ignore paths"
+topchester kb context --source all "configure knowledge sync" --json
 topchester kb sync --full
 topchester kb reset
 ```
@@ -55,6 +58,7 @@ topchester kb reset
 | `topchester run`        | Run one prompt or slash command without opening the TUI. |
 | `topchester search`     | Search compiled L1 file knowledge.                       |
 | `topchester kb init`    | Create the project knowledge folders.                    |
+| `topchester kb sources` | Show project and built-in knowledge source diagnostics.  |
 | `topchester kb context` | Create an L1 context pack for a query.                   |
 | `topchester kb dry-run` | Preview which files would be synced.                     |
 | `topchester kb search`  | Search compiled L1 file knowledge.                       |
@@ -70,6 +74,14 @@ topchester kb reset
 Reports config layers, the active selected profile and any environment profile shadowed by `--config`, whether the effective config is valid, configured model/provider hints, provider API key env presence, MCP server command presence, hook counts, and local session/log/knowledge paths.
 
 If config is invalid, it prints the config error and exits nonzero.
+
+## Knowledge source selection
+
+`topchester kb sources` is a local, model-free check. It reports the `project` workspace source and the read-only `topchester` product source, including readiness, version, sync support, and validation warnings. Text output keeps the installed product path package-relative; `--json` includes structured diagnostics.
+
+`topchester kb search` and `topchester kb context` accept `--source project|topchester|all`. Omitting it preserves the project-only default, and the top-level `topchester search` alias stays project-only. An unavailable explicitly selected source fails clearly. With `all`, an unavailable source is reported as a warning while ready sources still return results.
+
+The project-only commands `kb init`, `dry-run`, `sync`, `status`, and `reset` never write to the packaged product source.
 
 ## `topchester auth login codex --device`
 

@@ -55,6 +55,11 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
     ...(canUseTool("read_file") || canUseTool("grep") || canUseTool("find_file") || canUseTool("list_files")
       ? ["- Use read/search tools when the user asks about files, code, symbols, usages, tests, or project behavior."]
       : []),
+    ...(canUseTool("skill_view") && canUseTool("skill_read")
+      ? [
+          "- After skill_view, use skill_read only for a linked file listed by that skill and only when the current task needs it.",
+        ]
+      : []),
     ...(canUseTool("read_file") || canUseTool("find_file")
       ? [
           "- User-message tokens like @src/file.ts are workspace-relative paths the user picked deliberately; read or inspect them with tools when the request depends on them.",

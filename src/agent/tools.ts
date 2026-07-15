@@ -167,9 +167,14 @@ export {
   type ListFilesToolResult,
 } from "./tools/list-files.js";
 export {
+  skillReadArgsSchema,
   skillViewArgsSchema,
+  skillReadTool,
   skillsListTool,
   skillViewTool,
+  type SkillReadToolArgs,
+  type SkillReadToolCall,
+  type SkillReadToolResult,
   type SkillsListToolCall,
   type SkillsListToolResult,
   type SkillViewToolArgs,

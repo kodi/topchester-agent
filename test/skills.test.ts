@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
@@ -244,6 +244,38 @@ describe("skills", () => {
     await expect(service.readLinkedFile("review", "references", "../secret.md")).rejects.toThrow(
       "Linked skill file path stays outside references."
     );
+
+    await symlink(join(root, "secret.md"), join(root, "review", "references", "linked-secret.md"));
+    await expect(service.readLinkedFile("review", "references", "linked-secret.md")).rejects.toThrow(
+      "Linked skill file path stays outside references."
+    );
+  });
+
+  it("reads linked skill files and truncates oversized content", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-skills-service-"));
+    await mkdir(join(root, "review", "references"), { recursive: true });
+    await writeFile(join(root, "review", "SKILL.md"), "# Review\n");
+    await writeFile(join(root, "review", "references", "short.md"), "short\n");
+    await writeFile(join(root, "review", "references", "large.md"), "x".repeat(70 * 1024));
+
+    const service = createSkillsService({
+      workspaceRoot: root,
+      roots: [{ source: "workspace-neutral", root, precedence: 6 }],
+    });
+
+    await expect(service.readLinkedFile("review", "references", "short.md")).resolves.toEqual({
+      content: "short\n",
+      bytes: 6,
+      truncated: false,
+    });
+    await expect(service.readLinkedFile("review", "references", "large.md")).resolves.toMatchObject({
+      bytes: 70 * 1024,
+      truncated: true,
+      content: expect.stringMatching(/^x{65536}$/),
+    });
+    await expect(service.readLinkedFile("review", "references", "missing.md")).rejects.toThrow(
+      "Linked skill file not found"
+    );
   });
 
   it("extracts active skill mentions in mention order", () => {
@@ -326,6 +358,11 @@ describe("skills", () => {
         expect.objectContaining({
           name: "repo-orientation",
           source: "builtin",
+        }),
+        expect.objectContaining({
+          name: "topchester",
+          source: "builtin",
+          description: expect.stringContaining("Explain Topchester commands"),
         }),
         expect.objectContaining({
           name: "topchester-config",

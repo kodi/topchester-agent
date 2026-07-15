@@ -335,6 +335,12 @@ describe("agent tools", () => {
       tool: "skill_view",
       args: { name: "code-review" },
     });
+    expect(
+      parseToolCall('{"tool":"skill_read","args":{"name":"topchester","group":"references","path":"configuration.md"}}')
+    ).toEqual({
+      tool: "skill_read",
+      args: { name: "topchester", group: "references", path: "configuration.md" },
+    });
   });
 
   it("parses the first tool call when the model emits concatenated tool JSON", () => {
@@ -813,6 +819,7 @@ describe("agent tools", () => {
       "grep",
       "list_files",
       "read_file",
+      "skill_read",
       "skill_view",
       "skills_list",
     ]);
@@ -955,6 +962,7 @@ describe("agent tools", () => {
       'finish_task: complete the task with a brief final response only after tool results prove the work is done. In benchmark or require-finish mode, this is the only valid terminal action; normal assistant messages are progress notes and do not finish the task, and remaining_issues must be empty. For implementation tasks, do not call finish_task until source files were changed by edit_file, write_file, apply_patch, or another mutating tool, unless no code change is truly required. Example: {"tool":"finish_task","args":{"final_response":"Changed src/foo.ts and ran pnpm test foo.test.ts.","files_changed":["src/foo.ts"],"validation":["pnpm test foo.test.ts"],"remaining_issues":[]}}',
       'skills_list: List available on-demand skills without loading full skill bodies. Args: {}. Example: {"tool":"skills_list","args":{}}',
       'skill_view: Load full SKILL.md content for one skill by name. Args: {"name":"skill-name"}. Example: {"tool":"skill_view","args":{"name":"code-review"}}',
+      'skill_read: Read a linked reference, template, script, or asset named by skill_view. Args: {"name":"skill-name","group":"references|templates|scripts|assets","path":"relative/path"}. Example: {"tool":"skill_read","args":{"name":"topchester","group":"references","path":"configuration.md"}}',
     ]);
   });
 

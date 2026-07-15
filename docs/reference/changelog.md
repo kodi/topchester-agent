@@ -10,6 +10,18 @@ public: true
 
 Topchester changes grouped by day. This file is the source of truth for the public changelog.
 
+## 2026-07-15
+
+### Features
+
+- Added version-matched, read-only Topchester product knowledge with automatic product-intent retrieval alongside project knowledge.
+- Added the built-in `topchester` product-help skill and bounded `skill_read` access to linked skill files.
+- Added `topchester kb sources`, `/kb sources`, and explicit `--source project|topchester|all` selection for KB search and context commands.
+
+### Validation
+
+- Added deterministic product-pack freshness and built-package content checks to local CI and publication validation.
+
 ## 2026-07-14
 
 ### Features
