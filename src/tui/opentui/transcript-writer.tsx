@@ -11,6 +11,8 @@ const SolidRendererProvider = RendererContext.Provider as unknown as (props: {
   readonly children: JSX.Element;
 }) => BaseRenderable;
 
+const SCROLLBACK_SETTLE_TIMEOUT_MS = 15_000;
+
 export class TranscriptWriter {
   private readonly scheduled = new Set<string>();
   private pending = Promise.resolve();
@@ -123,7 +125,7 @@ export class TranscriptWriter {
           }),
         surface.root
       );
-      await surface.settle();
+      await surface.settle(SCROLLBACK_SETTLE_TIMEOUT_MS);
       if (!this.disposed) {
         surface.commitRows(0, surface.height, { trailingNewline: true });
       }

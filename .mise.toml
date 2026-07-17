@@ -23,7 +23,8 @@ dir = "{{config_root}}"
 run = "vp lint"
 
 [tasks.test]
-depends = ["test-node", "opentui-test"]
+depends = ["test-node"]
+run = "mise run opentui-test"
 
 [tasks.test-node]
 dir = "{{config_root}}"
@@ -69,8 +70,7 @@ run = "vp check"
 depends = ["format-check", "lint", "typecheck"]
 
 [tasks.local-ci-extended]
-depends = ["local-ci", "test", "knowledge-product-check"]
-run = "mise run native-package-check"
+run = ["mise run local-ci", "mise run knowledge-product-check", "mise run test", "mise run native-package-check"]
 
 [tasks.knowledge-product-sync]
 dir = "{{config_root}}"
