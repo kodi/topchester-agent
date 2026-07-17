@@ -111,14 +111,22 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      - name: Run release checks
+        run: mise run local-ci-extended
+
       - name: Bump package version
         run: npm version ${{ inputs.release }} --no-git-tag-version
 
       - name: Sync versioned product knowledge
         run: vp run knowledge-product-sync
 
-      - name: Run release checks
-        run: mise run local-ci-extended
+      - name: Format versioned product knowledge
+        run: vp fmt resources/knowledge/topchester
+
+      - name: Check versioned product knowledge
+        run: |
+          vp fmt resources/knowledge/topchester --check
+          mise run knowledge-product-check
 
       - name: Build standalone npm release packages
         run: mise run release-build
