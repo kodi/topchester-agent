@@ -18,7 +18,6 @@ export interface StandaloneTarget {
 
 export const STANDALONE_TARGETS: readonly StandaloneTarget[] = [
   createTarget("darwin", "arm64", "bun-darwin-arm64"),
-  createTarget("darwin", "x64", "bun-darwin-x64-baseline"),
   createTarget("linux", "arm64", "bun-linux-arm64"),
   createTarget("linux", "x64", "bun-linux-x64-baseline"),
 ];

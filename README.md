@@ -11,7 +11,7 @@ If you have used tools like Codex, Claude Code, or OpenCode, the shape should fe
 Requirements:
 
 - Node.js `>=18` and npm for installation. The installed Topchester runtime is a standalone executable and does not require Bun.
-- macOS or glibc Linux on ARM64 or x64. Windows and musl Linux are not included in the first standalone release.
+- macOS on Apple Silicon, or glibc Linux on ARM64 or x64. Intel macOS, Windows, and musl Linux are not supported by the standalone release.
 - A model provider key. The example below uses OpenRouter.
 
 Install the CLI:

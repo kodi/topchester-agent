@@ -6,8 +6,11 @@ import { dirname, join, relative, sep } from "node:path";
 import { resolveStandaloneTargets, type StandaloneTarget } from "./standalone/targets.js";
 
 const root = process.cwd();
-const generatedEntry = join(root, "dist", "standalone", ".standalone-entry.generated.ts");
+const standaloneRoot = join(root, "dist", "standalone");
+const generatedEntry = join(standaloneRoot, ".standalone-entry.generated.ts");
 const packageMetadata = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { version?: unknown };
+const buildArgs = process.argv.slice(2);
+const targets = resolveStandaloneTargets(buildArgs);
 
 if (typeof packageMetadata.version !== "string" || packageMetadata.version.length === 0) {
   throw new Error("package.json does not contain a valid version.");
@@ -40,11 +43,14 @@ const source = [
   "",
 ].join("\n");
 
-await mkdir(dirname(generatedEntry), { recursive: true });
+if (buildArgs.includes("--all")) {
+  await rm(standaloneRoot, { recursive: true, force: true });
+}
+await mkdir(standaloneRoot, { recursive: true });
 await writeFile(generatedEntry, source);
 
 try {
-  for (const target of resolveStandaloneTargets(process.argv.slice(2))) {
+  for (const target of targets) {
     await buildTarget(target, packageMetadata.version, assetPaths.length, builtinSkillFiles);
   }
 } finally {

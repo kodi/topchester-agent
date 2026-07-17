@@ -7,7 +7,7 @@
   "language": "json",
   "content_hash": "sha256:4aad5a41bc05622a159d5bc794dea91e9a42d8c3df8b5262ad7d98b29ca76cc9",
   "size_bytes": 1370,
-  "last_scanned_at": "2026-07-17T02:52:41.395Z",
+  "last_scanned_at": "2026-07-17T03:25:20.517Z",
   "scan_status": "current",
   "file_role": "config",
   "summary": "{ \"version\": 1, \"agents\": { \"topchester\": { \"display_name\": \"Topchester\", \"description\": \"Terminal-native coding agent with a project knowledge base as part of the runtime contract.\", \"logo_image\": \"assets/agents/topchester.svg\", \"external_url\": \"https://github.com/kodi/topchester-agent\", \"source_url\": \"https://github.com/kodi/topchester-agent\", \"tags\": [\"terminal\", \"coding-agent\", \"knowledge-base\"], \"capabilities\": [\"terminal-ui\", \"project-knowledge-base\", \"tool-calling\", \"subagents\", \"hooks\"],",

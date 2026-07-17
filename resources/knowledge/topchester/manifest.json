@@ -7,7 +7,7 @@
     "name": "topchester-knowledge-compiler",
     "version": 1
   },
-  "generatedAt": "2026-07-17T02:52:41.395Z",
+  "generatedAt": "2026-07-17T03:25:20.517Z",
   "packSpecHash": "sha256:8d279afcd49f232730a090bab4b795486cfc819732a23f2d9d207e410dc8f7cd",
   "sourceFileCount": 32,
   "entryCount": 32,
@@ -62,11 +62,11 @@
     },
     {
       "path": "docs/getting-started/installation.md",
-      "contentHash": "sha256:f8312bdebef05eb1503c54ff03f485d43d50cf84a0c927c0589dea1ebf1e1dda"
+      "contentHash": "sha256:453f36240c37631a2964b04f3d5f76eafde0fb0af6d238ecc9feb52eebc76706"
     },
     {
       "path": "docs/getting-started/quickstart.md",
-      "contentHash": "sha256:0d224e5919eebdb385efe3987a54a2296e606a6a60f949b0decd082833a888aa"
+      "contentHash": "sha256:9236722e82e21768381be481a848d94bc31d2931af4c899536b22f66f29001e9"
     },
     {
       "path": "docs/hooks/events.md",

@@ -7,7 +7,7 @@
   "language": "markdown",
   "content_hash": "sha256:5664480a12aedeb55269deb153b7904d4b6b2637997f655954b2e3d713870e8f",
   "size_bytes": 2402,
-  "last_scanned_at": "2026-07-17T02:52:41.395Z",
+  "last_scanned_at": "2026-07-17T03:25:20.517Z",
   "scan_status": "current",
   "file_role": "doc",
   "summary": "Built-in TUI commands for models, skills, sessions, and the knowledge base.",

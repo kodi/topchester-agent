@@ -7,7 +7,7 @@
   "language": "markdown",
   "content_hash": "sha256:98213203fb81fbde16c728e19912af41f041f7148c3bf3b216f62e70ee68e6e8",
   "size_bytes": 880,
-  "last_scanned_at": "2026-07-17T02:52:41.395Z",
+  "last_scanned_at": "2026-07-17T03:25:20.517Z",
   "scan_status": "current",
   "file_role": "doc",
   "summary": "Use local stdio MCP servers as Topchester tools.",

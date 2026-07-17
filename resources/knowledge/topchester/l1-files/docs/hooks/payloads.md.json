@@ -7,7 +7,7 @@
   "language": "markdown",
   "content_hash": "sha256:eea0e76954f97cdf14265b32ae491cc723c6fc7dfcd68a54d1b7f9b2e24c63dc",
   "size_bytes": 2099,
-  "last_scanned_at": "2026-07-17T02:52:41.395Z",
+  "last_scanned_at": "2026-07-17T03:25:20.517Z",
   "scan_status": "current",
   "file_role": "doc",
   "summary": "Common and event-specific JSON fields sent to command hooks.",

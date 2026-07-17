@@ -7,7 +7,7 @@
   "language": "markdown",
   "content_hash": "sha256:20befa53a42915bbc6579b522ea0c9f4baa0e565cf0059c306f152827f97f807",
   "size_bytes": 2407,
-  "last_scanned_at": "2026-07-17T02:52:41.395Z",
+  "last_scanned_at": "2026-07-17T03:25:20.517Z",
   "scan_status": "current",
   "file_role": "doc",
   "summary": "How Topchester uses project knowledge, sync commands, and drift checks.",
