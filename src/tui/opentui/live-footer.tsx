@@ -334,7 +334,7 @@ export function LiveFooter(props: { mentionProvider?: FileMentionProvider; onInt
       <Show when={!hasOverlay() && visibleSuggestions().length > 0}>
         <SuggestionList items={visibleSuggestions().map((item) => item.label)} selectedIndex={selection()} />
       </Show>
-      <box border={["top"]} borderColor={theme.focus} flexDirection="column" minHeight={3}>
+      <box border={["top"]} borderColor={theme.focus} flexDirection="column" minHeight={5}>
         <textarea
           id="topchester-composer"
           ref={(value) => {
@@ -343,12 +343,14 @@ export function LiveFooter(props: { mentionProvider?: FileMentionProvider; onInt
           width="100%"
           minHeight={1}
           maxHeight={5}
+          marginTop={1}
+          marginBottom={1}
           wrapMode="word"
           placeholder={snapshot().promptHint ?? "Ask Topchester…"}
           textColor={theme.text}
           focusedTextColor={theme.text}
-          backgroundColor={theme.surface}
-          focusedBackgroundColor={theme.surface}
+          backgroundColor={theme.background}
+          focusedBackgroundColor={theme.background}
           placeholderColor={snapshot().promptHint ? theme.warning : theme.muted}
           cursorColor={theme.accent}
           selectionBg={theme.selection}
@@ -430,7 +432,7 @@ function estimateFooterHeight(
   suggestionCount: number,
   draft: string
 ): number {
-  const base = 4 + Math.min(4, Math.max(0, draft.split("\n").length - 1));
+  const base = 6 + Math.min(4, Math.max(0, draft.split("\n").length - 1));
   const taskRows = Math.min(6, snapshot.taskPlan?.items.length ?? 0);
   const transientRows = [
     snapshot.startupHint,

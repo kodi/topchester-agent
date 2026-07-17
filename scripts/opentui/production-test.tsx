@@ -18,6 +18,7 @@ import { agentEvent } from "../../src/agent/events.js";
 import { type AgentRuntime } from "../../src/agent/runtime/index.js";
 import { TopchesterTuiController } from "../../src/chat/controller.js";
 import { reasoningTranscriptEntry, type TranscriptEntry } from "../../src/chat/index.js";
+import { getKnowledgeStatus } from "../../src/knowledge/status.js";
 import { TopchesterApp } from "../../src/tui/opentui/app.js";
 import { runOpenTui } from "../../src/tui/opentui/renderer.js";
 import { ThreadEntry } from "../../src/tui/opentui/thread-entry.js";
@@ -70,6 +71,7 @@ async function testAppSurface(): Promise<void> {
     },
   };
   const controller = await TopchesterTuiController.create(context, createRuntime(submitted));
+  await controller.applyRuntimeEvents([agentEvent.knowledgeStatus(getKnowledgeStatus(workspace), "Run /kb init")]);
   const syntaxStyle = SyntaxStyle.create();
   const theme = resolveTopchesterTheme();
   let interrupts = 0;
@@ -91,8 +93,36 @@ async function testAppSurface(): Promise<void> {
   try {
     await setup.renderOnce();
     const composer = setup.renderer.root.findDescendantById("topchester-composer") as TextareaRenderable;
-    assert.match(setup.captureCharFrame(), /Ask Topchester/u);
-    assert.match(setup.captureCharFrame(), /not set/u);
+    const initialFrame = setup.captureCharFrame();
+    assert.match(initialFrame, /Ask Topchester/u);
+    assert.match(initialFrame, /not set/u);
+    assert.deepEqual(composer.backgroundColor.toInts(), RGBA.fromHex(theme.background).toInts());
+    const initialRows = initialFrame.split("\n");
+    const promptRow = initialRows.findIndex((row) => row.includes("Ask Topchester"));
+    assert.ok(promptRow > 0);
+    assert.equal(initialRows[promptRow - 1]?.trim(), "");
+    assert.equal(initialRows[promptRow + 1]?.trim(), "");
+    const statusRow = initialRows.find((row) => row.includes("● ready"));
+    assert.ok(statusRow, initialFrame);
+    assert.ok(statusRow.includes(" topchester-opentui-app-"), statusRow);
+    assert.ok(statusRow.trimEnd().endsWith("⚠ kb: missing"), statusRow);
+    assert.ok((statusRow?.length ?? 0) - (statusRow?.trimEnd().length ?? 0) <= 1);
+
+    const singleLineHeight = composer.height;
+    await setup.mockInput.typeText("first line");
+    assert.equal(composer.newLine(), true);
+    await setup.mockInput.typeText("second line");
+    await setup.flush();
+    assert.equal(composer.lineCount, 2);
+    assert.equal(composer.height, singleLineHeight + 1);
+    const multilineRows = setup.captureCharFrame().split("\n");
+    const firstLineRow = multilineRows.findIndex((row) => row.includes("first line"));
+    const secondLineRow = multilineRows.findIndex((row) => row.includes("second line"));
+    assert.equal(secondLineRow, firstLineRow + 1);
+    assert.equal(multilineRows[firstLineRow - 1]?.trim(), "");
+    assert.equal(multilineRows[secondLineRow + 1]?.trim(), "");
+    composer.setText("");
+    await setup.flush();
 
     await setup.mockInput.typeText("/");
     await setup.flush();
