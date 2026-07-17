@@ -58,6 +58,32 @@ describe("self update", () => {
     ).toBe("pnpm");
   });
 
+  it("detects the package manager from a compiled executable path", () => {
+    const modulePath = "/$bunfs/root/src/cli/self-update.ts";
+    expect(
+      detectSelfUpdateManager({
+        modulePath,
+        execPath:
+          "/Users/me/.local/share/pnpm/global/5/.pnpm/topchester-ai@0.76.0/node_modules/topchester-ai/bin/topchester.exe",
+        env: {},
+      })
+    ).toBe("pnpm");
+    expect(
+      detectSelfUpdateManager({
+        modulePath,
+        execPath: "/Users/me/.bun/install/global/node_modules/topchester-ai/bin/topchester.exe",
+        env: {},
+      })
+    ).toBe("bun");
+    expect(
+      detectSelfUpdateManager({
+        modulePath,
+        execPath: "/Users/me/.nvm/versions/node/v24/lib/node_modules/topchester-ai/bin/topchester.exe",
+        env: {},
+      })
+    ).toBe("npm");
+  });
+
   it("does not guess from source checkout paths", () => {
     expect(
       detectSelfUpdateManager({

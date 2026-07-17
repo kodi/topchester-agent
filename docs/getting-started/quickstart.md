@@ -8,9 +8,11 @@ public: true
 
 # Quickstart
 
-## Requirement
+## Requirements
 
-Install Bun `>=1.3`; the packaged `topchester` command and its OpenTUI renderer run on Bun.
+- Node.js `>=18` and npm for installation. The installed Topchester runtime does not require Bun.
+- macOS or glibc Linux on ARM64 or x64.
+- An API key for your model provider. The example below uses OpenRouter.
 
 ## Install
 

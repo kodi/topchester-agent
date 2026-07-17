@@ -1,7 +1,7 @@
 {
   "name": "topchester-ai",
   "version": "0.76.0",
-  "private": false,
+  "private": true,
   "description": "Terminal-native TUI coding agent tightly coupled to a project knowledge base.",
   "license": "MIT",
   "repository": {
@@ -21,6 +21,10 @@
   "scripts": {
     "build": "bun scripts/build.ts",
     "build:standalone": "bun scripts/build-standalone.ts",
+    "build:standalone:all": "bun scripts/build-standalone.ts --all",
+    "build:npm-release": "node --import tsx scripts/package/build-npm-release.ts",
+    "build:npm-release:all": "node --import tsx scripts/package/build-npm-release.ts --all",
+    "prepare:standalone-targets": "node --import tsx scripts/standalone/install-target-dependencies.ts",
     "dev": "bun src/bin.ts dev --config config/example.jsonc",
     "format": "vp fmt .",
     "format-check": "vp fmt . --check",
@@ -35,7 +39,8 @@
     "test": "vp test run --dir test && bun scripts/opentui/production-test.tsx",
     "typecheck": "vp check --no-fmt --no-lint",
     "check": "vp check && pnpm test",
-    "prepublishOnly": "vp run knowledge-product-check && vp run package-check && vp run build",
+    "release:build": "vp run prepare:standalone-targets && vp run build:standalone:all && vp run build:npm-release:all",
+    "release:publish": "node --import tsx scripts/package/publish-npm-release.ts",
     "knowledge-product-sync": "node --import tsx scripts/knowledge/build-topchester-pack.ts",
     "knowledge-product-check": "node --import tsx scripts/knowledge/check-topchester-pack.ts",
     "package-check": "node --import tsx scripts/package/check-package-contents.ts",

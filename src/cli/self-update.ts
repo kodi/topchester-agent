@@ -80,7 +80,17 @@ export function detectSelfUpdateManager(options: DetectSelfUpdateManagerOptions 
     return "npm";
   }
 
-  if (normalizedExecPath.includes("/.bun/") || normalizedExecPath.includes("/bun/")) return "bun";
+  if (normalizedExecPath.includes("/.pnpm/") || normalizedExecPath.includes("/pnpm/")) return "pnpm";
+
+  if (
+    normalizedExecPath.includes("/.bun/") ||
+    normalizedExecPath.includes("/bun/") ||
+    normalizedExecPath.includes("/install/global/node_modules/")
+  ) {
+    return "bun";
+  }
+
+  if (normalizedExecPath.includes("/node_modules/")) return "npm";
 
   return undefined;
 }

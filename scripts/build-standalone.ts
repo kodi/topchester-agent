@@ -3,13 +3,10 @@
 import solidPlugin from "@opentui/solid/bun-plugin";
 import { chmod, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
+import { resolveStandaloneTargets, type StandaloneTarget } from "./standalone/targets.js";
 
 const root = process.cwd();
-const targetName = `topchester-${process.platform}-${process.arch}`;
-const executableName = process.platform === "win32" ? "topchester.exe" : "topchester";
-const embeddedPackageRoot = process.platform === "win32" ? "B:/~BUN/root" : "/$bunfs/root";
-const output = join(root, "dist", "standalone", targetName, "bin", executableName);
-const generatedEntry = join(root, "scripts", "opentui", ".standalone-entry.generated.ts");
+const generatedEntry = join(root, "dist", "standalone", ".standalone-entry.generated.ts");
 const packageMetadata = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { version?: unknown };
 
 if (typeof packageMetadata.version !== "string" || packageMetadata.version.length === 0) {
@@ -43,40 +40,79 @@ const source = [
   "",
 ].join("\n");
 
-await mkdir(dirname(output), { recursive: true });
-await rm(output, { force: true });
+await mkdir(dirname(generatedEntry), { recursive: true });
 await writeFile(generatedEntry, source);
 
 try {
+  for (const target of resolveStandaloneTargets(process.argv.slice(2))) {
+    await buildTarget(target, packageMetadata.version, assetPaths.length, builtinSkillFiles);
+  }
+} finally {
+  await rm(generatedEntry, { force: true });
+}
+
+async function buildTarget(
+  target: StandaloneTarget,
+  version: string,
+  assetCount: number,
+  skillFiles: readonly string[]
+): Promise<void> {
+  const targetDirectory = join(root, "dist", "standalone", target.directoryName);
+  const output = join(targetDirectory, "bin", target.executableName);
+  const embeddedPackageRoot = "/$bunfs/root";
+  await rm(targetDirectory, { recursive: true, force: true });
+  await mkdir(dirname(output), { recursive: true });
+
   const result = await Bun.build({
     entrypoints: [generatedEntry],
     root: ".",
+    conditions: ["bun", "node"],
     format: "esm",
     minify: true,
     packages: "bundle",
     naming: { asset: "[dir]/[name].[ext]" },
     plugins: [solidPlugin],
     define: {
-      TOPCHESTER_BUILTIN_SKILL_FILES: JSON.stringify(builtinSkillFiles),
+      TOPCHESTER_BUILTIN_SKILL_FILES: JSON.stringify(skillFiles),
       TOPCHESTER_PACKAGE_ROOT: JSON.stringify(embeddedPackageRoot),
-      TOPCHESTER_VERSION: JSON.stringify(packageMetadata.version),
+      TOPCHESTER_VERSION: JSON.stringify(version),
+      ...(target.platform === "linux" ? { "process.env.OPENTUI_LIBC": JSON.stringify(target.libc) } : {}),
     },
-    compile: { outfile: output },
+    compile: {
+      target: target.bunTarget,
+      outfile: output,
+      autoloadBunfig: false,
+      autoloadDotenv: false,
+      autoloadTsconfig: false,
+      autoloadPackageJson: false,
+    },
   });
 
   if (!result.success) {
     for (const log of result.logs) {
       console.error(log);
     }
-    throw new Error("Standalone Bun build failed.");
+    throw new Error(`Standalone Bun build failed for ${target.id}.`);
   }
 
-  if (process.platform !== "win32") {
-    await chmod(output, 0o755);
-  }
-  console.log(`Built ${relative(root, output)} with ${assetPaths.length} embedded assets.`);
-} finally {
-  await rm(generatedEntry, { force: true });
+  await chmod(output, 0o755);
+  await writeFile(
+    join(targetDirectory, "target.json"),
+    `${JSON.stringify(
+      {
+        formatVersion: 1,
+        id: target.id,
+        platform: target.platform,
+        arch: target.arch,
+        ...(target.libc ? { libc: target.libc } : {}),
+        bunTarget: target.bunTarget,
+        version,
+      },
+      null,
+      2
+    )}\n`
+  );
+  console.log(`Built ${relative(root, output)} with ${assetCount} embedded assets.`);
 }
 
 async function listFiles(directory: string): Promise<string[]> {

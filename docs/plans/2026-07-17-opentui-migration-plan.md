@@ -190,7 +190,7 @@ The migration must audit:
 - npm global installation documentation;
 - native optional packages included in the npm tarball.
 
-Standalone executables are explicitly deferred. Bun can compile them, but multi-platform native assets and release signing are a separate distribution project. See [OpenTUI standalone executables](https://opentui.com/docs/reference/standalone-executables/).
+Standalone executables were explicitly deferred from migration Slices 0-10. The distribution follow-up in Slices 11-15 below now implements that separate project. See [OpenTUI standalone executables](https://opentui.com/docs/reference/standalone-executables/).
 
 ### 3. Preserve the inline scrollback model with `split-footer`
 
@@ -937,19 +937,20 @@ These may be valuable after the migration but are not part of the parity release
 
 ## Standalone executable distribution follow-up
 
-Status: active; current-platform feasibility passed, public npm cutover not started
+Status: active; local implementation and release workflow complete, native CI and registry publication pending
 
 ### Target outcome
 
-Publish Topchester as platform-specific standalone executables so end users do not need Bun installed. Keep Bun as the source, build, and contributor runtime. Preserve the existing `npm install -g topchester-ai` command through a small npm meta-package that selects the executable matching the user's operating system, CPU, and Linux libc when applicable.
+Publish Topchester as platform-specific standalone executables so end users do not need Bun installed. Keep Bun as the source, build, and contributor runtime. Preserve the existing `npm install -g topchester-ai` command through a small launcher version that selects the executable matching the user's operating system, CPU, and Linux libc when applicable.
 
 ### Cross-slice rules
 
 - Do not replace the current npm artifact until the standalone package passes the existing installed-package and PTY lifecycle contracts on every supported release platform.
 - Keep the platform executable self-contained: Topchester version metadata, built-in skills, product knowledge, and OpenTUI native code must not depend on the source checkout or a system Bun installation.
-- Generate platform package metadata from one target matrix; do not maintain hand-written package lists in multiple workflows.
+- Generate platform-version metadata from one target matrix; do not maintain hand-written package lists in multiple workflows.
+- Keep `topchester-ai` as the only npm registry package identity. Publish native artifacts as platform-tagged versions and reference them through local optional-dependency aliases.
 - Treat Windows signing, macOS signing/notarization requirements, Linux glibc/musl selection, and x64 baseline CPU support as release decisions, not incidental build details.
-- Keep the existing Bun-script package available as a rollback artifact until the native npm selector has been exercised from a registry prerelease.
+- Keep the previously published Bun-backed npm version as the rollback point until the native selector has been exercised from the registry. The source root is private so `npm publish` cannot accidentally bypass the generated native package graph.
 
 ### Slice 11: Prove a self-contained executable on the current platform
 
@@ -979,11 +980,11 @@ Dependencies: completed OpenTUI migration Slices 0-10.
 
 ### Slice 12: Add the supported cross-platform target matrix
 
-Status: [ ] Not started
+Status: [~] Implemented; native CI evidence pending
 
 Goal: produce deterministic executables for the release platforms from one build description.
 
-Why here: npm platform packages are only useful after each target can be built and smoke-tested independently.
+Why here: npm platform versions are only useful after each target can be built and smoke-tested independently.
 
 This slice should implement:
 
@@ -997,11 +998,24 @@ Expected output: one verified directory per supported target under `dist/standal
 
 Verification: matrix build plus native-host version, embedded-resource, and PTY checks; cross-compiled artifacts alone are not sufficient.
 
+Implemented:
+
+- The initial release matrix is macOS ARM64/x64 and glibc Linux ARM64/x64. Windows and musl are follow-ups; x64 builds use Bun's baseline target.
+- `scripts/standalone/targets.ts` is the single source for Bun targets, output directories, npm aliases and dist-tags, OpenTUI native packages, OS, CPU, and libc metadata.
+- `scripts/standalone/install-target-dependencies.ts` installs only the four target-specific OpenTUI libraries in an isolated temporary package so Bun does not try to migrate the repository's pnpm `catalog:` dependencies.
+- Cross-builds emit one executable and `target.json` per target. Linux compilation fixes `OPENTUI_LIBC` to glibc.
+- Code-quality and release-preflight matrices run the isolated npm install and OpenTUI PTY lifecycle on native GitHub runners for all four targets.
+
+Local verification:
+
+- `mise run release-build` produced ARM64/x64 Mach-O executables and ARM64/x64 glibc ELF executables on 2026-07-17.
+- Native execution is verified locally only for Darwin ARM64; the other three native jobs remain pending until GitHub Actions runs this branch.
+
 Dependencies: Slice 11.
 
-### Slice 13: Publish npm platform packages and a selector meta-package
+### Slice 13: Publish npm platform versions and a selector launcher
 
-Status: [ ] Not started
+Status: [~] Implemented for npm; registry and alternate installer evidence pending
 
 Goal: retain `npm install -g topchester-ai` while installing and invoking the correct standalone executable.
 
@@ -1009,21 +1023,36 @@ Why here: the public package layout depends on a stable, verified target matrix.
 
 This slice should implement:
 
-- generate packages such as `topchester-darwin-arm64`, `topchester-linux-x64`, and `topchester-windows-x64` with npm `os`, `cpu`, and optional `libc` constraints;
-- generate a small `topchester-ai` meta-package with exact-version optional dependencies on every platform package;
+- generate platform-tagged `topchester-ai` versions such as `0.77.0-darwin-arm64` and `0.77.0-linux-x64` with npm `os`, `cpu`, and optional `libc` constraints;
+- generate the stable `topchester-ai` launcher with exact `npm:` aliases from local platform names to those tagged versions;
 - add an install-time selector that chooses and verifies the matching binary and reports an actionable error when install scripts or optional dependencies are disabled;
 - preserve argument forwarding, signals, exit codes, self-update detection, and `topchester --version` through npm, pnpm, and Bun installs;
-- install a locally packed meta-package into isolated prefixes and prove that the final command runs with Bun absent from `PATH`.
+- install a locally packed launcher into isolated prefixes and prove that the final command runs with Bun absent from `PATH`.
 
-Expected output: local npm tarballs for the meta-package and every supported platform package.
+Expected output: local npm tarballs for the stable launcher and every supported platform-tagged version, all using the `topchester-ai` registry identity.
 
 Verification: isolated global-style installs with npm, pnpm, and Bun; `--version`, product knowledge, skills, noninteractive smoke, and PTY lifecycle checks from the installed command.
+
+Implemented:
+
+- `scripts/package/build-npm-release.ts` stages four constrained platform-tagged versions of `topchester-ai` and a small stable launcher whose optional dependencies alias local platform names to those exact versions.
+- The launcher postinstall selects the current OS, CPU, and libc alias, copies the executable into the public npm bin path, verifies it, and leaves an actionable placeholder when install scripts are disabled.
+- The root package is private; only generated directories under `dist/npm/` are publishable.
+- Package validation locally packs and installs the generated launcher plus its Darwin ARM64 aliased dependency, then checks version, product knowledge, skills, and a Bun-free `PATH`.
+- The production PTY smoke now launches that installed native executable directly and preserves the interaction, resize, Ctrl-C, signal, and terminal-cleanup contract.
+- Compiled executable paths participate in npm, pnpm, and Bun self-update manager detection.
+
+Local verification:
+
+- `mise run package-check` passed for Darwin ARM64 on 2026-07-17 after the single-identity alias refactor. It packed `topchester-ai@0.76.0-darwin-arm64`, installed it through the `topchester-ai-darwin-arm64` local alias, and ran the CLI with Bun absent from `PATH`.
+- `mise run opentui-pty-smoke` passed for the installed Darwin ARM64 npm launcher on 2026-07-17.
+- pnpm and Bun global installation remain unverified and are not part of the first documented install contract.
 
 Dependencies: Slice 12.
 
 ### Slice 14: Integrate release CI, provenance, and signing
 
-Status: [ ] Not started
+Status: [~] npm release automation implemented; live publication pending
 
 Goal: make platform artifacts and npm packages a single atomic, recoverable release.
 
@@ -1033,20 +1062,41 @@ This slice should implement:
 
 - build and test platform executables before publishing any package;
 - sign Windows executables and establish the macOS CLI signing/notarization policy;
-- publish platform packages before the `topchester-ai` meta-package with the same exact version and npm provenance;
+- publish platform-tagged versions under target-specific dist-tags before the stable `topchester-ai` launcher, with npm provenance throughout;
 - attach native archives and checksums to the GitHub release;
 - fix the existing version-bump ordering, product-pack version synchronization, and hard-coded `0.76.0` package assertion before enabling publication;
 - ensure partial publication can be retried without changing package contents.
 
-Expected output: a prerelease workflow that publishes a complete target set or stops before the public meta-package.
+Expected output: a prerelease workflow that publishes a complete target set or stops before the public stable launcher.
 
 Verification: registry prerelease installed on clean Darwin, Linux, and Windows hosts, with artifact signatures/checksums verified.
+
+Implemented:
+
+- The publish workflow blocks on four native package and PTY preflight jobs.
+- Version bumping now happens before product-knowledge synchronization and executable compilation, so the embedded product source matches the published version.
+- The release job runs the extended repository checks, prepares target-native dependencies, cross-builds all four executables, and stages the generated npm graph.
+- `scripts/package/publish-npm-release.ts` verifies that every artifact uses the `topchester-ai` identity, publishes platform-tagged versions before the stable launcher, uses npm provenance, and skips already-published exact versions so a partially completed job can be rerun.
+- The workflow uses the existing `topchester-ai` trusted publisher and OIDC for every artifact. No `NPM_TOKEN` or new package bootstrap is required because platform binaries are versions of the existing package, not new registry package names.
+- The release commit includes the regenerated versioned product-knowledge pack.
+
+Local verification:
+
+- `mise run release-build` staged the stable launcher plus Darwin ARM64/x64 and glibc Linux ARM64/x64 versions, all named `topchester-ai`, on 2026-07-17.
+- Platform versions are `0.76.0-<target>` and publish under matching target dist-tags; the stable `0.76.0` launcher publishes last and is the only artifact that advances `latest`.
+- Both modified workflow files parse as YAML, and the publish workflow contains no npm token environment variable.
+
+Remaining:
+
+- Exercise trusted publication against npm and install that registry version on all four native runners.
+- Add checksums/GitHub release archives if direct binary downloads become a supported channel.
+- Establish macOS signing/notarization policy before advertising signed direct-download binaries.
 
 Dependencies: Slice 13 and release credentials/signing infrastructure.
 
 ### Slice 15: Cut over the supported install contract
 
-Status: [ ] Not started
+Status: [~] Local contract cut over; stable registry evidence pending
 
 Goal: make the standalone executable the supported npm-installed Topchester runtime.
 
@@ -1064,14 +1114,22 @@ Expected output: `topchester` runs from npm without Bun installed on every docum
 
 Verification: clean-machine installation and the complete release smoke matrix against the stable npm version.
 
+Implemented:
+
+- README and getting-started documentation now describe Node/npm as the installer, Bun as contributor-only, and the initial macOS/glibc Linux ARM64/x64 support matrix.
+- The generated npm package contains no Bun engine requirement and invokes the standalone executable.
+- Source builds keep the Bun-targeted development artifact as a separate contributor path.
+
+Remaining: publish and verify the first registry version before marking this slice done.
+
 Dependencies: Slice 14 prerelease evidence.
 
-### Open questions
+### Distribution decisions and follow-ups
 
-- Is Windows ARM64 part of the first supported release or a follow-up after Windows x64?
-- Do we require baseline x64 executables for machines without AVX2, matching OpenCode's compatibility policy?
-- Should Linux musl be first-class in npm or initially distributed only as a release archive?
-- Do we retain a Bun-script fallback package for one stable release, or only for prereleases?
+- Windows ARM64/x64 are follow-ups and are not exposed by the first launcher.
+- Both macOS and Linux x64 executables use Bun baseline targets; no AVX2 selector is needed in the first package graph.
+- Linux musl is a follow-up and gets an explicit unsupported-target error from postinstall.
+- The already-published Bun-backed version is the rollback point. The next release replaces the `topchester-ai` artifact with the native selector rather than publishing a second Bun fallback from this source tree.
 
 ## Decision log
 
@@ -1114,10 +1172,27 @@ Future implementation work should append dated decisions and verified progress h
 ### 2026-07-17: production OpenTUI cutover
 
 - The disposable feature branch is the rollback boundary. The implementation cut directly to OpenTUI once controller, renderer, package, and PTY proofs passed, then removed pi-tui and the temporary spikes instead of shipping a dual-renderer flag.
-- Bun `>=1.3` is the only supported packaged CLI runtime. Node remains contributor tooling; there is no Node-to-Bun launcher handoff or second execution path.
+- Bun `>=1.3` was the packaged CLI runtime for the OpenTUI migration itself. The standalone distribution follow-up below supersedes that artifact with compiled executables while retaining Bun for source and contributor workflows.
 - Stable output uses append-only split-footer commits. New, forked, and restored sessions append a visible boundary and replay below it; Topchester never invokes OpenTUI's destructive saved-line reset.
 - Application behavior lives in `src/chat/`; OpenTUI components own presentation, local edit/focus state, and input translation. Import-boundary tests enforce both directions.
 - OpenTUI `0.4.4` Markdown remains on its streaming draw path for stable entries because that is the only path that synchronously exposes unhighlighted content to split-footer snapshots. The workaround is local to `ThreadEntry` and has direct renderer coverage.
 - Package and PTY validation use an isolated npm installation of the real tarball. The PTY gate covers streamed interaction, resize, dialog cancellation, two-stage Ctrl-C, `SIGTERM`, `SIGHUP`, alternate-screen rejection, cursor restoration, and bracketed-paste shutdown; the Bun renderer test covers a forced mount failure.
 - Broader UI patterns—panes, tabs, mouse navigation, command palettes, and collapsible histories—remain follow-up product work. The migration provides reusable controller, transcript, theme, dialog, suggestion, composer, and lifecycle seams without changing the first-release interaction model.
 - Final gate: `mise run local-ci` passed on 2026-07-17. It verified formatting for 456 files; lint/type checking for 208 files; 38 Node suites with 626 tests; the production Bun renderer; 32-source product-knowledge freshness; a 54-file isolated package with `@opentui/core-darwin-arm64`; and the packed OpenTUI PTY lifecycle smoke.
+
+### 2026-07-17: standalone npm distribution implementation
+
+- The first generated package matrix covers macOS and glibc Linux on ARM64/x64. x64 uses baseline Bun runtimes; Windows and musl remain explicit follow-ups.
+- `topchester-ai` remains the only registry package identity. Native executables publish first as platform-tagged versions, and the stable launcher aliases the matching version through an exact optional dependency.
+- Trusted publishing remains tokenless: the existing `topchester-ai` OIDC configuration authorizes every platform-tagged version and the stable launcher.
+- End users on the documented npm path need Node/npm to install but do not need Bun to run Topchester. Bun remains the source and contributor runtime.
+- The source root is private to prevent accidental publication of the former Bun-script artifact. The publish workflow is the only supported release path.
+- Local Darwin ARM64 evidence covers isolated npm pack/install, Bun-free version/product-knowledge/skill commands, and the full OpenTUI PTY lifecycle. Four native GitHub Actions jobs are the remaining pre-publication evidence.
+
+### 2026-07-17: single npm identity correction
+
+- OpenCode's native npm release uses distinct platform package names hidden behind `opencode-ai`, but distinct registry identities are not required for platform selection.
+- The adopted model follows Codex: publish native artifacts as platform-tagged versions of the existing `topchester-ai` package and reference them through `npm:` optional-dependency aliases in the stable launcher.
+- This keeps the existing trusted-publisher boundary intact. `publish-npm.yml` uses Node 24 plus OIDC and intentionally has no `NODE_AUTH_TOKEN` or `NPM_TOKEN` fallback.
+- `mise run local-ci-extended` passed after the refactor on 2026-07-17: formatting for 463 files, lint and type checking for 215 files, 38 test files with 627 tests, production OpenTUI, product-knowledge freshness, isolated native npm install, and the native npm PTY lifecycle.
+- `mise run release-build` then staged all four executable targets and five npm artifact directories under the single `topchester-ai` identity.

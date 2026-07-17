@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { getCurrentStandaloneTarget } from "../standalone/targets.js";
 import { startFakeApi } from "../smoke/fake-api.js";
 
 const run = promisify(execFile);
@@ -13,34 +14,24 @@ const root = process.cwd();
 const destination = await mkdtemp(join(tmpdir(), "topchester-opentui-pty-"));
 const fakeApi = await startFakeApi();
 const maxBuffer = 30 * 1024 * 1024;
+const npmExecutable = join(dirname(process.execPath), process.platform === "win32" ? "npm.cmd" : "npm");
+const target = getCurrentStandaloneTarget();
 
 try {
-  await run("vp", ["run", "build"], { cwd: root, maxBuffer });
-  const { stdout } = await run("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", destination], {
-    cwd: root,
-    env: { ...process.env, npm_config_cache: join(destination, "npm-cache") },
-    maxBuffer,
-  });
-  const filename = (JSON.parse(stdout) as Array<{ filename?: string }>)[0]?.filename;
-  assert.ok(filename, "npm pack did not report an artifact filename");
+  await run("vp", ["run", "build:standalone"], { cwd: root, maxBuffer });
+  await run("vp", ["run", "build:npm-release"], { cwd: root, maxBuffer });
+  const platformPackage = await packPackage(join(root, "dist", "npm", target.npmAliasName));
+  const metaDirectory = join(root, "dist", "npm", "topchester-ai");
+  await useLocalPlatformTarball(metaDirectory, platformPackage);
+  const metaPackage = await packPackage(metaDirectory);
 
   const prefix = join(destination, "installed");
   await run(
-    "npm",
-    [
-      "install",
-      "--ignore-scripts",
-      "--no-audit",
-      "--no-fund",
-      "--loglevel",
-      "error",
-      "--prefix",
-      prefix,
-      join(destination, filename),
-    ],
+    npmExecutable,
+    ["install", "--no-audit", "--no-fund", "--loglevel", "error", "--prefix", prefix, metaPackage],
     {
       cwd: root,
-      env: { ...process.env, npm_config_cache: join(destination, "npm-cache") },
+      env: npmEnvironment(),
       maxBuffer,
       timeout: 120_000,
     }
@@ -68,18 +59,19 @@ try {
     )}\n`
   );
 
-  const cli = join(prefix, "node_modules", "topchester-ai", "dist", "bin.mjs");
+  const cli = join(prefix, "node_modules", ".bin", "topchester");
+  const installedVersion = await run(cli, ["--version"], {
+    env: { ...process.env, HOME: destination, PATH: "/usr/bin:/bin" },
+    maxBuffer,
+  });
+  assert.match(installedVersion.stdout, /^\d+\.\d+\.\d+/u, "the installed native CLI did not start directly");
   const runPty = async (mode: "interactive" | "sigterm" | "sighup", output: string) =>
-    run(
-      "/usr/bin/expect",
-      [join(root, "scripts", "opentui", "pty-smoke.exp"), mode, "bun", cli, config, workspace, output],
-      {
-        cwd: root,
-        env: { ...process.env, HOME: destination },
-        maxBuffer,
-        timeout: 90_000,
-      }
-    );
+    run("/usr/bin/expect", [join(root, "scripts", "opentui", "pty-smoke.exp"), mode, cli, config, workspace, output], {
+      cwd: root,
+      env: { ...process.env, HOME: destination },
+      maxBuffer,
+      timeout: 90_000,
+    });
   await runPty("interactive", capture);
   const signalCaptures: Buffer[] = [];
   for (const mode of ["sigterm", "sighup"] as const) {
@@ -109,8 +101,40 @@ try {
     "the packed CLI did not submit the typed prompt to the mocked model"
   );
 
-  process.stdout.write("Packed OpenTUI PTY smoke: pass\n");
+  process.stdout.write("Native npm OpenTUI PTY smoke: pass\n");
 } finally {
   await fakeApi.close();
   await rm(destination, { recursive: true, force: true });
+}
+
+async function packPackage(directory: string): Promise<string> {
+  const { stdout } = await run(
+    npmExecutable,
+    ["pack", "--ignore-scripts", "--json", "--pack-destination", destination],
+    {
+      cwd: directory,
+      env: npmEnvironment(),
+      maxBuffer,
+    }
+  );
+  const filename = (JSON.parse(stdout) as Array<{ filename?: string }>)[0]?.filename;
+  assert.ok(filename, `npm pack did not report an artifact for ${directory}`);
+  return join(destination, filename);
+}
+
+async function useLocalPlatformTarball(metaDirectory: string, platformTarball: string): Promise<void> {
+  const path = join(metaDirectory, "package.json");
+  const metadata = JSON.parse(await readFile(path, "utf8")) as {
+    optionalDependencies?: Record<string, string>;
+  };
+  metadata.optionalDependencies = { [target.npmAliasName]: `file:${platformTarball}` };
+  await writeFile(path, `${JSON.stringify(metadata, null, 2)}\n`);
+}
+
+function npmEnvironment(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { npm_config_cache: join(destination, "npm-cache") };
+  for (const key of ["PATH", "HOME", "TMPDIR", "TMP", "TEMP", "SystemRoot", "ComSpec"] as const) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  return env;
 }

@@ -10,7 +10,8 @@ If you have used tools like Codex, Claude Code, or OpenCode, the shape should fe
 
 Requirements:
 
-- Bun `>=1.3`
+- Node.js `>=18` and npm for installation. The installed Topchester runtime is a standalone executable and does not require Bun.
+- macOS or glibc Linux on ARM64 or x64. Windows and musl Linux are not included in the first standalone release.
 - A model provider key. The example below uses OpenRouter.
 
 Install the CLI:
@@ -159,7 +160,7 @@ mise run package-check
 mise run opentui-pty-smoke
 ```
 
-The repository pins Bun, Node, and pnpm through mise. Bun runs the CLI and OpenTUI renderer; Node remains a contributor tool for repository scripts.
+The repository pins Bun, Node, and pnpm through mise. Bun builds and runs the CLI from source; published npm installs run the compiled standalone executable.
 
 The package name is `topchester-ai`; the installed command is `topchester`.
 

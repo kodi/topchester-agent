@@ -7,7 +7,7 @@
   "language": "markdown",
   "content_hash": "sha256:8ead8db5ece4091887d90e536e22a0b7388325f8aa8ecb01d19b9fc1ec0fd977",
   "size_bytes": 1118,
-  "last_scanned_at": "2026-07-17T01:17:59.105Z",
+  "last_scanned_at": "2026-07-17T02:52:41.395Z",
   "scan_status": "current",
   "file_role": "config",
   "summary": "Explain Topchester commands, configuration, knowledge-base behavior, skills, hooks, sessions, and troubleshooting using version-matched product guidance and current workspace facts.",

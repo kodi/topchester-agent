@@ -37,12 +37,20 @@ jobs:
         run: mise run local-ci
 
   package-platforms:
-    name: Package (${{ matrix.os }})
+    name: Native npm package (${{ matrix.target }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        include:
+          - runner: ubuntu-latest
+            target: linux-x64
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+          - runner: macos-15-intel
+            target: darwin-x64
+          - runner: macos-latest
+            target: darwin-arm64
+    runs-on: ${{ matrix.runner }}
     env:
       VITE_GIT_HOOKS: "0"
 
@@ -62,8 +70,15 @@ jobs:
           install: true
           cache: true
 
+      - name: Install PTY test dependency
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y expect
+
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
-      - name: Check isolated package
+      - name: Check isolated native npm package
         run: mise run package-check
+
+      - name: Check native npm PTY lifecycle
+        run: mise run opentui-pty-smoke

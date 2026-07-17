@@ -69,8 +69,8 @@ run = "vp check"
 depends = ["format-check", "lint", "typecheck"]
 
 [tasks.local-ci-extended]
-depends = ["local-ci", "test", "knowledge-product-check", "package-check"]
-run = "mise run opentui-pty-smoke"
+depends = ["local-ci", "test", "knowledge-product-check"]
+run = "mise run native-package-check"
 
 [tasks.knowledge-product-sync]
 dir = "{{config_root}}"
@@ -84,9 +84,29 @@ run = "vp run knowledge-product-check"
 dir = "{{config_root}}"
 run = "vp run package-check"
 
+[tasks.native-package-check]
+depends = ["package-check"]
+run = "mise run opentui-pty-smoke"
+
 [tasks.build-standalone]
 dir = "{{config_root}}"
 run = "vp run build:standalone"
+
+[tasks.build-standalone-all]
+dir = "{{config_root}}"
+run = "vp run build:standalone:all"
+
+[tasks.build-npm-release]
+dir = "{{config_root}}"
+run = "vp run build:npm-release"
+
+[tasks.prepare-standalone-targets]
+dir = "{{config_root}}"
+run = "vp run prepare:standalone-targets"
+
+[tasks.release-build]
+dir = "{{config_root}}"
+run = "vp run release:build"
 
 [tasks.standalone-check]
 dir = "{{config_root}}"

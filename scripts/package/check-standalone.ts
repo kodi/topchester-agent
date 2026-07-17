@@ -3,19 +3,13 @@ import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { getCurrentStandaloneTarget } from "../standalone/targets.js";
 
 const run = promisify(execFile);
 const root = process.cwd();
 const destination = await mkdtemp(join(tmpdir(), "topchester-standalone-check-"));
-const executableName = process.platform === "win32" ? "topchester.exe" : "topchester";
-const executable = join(
-  root,
-  "dist",
-  "standalone",
-  `topchester-${process.platform}-${process.arch}`,
-  "bin",
-  executableName
-);
+const target = getCurrentStandaloneTarget();
+const executable = join(root, "dist", "standalone", target.directoryName, "bin", target.executableName);
 const packageMetadata = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { version?: unknown };
 
 try {
@@ -56,9 +50,7 @@ try {
   }
 
   const bytes = (await stat(executable)).size;
-  console.log(
-    `Standalone ${process.platform}-${process.arch} CLI passes without Bun on PATH (${(bytes / 1024 / 1024).toFixed(1)} MiB).`
-  );
+  console.log(`Standalone ${target.id} CLI passes without Bun on PATH (${(bytes / 1024 / 1024).toFixed(1)} MiB).`);
 } finally {
   await rm(destination, { recursive: true, force: true });
 }

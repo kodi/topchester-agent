@@ -1,12 +1,12 @@
 #!/usr/bin/expect -f
 
 set timeout 45
-if {$argc != 6} {
-  puts stderr "usage: pty-smoke.exp <mode> <bun> <cli> <config> <workspace> <capture>"
+if {$argc != 5} {
+  puts stderr "usage: pty-smoke.exp <mode> <cli> <config> <workspace> <capture>"
   exit 2
 }
 
-lassign $argv mode bun cli config workspace capture
+lassign $argv mode cli config workspace capture
 log_file -noappend $capture
 set env(TERM) "xterm-256color"
 set env(COLORTERM) "truecolor"
@@ -14,7 +14,7 @@ set env(NO_COLOR) "1"
 set env(TOPCHESTER_LOG_LEVEL) "silent"
 set env(TOPCHESTER_LOG_FILE) ""
 
-spawn -noecho $bun $cli --config $config --workspace $workspace
+spawn -noecho $cli --config $config --workspace $workspace
 
 expect {
   -re {Ask Topchester} {}
