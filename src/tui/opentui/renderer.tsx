@@ -39,14 +39,21 @@ export async function runOpenTui(
   let rendererToDestroy: CliRenderer | undefined;
   let syntaxStyleToDestroy: ReturnType<typeof createTopchesterSyntaxStyle> | undefined;
   let finish: () => void = () => {};
+  let fail: (error: unknown) => void = () => {};
   let finished = false;
   let interruptCount = 0;
   let interruptTimer: ReturnType<typeof setTimeout> | undefined;
-  const done = new Promise<void>((resolve) => {
+  const done = new Promise<void>((resolve, reject) => {
     finish = () => {
       if (!finished) {
         finished = true;
         resolve();
+      }
+    };
+    fail = (error) => {
+      if (!finished) {
+        finished = true;
+        reject(error);
       }
     };
   });
@@ -69,6 +76,7 @@ export async function runOpenTui(
     const renderer = await (options.rendererFactory?.() ?? createProductionRenderer());
     rendererToDestroy = renderer;
     const theme = await resolveTopchesterThemeForRenderer(renderer, { noColor: process.env.NO_COLOR !== undefined });
+    renderer.setBackgroundColor(theme.background);
     const syntaxStyle = createTopchesterSyntaxStyle(theme);
     syntaxStyleToDestroy = syntaxStyle;
     for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
@@ -89,6 +97,7 @@ export async function runOpenTui(
             logger: context.logger,
             onUpdate: () => renderer.requestRender(),
           })}
+          onRenderError={fail}
           onInterrupt={interrupt}
         />
       ),

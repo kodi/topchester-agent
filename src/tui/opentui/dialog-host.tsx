@@ -3,7 +3,7 @@
 import { For, Show } from "solid-js";
 import { type TuiViewState } from "../../chat/controller-state.js";
 import { useTheme } from "./context.js";
-import { getListWindowStart } from "./list-window.js";
+import { ACTIVE_ROW_MARKER, getListWindowStart } from "./list-window.js";
 
 const DIALOG_ACTION_ROWS = 8;
 const DIALOG_BODY_ROWS = 5;
@@ -44,7 +44,7 @@ export function ChoiceDialog(props: {
           const selected = () => absoluteIndex() === props.selectedIndex;
           return (
             <text width="100%" wrapMode="none" fg={selected() ? theme.accent : theme.text}>
-              {selected() ? ">" : " "} {absoluteIndex() + 1}) {action.label}
+              {selected() ? ACTIVE_ROW_MARKER : " "} {absoluteIndex() + 1}) {action.label}
             </text>
           );
         }}
@@ -86,8 +86,8 @@ export function SessionPicker(props: { picker: NonNullable<TuiViewState["session
           const selected = () => absoluteIndex() === props.selectedIndex;
           return (
             <text width="100%" wrapMode="none" fg={selected() ? theme.accent : theme.text}>
-              {selected() ? ">" : " "} {item.updatedAt.slice(0, 16).replace("T", " ")} {item.sessionId.slice(0, 8)}{" "}
-              {item.firstUserPrompt ?? "(no user prompt)"}
+              {selected() ? ACTIVE_ROW_MARKER : " "} {item.updatedAt.slice(0, 16).replace("T", " ")}{" "}
+              {item.sessionId.slice(0, 8)} {item.firstUserPrompt ?? "(no user prompt)"}
             </text>
           );
         }}

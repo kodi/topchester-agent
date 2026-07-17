@@ -1,7 +1,13 @@
 /// <reference types="bun" />
 /** @jsxImportSource @opentui/solid */
 
-import { RGBA, SyntaxStyle, type TextareaRenderable } from "@opentui/core";
+import {
+  CliRenderEvents,
+  RGBA,
+  SyntaxStyle,
+  type CliRendererExternalOutputEvent,
+  type TextareaRenderable,
+} from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
 import { testRender } from "@opentui/solid";
 import assert from "node:assert/strict";
@@ -15,7 +21,7 @@ import { reasoningTranscriptEntry, type TranscriptEntry } from "../../src/chat/i
 import { TopchesterApp } from "../../src/tui/opentui/app.js";
 import { runOpenTui } from "../../src/tui/opentui/renderer.js";
 import { ThreadEntry } from "../../src/tui/opentui/thread-entry.js";
-import { resolveTopchesterTheme } from "../../src/tui/opentui/theme.js";
+import { createTopchesterSyntaxStyle, resolveTopchesterTheme } from "../../src/tui/opentui/theme.js";
 import { TranscriptWriter } from "../../src/tui/opentui/transcript-writer.js";
 import { createTestContext } from "../../test/app-context.fixtures.js";
 
@@ -53,7 +59,17 @@ process.stdout.write("Production OpenTUI Bun renderer: pass\n");
 async function testAppSurface(): Promise<void> {
   const workspace = await mkdtemp(join(tmpdir(), "topchester-opentui-app-"));
   const submitted: string[] = [];
-  const controller = await TopchesterTuiController.create(createTestContext(workspace), createRuntime(submitted));
+  const context = createTestContext(workspace);
+  context.config = {
+    ...context.config,
+    models: {
+      choices: Array.from({ length: 10 }, (_, index) => ({
+        provider: "openrouter",
+        name: index === 0 ? "provider/very-long-model-name-that-must-be-cleared" : `provider/model-${index + 1}`,
+      })),
+    },
+  };
+  const controller = await TopchesterTuiController.create(context, createRuntime(submitted));
   const syntaxStyle = SyntaxStyle.create();
   const theme = resolveTopchesterTheme();
   let interrupts = 0;
@@ -78,7 +94,13 @@ async function testAppSurface(): Promise<void> {
     assert.match(setup.captureCharFrame(), /Ask Topchester/u);
     assert.match(setup.captureCharFrame(), /not set/u);
 
-    await setup.mockInput.typeText("/mo");
+    await setup.mockInput.typeText("/");
+    await setup.flush();
+    assert.ok(setup.renderer.footerHeight >= 10);
+    assert.match(setup.captureCharFrame(), /\/model all/u);
+    assert.match(setup.captureCharFrame(), /\/connect/u);
+
+    await setup.mockInput.typeText("mo");
     await setup.flush();
     assert.match(setup.captureCharFrame(), /\/model/u);
 
@@ -88,7 +110,10 @@ async function testAppSurface(): Promise<void> {
     controller.submitCommand("/connect");
     await controller.waitForIdle();
     await setup.flush();
+    assert.ok(setup.renderer.footerHeight >= 10);
     assert.match(setup.captureCharFrame(), /Connect provider/u);
+    assert.match(setup.captureCharFrame(), /OpenRouter/u);
+    assert.match(setup.captureCharFrame(), /Cancel/u);
     assert.equal(composer.focused, false);
 
     await setup.mockInput.typeText(" draft stays");
@@ -99,6 +124,28 @@ async function testAppSurface(): Promise<void> {
     assert.equal(composer.focused, true);
     assert.match(setup.captureCharFrame(), /\/mo/u);
     assert.doesNotMatch(setup.captureCharFrame(), /draft stays/u);
+
+    composer.setText("");
+    await setup.mockInput.typeText("/model");
+    setup.mockInput.pressEnter();
+    await controller.waitForIdle();
+    await setup.flush();
+    assert.ok(setup.renderer.footerHeight >= 16);
+    assert.match(setup.captureCharFrame(), /Choose model/u);
+    assert.match(setup.captureCharFrame(), /very-long-model-name-that-must-be-cleared/u);
+    assert.match(setup.captureCharFrame(), /8\/11/u);
+
+    for (let index = 0; index < 6; index += 1) {
+      setup.mockInput.pressArrow("down");
+    }
+    await setup.flush();
+    assert.doesNotMatch(setup.captureCharFrame(), /very-long-model-name-that-must-be-cleared/u);
+    assert.match(setup.captureCharFrame(), /❯ 7\) provider\/model-7/u);
+    for (let index = 0; index < 4; index += 1) {
+      setup.mockInput.pressArrow("down");
+    }
+    setup.mockInput.pressEnter();
+    await setup.flush();
 
     composer.setText("");
     const pasted = Array.from({ length: 7 }, (_, index) => `line ${index + 1}`).join("\n");
@@ -141,8 +188,8 @@ async function testTranscriptWriter(): Promise<void> {
   const controller = await TopchesterTuiController.create(createTestContext(workspace), createRuntime(), {
     banner: "TOPCHESTER",
   });
-  const syntaxStyle = SyntaxStyle.create();
   const theme = resolveTopchesterTheme();
+  const syntaxStyle = createTopchesterSyntaxStyle(theme);
   const setup = await testRender(() => <box />, {
     width: 80,
     height: 24,
@@ -154,10 +201,72 @@ async function testTranscriptWriter(): Promise<void> {
   try {
     writer.sync(setup.renderer, controller.getSnapshot(), theme, syntaxStyle);
     writer.sync(setup.renderer, controller.getSnapshot(), theme, syntaxStyle);
+    await writer.idle();
     await setup.flush();
     const output = setup.externalOutput.take();
     assert.equal(output.length, 1);
     assert.match(output[0]?.text ?? "", /TOPCHESTER/u);
+
+    let keywordColor: number[] | undefined;
+    const captureHighlight = (event: CliRendererExternalOutputEvent) => {
+      const keyword = event.snapshot
+        .getSpanLines()
+        .flatMap((line) => line.spans)
+        .find((span) => span.text === "const");
+      keywordColor = keyword?.fg.toInts();
+    };
+    setup.renderer.on(CliRenderEvents.EXTERNAL_OUTPUT, captureHighlight);
+    try {
+      const markdownTranscript: TranscriptEntry[] = [
+        {
+          kind: "assistant",
+          persistence: "session",
+          text: [
+            "### YAML",
+            "",
+            "```yaml",
+            "server:",
+            "  port: 8080",
+            "```",
+            "",
+            "### TypeScript",
+            "",
+            "```typescript",
+            "const answer: number = 42;",
+            "```",
+            "",
+            "### Go",
+            "",
+            "```go",
+            "package main",
+            "```",
+          ].join("\n"),
+        },
+      ];
+      const markdownSnapshot = { ...controller.getSnapshot(), transcript: markdownTranscript };
+      writer.sync(setup.renderer, markdownSnapshot, theme, syntaxStyle);
+      writer.sync(setup.renderer, markdownSnapshot, theme, syntaxStyle);
+      await writer.idle();
+      await setup.flush();
+    } finally {
+      setup.renderer.off(CliRenderEvents.EXTERNAL_OUTPUT, captureHighlight);
+    }
+    const markdownOutput = setup.externalOutput.take();
+    assert.equal(markdownOutput.length, 1);
+    const markdownText = markdownOutput[0]?.text ?? "";
+    for (const marker of [
+      "YAML",
+      "server:",
+      "port: 8080",
+      "TypeScript",
+      "const answer: number = 42;",
+      "Go",
+      "package main",
+    ]) {
+      assert.match(markdownText, new RegExp(marker, "u"));
+    }
+    assert.doesNotMatch(markdownText, /```|###/u);
+    assert.deepEqual(keywordColor, RGBA.fromHex(theme.accent).toInts());
 
     writer.sync(
       setup.renderer,
@@ -181,12 +290,14 @@ async function testTranscriptWriter(): Promise<void> {
       theme,
       syntaxStyle
     );
+    await writer.idle();
     await setup.flush();
     const replay = setup.externalOutput.take();
     assert.equal(replay.length, 2);
     assert.match(replay.map((entry) => entry.text).join("\n"), /session restored/u);
     assert.match(replay.map((entry) => entry.text).join("\n"), /restored prompt/u);
   } finally {
+    writer.dispose();
     await controller.dispose();
     setup.renderer.destroy();
     syntaxStyle.destroy();
@@ -349,7 +460,7 @@ async function testNoColorSelection(): Promise<void> {
 
   try {
     await setup.renderOnce();
-    assert.match(setup.captureCharFrame(), /> 1\) OpenRouter/u);
+    assert.match(setup.captureCharFrame(), /❯ 1\) OpenRouter/u);
   } finally {
     await controller.dispose();
     setup.renderer.destroy();
@@ -373,6 +484,12 @@ async function testRenderFailureCleanup(): Promise<void> {
   setup.renderer.root.add = () => {
     throw failure;
   };
+  const setBackgroundColor = setup.renderer.setBackgroundColor.bind(setup.renderer);
+  let backgroundWasSet = false;
+  setup.renderer.setBackgroundColor = (color) => {
+    backgroundWasSet = true;
+    setBackgroundColor(color);
+  };
   const restoreStdinTty = overrideProperty(process.stdin, "isTTY", true);
   const restoreStdoutTty = overrideProperty(process.stdout, "isTTY", true);
   const signalCounts = ["SIGINT", "SIGTERM", "SIGHUP"].map((signal) => process.listenerCount(signal));
@@ -390,6 +507,7 @@ async function testRenderFailureCleanup(): Promise<void> {
       ["SIGINT", "SIGTERM", "SIGHUP"].map((signal) => process.listenerCount(signal)),
       signalCounts
     );
+    assert.equal(backgroundWasSet, true);
   } finally {
     restoreStdinTty();
     restoreStdoutTty();

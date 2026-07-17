@@ -17,12 +17,13 @@ export interface TopchesterAppProps {
   syntaxStyle: SyntaxStyle;
   renderer?: CliRenderer;
   mentionProvider?: FileMentionProvider;
+  onRenderError?(error: unknown): void;
   onInterrupt(): void;
 }
 
 export function TopchesterApp(props: TopchesterAppProps) {
   const [snapshot, setSnapshot] = createSignal(props.initialSnapshot);
-  const writer = new TranscriptWriter();
+  const writer = new TranscriptWriter((error) => props.onRenderError?.(error));
   const unsubscribe = props.controller.subscribe(setSnapshot);
 
   createEffect(() => {
@@ -31,7 +32,10 @@ export function TopchesterApp(props: TopchesterAppProps) {
       writer.sync(props.renderer, next, props.theme, props.syntaxStyle);
     }
   });
-  onCleanup(unsubscribe);
+  onCleanup(() => {
+    unsubscribe();
+    writer.dispose();
+  });
 
   return (
     <ControllerProvider controller={props.controller} snapshot={snapshot}>

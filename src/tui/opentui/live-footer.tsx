@@ -23,7 +23,7 @@ export function LiveFooter(props: { mentionProvider?: FileMentionProvider; onInt
   const { controller, snapshot } = useController();
   const theme = useTheme();
   const renderer = useRenderer();
-  const dimensions = useTerminalDimensions();
+  const renderDimensions = useTerminalDimensions();
   const composerState = new ComposerState();
   const [draft, setDraft] = createSignal("");
   const [selection, setSelection] = createSignal(0);
@@ -99,7 +99,13 @@ export function LiveFooter(props: { mentionProvider?: FileMentionProvider; onInt
   });
 
   createEffect(() => {
-    const height = dimensions().height;
+    // In split-footer mode, useTerminalDimensions() reports the live footer
+    // surface rather than the physical terminal. Keep the hook as the resize
+    // signal, but use the renderer's terminal height when bounding the footer;
+    // otherwise each footer-height update feeds a smaller height back into this
+    // effect until dialogs and suggestions collapse to the six-row minimum.
+    renderDimensions();
+    const height = renderer.terminalHeight;
     const next = estimateFooterHeight(snapshot(), activeChoice(), visibleSuggestions().length, draft());
     const footerHeight = Math.max(6, Math.min(Math.max(6, height - 2), next));
     if (renderer.footerHeight !== footerHeight) renderer.footerHeight = footerHeight;
@@ -154,7 +160,7 @@ export function LiveFooter(props: { mentionProvider?: FileMentionProvider; onInt
           if (item) controller.selectSession(item.sessionId);
         },
         () => controller.cancelSessionPicker(),
-        dimensions().height
+        renderer.terminalHeight
       );
       return;
     }

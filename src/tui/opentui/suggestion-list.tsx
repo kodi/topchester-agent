@@ -2,7 +2,7 @@
 
 import { For, Show } from "solid-js";
 import { useTheme } from "./context.js";
-import { getListWindowStart } from "./list-window.js";
+import { ACTIVE_ROW_MARKER, getListWindowStart } from "./list-window.js";
 
 export interface SuggestionListProps {
   items: readonly string[];
@@ -17,14 +17,14 @@ export function SuggestionList(props: SuggestionListProps) {
   const visibleItems = () => props.items.slice(windowStart(), windowStart() + visibleRows());
 
   return (
-    <box width="100%" maxHeight={visibleRows() + 1} flexDirection="column">
+    <box width="100%" maxHeight={visibleRows() + 1} flexDirection="column" backgroundColor={theme.overlay}>
       <For each={visibleItems()}>
         {(item, index) => {
           const absoluteIndex = () => windowStart() + index();
           const selected = () => absoluteIndex() === props.selectedIndex;
           return (
             <text width="100%" wrapMode="none" fg={selected() ? theme.accent : theme.muted}>
-              {selected() ? ">" : " "} {item}
+              {selected() ? ACTIVE_ROW_MARKER : " "} {item}
             </text>
           );
         }}
