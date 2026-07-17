@@ -896,8 +896,8 @@ describe("CLI integration", () => {
     expect(stdout).toContain(`workspace: ${fixture.workspace}`);
     expect(stdout).toContain(`knowledge folder: ${join(fixture.workspace, "topchester-kb")} [missing]`);
     expect(stdout).toContain("non-clean files: 1");
-    expect(stdout).toContain("non-clean files: 1\n\nmissing_entry\tsrc/index.ts");
-    expect(stdout).toContain("missing_entry\tsrc/index.ts");
+    expect(stdout).toContain("non-clean files: 1\n\nstatus             size  path");
+    expect(stdout).toMatch(/missing_entry {2,}\d+ bytes {2}src\/index\.ts/u);
     expect(stdout).toContain("----\ntotal non-clean files: 1");
   });
 
@@ -1272,8 +1272,8 @@ describe("CLI integration", () => {
     expect(stdout).toContain("KB dry run");
     expect(stdout).toContain("config ignore rules: 1");
     expect(stdout).toContain("files: 2");
-    expect(stdout).toContain("missing_entry\t.gitignore");
-    expect(stdout).toContain("missing_entry\tsrc/index.ts");
+    expect(stdout).toMatch(/missing_entry {2,}\d+ bytes {2}\.gitignore/u);
+    expect(stdout).toMatch(/missing_entry {2,}\d+ bytes {2}src\/index\.ts/u);
     expect(stdout).toContain("----\ntotal files: 2");
     expect(stdout).not.toContain("sha256:");
     expect(stdout).not.toContain("topchester.jsonc");
@@ -1316,7 +1316,8 @@ describe("CLI integration", () => {
       { FORCE_COLOR: "1", NO_COLOR: "" }
     );
 
-    expect(stdout).toContain("\u001b[33mmissing_entry\u001b[0m\tsrc/index.ts");
+    const coloredStatusLine = stdout.split("\n").find((line) => line.includes("\u001b[33mmissing_entry\u001b[0m"));
+    expect(coloredStatusLine).toMatch(/ {2,}\d+ bytes {2}src\/index\.ts$/u);
   });
 
   it("fails full sync clearly when no kb.summarize model or fallback is configured", async () => {

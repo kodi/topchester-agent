@@ -266,6 +266,8 @@ function formatKnowledgeCompileInventoryResult(
     formatSyncStatus?: (status: L1FileScanStatus) => string;
   }
 ): string[] {
+  const fileRows = formatKnowledgeCompileFileRows(result.files, options.formatSyncStatus);
+
   return [
     options.title,
     `workspace: ${result.workspaceRoot}`,
@@ -274,13 +276,31 @@ function formatKnowledgeCompileInventoryResult(
     `config ignore rules: ${result.configIgnorePathCount}`,
     `${options.countLabel}: ${result.files.length}`,
     ...(result.files.length === 0 && options.emptyState ? [options.emptyState] : []),
-    ...(result.files.length > 0 && options.emptyState ? [""] : []),
-    ...result.files.map((file) => {
-      const status = options.formatSyncStatus ? options.formatSyncStatus(file.syncStatus) : file.syncStatus;
-      return `${status}\t${file.path}\t${file.sizeBytes} bytes`;
-    }),
+    ...(fileRows.length > 0 ? ["", ...fileRows] : []),
     "----",
     `total ${options.countLabel}: ${result.files.length}`,
+  ];
+}
+
+function formatKnowledgeCompileFileRows(
+  files: KnowledgeCompileDryRunFile[],
+  formatSyncStatus?: (status: L1FileScanStatus) => string
+): string[] {
+  if (files.length === 0) {
+    return [];
+  }
+
+  const statusWidth = Math.max("status".length, ...files.map((file) => file.syncStatus.length));
+  const sizes = files.map((file) => `${file.sizeBytes} bytes`);
+  const sizeWidth = Math.max("size".length, ...sizes.map((size) => size.length));
+
+  return [
+    `${"status".padEnd(statusWidth)}  ${"size".padStart(sizeWidth)}  path`,
+    ...files.map((file, index) => {
+      const status = formatSyncStatus ? formatSyncStatus(file.syncStatus) : file.syncStatus;
+      const statusPadding = " ".repeat(statusWidth - file.syncStatus.length);
+      return `${status}${statusPadding}  ${sizes[index]!.padStart(sizeWidth)}  ${file.path}`;
+    }),
   ];
 }
 

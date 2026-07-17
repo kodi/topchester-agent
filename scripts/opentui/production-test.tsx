@@ -16,8 +16,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentEvent } from "../../src/agent/events.js";
 import { type AgentRuntime } from "../../src/agent/runtime/index.js";
+import { formatTuiSyncStatus } from "../../src/agent/runtime/knowledge.js";
 import { TopchesterTuiController } from "../../src/chat/controller.js";
 import { reasoningTranscriptEntry, type TranscriptEntry } from "../../src/chat/index.js";
+import { formatKnowledgeCompileStatusResult } from "../../src/knowledge/compiler/index.js";
 import { getKnowledgeStatus } from "../../src/knowledge/status.js";
 import { TopchesterApp } from "../../src/tui/opentui/app.js";
 import { runOpenTui } from "../../src/tui/opentui/renderer.js";
@@ -236,6 +238,49 @@ async function testTranscriptWriter(): Promise<void> {
     const output = setup.externalOutput.take();
     assert.equal(output.length, 1);
     assert.match(output[0]?.text ?? "", /TOPCHESTER/u);
+
+    const kbStatusText = formatKnowledgeCompileStatusResult(
+      {
+        workspaceRoot: "/repo",
+        kbPath: "/repo/topchester-kb",
+        cachePath: "/repo/.agents/topchester-kb-cache",
+        kbReady: true,
+        gitignoreFiles: [],
+        configIgnorePathCount: 0,
+        files: [
+          {
+            path: ".github/workflows/publish-npm.yml",
+            sizeBytes: 3816,
+            hash: "sha256:changed",
+            syncStatus: "changed",
+          },
+          {
+            path: "skills/topchester/references/skills-hooks-sessions.md",
+            sizeBytes: 509,
+            hash: "sha256:missing",
+            syncStatus: "missing_entry",
+          },
+        ],
+      },
+      { formatSyncStatus: formatTuiSyncStatus }
+    ).join("\n");
+    const kbStatusSnapshot = {
+      ...controller.getSnapshot(),
+      transcript: [{ kind: "system", persistence: "session", text: kbStatusText } satisfies TranscriptEntry],
+    };
+    writer.sync(setup.renderer, kbStatusSnapshot, theme, syntaxStyle);
+    writer.sync(setup.renderer, kbStatusSnapshot, theme, syntaxStyle);
+    await writer.idle();
+    await setup.flush();
+    const kbStatusOutput = setup.externalOutput.take();
+    assert.equal(kbStatusOutput.length, 1);
+    const renderedKbStatus = kbStatusOutput[0]?.text ?? "";
+    assert.match(renderedKbStatus, /changed {2,}3816 bytes {2}\.github\/workflows\/publish-npm\.yml/u);
+    assert.match(
+      renderedKbStatus,
+      /missing_entry {2,}509 bytes {2}skills\/topchester\/references\/skills-hooks-sessions\.md/u
+    );
+    assert.doesNotMatch(renderedKbStatus, /changedithub|missing_entrykills/u);
 
     let keywordColor: number[] | undefined;
     let keywordBackground: number[] | undefined;

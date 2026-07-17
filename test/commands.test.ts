@@ -655,7 +655,8 @@ describe("slash commands", () => {
     expect(result.messages).toContain(`knowledge folder: ${join(workspace, "topchester-kb")} [missing]`);
     expect(result.messages).toContain("non-clean files: 1");
     expect(result.messages).toContain("");
-    expect(result.messages.some((line) => line.startsWith("missing_entry\tsrc/index.ts\t"))).toBe(true);
+    expect(result.messages).toContain("status             size  path");
+    expect(result.messages.some((line) => /^missing_entry {2,}\d+ bytes {2}src\/index\.ts$/u.test(line))).toBe(true);
     expect(result.messages).toContain("----");
     expect(result.messages).toContain("total non-clean files: 1");
   });

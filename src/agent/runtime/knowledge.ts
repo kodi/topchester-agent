@@ -1,25 +1,15 @@
-import { ui } from "../../cli/ui.js";
 import { type L1FileScanStatus } from "../../knowledge/compiler/l1-entry.js";
 import { type KnowledgeStatus } from "../../knowledge/status.js";
 import { agentEvent, type AgentRuntimeEvent } from "../events.js";
 import { parseSlashCommand } from "../commands.js";
 
 /**
- * Applies TUI styling to per-file KB sync states. The raw scanner statuses
- * are preserved as text, but success, warning, and error categories get
- * different colors so slash-command output is readable without changing the
- * underlying command semantics.
+ * Keeps per-file KB sync states safe for OpenTUI's plain-text renderer.
+ * ANSI sequences embedded in text are counted as cells during layout even
+ * though the terminal later hides them, which corrupts aligned rows and wraps.
  */
 export function formatTuiSyncStatus(status: L1FileScanStatus): string {
-  if (status === "current") {
-    return ui.ok(status);
-  }
-
-  if (status === "invalid" || status === "missing_file") {
-    return ui.error(status);
-  }
-
-  return ui.warn(status);
+  return status;
 }
 
 /**
