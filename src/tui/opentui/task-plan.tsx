@@ -29,15 +29,12 @@ export function TaskPlan(props: { plan: TaskPlanState }) {
             wrapMode="word"
             fg={item().status === "in_progress" ? theme.warning : theme.muted}
             bg={theme.background}
-          >
-            {TASK_PLAN_MARKERS[item().status]} {item().text}
-          </text>
+            content={`${TASK_PLAN_MARKERS[item().status]} ${item().text}`}
+          />
         )}
       </Index>
       <Show when={props.plan.items.length > MAX_TASK_ROWS}>
-        <text fg={theme.muted} bg={theme.background}>
-          … {props.plan.items.length - MAX_TASK_ROWS} more
-        </text>
+        <text fg={theme.muted} bg={theme.background} content={`… ${props.plan.items.length - MAX_TASK_ROWS} more`} />
       </Show>
     </box>
   );

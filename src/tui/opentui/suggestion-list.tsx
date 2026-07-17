@@ -23,16 +23,22 @@ export function SuggestionList(props: SuggestionListProps) {
           const absoluteIndex = () => windowStart() + index();
           const selected = () => absoluteIndex() === props.selectedIndex;
           return (
-            <text width="100%" wrapMode="none" fg={selected() ? theme.accent : theme.muted}>
-              {selected() ? ACTIVE_ROW_MARKER : " "} {item}
-            </text>
+            <text
+              width="100%"
+              wrapMode="none"
+              fg={selected() ? theme.accent : theme.muted}
+              bg={theme.overlay}
+              content={`${selected() ? ACTIVE_ROW_MARKER : " "} ${item}`}
+            />
           );
         }}
       </For>
       <Show when={props.items.length > visibleRows()}>
-        <text fg={theme.muted}>
-          {Math.min(props.items.length, windowStart() + visibleRows())}/{props.items.length}
-        </text>
+        <text
+          fg={theme.muted}
+          bg={theme.overlay}
+          content={`${Math.min(props.items.length, windowStart() + visibleRows())}/${props.items.length}`}
+        />
       </Show>
     </box>
   );

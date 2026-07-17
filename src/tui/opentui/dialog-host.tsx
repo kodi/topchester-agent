@@ -32,27 +32,29 @@ export function ChoiceDialog(props: {
       paddingRight={1}
     >
       <Show when={visibleBody()}>
-        {(body) => (
-          <text width="100%" wrapMode="word" fg={theme.text}>
-            {body()}
-          </text>
-        )}
+        {(body) => <text width="100%" wrapMode="word" fg={theme.text} bg={theme.overlay} content={body()} />}
       </Show>
       <For each={visibleActions()}>
         {(action, index) => {
           const absoluteIndex = () => windowStart() + index();
           const selected = () => absoluteIndex() === props.selectedIndex;
           return (
-            <text width="100%" wrapMode="none" fg={selected() ? theme.accent : theme.text}>
-              {selected() ? ACTIVE_ROW_MARKER : " "} {absoluteIndex() + 1}) {action.label}
-            </text>
+            <text
+              width="100%"
+              wrapMode="none"
+              fg={selected() ? theme.accent : theme.text}
+              bg={theme.overlay}
+              content={`${selected() ? ACTIVE_ROW_MARKER : " "} ${absoluteIndex() + 1}) ${action.label}`}
+            />
           );
         }}
       </For>
       <Show when={props.choice.actions.length > DIALOG_ACTION_ROWS}>
-        <text fg={theme.muted}>
-          {Math.min(props.choice.actions.length, windowStart() + DIALOG_ACTION_ROWS)}/{props.choice.actions.length}
-        </text>
+        <text
+          fg={theme.muted}
+          bg={theme.overlay}
+          content={`${Math.min(props.choice.actions.length, windowStart() + DIALOG_ACTION_ROWS)}/${props.choice.actions.length}`}
+        />
       </Show>
       <text fg={theme.muted}>↑↓ move · Enter accept · Esc cancel</text>
     </box>
@@ -85,17 +87,22 @@ export function SessionPicker(props: { picker: NonNullable<TuiViewState["session
           const absoluteIndex = () => windowStart() + index();
           const selected = () => absoluteIndex() === props.selectedIndex;
           return (
-            <text width="100%" wrapMode="none" fg={selected() ? theme.accent : theme.text}>
-              {selected() ? ACTIVE_ROW_MARKER : " "} {item.updatedAt.slice(0, 16).replace("T", " ")}{" "}
-              {item.sessionId.slice(0, 8)} {item.title ?? item.firstUserPrompt ?? "(no user prompt)"}
-            </text>
+            <text
+              width="100%"
+              wrapMode="none"
+              fg={selected() ? theme.accent : theme.text}
+              bg={theme.overlay}
+              content={`${selected() ? ACTIVE_ROW_MARKER : " "} ${item.updatedAt.slice(0, 16).replace("T", " ")} ${item.sessionId.slice(0, 8)} ${item.title ?? item.firstUserPrompt ?? "(no user prompt)"}`}
+            />
           );
         }}
       </For>
       <Show when={props.picker.items.length > SESSION_ROWS}>
-        <text fg={theme.muted}>
-          {Math.min(props.picker.items.length, windowStart() + SESSION_ROWS)}/{props.picker.items.length}
-        </text>
+        <text
+          fg={theme.muted}
+          bg={theme.overlay}
+          content={`${Math.min(props.picker.items.length, windowStart() + SESSION_ROWS)}/${props.picker.items.length}`}
+        />
       </Show>
       <text fg={theme.muted}>↑↓ move · PgUp/PgDn · Enter restore · Esc cancel</text>
     </box>

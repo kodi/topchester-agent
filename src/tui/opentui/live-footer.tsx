@@ -2,7 +2,7 @@
 
 import { type KeyEvent, type PasteEvent, type TextareaRenderable } from "@opentui/core";
 import { useKeyboard, usePaste, useRenderer, useTerminalDimensions } from "@opentui/solid";
-import { createEffect, createMemo, createSignal, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { type TuiViewState } from "../../chat/controller-state.js";
 import { getSlashCommandSuggestions, type SlashCommandSuggestion } from "../../chat/suggestions.js";
 import { type ChoiceTranscriptEntry } from "../../chat/transcript.js";
@@ -31,6 +31,8 @@ export function LiveFooter(props: { mentionProvider?: FileMentionProvider; onInt
   const [dismissedMentionKey, setDismissedMentionKey] = createSignal<string>();
   let composer: TextareaRenderable | undefined;
   let previousSessionEpoch = snapshot().sessionEpoch;
+  let footerShrinkTimer: ReturnType<typeof setTimeout> | undefined;
+  let desiredFooterHeight = renderer.footerHeight;
 
   const activeChoice = createMemo(() => {
     const entry = snapshot().transcript.at(-1);
@@ -106,9 +108,27 @@ export function LiveFooter(props: { mentionProvider?: FileMentionProvider; onInt
     // effect until dialogs and suggestions collapse to the six-row minimum.
     renderDimensions();
     const height = renderer.terminalHeight;
-    const next = estimateFooterHeight(snapshot(), activeChoice(), visibleSuggestions().length, draft());
+    const width = renderer.terminalWidth;
+    const next = estimateFooterHeight(snapshot(), activeChoice(), visibleSuggestions().length, draft(), width);
     const footerHeight = Math.max(6, Math.min(Math.max(6, height - 2), next));
-    if (renderer.footerHeight !== footerHeight) renderer.footerHeight = footerHeight;
+    desiredFooterHeight = footerHeight;
+    if (footerShrinkTimer) {
+      clearTimeout(footerShrinkTimer);
+      footerShrinkTimer = undefined;
+    }
+    if (footerHeight >= renderer.footerHeight) {
+      if (renderer.footerHeight !== footerHeight) renderer.footerHeight = footerHeight;
+      return;
+    }
+    footerShrinkTimer = setTimeout(() => {
+      footerShrinkTimer = undefined;
+      if (renderer.footerHeight !== desiredFooterHeight) renderer.footerHeight = desiredFooterHeight;
+    }, 50);
+    footerShrinkTimer.unref?.();
+  });
+
+  onCleanup(() => {
+    if (footerShrinkTimer) clearTimeout(footerShrinkTimer);
   });
 
   const consume = (event: KeyEvent | PasteEvent) => {
@@ -430,7 +450,8 @@ function estimateFooterHeight(
   snapshot: TuiViewState,
   choice: ChoiceTranscriptEntry | undefined,
   suggestionCount: number,
-  draft: string
+  draft: string,
+  terminalWidth: number
 ): number {
   const base = 6 + Math.min(4, Math.max(0, draft.split("\n").length - 1));
   const taskRows = Math.min(6, snapshot.taskPlan?.items.length ?? 0);
@@ -443,9 +464,16 @@ function estimateFooterHeight(
     .filter(Boolean)
     .reduce((total, value) => total + Math.min(3, String(value).split("\n").length), 0);
   const overlayRows = choice
-    ? Math.min(8, choice.actions.length) + Math.min(5, choice.body?.split("\n").length ?? 0) + 3
+    ? Math.min(8, choice.actions.length) + estimateWrappedRows(choice.body, Math.max(1, terminalWidth - 6)) + 3
     : snapshot.sessionPicker
       ? Math.min(7, snapshot.sessionPicker.items.length) + 3
       : Math.min(6, suggestionCount);
   return base + taskRows + transientRows + overlayRows;
+}
+
+function estimateWrappedRows(text: string | undefined, width: number): number {
+  if (!text) {
+    return 0;
+  }
+  return text.split("\n").reduce((rows, line) => rows + Math.max(1, Math.ceil(line.length / width)), 0);
 }

@@ -14,20 +14,17 @@ import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createSignal } from "solid-js";
 import { agentEvent } from "../../src/agent/events.js";
 import { type AgentRuntime } from "../../src/agent/runtime/index.js";
 import { formatTuiSyncStatus } from "../../src/agent/runtime/knowledge.js";
 import { TopchesterTuiController } from "../../src/chat/controller.js";
-import { type TaskPlanState } from "../../src/chat/controller-state.js";
-import { reasoningTranscriptEntry, type TranscriptEntry } from "../../src/chat/index.js";
+import { reasoningTranscriptEntry, type ChoiceTranscriptEntry, type TranscriptEntry } from "../../src/chat/index.js";
 import { formatKnowledgeCompileStatusResult } from "../../src/knowledge/compiler/index.js";
 import { getKnowledgeStatus } from "../../src/knowledge/status.js";
 import { TopchesterApp } from "../../src/tui/opentui/app.js";
 import { ThemeProvider } from "../../src/tui/opentui/context.js";
 import { SessionPicker } from "../../src/tui/opentui/dialog-host.js";
 import { runOpenTui } from "../../src/tui/opentui/renderer.js";
-import { TaskPlan } from "../../src/tui/opentui/task-plan.js";
 import { ThreadEntry } from "../../src/tui/opentui/thread-entry.js";
 import { createTopchesterSyntaxStyle, resolveTopchesterTheme } from "../../src/tui/opentui/theme.js";
 import { TranscriptWriter } from "../../src/tui/opentui/transcript-writer.js";
@@ -61,6 +58,7 @@ await testAssistantMessage();
 await testReasoningStyle();
 await testNoColorSelection();
 await testTaskPlanUpdates();
+await testChoiceDialogWrapping();
 await testSessionPickerTitle();
 await testRenderFailureCleanup();
 
@@ -555,49 +553,122 @@ async function testNoColorSelection(): Promise<void> {
 }
 
 async function testTaskPlanUpdates(): Promise<void> {
+  const workspace = await mkdtemp(join(tmpdir(), "topchester-opentui-plan-"));
   const theme = resolveTopchesterTheme();
-  const [plan, setPlan] = createSignal<TaskPlanState>({
-    updatedAt: "2026-07-17T00:00:00.000Z",
-    items: [
-      { text: "Implement deterministic session titles and fork inheritance", status: "in_progress" },
-      { text: "Update tests and session docs", status: "pending" },
-      { text: "Run focused repo checks", status: "pending" },
-    ],
-  });
+  const syntaxStyle = SyntaxStyle.create();
+  const controller = await TopchesterTuiController.create(createTestContext(workspace), createRuntime());
   const setup = await testRender(
     () => (
-      <ThemeProvider theme={theme}>
-        <TaskPlan plan={plan()} />
-      </ThemeProvider>
+      <TopchesterApp
+        controller={controller}
+        initialSnapshot={controller.getSnapshot()}
+        theme={theme}
+        syntaxStyle={syntaxStyle}
+        onInterrupt={() => {}}
+      />
     ),
-    { width: 80, height: 10 }
+    { width: 80, height: 24, screenMode: "split-footer", footerHeight: 16 }
   );
 
   try {
     await setup.renderOnce();
+    await controller.applyRuntimeEvents([
+      agentEvent.taskPlan({
+        updatedAt: "2026-07-17T00:00:00.000Z",
+        items: [
+          { text: "Count the total number of lines in src", status: "in_progress" },
+          { text: "Count one-line comments in src", status: "pending" },
+          { text: "Summarize the results", status: "pending" },
+        ],
+      }),
+    ]);
+    await setup.flush();
     assertPlanRows(setup.captureCharFrame(), [
-      "◐ Implement deterministic session titles and fork inheritance",
-      "○ Update tests and session docs",
-      "○ Run focused repo checks",
+      "◐ Count the total number of lines in src",
+      "○ Count one-line comments in src",
+      "○ Summarize the results",
     ]);
 
-    setPlan({
-      updatedAt: "2026-07-17T00:00:01.000Z",
-      items: [
-        { text: "Implemented deterministic session titles and fork inheritance", status: "completed" },
-        { text: "Update tests and session docs", status: "in_progress" },
-        { text: "Run focused repo checks", status: "pending" },
-      ],
-    });
-    await setup.flush();
-    const updatedFrame = setup.captureCharFrame();
-    assertPlanRows(updatedFrame, [
-      "✓ Implemented deterministic session titles and fork inheritance",
-      "◐ Update tests and session docs",
-      "○ Run focused repo checks",
+    await controller.applyRuntimeEvents([
+      agentEvent.taskPlan({
+        updatedAt: "2026-07-17T00:00:01.000Z",
+        items: [
+          { text: "Count the number of one-line comments in src", status: "in_progress" },
+          { text: "Summarize the results", status: "pending" },
+        ],
+      }),
     ]);
+    await setup.flush();
+    assertPlanRows(setup.captureCharFrame(), [
+      "◐ Count the number of one-line comments in src",
+      "○ Summarize the results",
+    ]);
+
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    await setup.flush();
+    const settledFrame = setup.captureCharFrame();
+    assertPlanRows(settledFrame, ["◐ Count the number of one-line comments in src", "○ Summarize the results"]);
+    assert.doesNotMatch(settledFrame, /Count the total number of lines/u);
   } finally {
+    await controller.dispose();
     setup.renderer.destroy();
+    syntaxStyle.destroy();
+  }
+}
+
+async function testChoiceDialogWrapping(): Promise<void> {
+  const workspace = await mkdtemp(join(tmpdir(), "topchester-opentui-choice-"));
+  const theme = resolveTopchesterTheme();
+  const syntaxStyle = SyntaxStyle.create();
+  const choice: ChoiceTranscriptEntry = {
+    kind: "choice",
+    persistence: "session",
+    tone: "warning",
+    title: "Run bash command?",
+    body: [
+      "Command:",
+      "total=$(find src -type f -print0 | xargs -0 wc -l | tail -n 1 | awk '{print $1}'); comments=$(find src -type f -print0 | xargs -0 grep -hE '^[[:space:]]*//' | wc -l | awk '{print $1}'); awk -v total=\"$total\" -v comments=\"$comments\" 'BEGIN { printf \"total_lines=%d\\none_line_comments=%d\\ncomment_rate=%.4f%%\\n\", total, comments, (comments/total)*100 }'",
+      "",
+      "This bash command is not allowed yet.",
+    ].join("\n"),
+    actions: [
+      { label: "Run once", value: "run_once" },
+      { label: "Always allow exact command this session", value: "allow_session" },
+      { label: "Always allow exact command for this repo", value: "allow_repo" },
+      { label: "Cancel", value: "cancel" },
+    ],
+  };
+  const controller = await TopchesterTuiController.create(createTestContext(workspace), createRuntime(), {
+    initialTranscript: [choice],
+  });
+  const setup = await testRender(
+    () => (
+      <TopchesterApp
+        controller={controller}
+        initialSnapshot={controller.getSnapshot()}
+        theme={theme}
+        syntaxStyle={syntaxStyle}
+        onInterrupt={() => {}}
+      />
+    ),
+    { width: 120, height: 30, screenMode: "split-footer", footerHeight: 16 }
+  );
+
+  try {
+    await setup.renderOnce();
+    await setup.flush();
+    setup.mockInput.pressArrow("down");
+    await setup.flush();
+    const frame = setup.captureCharFrame();
+    const rows = frame.split("\n");
+    const reasonRow = rows.findIndex((row) => row.includes("This bash command is not allowed yet."));
+    const firstActionRow = rows.findIndex((row) => row.includes("  1) Run once"));
+    assert.ok(reasonRow >= 0, frame);
+    assert.ok(firstActionRow > reasonRow, frame);
+  } finally {
+    await controller.dispose();
+    setup.renderer.destroy();
+    syntaxStyle.destroy();
   }
 }
 
