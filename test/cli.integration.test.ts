@@ -234,7 +234,7 @@ describe("CLI integration", () => {
     const binSource = await readFile(join(process.cwd(), "src", "bin.ts"), "utf8");
 
     expect(packageJson.bin.topchester).toBe("dist/bin.mjs");
-    expect(binSource).toContain("#!/usr/bin/env node");
+    expect(binSource).toContain("#!/usr/bin/env bun");
     expect(binSource).toContain('import { runTopchesterCli } from "./cli.js";');
     expect(binSource).toContain("await runTopchesterCli();");
   });

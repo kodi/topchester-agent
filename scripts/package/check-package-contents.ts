@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -7,13 +7,14 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 const root = process.cwd();
 const destination = await mkdtemp(join(tmpdir(), "topchester-package-check-"));
+const maxBuffer = 30 * 1024 * 1024;
 
 try {
-  await run("vp", ["run", "build"], { cwd: root, maxBuffer: 20 * 1024 * 1024 });
+  await run("vp", ["run", "build"], { cwd: root, maxBuffer });
   const { stdout } = await run("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", destination], {
     cwd: root,
     env: { ...process.env, npm_config_cache: join(destination, "npm-cache") },
-    maxBuffer: 20 * 1024 * 1024,
+    maxBuffer,
   });
   const packed = JSON.parse(stdout) as Array<{ filename?: string; files?: Array<{ path?: string }> }>;
   const paths = new Set(
@@ -35,15 +36,51 @@ try {
       `Package contents are incomplete.${missing.length > 0 ? ` Missing: ${missing.join(", ")}.` : ""}${!hasProductEntry ? " No product L1 entries were packed." : ""}`
     );
   }
+
   const filename = packed[0]?.filename;
   if (!filename) throw new Error("npm pack did not report an artifact filename.");
-  const unpacked = join(destination, "unpacked");
+  const prefix = join(destination, "installed");
+  await mkdir(prefix, { recursive: true });
+  await run(
+    "npm",
+    [
+      "install",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      "--loglevel",
+      "error",
+      "--prefix",
+      prefix,
+      join(destination, filename),
+    ],
+    {
+      cwd: root,
+      env: { ...process.env, npm_config_cache: join(destination, "npm-cache") },
+      maxBuffer,
+      timeout: 120_000,
+    }
+  );
+
+  const installedPackage = join(prefix, "node_modules", "topchester-ai");
+  const cli = join(installedPackage, "dist", "bin.mjs");
+  const nativePackage = join(
+    prefix,
+    "node_modules",
+    "@opentui",
+    `core-${process.platform}-${process.arch}`,
+    "package.json"
+  );
+  await access(nativePackage);
+  const installedMetadata = JSON.parse(await readFile(join(installedPackage, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
+  };
+  if (installedMetadata.dependencies?.["@earendil-works/pi-tui"]) {
+    throw new Error("Packed metadata still depends on pi-tui.");
+  }
+
   const fixture = join(destination, "fixture");
   await mkdir(join(fixture, ".git"), { recursive: true });
-  await mkdir(unpacked, { recursive: true });
-  await run("tar", ["-xzf", join(destination, filename), "-C", unpacked]);
-  await symlink(join(root, "node_modules"), join(unpacked, "package", "node_modules"), "dir");
-  const cli = join(unpacked, "package", "dist", "bin.mjs");
   const env = {
     ...process.env,
     HOME: fixture,
@@ -51,20 +88,25 @@ try {
     TOPCHESTER_LOG_FILE: "",
     TOPCHESTER_LOG_LEVEL: "silent",
   };
-  const sources = await run(process.execPath, [cli, "--workspace", fixture, "kb", "sources"], { env });
+  const version = await run("bun", [cli, "--version"], { env, maxBuffer });
+  if (!version.stdout.includes("0.76.0")) {
+    throw new Error(`Packed Bun CLI returned an unexpected version: ${version.stdout.trim()}`);
+  }
+  const sources = await run("bun", [cli, "--workspace", fixture, "kb", "sources"], { env, maxBuffer });
   if (!sources.stdout.includes("topchester\tbuiltin-product\tready\tread-only")) {
     throw new Error("Packed CLI did not load its version-matched built-in product source.");
   }
   const search = await run(
-    process.execPath,
+    "bun",
     [cli, "--workspace", fixture, "kb", "search", "--source", "topchester", "ignore", "paths"],
-    { env }
+    { env, maxBuffer }
   );
   if (!search.stdout.includes("topchester:docs/configuration/ignore-paths.md")) {
     throw new Error("Packed CLI could not search its built-in product source.");
   }
+
   console.log(
-    `Package contains ${paths.size} files and the packed CLI loads and searches its Topchester product source.`
+    `Package contains ${paths.size} files; its isolated Bun install includes @opentui/core-${process.platform}-${process.arch} and passes product-knowledge checks.`
   );
 } finally {
   await rm(destination, { recursive: true, force: true });

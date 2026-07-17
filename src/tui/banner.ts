@@ -1,5 +1,3 @@
-import { color, type UiColorName } from "../cli/ui.js";
-
 export const ASCII_BANNERS = [
   [
     "s5SSSSs. .s5SSSs.  .s5SSSs.  .s5SSSs.  .s    s.  .s5SSSs.  .s5SSSs.  .s5SSSSs. .s5SSSs.  .s5SSSs.      .s5SSSs.  s.",
@@ -113,8 +111,6 @@ export const ASCII_BANNERS = [
   ].join("\n"),
 ];
 
-export const ASCII_BANNER_COLORS = ["purple", "blue", "yellow", "orange", "red", "green", "cyan"] as const;
-
 export function getRandomAsciiBanner(banners = ASCII_BANNERS, random: () => number = Math.random): string | undefined {
   if (banners.length === 0) {
     return undefined;
@@ -123,28 +119,4 @@ export function getRandomAsciiBanner(banners = ASCII_BANNERS, random: () => numb
   const index = Math.floor(random() * banners.length) % banners.length;
 
   return banners[index];
-}
-
-export function getRandomAsciiBannerColor(
-  colors: readonly UiColorName[] = ASCII_BANNER_COLORS,
-  random: () => number = Math.random
-): UiColorName | undefined {
-  if (colors.length === 0) {
-    return undefined;
-  }
-
-  const index = Math.floor(random() * colors.length) % colors.length;
-
-  return colors[index];
-}
-
-export function colorAsciiBanner(banner: string, random: () => number = Math.random): string {
-  const colorName = getRandomAsciiBannerColor(ASCII_BANNER_COLORS, random);
-
-  return colorName
-    ? banner
-        .split("\n")
-        .map((line) => color(line, colorName))
-        .join("\n")
-    : banner;
 }

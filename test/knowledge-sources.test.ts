@@ -6,11 +6,22 @@ import {
   createAutomaticKnowledgeContext,
   getBuiltinProductKnowledgeSource,
   getKnowledgeSourceDescriptors,
+  resolveTopchesterPackageRoot,
   shouldRouteToTopchesterProduct,
 } from "../src/knowledge/sources/index.js";
 import { getL1FileEntryPath } from "../src/knowledge/compiler/path-encoding.js";
 
 describe("knowledge sources", () => {
+  it("prefers the nearest package root inside an isolated npm prefix", async () => {
+    const prefix = await mkdtemp(join(tmpdir(), "topchester-package-root-"));
+    const packageRoot = join(prefix, "node_modules", "topchester-ai");
+    await mkdir(join(packageRoot, "dist"), { recursive: true });
+    await writeFile(join(prefix, "package.json"), '{"dependencies":{"topchester-ai":"file:fixture.tgz"}}\n');
+    await writeFile(join(packageRoot, "package.json"), '{"name":"topchester-ai"}\n');
+
+    expect(resolveTopchesterPackageRoot(join(packageRoot, "dist", "bin.mjs"))).toBe(packageRoot);
+  });
+
   it("routes explicit and focused Topchester product requests without matching generic work", () => {
     for (const query of [
       "How does Topchester load config?",

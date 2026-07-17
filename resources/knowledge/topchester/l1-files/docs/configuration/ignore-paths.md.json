@@ -7,7 +7,7 @@
   "language": "markdown",
   "content_hash": "sha256:d67b3ff188b8233142c6dfa084aa0f818c47b054df01fb2db94be603382bec04",
   "size_bytes": 839,
-  "last_scanned_at": "2026-07-15T10:14:45.831Z",
+  "last_scanned_at": "2026-07-17T01:17:59.105Z",
   "scan_status": "current",
   "file_role": "doc",
   "summary": "Exclude generated or noisy files from Topchester project knowledge.",

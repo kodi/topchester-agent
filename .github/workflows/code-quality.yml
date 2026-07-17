@@ -21,8 +21,49 @@ jobs:
           node-version: "24"
           cache: true
 
+      - name: Set up mise tools
+        uses: jdx/mise-action@v3
+        with:
+          install: true
+          cache: true
+
+      - name: Install PTY test dependency
+        run: sudo apt-get update && sudo apt-get install -y expect
+
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
-      - name: Run checks
-        run: vp check
+      - name: Run local CI
+        run: mise run local-ci
+
+  package-platforms:
+    name: Package (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      VITE_GIT_HOOKS: "0"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: "24"
+          cache: true
+
+      - name: Set up mise tools
+        uses: jdx/mise-action@v3
+        with:
+          install: true
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Check isolated package
+        run: mise run package-check

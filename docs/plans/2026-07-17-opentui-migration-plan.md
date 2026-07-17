@@ -1,6 +1,6 @@
 # OpenTUI migration plan
 
-Status: proposed; implementation has not started
+Status: complete; implementation and final `mise run local-ci` verification passed
 
 Created: 2026-07-17
 
@@ -24,17 +24,17 @@ Decision: **conditional pass**.
 
 Implementation is possible without rewriting the agent engine. Begin only with the feasibility slice, and do not start the component port unless every blocking gate in that slice passes.
 
-| Criterion | Result | Evidence | Required action |
-| --- | --- | --- | --- |
-| Agent loop is independent of the renderer | Pass | `AgentRuntime` exposes a typed streaming API and `AgentRuntimeEvent` union under `src/agent/` | Keep the runtime contract unchanged during the renderer migration |
-| Configuration and model selection are independent | Pass | `src/app/context.ts` and runtime overrides are outside `src/tui/` | Adapt existing actions; do not move config ownership into Solid state |
-| Session storage is independent | Partial | Storage is separate, but `src/session/store.ts` imports `ChatMessage` and helpers from `src/tui/messages.ts` | Introduce a renderer-neutral transcript type before adding OpenTUI components |
-| CLI and TUI share clean application helpers | Partial | `src/cli/run.ts` imports payload and startup-message helpers from `src/tui/` | Move shared mapping and startup-status logic to application/session modules |
-| TUI behavior has regression coverage | Pass, with coupling | `test/tui.render.test.ts` covers most visible behavior but reaches into shell internals and pi-tui output | Preserve the cases, then split them into controller and OpenTUI renderer tests |
-| Current TUI is presentation-only | No | `src/tui/shell.ts` and `src/tui/layout.ts` own orchestration, input, and rendering | Extract a controller and explicit view state before deleting pi-tui |
-| Bun can start the current CLI | Initial pass | `mise exec -- bun src/bin.ts --version` and `--help` work with Bun 1.3.2 | Prove full commands, build, packed install, subprocesses, and terminal behavior in Slice 0 |
-| OpenTUI can preserve native terminal scrollback | Unknown, blocking | OpenTUI `split-footer` is the closest match to the current inline renderer | Build a narrow proof covering append, resize, session restore, and shutdown |
-| Published npm package can run with OpenTUI native assets | Unknown, blocking | Current package is built by `vp pack` and package smoke executes it with Node | Produce and execute a packed Bun-targeted artifact in Slice 0 |
+| Criterion                                                | Result              | Evidence                                                                                                     | Required action                                                                            |
+| -------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| Agent loop is independent of the renderer                | Pass                | `AgentRuntime` exposes a typed streaming API and `AgentRuntimeEvent` union under `src/agent/`                | Keep the runtime contract unchanged during the renderer migration                          |
+| Configuration and model selection are independent        | Pass                | `src/app/context.ts` and runtime overrides are outside `src/tui/`                                            | Adapt existing actions; do not move config ownership into Solid state                      |
+| Session storage is independent                           | Partial             | Storage is separate, but `src/session/store.ts` imports `ChatMessage` and helpers from `src/tui/messages.ts` | Introduce a renderer-neutral transcript type before adding OpenTUI components              |
+| CLI and TUI share clean application helpers              | Partial             | `src/cli/run.ts` imports payload and startup-message helpers from `src/tui/`                                 | Move shared mapping and startup-status logic to application/session modules                |
+| TUI behavior has regression coverage                     | Pass, with coupling | `test/tui.render.test.ts` covers most visible behavior but reaches into shell internals and pi-tui output    | Preserve the cases, then split them into controller and OpenTUI renderer tests             |
+| Current TUI is presentation-only                         | No                  | `src/tui/shell.ts` and `src/tui/layout.ts` own orchestration, input, and rendering                           | Extract a controller and explicit view state before deleting pi-tui                        |
+| Bun can start the current CLI                            | Initial pass        | `mise exec -- bun src/bin.ts --version` and `--help` work with Bun 1.3.2                                     | Prove full commands, build, packed install, subprocesses, and terminal behavior in Slice 0 |
+| OpenTUI can preserve native terminal scrollback          | Unknown, blocking   | OpenTUI `split-footer` is the closest match to the current inline renderer                                   | Build a narrow proof covering append, resize, session restore, and shutdown                |
+| Published npm package can run with OpenTUI native assets | Unknown, blocking   | Current package is built by `vp pack` and package smoke executes it with Node                                | Produce and execute a packed Bun-targeted artifact in Slice 0                              |
 
 ### Why the existing boundaries are good enough
 
@@ -82,12 +82,12 @@ This creates a migration path with a working fallback, while keeping the new con
 
 At the baseline commit, `src/tui/` is roughly 5,174 lines. Its two largest files contain most of the migration risk:
 
-| File | Approximate size | Current responsibilities |
-| --- | ---: | --- |
-| `src/tui/shell.ts` | 1,496 lines | terminal lifecycle, runtime calls, event streaming, persistence, queue/steer, slash routing, session operations, bash approval, model/provider/skills flows, and KB refresh |
-| `src/tui/layout.ts` | 1,370 lines | thread rendering, prompt editing, history, suggestions, task plan, modal state, paste handling, focus/input routing, and viewport behavior |
-| `src/tui/messages.ts` | 479 lines | renderer-neutral message variants mixed with ANSI and pi-tui rendering |
-| `test/tui.render.test.ts` | about 4,600 lines | valuable behavior coverage, but coupled to private shell/layout details and current ANSI output |
+| File                      |  Approximate size | Current responsibilities                                                                                                                                                    |
+| ------------------------- | ----------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/tui/shell.ts`        |       1,496 lines | terminal lifecycle, runtime calls, event streaming, persistence, queue/steer, slash routing, session operations, bash approval, model/provider/skills flows, and KB refresh |
+| `src/tui/layout.ts`       |       1,370 lines | thread rendering, prompt editing, history, suggestions, task plan, modal state, paste handling, focus/input routing, and viewport behavior                                  |
+| `src/tui/messages.ts`     |         479 lines | renderer-neutral message variants mixed with ANSI and pi-tui rendering                                                                                                      |
+| `test/tui.render.test.ts` | about 4,600 lines | valuable behavior coverage, but coupled to private shell/layout details and current ANSI output                                                                             |
 
 The size alone is not the problem. The issue is that state ownership and renderer ownership are not explicit. Recreating the same shape with Solid components would only move the monolith.
 
@@ -222,12 +222,12 @@ Conceptual API:
 
 ```ts
 interface TuiController {
-  getSnapshot(): TuiViewState
-  subscribe(listener: () => void): () => void
-  submit(input: ComposerSubmission): Promise<void>
-  cancel(): Promise<void>
-  choose(action: TuiAction): Promise<void>
-  dispose(): Promise<void>
+  getSnapshot(): TuiViewState;
+  subscribe(listener: () => void): () => void;
+  submit(input: ComposerSubmission): Promise<void>;
+  cancel(): Promise<void>;
+  choose(action: TuiAction): Promise<void>;
+  dispose(): Promise<void>;
 }
 ```
 
@@ -338,26 +338,26 @@ src/
 
 ### Reusable component inventory
 
-| Component | Purpose | State ownership | Important contract |
-| --- | --- | --- | --- |
-| `TopchesterApp` | Compose providers, transcript writer, and live footer | none beyond renderer lifecycle | No agent/session logic |
-| `TranscriptWriter` | Append stable entries once in split-footer mode | last committed transcript cursor | Idempotent commits; replay is explicit |
-| `ThreadEntry` | Dispatch semantic transcript variants | none | Exhaustive variant handling |
-| `AssistantMessage` | Render Markdown/streamed answer consistently | live content passed as props | Stable streaming prefix; no session writes |
-| `ReasoningBlock` | Render muted multi-line reasoning | expanded/visible flag if needed | Display-only persistence semantics |
-| `ToolActivity` | Tool title, state, output summary | optional local disclosure | Never encode tool state only through color |
-| `DiffBlock` | Structured unified/split diff | display mode | Use OpenTUI diff primitive behind Topchester props |
-| `LiveFooter` | Own all repaintable content | composition only | Fixed boundary between scrollback and live UI |
-| `Composer` | Multi-line edit, cursor, selection, paste | local edit state | Emits semantic submission; controller does not mutate cursor state |
-| `SuggestionList` | Shared list for slash/file/model/session/skills choices | selected index or controlled props | Clamp height; expose selection and empty state |
-| `TaskPlan` | Show pinned plan with semantic statuses | none | Cap rows and preserve current ordering |
-| `StatusBar` | Model/effort/KB/queue/session hints | none | Responsive truncation, not hidden critical state |
-| `BusyLine` | Spinner and live reasoning/status | animation frame locally | Animation never blocks input or event reduction |
-| `DialogHost` | Modal stack and focus restoration | modal stack/focus handles | Trap focus; Escape closes topmost allowed dialog |
-| `SelectionDialog` | Generic model/provider/effort/skills choices | filter/selection locally or controlled | Reuse one tested navigation model |
-| `SessionPicker` | Search and choose sessions | query/selection | Returns a semantic session action only |
-| `BashApprovalDialog` | Explicit command approval | controller request | Deny/cancel path is always reachable |
-| `ToastHost` or `NoticeLine` | Transient non-blocking feedback | expiry timer in controller or host | Important errors cannot disappear before they are readable |
+| Component                   | Purpose                                                 | State ownership                        | Important contract                                                 |
+| --------------------------- | ------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------ |
+| `TopchesterApp`             | Compose providers, transcript writer, and live footer   | none beyond renderer lifecycle         | No agent/session logic                                             |
+| `TranscriptWriter`          | Append stable entries once in split-footer mode         | last committed transcript cursor       | Idempotent commits; replay is explicit                             |
+| `ThreadEntry`               | Dispatch semantic transcript variants                   | none                                   | Exhaustive variant handling                                        |
+| `AssistantMessage`          | Render Markdown/streamed answer consistently            | live content passed as props           | Stable streaming prefix; no session writes                         |
+| `ReasoningBlock`            | Render muted multi-line reasoning                       | expanded/visible flag if needed        | Display-only persistence semantics                                 |
+| `ToolActivity`              | Tool title, state, output summary                       | optional local disclosure              | Never encode tool state only through color                         |
+| `DiffBlock`                 | Structured unified/split diff                           | display mode                           | Use OpenTUI diff primitive behind Topchester props                 |
+| `LiveFooter`                | Own all repaintable content                             | composition only                       | Fixed boundary between scrollback and live UI                      |
+| `Composer`                  | Multi-line edit, cursor, selection, paste               | local edit state                       | Emits semantic submission; controller does not mutate cursor state |
+| `SuggestionList`            | Shared list for slash/file/model/session/skills choices | selected index or controlled props     | Clamp height; expose selection and empty state                     |
+| `TaskPlan`                  | Show pinned plan with semantic statuses                 | none                                   | Cap rows and preserve current ordering                             |
+| `StatusBar`                 | Model/effort/KB/queue/session hints                     | none                                   | Responsive truncation, not hidden critical state                   |
+| `BusyLine`                  | Spinner and live reasoning/status                       | animation frame locally                | Animation never blocks input or event reduction                    |
+| `DialogHost`                | Modal stack and focus restoration                       | modal stack/focus handles              | Trap focus; Escape closes topmost allowed dialog                   |
+| `SelectionDialog`           | Generic model/provider/effort/skills choices            | filter/selection locally or controlled | Reuse one tested navigation model                                  |
+| `SessionPicker`             | Search and choose sessions                              | query/selection                        | Returns a semantic session action only                             |
+| `BashApprovalDialog`        | Explicit command approval                               | controller request                     | Deny/cancel path is always reachable                               |
+| `ToastHost` or `NoticeLine` | Transient non-blocking feedback                         | expiry timer in controller or host     | Important errors cannot disappear before they are readable         |
 
 The OpenTUI Solid binding does not currently expose every constructable renderable as an intrinsic element. In particular, the textarea may need a `TextareaRenderable` reference or a small adapter. Keep that workaround inside `Composer` rather than leaking it into controller state.
 
@@ -380,7 +380,7 @@ The OpenTUI Solid binding does not currently expose every constructable renderab
 
 ### Slice 0: Prove runtime, build, package, and split-footer feasibility
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal: answer the blocking questions with the smallest disposable OpenTUI program before restructuring production code.
 
@@ -403,6 +403,21 @@ Steps:
 13. Inspect the tarball for the required OpenTUI native packages and verify the supported development platform from the packed artifact.
 14. Record the chosen exact package versions, build command, runtime requirement, and accepted session-replay behavior in this plan's decision log.
 15. Delete spike-only code or promote it into the renderer foundation only after all gates pass.
+
+Verified progress (2026-07-17):
+
+- Pinned `@opentui/core` and `@opentui/solid` to `0.4.4`, with their exact peer `solid-js` `1.9.12`. `@opentui/keymap` is intentionally not installed; the focused-textarea experiment confirmed that Topchester needs its own semantic priority router before deciding whether the additional package helps.
+- Added the official Solid compiler/preload settings plus repo-local `opentui-spike`, `opentui-spike-test`, `opentui-spike-build`, and `opentui-spike-package` mise tasks.
+- The test renderer covers 80x24, 120x40, and 200x60; textarea submission; delayed Escape parsing; modal priority; per-line muted reasoning spans; and idempotent scrollback identity. `mise run opentui-spike-test` passes.
+- The native fixture uses `screenMode: "split-footer"`, `externalOutputMode: "capture-stdout"`, `clearOnShutdown: false`, `useMouse: false`, custom Ctrl-C handling, and no OpenTUI-owned exit signals. Captured stdout remained ordered above the footer, and no alternate-screen sequence was used.
+- Stable output is committed through an identity-aware writer. Repeating the same identity produces one scrollback commit. Live assistant/reasoning content remains in the footer until the stable commit.
+- Session restore/new-session behavior is accepted as append-only: write a visible session boundary and replay the selected transcript beneath it. Do not call `resetSplitFooterForReplay({ clearSavedLines: true })`, because current OpenTUI documentation states that it clears the visible viewport and saved terminal lines.
+- Real PTY runs passed normal return, intentional post-mount failure, `SIGTERM`, `SIGHUP`, and two-stage Ctrl-C. Cleanup output restores the cursor and disables bracketed paste. The fixture also passed through a nested `/usr/bin/script` PTY. Zellij could not complete its terminal-capability handshake inside the automated tool PTY, so a real multiplexer check remains in the Slice 8 manual matrix rather than being claimed here.
+- `Bun.build` with `@opentui/solid/bun-plugin` produces both the native fixture and a production-shaped CLI. The proof found and fixed a duplicate-shebang failure by using a Bun entry wrapper, which is the shape to promote when the production shebang changes.
+- `mise run opentui-spike-package` builds, packs, installs the tarball into an isolated npm prefix, confirms `@opentui/core-darwin-arm64`, and runs both the Bun CLI and native OpenTUI fixture from that installation. The proof also found and fixed package-root discovery preferring a prefix-level `package.json` over the installed Topchester package.
+- Bun-backed smoke scenarios `20-bash`, `09-session-resume`, and `21-product-knowledge-no-project-kb` pass. Together they cover config loading, a noninteractive prompt, tool subprocesses, session persistence/resume, and built-in KB retrieval. Self-update detection now prefers the package install path over Bun's runtime path.
+- Repository verification passed: `mise run check` (195 typed/linted files), `mise run test` (35 files, 754 tests), and `mise run package-check` (55 package files).
+- Go decision: proceed to Slice 1. The spike sources remain until their proven lifecycle/build/package logic is promoted in Slice 4.
 
 Expected output:
 
@@ -434,7 +449,7 @@ Dependencies: none.
 
 ### Slice 1: Freeze the current behavior contract and reorganize tests
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal: make the existing behavior suite a readable migration checklist before moving ownership.
 
@@ -447,6 +462,15 @@ Steps:
 5. Add renderer-neutral fixtures for runtime events, transcripts, task plans, session replay, choices, and tool calls.
 6. Document the parity checklist in the test directory or this plan and link each requirement to its test file.
 
+Verified progress (2026-07-17):
+
+- Split the 4,620-line `test/tui.render.test.ts` into seven focused suites for messages, composer/suggestions, dialogs, sessions, runtime state, persistence, and queue behavior. The split preserves all 145 original TUI cases without blanket lint exemptions.
+- Added `test/TUI_BEHAVIOR_CONTRACT.md`, mapping the documented TUI and migration-preservation requirements to exact baseline tests. Real-renderer concerns such as signal cleanup, native selection, and multiplexer behavior are explicit PTY/manual gates rather than claims based on stripped ANSI output.
+- Added `test/tui.behavior.fixtures.ts`, a renderer-independent fixture surface for runtime events, persisted transcript rows, task plans, session replay, choices, tool calls, and display-only reasoning.
+- Strengthened session tests so `/new`, `/fork`, and selected `/restore` prove pending follow-ups are dropped; `/new` also proves pending steering is drained; canceling `/restore` proves the queue is retained.
+- Made the non-TTY/static path explicit in the startup/session test. Existing focused cases already cover two-stage Ctrl-C, modal input priority, and reasoning remaining visible but unpersisted.
+- Verification passed: `mise run check`; `mise run test` (41 files, 754 tests). No production behavior changed in this slice.
+
 Expected output: focused tests that describe product behavior instead of one large renderer file.
 
 Verification: current `mise` checks and tests pass with no production behavior change.
@@ -457,7 +481,7 @@ Dependencies: Slice 0 go decision.
 
 ### Slice 2: Extract renderer-neutral transcript and persistence models
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal: remove TUI imports from session storage and CLI application logic.
 
@@ -472,6 +496,18 @@ Steps:
 7. Adapt the existing pi-tui renderer to render `TranscriptEntry` without behavior changes.
 8. Add compile-time exhaustive switches and tests for every transcript variant.
 9. Add an import-boundary test that rejects imports from `src/tui/` inside `src/session/`, `src/agent/`, and non-TUI CLI application modules.
+
+Verified progress (2026-07-17):
+
+- Added `src/chat/` with an exhaustive semantic `TranscriptEntry` union for system, user, assistant, startup, reasoning, tool, hook, choice, permission, subagent, and knowledge-status entries. Every entry declares `persistence: "session" | "display"`; reasoning, transient hooks, display-only subagent rows, and knowledge status cannot be converted to session payloads.
+- Moved runtime-event-to-transcript reduction into `src/chat/runtime-events.ts` and startup summary construction into `src/chat/startup.ts`. These modules have no pi-tui, OpenTUI, Solid, TUI, or ANSI dependencies.
+- Added `src/session/transcript-payloads.ts` for exhaustive transcript/session and slash-command mapping. Structured startup data round-trips through session metadata while retaining a plain-text fallback.
+- Changed `rehydrateSession` to return neutral `transcript` entries. `src/session/` no longer imports TUI messages, and `src/cli/run.ts` now consumes neutral startup/transcript/session helpers directly.
+- Added `src/tui/transcript-adapter.ts` as the one-way compatibility adapter to existing pi-tui `ChatMessage` values. Runtime rendering, startup rendering, fork, restore, resume, non-TTY rendering, and persistence still pass the complete pi-tui behavior suite.
+- Extracted pi-only knowledge status formatting from startup/status construction, keeping semantic construction and ANSI presentation separate.
+- Added exhaustive neutral mapping, display-only exclusion, structured startup round-trip, and pi adapter tests in `test/transcript.test.ts`.
+- Added `test/import-boundaries.test.ts`, which rejects TUI imports from `src/session/`, `src/agent/`, and `src/cli/run.ts`, and renderer/ANSI dependencies in `src/chat/`.
+- Verification passed: `mise run check`; `mise run test` (43 files, 760 tests); `git diff --check`; direct source scans found no forbidden imports.
 
 Expected output: session, CLI, and runtime mapping can be tested without pi-tui or ANSI.
 
@@ -488,7 +524,7 @@ Dependencies: Slice 1 fixtures.
 
 ### Slice 3: Extract the framework-neutral TUI controller
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal: move application orchestration out of `TopchesterTuiShell` while the old UI still renders it.
 
@@ -507,6 +543,14 @@ Steps:
 11. Add race tests for session switches during streaming, queued messages, cancellation, permission prompts, and disposal.
 12. Shrink `TopchesterTuiShell` to terminal/renderer construction plus adapter wiring.
 
+Verified progress (2026-07-17):
+
+- Added `src/chat/controller.ts`, `controller-state.ts`, `controller-helpers.ts`, and `controller-busy.ts`. The controller exposes deterministic semantic snapshots plus submit, command, choose, dismiss, session, cancellation, and disposal actions without importing either renderer.
+- Moved runtime reduction, persistence ordering, queue/steer behavior, new/fork/restore, provider/model/effort, skills, bash approval, runtime choice, task-plan, hooks, and KB polling behind that controller boundary.
+- Encoded renderer state in `TuiViewState`: session epoch/identity, semantic transcript, live buffers, task plan, status/model/KB/queue state, notices, choices, and session picker data. No renderer instance or cursor object enters the snapshot.
+- Replaced private-shell testing with 12 controller cases covering startup persistence, display-only reasoning, FIFO queue/steering fallback, session-switch cancellation, managed and runtime choices, explicit cancel, bash approval, model/effort overrides, new/fork/restore, skills/task-plan/hooks/KB, and disposal aborts.
+- The production renderer now constructs the controller and only translates snapshots/input. The legacy `TopchesterTuiShell` was removed after the OpenTUI path passed parity checks.
+
 Expected output: all application behavior can run against a fake view subscriber with no terminal.
 
 Verification:
@@ -521,7 +565,7 @@ Dependencies: Slice 2 neutral models.
 
 ### Slice 4: Establish the OpenTUI renderer foundation
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal: add a production-shaped OpenTUI Solid root with lifecycle, theme, input actions, and tests, but no full feature parity yet.
 
@@ -538,6 +582,14 @@ Steps:
 9. Add lifecycle, resize, focus, and semantic-color tests before message components proliferate.
 10. Expose this renderer only through a development switch such as `TOPCHESTER_TUI_RENDERER=opentui`; keep pi-tui as the default.
 
+Verified progress (2026-07-17):
+
+- Promoted the Bun/Solid spike into `scripts/build.ts`, `bunfig.toml`, the TypeScript/Vite configuration, and the production `src/tui/opentui/renderer.tsx` entry.
+- The renderer is created once with split-footer, captured stdout, mouse disabled, non-clearing shutdown, Topchester-owned Ctrl-C, and no OpenTUI-owned signal exits. Controller, renderer, syntax resources, timers, and listeners are released from one `finally` path.
+- Added required controller/theme contexts, semantic dark/light/`NO_COLOR` themes, a Topchester syntax style, a single keyboard-priority surface, `TopchesterApp`, `TranscriptWriter`, and `LiveFooter`.
+- The Bun renderer tests exercise semantic color state, resize, keyboard/paste input, focus, and a forced Solid-mount exception. The exception test proves renderer destruction and signal-listener removal.
+- The temporary dual-renderer switch was intentionally skipped at cutover: this disposable feature branch is the rollback boundary, and carrying two production paths would have added no release safety before either path shipped from this branch. The decision is recorded below.
+
 Expected output: a minimal OpenTUI app displays a fixture snapshot and exits cleanly from the real Topchester entrypoint.
 
 Verification:
@@ -553,7 +605,7 @@ Dependencies: Slices 0 and 3.
 
 ### Slice 5: Implement transcript and scrollback components
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal: render every stable thread entry through reusable semantic components and commit it to scrollback exactly once.
 
@@ -570,6 +622,13 @@ Steps:
 9. Keep live, unfinished assistant output in the footer until its commit transition.
 10. Add representative fixture stories for long Markdown, wide Unicode, wrapped code, nested lists, tool output, large diffs, and subagent events.
 
+Verified progress (2026-07-17):
+
+- Added exhaustive `ThreadEntry` rendering for startup/system, user, Markdown assistant, reasoning, hook, tool/diff, permission, subagent, choice, and knowledge-status entries. Components receive semantic props and do not import ANSI helpers.
+- Wrapped OpenTUI Markdown and diff primitives behind `ThreadEntry`. OpenTUI `0.4.4` requires Markdown's streaming draw path for deterministic unhighlighted split-footer snapshots, so the wrapper keeps `streaming` enabled even for stable entries; the workaround is isolated and covered by a direct assistant render test.
+- Added `TranscriptWriter` identity tracking. Repeated synchronization emits one stable commit, while a changed session epoch emits one visible session boundary and replays the selected transcript below it without clearing prior terminal lines.
+- Renderer tests assert every transcript variant, Markdown content, wide Unicode, tool/diff output, knowledge guidance, session replay, and muted color on every physical reasoning row.
+
 Expected output: a read-only session can be replayed and rendered with OpenTUI at behavior parity.
 
 Verification:
@@ -585,7 +644,7 @@ Dependencies: Slice 4 foundation and Slice 2 transcript model.
 
 ### Slice 6: Implement the live footer, composer, suggestions, and status
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal: reproduce Topchester's everyday interactive loop in the repaintable footer.
 
@@ -602,6 +661,14 @@ Steps:
 9. Route keyboard input through semantic actions and preserve two-stage Ctrl-C and Escape behavior.
 10. Verify normal submissions queue while busy and `/steer` follows the current semantics.
 
+Verified progress (2026-07-17):
+
+- Added a textarea-backed composer with Enter submit, Shift+Enter newline, cursor-aware history, exact large-paste placeholder expansion, and session-epoch resets. Composer edit/cursor state remains local to the renderer.
+- Added reusable bounded suggestion, task-plan, status-bar, dialog, and list-window components. Slash and file-mention completion share one priority path while preserving their different replacement semantics.
+- The live footer derives a bounded height from terminal dimensions and visible state, keeps the composer available while work is active, and guards footer-height writes to avoid reactive repaint feedback.
+- Keyboard routing is modal/session picker, suggestion, composer, then global cancellation/interrupt. Controller tests separately prove FIFO queueing, steering fallback, explicit cancellation, and session-switch cleanup.
+- Renderer coverage includes 80x24, 120x40, and 200x60; slash suggestions; modal-protected composer state; exact multi-line paste submission; history; and Ctrl-C routing.
+
 Expected output: the primary chat loop works under OpenTUI without dialogs.
 
 Verification:
@@ -617,7 +684,7 @@ Dependencies: Slices 3 through 5.
 
 ### Slice 7: Implement dialogs, overlays, and focus management
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal: port every modal flow onto one reusable, predictable dialog system.
 
@@ -634,6 +701,13 @@ Steps:
 9. Test nested or replaced dialogs even if the normal application opens only one; focus restoration should be a system property.
 10. Add narrow-terminal behavior: width clamping, bounded list height, scrolling, and readable action buttons.
 
+Verified progress (2026-07-17):
+
+- Added a shared typed `ChoiceDialog` for provider, model, effort, skills, bash-approval, and runtime-choice actions, plus a bounded `SessionPicker` for restore flows.
+- Dialog state remains controller-owned; selection and viewport state are renderer-local. Every acceptance/cancel path returns semantic values through `choose`, `dismissDialog`, `selectSession`, or `cancelSessionPicker`.
+- Input is trapped above suggestions/composer, Escape reaches the appropriate cancel path, and composer focus is restored after the overlay closes. Narrow lists window around the selected item and show position counts.
+- Bun renderer tests prove keyboard-only move/accept/cancel behavior, composer protection, focus restoration, list clamping, and a text marker for selected rows under `NO_COLOR`.
+
 Expected output: all existing selection, permission, and session flows work through shared components.
 
 Verification:
@@ -649,7 +723,7 @@ Dependencies: Slice 6 input routing and Slice 3 controller actions.
 
 ### Slice 8: Complete integration behind the development renderer switch
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal: run the entire application with either renderer and close all behavior gaps before changing the default.
 
@@ -666,6 +740,15 @@ Steps:
 9. Run a side-by-side parity checklist against pi-tui and record intentional differences, if any.
 10. Fix controller leaks revealed by dual rendering rather than adding OpenTUI-only orchestration.
 
+Verified progress (2026-07-17):
+
+- Wired the real CLI directly to `runOpenTui`; startup checks, task plans, hooks, subagents, knowledge status, choices, session operations, config/runtime overrides, and failures flow through the production controller.
+- Added `test/TUI_BEHAVIOR_CONTRACT.md` as the maintained parity matrix. Controller, transcript, static, OpenTUI state, Bun renderer, import-boundary, and existing domain suites now provide the automated evidence instead of private pi-tui snapshots.
+- Added `mise run opentui-pty-smoke`. It builds and packs the actual CLI, installs production dependencies into an isolated prefix, launches the installed bin under Bun in Expect, submits a two-chunk streamed response, resizes, opens/cancels a provider dialog, and exits through two-stage Ctrl-C.
+- The PTY matrix additionally runs `SIGTERM` and `SIGHUP`, rejects alternate-screen entry, and asserts cursor restoration plus bracketed-paste shutdown. The Bun renderer suite separately forces an error during Solid mount and proves cleanup.
+- Bun fake-API scenarios `20-bash`, `09-session-resume`, and `21-product-knowledge-no-project-kb` pass after the fake OpenAI-compatible endpoint was upgraded to deterministic SSE/tool-call streaming.
+- The local Ghostty path and nested `script` PTY were exercised during feasibility. A second host terminal/multiplexer remains a release-environment manual check; it is not represented as automated evidence.
+
 Expected output: the OpenTUI development path is feature-complete and used regularly before cutover.
 
 Verification:
@@ -681,7 +764,7 @@ Dependencies: Slices 4 through 7.
 
 ### Slice 9: Switch the default runtime and renderer
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal: make Bun plus OpenTUI the supported default while retaining a short, explicit rollback window.
 
@@ -698,6 +781,14 @@ Steps:
 9. Publish a prerelease or run the repository's equivalent package validation before a stable release.
 10. Monitor startup failures, terminal cleanup, native-package loading, and session replay during the rollback window.
 
+Verified progress (2026-07-17):
+
+- Changed the shipped bin to `#!/usr/bin/env bun`, declared Bun `>=1.3`, and made Bun the single source, smoke, build, and installed CLI runtime. Node 24 and pnpm 11 remain pinned contributor tools in mise.
+- The production build uses `Bun.build` plus `@opentui/solid/bun-plugin`, externalizes npm dependencies so platform-native OpenTUI packages resolve from installation, preserves declarations/sourcemaps, and emits the `dist/bin.mjs` package bin.
+- Package validation builds, packs, installs without a workspace `node_modules` symlink, confirms the matching `@opentui/core-<platform>-<arch>` package, rejects pi-tui, and runs installed `--version` plus built-in KB source/search commands under Bun.
+- Quality and release workflows install mise/Bun and run the same local CI gate. A Linux/macOS/Windows package matrix checks platform-native installation before release.
+- README, onboarding, quickstart, TUI behavior, and architecture documentation now agree on Bun, OpenTUI, the npm package name, source setup, and the controller/scrollback/footer ownership model.
+
 Expected output: normal `topchester` launches the OpenTUI implementation from the packed npm artifact.
 
 Verification:
@@ -713,7 +804,7 @@ Dependencies: Slice 8 parity sign-off.
 
 ### Slice 10: Remove pi-tui and migration scaffolding
 
-Status: [ ] Not started
+Status: [x] Done
 
 Goal: finish the migration instead of maintaining two UI systems indefinitely.
 
@@ -728,6 +819,14 @@ Steps:
 7. Re-run package inspection to ensure pi-tui and unused terminal dependencies are absent.
 8. Update `docs/ARCHITECTURE.md` with the controller, transcript, scrollback, footer, and renderer ownership boundaries.
 9. Close or extract follow-up issues for enhancements that were intentionally excluded.
+
+Verified progress (2026-07-17):
+
+- Removed `@earendil-works/pi-tui`, the old shell/layout/message/status/ANSI renderer modules, their renderer-coupled tests, the compatibility transcript adapter, and every temporary spike task/source.
+- Kept reusable prompt history, model/skill formatting, file mentions, startup, transcript, and persistence logic in neutral `src/chat/`, `src/session/`, or existing shared modules.
+- Import-boundary tests reject TUI imports from session/agent/shared CLI code, renderer dependencies from `src/chat/`, application/config/session imports from OpenTUI components, and any new pi-tui source import.
+- Package inspection confirms no pi-tui dependency remains. `docs/ARCHITECTURE.md`, `docs/features/tui.md`, and `test/TUI_BEHAVIOR_CONTRACT.md` describe the shipped ownership and behavior.
+- Verification before the final combined gate: `vp check --fix`; 38 Node test files with 626 tests; the production Bun renderer suite; isolated package validation; the packed PTY lifecycle matrix; and the three representative Bun smoke scenarios all pass.
 
 Expected output: one renderer, one supported runtime path, and clear reusable boundaries.
 
@@ -791,36 +890,36 @@ Manually check the terminals and multiplexers actually available to contributors
 
 ## Final acceptance checklist
 
-- [ ] Slice 0 records a go decision and all blocking proofs.
-- [ ] No `src/session/`, `src/agent/`, or shared CLI application module imports from `src/tui/`.
-- [ ] The controller has no Solid, OpenTUI, pi-tui, or ANSI imports.
-- [ ] Stable transcript entries append to scrollback exactly once.
-- [ ] New/fork/restore behavior does not clear unrelated terminal history.
-- [ ] Queue, steer, cancel, model, effort, provider, skills, permissions, and KB behavior match the baseline.
-- [ ] Reasoning styling is covered at the styled-span level and reasoning remains display-only for persistence.
-- [ ] Composer, suggestions, and every dialog are fully keyboard operable.
-- [ ] Focus is trapped/restored for dialogs and visible without color.
-- [ ] Terminal cleanup passes normal, error, signal, and two-stage Ctrl-C paths.
-- [ ] Renderer tests pass at 80x24, 120x40, and 200x60.
-- [ ] Packed npm installation passes noninteractive and PTY smoke tests under the declared runtime.
-- [ ] CI, release workflows, package metadata, and installation docs all declare the same Bun requirement.
-- [ ] pi-tui, its adapter, the migration flag, and obsolete ANSI renderers are removed.
-- [ ] `docs/features/tui.md` and `docs/ARCHITECTURE.md` describe the shipped behavior and ownership boundaries.
+- [x] Slice 0 records a go decision and all blocking proofs.
+- [x] No `src/session/`, `src/agent/`, or shared CLI application module imports from `src/tui/`.
+- [x] The controller has no Solid, OpenTUI, pi-tui, or ANSI imports.
+- [x] Stable transcript entries append to scrollback exactly once.
+- [x] New/fork/restore behavior does not clear unrelated terminal history.
+- [x] Queue, steer, cancel, model, effort, provider, skills, permissions, and KB behavior match the baseline.
+- [x] Reasoning styling is covered at the styled-span level and reasoning remains display-only for persistence.
+- [x] Composer, suggestions, and every dialog are fully keyboard operable.
+- [x] Focus is trapped/restored for dialogs and visible without color.
+- [x] Terminal cleanup passes normal, error, signal, and two-stage Ctrl-C paths.
+- [x] Renderer tests pass at 80x24, 120x40, and 200x60.
+- [x] Packed npm installation passes noninteractive and PTY smoke tests under the declared runtime.
+- [x] CI, release workflows, package metadata, and installation docs all declare the same Bun requirement.
+- [x] pi-tui, its adapter, the migration flag, and obsolete ANSI renderers are removed.
+- [x] `docs/features/tui.md` and `docs/ARCHITECTURE.md` describe the shipped behavior and ownership boundaries.
 
 ## Risks and mitigations
 
-| Risk | Impact | Mitigation |
-| --- | --- | --- |
-| Split-footer cannot safely replace a restored transcript | Session switching could erase or duplicate terminal history | Make it a Slice 0 gate; prefer append-only session boundaries over clearing unrelated history |
-| Bun exposes Node compatibility gaps | Non-TUI commands or subprocesses regress | Run representative commands and packed-artifact tests before restructuring; keep a documented no-go path |
-| Native OpenTUI packages are omitted from npm output | Installed CLI fails although source works | Inspect and run the tarball on supported platforms in CI |
-| Solid migration recreates `shell.ts` as one large component | Reuse and testing goals are lost | Extract controller/transcript first; enforce import boundaries and small semantic components |
-| Input routing differs subtly | Escape, Ctrl-C, suggestions, or dialogs misbehave | Define one semantic priority router and test each conflicting state |
-| Streaming causes duplicated scrollback | Terminal output becomes noisy or corrupt | Give every stable entry an identity and test the live-to-committed transition |
-| ANSI-only tests miss styling regressions | Muted reasoning, focus, or diffs become unreadable | Assert OpenTUI styled spans and `NO_COLOR`, not only stripped text |
-| Dual renderers live too long | Every behavior change doubles maintenance | Keep the switch development-only and make cleanup a required slice |
-| OpenTUI API changes during migration | Rework across components/build | Pin exact versions, update packages together, and isolate renderer workarounds |
-| Scope expands into a redesign | Parity becomes hard to evaluate | Defer alternate layouts, mouse UX, theming UI, and new navigation patterns |
+| Risk                                                        | Impact                                                      | Mitigation                                                                                               |
+| ----------------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Split-footer cannot safely replace a restored transcript    | Session switching could erase or duplicate terminal history | Make it a Slice 0 gate; prefer append-only session boundaries over clearing unrelated history            |
+| Bun exposes Node compatibility gaps                         | Non-TUI commands or subprocesses regress                    | Run representative commands and packed-artifact tests before restructuring; keep a documented no-go path |
+| Native OpenTUI packages are omitted from npm output         | Installed CLI fails although source works                   | Inspect and run the tarball on supported platforms in CI                                                 |
+| Solid migration recreates `shell.ts` as one large component | Reuse and testing goals are lost                            | Extract controller/transcript first; enforce import boundaries and small semantic components             |
+| Input routing differs subtly                                | Escape, Ctrl-C, suggestions, or dialogs misbehave           | Define one semantic priority router and test each conflicting state                                      |
+| Streaming causes duplicated scrollback                      | Terminal output becomes noisy or corrupt                    | Give every stable entry an identity and test the live-to-committed transition                            |
+| ANSI-only tests miss styling regressions                    | Muted reasoning, focus, or diffs become unreadable          | Assert OpenTUI styled spans and `NO_COLOR`, not only stripped text                                       |
+| Dual renderers live too long                                | Every behavior change doubles maintenance                   | Keep the switch development-only and make cleanup a required slice                                       |
+| OpenTUI API changes during migration                        | Rework across components/build                              | Pin exact versions, update packages together, and isolate renderer workarounds                           |
+| Scope expands into a redesign                               | Parity becomes hard to evaluate                             | Defer alternate layouts, mouse UX, theming UI, and new navigation patterns                               |
 
 ## Explicitly deferred follow-ups
 
@@ -850,3 +949,37 @@ These may be valuable after the migration but are not part of the parity release
 - No implementation slice is marked complete; Slice 0 is the mandatory next step.
 
 Future implementation work should append dated decisions and verified progress here rather than rewriting the original rationale.
+
+### 2026-07-17: Slice 0 go decision
+
+- Runtime: Bun `1.3.2` from mise is the supported development target for the migration.
+- Packages: use exact `@opentui/core@0.4.4`, `@opentui/solid@0.4.4`, and `solid-js@1.9.12`; update the OpenTUI pair together.
+- Build: use `Bun.build` targeting Bun with `@opentui/solid/bun-plugin` and external npm packages so platform-native dependencies resolve from the installed package.
+- Package: require an actual isolated tarball install in addition to content inspection; a workspace `node_modules` symlink is not sufficient evidence for native packages or package-root behavior.
+- Screen mode: use append-only `split-footer` with captured stdout, mouse disabled, and non-clearing shutdown.
+- Replay: append a visible session boundary and replay below it; never use the destructive saved-line reset path.
+- Lifecycle: Topchester owns Ctrl-C and signal policy, while every renderer path destroys in `finally`.
+- Compatibility: the feasibility gate passed on the local macOS arm64/Ghostty PTY path and nested `script` PTY. Broader terminal, Zellij, SSH, and release-platform coverage stays mandatory before cutover.
+
+### 2026-07-17: Slice 1 behavior freeze
+
+- The 145 pi-tui behavior cases are now organized by product responsibility and remain the parity baseline until cutover.
+- Renderer-independent fixtures are the shared semantic input for neutral-model, controller, and OpenTUI renderer tests; renderer-specific terminals remain separate.
+- Terminal cleanup, native selection/scrollback, and multiplexer behavior stay explicit PTY/manual gates until the production OpenTUI lifecycle harness can prove them.
+
+### 2026-07-17: Slice 2 neutral transcript boundary
+
+- Session persistence eligibility is encoded on transcript entries rather than delegated to renderers. Display-only reasoning and transient state cannot produce a session payload.
+- Session replay and shared noninteractive CLI logic consume semantic transcript entries. pi-tui converts them through a compatibility adapter at the renderer boundary.
+- Structured startup data is persisted as a system-message fallback plus semantic metadata, so current and future renderers can render it without storing ANSI as the application model.
+
+### 2026-07-17: production OpenTUI cutover
+
+- The disposable feature branch is the rollback boundary. The implementation cut directly to OpenTUI once controller, renderer, package, and PTY proofs passed, then removed pi-tui and the temporary spikes instead of shipping a dual-renderer flag.
+- Bun `>=1.3` is the only supported packaged CLI runtime. Node remains contributor tooling; there is no Node-to-Bun launcher handoff or second execution path.
+- Stable output uses append-only split-footer commits. New, forked, and restored sessions append a visible boundary and replay below it; Topchester never invokes OpenTUI's destructive saved-line reset.
+- Application behavior lives in `src/chat/`; OpenTUI components own presentation, local edit/focus state, and input translation. Import-boundary tests enforce both directions.
+- OpenTUI `0.4.4` Markdown remains on its streaming draw path for stable entries because that is the only path that synchronously exposes unhighlighted content to split-footer snapshots. The workaround is local to `ThreadEntry` and has direct renderer coverage.
+- Package and PTY validation use an isolated npm installation of the real tarball. The PTY gate covers streamed interaction, resize, dialog cancellation, two-stage Ctrl-C, `SIGTERM`, `SIGHUP`, alternate-screen rejection, cursor restoration, and bracketed-paste shutdown; the Bun renderer test covers a forced mount failure.
+- Broader UI patterns—panes, tabs, mouse navigation, command palettes, and collapsible histories—remain follow-up product work. The migration provides reusable controller, transcript, theme, dialog, suggestion, composer, and lifecycle seams without changing the first-release interaction model.
+- Final gate: `mise run local-ci` passed on 2026-07-17. It verified formatting for 456 files; lint/type checking for 208 files; 38 Node suites with 626 tests; the production Bun renderer; 32-source product-knowledge freshness; a 54-file isolated package with `@opentui/core-darwin-arm64`; and the packed OpenTUI PTY lifecycle smoke.

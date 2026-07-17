@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Draft
+Status: Current
 
 ## Product Direction
 
@@ -31,30 +31,25 @@ If no KB exists for a code project, Topchester should compile one before enterin
 
 ## Runtime Decision
 
-Topchester V0 should be a TypeScript/Node.js CLI application.
+Topchester is a TypeScript CLI whose supported runtime is Bun `>=1.3`.
 
 Rationale:
 
-- The first target repositories are TypeScript/JavaScript projects.
-- The chosen TUI foundation, `@earendil-works/pi-tui`, is a TypeScript package for Node.js.
-- Pi's coding-agent packages are TypeScript/Node packages with Node engine constraints.
-- npm gives the expected install path for users who already install terminal coding agents globally.
-- The current local environment has Node and npm available.
+- OpenTUI's native renderer has a direct, supported Bun path.
+- Bun runs the interactive CLI, noninteractive commands, the production bundle, and packed-artifact smoke tests.
+- pnpm remains the repository package manager; choosing Bun as the runtime does not require changing package managers.
+- npm remains a supported distribution channel. The installed `topchester` bin uses `#!/usr/bin/env bun`.
+- Node 24 remains a contributor tool for existing repository scripts, but it is not the packaged CLI runtime.
 
-Local verification on this machine:
-
-- `node`: v24.10.0
-- `npm`: 11.6.1
-- `npx`: 11.6.1
-- `pnpm`: 9.12.1
+The repository pins Bun 1.3, Node 24, and pnpm 11 through mise. Bun builds and runs the shipped CLI. Node and pnpm remain contributor tooling for repository scripts, tests, and package management.
 
 OpenCode comparison:
 
 - OpenCode is distributed through an npm-style CLI command.
-- Its current source tree is TypeScript-oriented and uses Bun for development/building.
-- Its published CLI bin is a Node shim (`#!/usr/bin/env node`) that resolves and launches a platform-specific native `opencode` binary.
-- Therefore, the useful lesson is the installation and command shape: an npm-installable CLI with optional platform-specific binaries later.
-- Topchester V0 should start simpler: Node/TypeScript runtime, npm package, `topchester` bin. If startup/performance/packaging later require it, we can add OpenCode-style platform binary packages.
+- Its current source tree uses Bun and OpenTUI.
+- Topchester adopts the smaller relevant boundaries: explicit renderer lifecycle, append-only scrollback, a reactive footer, required contexts, semantic themes, and a shared dialog system.
+- Topchester remains an in-process agent and does not copy OpenCode's client/server or Effect architecture.
+- Standalone platform binaries remain a separate future distribution project.
 
 ## Install and Invocation Workflow
 
@@ -64,7 +59,7 @@ Target user workflow:
 # install
 curl -fsSL https://topchester.com/install | sh
 # or
-npm install -g topchester
+npm install -g topchester-ai
 
 # use
 cd /path/to/project
@@ -121,55 +116,19 @@ When the user runs `topchester` in a directory, startup should follow this shape
 
 ## TUI Foundation
 
-We will use the TUI package from the `earendil-works/pi` repository:
+The interactive UI uses exact, mutually compatible OpenTUI packages:
 
-- Source: https://github.com/earendil-works/pi/tree/main/packages/tui
-- Package: `@earendil-works/pi-tui`
+- `@opentui/core@0.4.4`
+- `@opentui/solid@0.4.4`
+- `solid-js@1.9.12`
 
-This is the chosen foundation for the terminal UI layer unless explicitly replaced later.
+The production renderer uses `screenMode: "split-footer"`, captured external stdout, no mouse reporting, and non-clearing shutdown. Stable transcript entries append once to native scrollback; the composer, suggestions, task plan, busy state, status, and dialogs repaint only in the footer.
 
-Important observed properties:
+OpenTUI is a rendering dependency, not the application architecture. `src/chat/controller.ts` owns runtime/session behavior and exposes semantic snapshots/actions. `src/chat/transcript.ts` owns renderer-neutral entries and persistence eligibility. Components under `src/tui/opentui/` own layout, theme, focus, and keyboard translation only.
 
-- It is a TypeScript/Node package.
-- It exposes component-style terminal UI primitives.
-- It supports differential rendering, synchronized output, input/editor components, markdown rendering, overlays, selection lists, images, and terminal process handling.
+## Agent Strategy
 
-## Pi Agent Strategy
-
-Topchester should be Pi-inspired, but should not start as a fork of Pi's coding agent.
-
-Recommended V0 approach:
-
-1. Use `@earendil-works/pi-tui` for the TUI shell.
-2. Build Topchester's own runtime boundaries around the mandatory KB contract.
-3. Study Pi's coding-agent architecture for useful patterns: sessions, tools, prompts, auth, state, streaming, and terminal interaction.
-4. Only embed or reuse `@earendil-works/pi-coding-agent` if we can enforce KB-first behavior cleanly at the runtime boundary.
-5. Avoid modifying Pi internals unless a later spike proves that embedding/reuse is insufficient.
-
-Why not fork or directly modify Pi first:
-
-- The product invariant is different: Topchester's agent loop is inseparable from the KB.
-- A fork creates upstream drift and maintenance risk.
-- Deep modifications may make it harder to keep the architecture small and explicit.
-- The Knowledge Compiler, KB service, drift model, and write-back loop need to be first-class runtime concepts, not bolted onto a generic agent as afterthoughts.
-
-## OpenClaw / Pi Integration Research
-
-OpenClaw provides a useful precedent for how to integrate Pi without forking it.
-
-Observed from OpenClaw documentation/source:
-
-- OpenClaw depends on Pi packages (`pi-ai`, `pi-agent-core`, `pi-coding-agent`, `pi-tui`).
-- It embeds Pi through the SDK instead of spawning the `pi` CLI as a subprocess.
-- Its documented integration imports `createAgentSession`, `DefaultResourceLoader`, `SessionManager`, and `SettingsManager` from `pi-coding-agent`.
-- It creates an `AgentSession` programmatically, injects built-in/custom tools, overrides system prompt/context, subscribes to session events, and handles streaming/tool lifecycle callbacks itself.
-- It also uses `pi-tui` directly for a local TUI mode.
-
-Implication for Topchester:
-
-- If we reuse Pi beyond the TUI, the safer model is OpenClaw-style SDK embedding, not subprocess wrapping and not a hard fork.
-- The embedding seam must let Topchester inject KB context before model calls, route tool decisions through KB-aware policy, and update KB state after edits.
-- If that seam is not strong enough, Topchester should keep its own agent runtime while still using `pi-tui`.
+Topchester keeps its own KB-aware runtime rather than coupling application behavior to a UI framework or another coding agent. Competitor checkouts remain useful implementation references, but the runtime, controller, transcript model, tools, and session log are Topchester-owned boundaries.
 
 ## High-Level Architecture
 
@@ -179,10 +138,10 @@ Topchester should be organized around these responsibilities:
    - Owns `topchester`, `topchester kb sync`, `topchester kb scan`, and related commands.
    - Handles install-time/runtime checks, config discovery, workspace root resolution, and command dispatch.
 
-2. TUI shell
-   - Owns rendering, keyboard input, navigation, layout, overlays, status bars, and terminal interaction.
-   - Built on `@earendil-works/pi-tui`.
-   - Should not own the agent loop or KB semantics.
+2. Chat controller and OpenTUI renderer
+   - The framework-neutral controller owns runtime reduction, session operations, queue/steer/cancel, choices, model/provider/effort, skills, KB polling, and disposal.
+   - OpenTUI Solid components own rendering, keyboard translation, focus, layout, overlays, status, and terminal interaction.
+   - `TranscriptWriter` is the sole stable-scrollback commit boundary; `LiveFooter` is the sole repaintable region.
 
 3. Workspace detector
    - Identifies the project root and project type.
@@ -207,7 +166,7 @@ Topchester should be organized around these responsibilities:
    - Must be KB-aware by construction.
    - Should not have a normal coding path that bypasses the KB.
    - Uses the KB to orient, plan, estimate impact, and choose verification, while resolving task-critical facts against the current working tree.
-   - May be implemented as Topchester-owned runtime, or later as a Pi SDK embedding if a spike proves the KB contract can be enforced cleanly.
+   - Is implemented as a Topchester-owned runtime so the KB contract stays explicit and independent of the UI framework.
 
 7. Tool execution layer
    - Owns filesystem, shell, git, search, edit, test, package-manager, and future MCP/tool operations.
@@ -364,12 +323,12 @@ The agent can still use direct file reads, search, and tests. The constraint is 
 
 Resolved for V0:
 
-- Runtime: TypeScript/Node.js CLI.
+- Runtime: TypeScript on Bun `>=1.3`.
 - Command: `topchester` for the interactive agent.
 - Install shape: curl installer and npm global package.
-- TUI foundation: `@earendil-works/pi-tui`.
-- Agent strategy: Pi-inspired, not Pi fork first.
-- Possible Pi reuse: prefer OpenClaw-style SDK embedding if it can enforce KB-first semantics.
+- TUI foundation: OpenTUI Solid in append-only split-footer mode.
+- UI boundary: renderer-neutral controller and transcript model, with no application logic in components.
+- Agent strategy: Topchester-owned KB-aware runtime.
 - Canonical KB path: `topchester-kb/` by default, overrideable with `TOPCHESTER_KB_DIR`.
 - Generated cache path: `.agents/topchester-kb-cache/`.
 - KB API: local HTTP JSON-RPC core with MCP adapter on top.
@@ -378,18 +337,7 @@ Resolved for V0:
 
 ## Open Questions
 
-- Can Pi's `createAgentSession()` embedding seam enforce Topchester's KB-first runtime contract cleanly?
-- Should V0 implement a Topchester-owned agent loop immediately, or run a short spike comparing own-runtime vs Pi SDK embedding?
-- What exact state directory should Topchester use for user/session config outside project KB files?
-- How much of OpenCode's platform-binary distribution model should be copied later?
 - What should limited mode allow when the user opens a non-code directory?
 - What exact prompts/status copy should the first-run KB wizard use?
-
-## Near-Term Next Steps
-
-1. Create a minimal TypeScript/Node CLI skeleton with a `topchester` bin.
-2. Add workspace detection and a first-run project classification warning.
-3. Add a minimal TUI shell using `@earendil-works/pi-tui`.
-4. Add placeholder `topchester kb sync`, `topchester kb scan`, and `topchester kb status` commands.
-5. Spike Pi SDK embedding versus Topchester-owned runtime, with the key test being whether KB-first context retrieval and KB write-back can be enforced.
-6. Keep `docs/KNOWLEDGE.md` as the canonical KB architecture reference while runtime scaffolding starts.
+- Should a future release add standalone platform binaries, while keeping the npm package as the canonical installation path?
+- Which post-migration UI improvements should be introduced separately from renderer parity?

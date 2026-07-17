@@ -7,7 +7,7 @@
     "name": "topchester-knowledge-compiler",
     "version": 1
   },
-  "generatedAt": "2026-07-15T10:14:45.831Z",
+  "generatedAt": "2026-07-17T01:17:59.105Z",
   "packSpecHash": "sha256:8d279afcd49f232730a090bab4b795486cfc819732a23f2d9d207e410dc8f7cd",
   "sourceFileCount": 32,
   "entryCount": 32,
@@ -54,7 +54,7 @@
     },
     {
       "path": "docs/features/tui.md",
-      "contentHash": "sha256:dd891aef1c4225d4f7e46996ee7fdb90bf2ca10e40e5d861d0503be22a897506"
+      "contentHash": "sha256:7c5c83db79a81a35e2884c77b35fcdecd788464cd44a4ee9b201acad591823b4"
     },
     {
       "path": "docs/getting-started/first-project.md",
@@ -66,7 +66,7 @@
     },
     {
       "path": "docs/getting-started/quickstart.md",
-      "contentHash": "sha256:6793706739111911606b9b7f076f0f0ac409db15a03649f5333d95856df83ba9"
+      "contentHash": "sha256:0bbc38527799ef94b0fa0f80a53ea8581c8fcbb9c53966f182b956adfd94ac45"
     },
     {
       "path": "docs/hooks/events.md",

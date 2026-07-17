@@ -22,28 +22,34 @@ export async function startFakeApi(): Promise<FakeApiHandle> {
     }
 
     try {
-      const body = (await readJson(request)) as { model?: unknown; messages?: unknown; tools?: unknown };
+      const body = (await readJson(request)) as {
+        model?: unknown;
+        messages?: unknown;
+        stream?: unknown;
+        tools?: unknown;
+      };
       const model = typeof body.model === "string" ? body.model : "unknown";
       const prompt = extractPrompt(body.messages);
       const content = chooseResponse(prompt);
       requests.push({ model, prompt });
-      writeJson(response, 200, {
+      const choice = formatFakeChoice(model, body.tools, content);
+      const completion = {
         id: `fake-${requests.length}`,
         object: "chat.completion",
         created: Math.floor(Date.now() / 1000),
         model,
-        choices: [
-          {
-            index: 0,
-            ...formatFakeChoice(model, body.tools, content),
-          },
-        ],
+        choices: [{ index: 0, ...choice }],
         usage: {
           prompt_tokens: 1,
           completion_tokens: 1,
           total_tokens: 2,
         },
-      });
+      };
+      if (body.stream === true) {
+        writeEventStream(response, completion, choice);
+      } else {
+        writeJson(response, 200, completion);
+      }
     } catch (error) {
       writeJson(response, 500, { error: { message: error instanceof Error ? error.message : String(error) } });
     }
@@ -71,6 +77,62 @@ export async function startFakeApi(): Promise<FakeApiHandle> {
     requests,
     close: () => closeServer(server, sockets),
   };
+}
+
+function writeEventStream(
+  response: ServerResponse,
+  completion: {
+    id: string;
+    created: number;
+    model: string;
+    usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  },
+  choice: Record<string, unknown>
+): void {
+  response.writeHead(200, {
+    "cache-control": "no-cache",
+    "connection": "keep-alive",
+    "content-type": "text/event-stream",
+  });
+  const message = choice.message as
+    | { content?: string | null; role?: string; tool_calls?: Array<Record<string, unknown>> }
+    | undefined;
+  const content = typeof message?.content === "string" ? message.content : undefined;
+  const toolCalls = message?.tool_calls?.map((toolCall, index) => ({ index, ...toolCall }));
+  const deltas = content
+    ? splitStreamContent(content).map((part, index) => ({
+        ...(index === 0 ? { role: "assistant" } : {}),
+        content: part,
+      }))
+    : [{ role: "assistant", ...(toolCalls ? { tool_calls: toolCalls } : {}) }];
+
+  for (const delta of deltas) {
+    writeEventStreamData(response, {
+      id: completion.id,
+      object: "chat.completion.chunk",
+      created: completion.created,
+      model: completion.model,
+      choices: [{ index: 0, delta, finish_reason: null }],
+    });
+  }
+  writeEventStreamData(response, {
+    id: completion.id,
+    object: "chat.completion.chunk",
+    created: completion.created,
+    model: completion.model,
+    choices: [{ index: 0, delta: {}, finish_reason: choice.finish_reason ?? "stop" }],
+    usage: completion.usage,
+  });
+  response.end("data: [DONE]\n\n");
+}
+
+function splitStreamContent(content: string): string[] {
+  const middle = Math.max(1, Math.floor(content.length / 2));
+  return content.length <= 1 ? [content] : [content.slice(0, middle), content.slice(middle)];
+}
+
+function writeEventStreamData(response: ServerResponse, value: unknown): void {
+  response.write(`data: ${JSON.stringify(value)}\n\n`);
 }
 
 function formatFakeChoice(model: string, tools: unknown, content: string): Record<string, unknown> {

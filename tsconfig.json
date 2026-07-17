@@ -9,9 +9,11 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
+    "jsx": "preserve",
+    "jsxImportSource": "@opentui/solid",
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx", "scripts/**/*.ts", "scripts/**/*.tsx"]
 }

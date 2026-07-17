@@ -8,6 +8,10 @@ public: true
 
 # Quickstart
 
+## Requirement
+
+Install Bun `>=1.3`; the packaged `topchester` command and its OpenTUI renderer run on Bun.
+
 ## Install
 
 Install the CLI with your package manager:

@@ -89,7 +89,7 @@ export async function loadBuiltinProductKnowledgeSource(
 
 export function resolveTopchesterPackageRoot(currentFile = fileURLToPath(import.meta.url)): string {
   const currentDir = dirname(currentFile);
-  const candidates = [resolve(currentDir, "../../.."), resolve(currentDir, "..")];
+  const candidates = [resolve(currentDir, ".."), resolve(currentDir, "../../..")];
   return candidates.find((candidate) => existsSync(join(candidate, "package.json"))) ?? candidates[0]!;
 }
 

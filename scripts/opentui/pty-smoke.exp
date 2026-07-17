@@ -1,0 +1,70 @@
+#!/usr/bin/expect -f
+
+set timeout 45
+if {$argc != 6} {
+  puts stderr "usage: pty-smoke.exp <mode> <bun> <cli> <config> <workspace> <capture>"
+  exit 2
+}
+
+lassign $argv mode bun cli config workspace capture
+log_file -noappend $capture
+set env(TERM) "xterm-256color"
+set env(COLORTERM) "truecolor"
+set env(NO_COLOR) "1"
+set env(TOPCHESTER_LOG_LEVEL) "silent"
+set env(TOPCHESTER_LOG_FILE) ""
+
+spawn -noecho $bun $cli --config $config --workspace $workspace
+
+expect {
+  -re {Ask Topchester} {}
+  timeout { puts stderr "timed out waiting for the composer"; exit 10 }
+  eof { puts stderr "CLI exited before the composer appeared"; exit 11 }
+}
+
+if {$mode == "sigterm" || $mode == "sighup"} {
+  set signal [expr {$mode == "sigterm" ? "TERM" : "HUP"}]
+  exec /bin/kill -$signal [exp_pid]
+  expect {
+    eof {}
+    timeout { puts stderr "timed out waiting for $signal cleanup"; exit 19 }
+  }
+  set result [wait]
+  exit [lindex $result 3]
+}
+
+if {$mode != "interactive"} {
+  puts stderr "unsupported mode: $mode"
+  exit 3
+}
+
+send -- "PTY_STREAM_MARKER\r"
+after 1500
+
+exec /bin/stty rows 40 columns 120 <@ $spawn_id
+after 150
+send -- "/connect\r"
+expect {
+  -re {Connect provider} {}
+  timeout { puts stderr "timed out waiting for the provider dialog"; exit 14 }
+  eof { puts stderr "CLI exited before the provider dialog"; exit 15 }
+}
+
+send -- "\033"
+after 150
+send -- "\003"
+expect {
+  -re {press Ctrl-C again to exit} {}
+  timeout { puts stderr "timed out waiting for the first Ctrl-C notice"; exit 16 }
+  eof { puts stderr "CLI exited after only one Ctrl-C"; exit 17 }
+}
+
+send -- "\003"
+expect {
+  eof {}
+  timeout { puts stderr "timed out waiting for the second Ctrl-C exit"; exit 18 }
+}
+
+set result [wait]
+set status [lindex $result 3]
+exit $status

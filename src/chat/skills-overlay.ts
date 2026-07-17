@@ -7,16 +7,13 @@ export const SKILL_OVERLAY_BACK_VALUE = "__topchester_skills_back__";
 
 export function filterSkillsForOverlay(skills: readonly SkillDescriptor[], query = ""): SkillDescriptor[] {
   const normalizedQuery = query.trim().toLowerCase();
-
-  if (!normalizedQuery) {
-    return [...skills];
-  }
-
-  return skills.filter((skill) =>
-    [skill.name, skill.description, skill.source, skill.compatibilitySource]
-      .filter(Boolean)
-      .some((value) => value!.toLowerCase().includes(normalizedQuery))
-  );
+  return normalizedQuery
+    ? skills.filter((skill) =>
+        [skill.name, skill.description, skill.source, skill.compatibilitySource]
+          .filter(Boolean)
+          .some((value) => value!.toLowerCase().includes(normalizedQuery))
+      )
+    : [...skills];
 }
 
 export function formatSkillsOverlayBody(skills: ResolvedSkills, visibleSkills: readonly SkillDescriptor[]): string {
@@ -26,20 +23,15 @@ export function formatSkillsOverlayBody(skills: ResolvedSkills, visibleSkills: r
     "",
     ...visibleSkills.map((skill) => `${skill.name}  ${formatSkillSource(skill)}\n  ${skill.description}`),
   ];
-
   if (visibleSkills.length === 0) {
     lines.push("No skills matched.");
   }
-
   return lines.join("\n");
 }
 
 export function createSkillsOverlayActions(visibleSkills: readonly SkillDescriptor[]): AgentChoiceAction[] {
   return [
-    ...visibleSkills.map((skill) => ({
-      label: `Inspect ${skill.name}`,
-      value: `inspect:${skill.name}`,
-    })),
+    ...visibleSkills.map((skill) => ({ label: `Inspect ${skill.name}`, value: `inspect:${skill.name}` })),
     { label: "Reload", value: SKILL_OVERLAY_RELOAD_VALUE },
     { label: "Close", value: SKILL_OVERLAY_CLOSE_VALUE },
   ];
@@ -52,7 +44,6 @@ export function formatSkillInspectBody(skill: LoadedSkill): string {
     `scripts ${skill.linkedFiles.scripts.length}`,
     `assets ${skill.linkedFiles.assets.length}`,
   ].join(", ");
-
   return [
     `source: ${formatSkillSource(skill)}`,
     `path: ${skill.skillFile}`,

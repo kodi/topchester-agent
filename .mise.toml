@@ -23,8 +23,19 @@ dir = "{{config_root}}"
 run = "vp lint"
 
 [tasks.test]
+depends = ["test-node", "opentui-test"]
+
+[tasks.test-node]
 dir = "{{config_root}}"
 run = "vp test run --dir test"
+
+[tasks.opentui-test]
+dir = "{{config_root}}"
+run = "bun scripts/opentui/production-test.tsx"
+
+[tasks.opentui-pty-smoke]
+dir = "{{config_root}}"
+run = "node --import tsx scripts/opentui/pty-smoke.ts"
 
 [tasks.smoke]
 dir = "{{config_root}}"
@@ -55,7 +66,8 @@ dir = "{{config_root}}"
 run = "vp check"
 
 [tasks.local-ci]
-depends = ["check", "knowledge-product-check", "package-check"]
+depends = ["check", "test", "knowledge-product-check", "package-check"]
+run = "mise run opentui-pty-smoke"
 
 [tasks.knowledge-product-sync]
 dir = "{{config_root}}"

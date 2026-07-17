@@ -10,7 +10,7 @@ If you have used tools like Codex, Claude Code, or OpenCode, the shape should fe
 
 Requirements:
 
-- Node.js `>=24`
+- Bun `>=1.3`
 - A model provider key. The example below uses OpenRouter.
 
 Install the CLI:
@@ -143,20 +143,23 @@ Common KB states:
 This section is for contributors working in this repository.
 
 ```sh
+mise install
 pnpm install
-pnpm build
-node dist/cli.mjs --help
+mise run build
+mise exec -- bun dist/bin.mjs --help
 ```
 
 Common repo checks:
 
 ```sh
-pnpm check
-pnpm test
-pnpm typecheck
-pnpm lint
-pnpm format-check
+mise run local-ci
+mise run check
+mise run test
+mise run package-check
+mise run opentui-pty-smoke
 ```
+
+The repository pins Bun, Node, and pnpm through mise. Bun runs the CLI and OpenTUI renderer; Node remains a contributor tool for repository scripts.
 
 The package name is `topchester-ai`; the installed command is `topchester`.
 

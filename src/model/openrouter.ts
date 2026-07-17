@@ -24,10 +24,12 @@ export interface OpenRouterModelChoice {
   description: string;
 }
 
+export type FetchImplementation = (input: URL | RequestInfo, init?: RequestInit) => Promise<Response>;
+
 export interface FetchOpenRouterModelsOptions {
   apiKey?: string;
   userFiltered?: boolean;
-  fetchImpl?: typeof fetch;
+  fetchImpl?: FetchImplementation;
 }
 
 const OPENROUTER_MODELS_URL = `${openRouterProviderDefaults.baseURL}/models`;

@@ -141,7 +141,7 @@ describe("session store", () => {
 
     const loaded = await loadSession(workspace, session.sessionId);
     expect(rehydrateSession(loaded.events)).toMatchObject({
-      messages: [{ kind: "user", text: "hello" }],
+      transcript: [{ kind: "user", persistence: "session", text: "hello" }],
       runtimeConfigOverrides: {
         activeModel: { name: "second", provider: "openrouter" },
         reasoningEffortByProvider: { openrouter: "max" },
@@ -886,12 +886,24 @@ describe("session store", () => {
     const loaded = await loadSession(workspace, session.sessionId);
     const rehydrated = rehydrateSession(loaded.events);
 
-    expect(rehydrated.messages).toEqual([
-      { kind: "system", text: "startup" },
-      { kind: "user", text: "/help" },
-      { kind: "agent", text: "answer", meta: "model" },
-      { kind: "tool_call", label: "Tool shell: echo hi", call: { command: "echo hi" } },
-      { kind: "modal", tone: "warning", title: "Continue?", body: "Pick", actions: [{ label: "No", value: "no" }] },
+    expect(rehydrated.transcript).toEqual([
+      { kind: "system", persistence: "session", text: "startup" },
+      { kind: "user", persistence: "session", text: "/help" },
+      { kind: "assistant", persistence: "session", text: "answer", meta: "model" },
+      {
+        kind: "tool_call",
+        persistence: "session",
+        label: "Tool shell: echo hi",
+        call: { command: "echo hi" },
+      },
+      {
+        kind: "choice",
+        persistence: "session",
+        tone: "warning",
+        title: "Continue?",
+        body: "Pick",
+        actions: [{ label: "No", value: "no" }],
+      },
     ]);
     expect(rehydrated.taskPlan).toEqual({
       updatedAt: "2026-05-14T00:01:00.000Z",
@@ -908,6 +920,8 @@ describe("session store", () => {
 
     const loaded = await loadSession(workspace, session.sessionId);
 
-    expect(rehydrateSession(loaded.events).messages).toEqual([{ kind: "agent", text: "real answer", meta: "model" }]);
+    expect(rehydrateSession(loaded.events).transcript).toEqual([
+      { kind: "assistant", persistence: "session", text: "real answer", meta: "model" },
+    ]);
   });
 });

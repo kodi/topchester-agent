@@ -7,7 +7,7 @@
   "language": "markdown",
   "content_hash": "sha256:782c0f9f018bf883334926dd89d940105408aad51d42749138979bf771a2b982",
   "size_bytes": 1172,
-  "last_scanned_at": "2026-07-15T10:14:45.831Z",
+  "last_scanned_at": "2026-07-17T01:17:59.105Z",
   "scan_status": "current",
   "file_role": "doc",
   "summary": "Configure lifecycle hooks that run small programs during agent work.",

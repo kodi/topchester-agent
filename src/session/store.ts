@@ -2,12 +2,18 @@ import { mkdir, readdir, readFile, rm, stat, truncate, writeFile } from "node:fs
 import { join } from "node:path";
 import { uuidv7 } from "uuidv7";
 import { ZodError } from "zod";
+import {
+  assistantTranscriptEntry,
+  parseStartupTranscriptEntry,
+  systemTranscriptEntry,
+  userTranscriptEntry,
+  type TranscriptEntry,
+} from "../chat/index.js";
 import { getTopchesterSessionsPath } from "../app/paths.js";
 import { type HookEventName } from "../config/index.js";
 import { emptyRuntimeConfigOverrides, type RuntimeConfigOverrides } from "../config/runtime.js";
 import { type TaskPlanState } from "../agent/task-plan.js";
 import { type ToolCall } from "../agent/tools.js";
-import { hookStatusMessage, toolCallMessage, type ChatMessage } from "../tui/messages.js";
 import {
   SESSION_EVENT_VERSION,
   SESSION_METADATA_VERSION,
@@ -58,7 +64,7 @@ export interface ListSessionSummariesOptions {
 }
 
 export interface RehydratedSession {
-  messages: ChatMessage[];
+  transcript: TranscriptEntry[];
   status?: string;
   taskPlan?: TaskPlanState;
   runtimeConfigOverrides: RuntimeConfigOverrides;
@@ -381,7 +387,7 @@ export async function resolveLatestSessionId(workspaceRoot: string): Promise<str
 }
 
 export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
-  const messages: ChatMessage[] = [];
+  const transcript: TranscriptEntry[] = [];
   let status: string | undefined;
   let taskPlan: TaskPlanState | undefined;
   let runtimeConfigOverrides = emptyRuntimeConfigOverrides();
@@ -393,14 +399,34 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
         if (event.role === "assistant" && event.text === "ready" && event.meta === undefined) {
           break;
         }
-        messages.push({
-          kind: event.role === "assistant" ? "agent" : event.role,
-          text: event.text,
-          ...(typeof event.meta === "string" ? { meta: event.meta } : {}),
-          ...(isVisibleOnlyMessage(event.meta) || visibleOnlyActionValues.has(event.text)
-            ? { modelContext: false }
-            : {}),
-        });
+        if (event.role === "system") {
+          const startup = getStartupTranscriptEntry(event.meta);
+          transcript.push(
+            startup ??
+              systemTranscriptEntry(
+                event.text,
+                isVisibleOnlyMessage(event.meta) || visibleOnlyActionValues.has(event.text)
+                  ? { modelContext: false }
+                  : {}
+              )
+          );
+        } else if (event.role === "user") {
+          transcript.push(
+            userTranscriptEntry(
+              event.text,
+              isVisibleOnlyMessage(event.meta) || visibleOnlyActionValues.has(event.text) ? { modelContext: false } : {}
+            )
+          );
+        } else {
+          transcript.push(
+            assistantTranscriptEntry(event.text, {
+              ...(typeof event.meta === "string" ? { meta: event.meta } : {}),
+              ...(isVisibleOnlyMessage(event.meta) || visibleOnlyActionValues.has(event.text)
+                ? { modelContext: false }
+                : {}),
+            })
+          );
+        }
         if (event.role === "user") {
           visibleOnlyActionValues = new Set();
         }
@@ -408,10 +434,22 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
       case "permission_auto_approved":
         break;
       case "tool_call":
-        messages.push(toolCallMessage(event.call as unknown as ToolCall, event.label, undefined, event.diff));
+        transcript.push({
+          kind: "tool_call",
+          persistence: "session",
+          call: event.call as unknown as ToolCall,
+          label: event.label,
+          ...(event.diff === undefined ? {} : { diff: event.diff }),
+        });
         break;
       case "hook_status":
-        messages.push(hookStatusMessage(event.label, event.eventName as HookEventName, event.statusMessage));
+        transcript.push({
+          kind: "hook_status",
+          persistence: "session",
+          label: event.label,
+          eventName: event.eventName as HookEventName,
+          statusMessage: event.statusMessage,
+        });
         break;
       case "task_plan":
         taskPlan = {
@@ -433,8 +471,9 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
       case "subagent_failed":
         break;
       case "choice":
-        messages.push({
-          kind: "modal",
+        transcript.push({
+          kind: "choice",
+          persistence: "session",
           tone: event.tone,
           title: event.title,
           ...(event.body === undefined ? {} : { body: event.body }),
@@ -452,7 +491,16 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
     }
   }
 
-  return { messages, status, ...(taskPlan === undefined ? {} : { taskPlan }), runtimeConfigOverrides };
+  return { transcript, status, ...(taskPlan === undefined ? {} : { taskPlan }), runtimeConfigOverrides };
+}
+
+function getStartupTranscriptEntry(meta: unknown): TranscriptEntry | undefined {
+  if (typeof meta !== "object" || meta === null || !("source" in meta) || !("entry" in meta)) {
+    return undefined;
+  }
+
+  const candidate = meta as { source?: unknown; entry?: unknown };
+  return candidate.source === "startup" ? parseStartupTranscriptEntry(candidate.entry) : undefined;
 }
 
 function buildHandle(sessionDir: string, metadata: SessionMetadata): SessionHandle {

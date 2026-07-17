@@ -9,6 +9,7 @@ import { type AgentRuntimeEvent } from "../agent/events.js";
 import { TopchesterAgentRuntime } from "../agent/runtime/index.js";
 import { formatTaskPlanNotice } from "../agent/task-plan.js";
 import { type AppContext } from "../app/context.js";
+import { createStartupTranscriptEntry } from "../chat/index.js";
 import {
   createSession,
   loadSession,
@@ -16,9 +17,8 @@ import {
   rehydrateSession,
   type SessionHandle,
 } from "../session/store.js";
-import { slashCommandToSessionPayload, chatMessageToSessionPayload } from "../tui/shell.js";
 import { runtimeEventToSessionPayload as runtimeEventToSessionPayloadFromSession } from "../session/runtime-payloads.js";
-import { getStartupThreadMessages } from "../tui/status.js";
+import { slashCommandToSessionPayload, transcriptEntryToSessionPayload } from "../session/transcript-payloads.js";
 
 export interface RunCommandOptions {
   prompt: string;
@@ -185,30 +185,31 @@ async function loadConversation(workspaceRoot: string, resume: string): Promise<
   const loaded = await loadSession(workspaceRoot, resume);
   const rehydrated = rehydrateSession(loaded.events);
 
-  return rehydrated.messages.flatMap((message): ConversationTurn[] => {
-    switch (message.kind) {
+  return rehydrated.transcript.flatMap((entry): ConversationTurn[] => {
+    switch (entry.kind) {
       case "user":
-        return message.modelContext === false ? [] : [{ role: "user", text: message.text }];
-      case "agent":
-        return message.modelContext === false ? [] : [{ role: "assistant", text: message.text }];
+        return entry.modelContext === false ? [] : [{ role: "user", text: entry.text }];
+      case "assistant":
+        return entry.modelContext === false ? [] : [{ role: "assistant", text: entry.text }];
       case "system":
-      case "thinking":
+      case "reasoning":
       case "tool_call":
       case "hook_status":
       case "subagent":
-      case "modal":
+      case "choice":
+      case "permission_auto_approved":
+      case "knowledge_status":
+      case "startup":
         return [];
     }
   });
 }
 
 async function persistStartupMessages(session: SessionHandle, context: AppContext): Promise<void> {
-  for (const message of getStartupThreadMessages(context)) {
-    const payload = chatMessageToSessionPayload(message);
+  const payload = transcriptEntryToSessionPayload(createStartupTranscriptEntry(context));
 
-    if (payload) {
-      await session.append(payload);
-    }
+  if (payload) {
+    await session.append(payload);
   }
 }
 
