@@ -9,11 +9,12 @@ import {
   type TextareaRenderable,
 } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
-import { testRender } from "@opentui/solid";
+import { render, testRender } from "@opentui/solid";
 import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Writable } from "node:stream";
 import { agentEvent } from "../../src/agent/events.js";
 import { type AgentRuntime } from "../../src/agent/runtime/index.js";
 import { formatTuiSyncStatus } from "../../src/agent/runtime/knowledge.js";
@@ -21,6 +22,7 @@ import { TopchesterTuiController } from "../../src/chat/controller.js";
 import { reasoningTranscriptEntry, type ChoiceTranscriptEntry, type TranscriptEntry } from "../../src/chat/index.js";
 import { formatKnowledgeCompileStatusResult } from "../../src/knowledge/compiler/index.js";
 import { getKnowledgeStatus } from "../../src/knowledge/status.js";
+import { createSession } from "../../src/session/store.js";
 import { TopchesterApp } from "../../src/tui/opentui/app.js";
 import { ThemeProvider } from "../../src/tui/opentui/context.js";
 import { SessionPicker } from "../../src/tui/opentui/dialog-host.js";
@@ -556,59 +558,133 @@ async function testTaskPlanUpdates(): Promise<void> {
   const workspace = await mkdtemp(join(tmpdir(), "topchester-opentui-plan-"));
   const theme = resolveTopchesterTheme();
   const syntaxStyle = SyntaxStyle.create();
-  const controller = await TopchesterTuiController.create(createTestContext(workspace), createRuntime());
-  const setup = await testRender(
-    () => (
-      <TopchesterApp
-        controller={controller}
-        initialSnapshot={controller.getSnapshot()}
-        theme={theme}
-        syntaxStyle={syntaxStyle}
-        onInterrupt={() => {}}
-      />
-    ),
-    { width: 80, height: 24, screenMode: "split-footer", footerHeight: 16 }
-  );
+  const session = await createSession(workspace);
+  const controller = await TopchesterTuiController.create(createTestContext(workspace), createRuntime(), { session });
+  const terminalOutput: Buffer[] = [];
+  const stdout = new Writable({
+    write(chunk, _encoding, callback) {
+      terminalOutput.push(Buffer.from(chunk));
+      callback();
+    },
+  }) as NodeJS.WriteStream;
+  Object.assign(stdout, { columns: 80, rows: 24, isTTY: true, getColorDepth: () => 24 });
+  const setup = await createTestRenderer({
+    width: 80,
+    height: 24,
+    screenMode: "split-footer",
+    footerHeight: 16,
+    externalOutputMode: "capture-stdout",
+    stdout,
+    bufferedOutput: "stdout",
+  });
 
   try {
+    // The corruption only appears when plan updates share the production
+    // split-footer path with scrollback commits and changing transient rows.
+    await setup.renderer.setupTerminal();
+    await setup.mockInput.pressKeys(["\u001b[24;1R"]);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await render(
+      () => (
+        <TopchesterApp
+          controller={controller}
+          initialSnapshot={controller.getSnapshot()}
+          theme={theme}
+          syntaxStyle={syntaxStyle}
+          renderer={setup.renderer}
+          onInterrupt={() => {}}
+        />
+      ),
+      setup.renderer
+    );
     await setup.renderOnce();
+    const initialItems = [
+      { text: "Count the number of lines in src", status: "in_progress" as const },
+      { text: "Count one-line comments in src", status: "pending" as const },
+      { text: "Summarize the counts", status: "pending" as const },
+    ];
     await controller.applyRuntimeEvents([
+      agentEvent.hookStatus("PreToolUse", "Correcting typo and creating plan"),
+      agentEvent.toolCall({ tool: "plan_todo", args: { items: initialItems } }, "plan_todo: 3 items, 1 active"),
       agentEvent.taskPlan({
         updatedAt: "2026-07-17T00:00:00.000Z",
-        items: [
-          { text: "Count the total number of lines in src", status: "in_progress" },
-          { text: "Count one-line comments in src", status: "pending" },
-          { text: "Summarize the results", status: "pending" },
-        ],
+        items: initialItems,
       }),
     ]);
     await setup.flush();
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    await setup.flush();
+    const initialFooterHeight = setup.renderer.footerHeight;
+    terminalOutput.length = 0;
     assertPlanRows(setup.captureCharFrame(), [
-      "◐ Count the total number of lines in src",
+      "◐ Count the number of lines in src",
       "○ Count one-line comments in src",
-      "○ Summarize the results",
+      "○ Summarize the counts",
     ]);
 
     await controller.applyRuntimeEvents([
+      agentEvent.hookStatus(
+        "PreToolUse",
+        "Correcting typo and creating plan\nPlanning source line and comment counting\nPlanning line count with bash pipeline"
+      ),
+    ]);
+    await setup.flush();
+    assert.equal(
+      setup.renderer.footerHeight,
+      initialFooterHeight,
+      "active task plans must reserve transient rows so status updates do not relocate the footer"
+    );
+    terminalOutput.length = 0;
+    const updatedItems = [
+      { text: "Count the number of lines in src", status: "completed" as const },
+      { text: "Count one-line comments in src", status: "in_progress" as const },
+      { text: "Summarize the counts", status: "pending" as const },
+    ];
+    await controller.applyRuntimeEvents([
+      agentEvent.toolCall({ tool: "plan_todo", args: { items: updatedItems } }, "plan_todo: 3 items, 1 active"),
       agentEvent.taskPlan({
         updatedAt: "2026-07-17T00:00:01.000Z",
-        items: [
-          { text: "Count the number of one-line comments in src", status: "in_progress" },
-          { text: "Summarize the results", status: "pending" },
-        ],
+        items: updatedItems,
       }),
     ]);
     await setup.flush();
+    const updatedTerminalOutput = Buffer.concat(terminalOutput).toString("utf8");
+    assert.match(updatedTerminalOutput, /✓ Count the number of lines in src/u);
+    assert.match(updatedTerminalOutput, /◐ Count one-line comments in src/u);
     assertPlanRows(setup.captureCharFrame(), [
-      "◐ Count the number of one-line comments in src",
-      "○ Summarize the results",
+      "✓ Count the number of lines in src",
+      "◐ Count one-line comments in src",
+      "○ Summarize the counts",
+    ]);
+
+    const completedItems = [
+      { text: "Count the number of lines in src", status: "completed" as const },
+      { text: "Count one-line comments in src", status: "completed" as const },
+      { text: "Summarize the results", status: "completed" as const },
+    ];
+    await controller.applyRuntimeEvents([
+      agentEvent.toolCall({ tool: "plan_todo", args: { items: completedItems } }, "plan_todo: 3 items, 0 active"),
+      agentEvent.taskPlan({
+        updatedAt: "2026-07-17T00:00:02.000Z",
+        items: completedItems,
+      }),
+    ]);
+    await setup.flush();
+    assert.equal(setup.renderer.footerHeight, initialFooterHeight);
+    assertPlanRows(setup.captureCharFrame(), [
+      "✓ Count the number of lines in src",
+      "✓ Count one-line comments in src",
+      "✓ Summarize the results",
     ]);
 
     await new Promise((resolve) => setTimeout(resolve, 75));
     await setup.flush();
     const settledFrame = setup.captureCharFrame();
-    assertPlanRows(settledFrame, ["◐ Count the number of one-line comments in src", "○ Summarize the results"]);
-    assert.doesNotMatch(settledFrame, /Count the total number of lines/u);
+    assertPlanRows(settledFrame, [
+      "✓ Count the number of lines in src",
+      "✓ Count one-line comments in src",
+      "✓ Summarize the results",
+    ]);
   } finally {
     await controller.dispose();
     setup.renderer.destroy();

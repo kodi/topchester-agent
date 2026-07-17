@@ -19,6 +19,8 @@ type VisibleSuggestion =
   | { kind: "mention"; label: string; mention: FileMentionSuggestion }
   | { kind: "slash"; label: string; slash: SlashCommandSuggestion };
 
+const TASK_PLAN_RESERVED_TRANSIENT_ROWS = 4;
+
 export function LiveFooter(props: { mentionProvider?: FileMentionProvider; onInterrupt(): void }) {
   const { controller, snapshot } = useController();
   const theme = useTheme();
@@ -463,12 +465,15 @@ function estimateFooterHeight(
   ]
     .filter(Boolean)
     .reduce((total, value) => total + Math.min(3, String(value).split("\n").length), 0);
+  const stableTransientRows = snapshot.taskPlan
+    ? Math.max(TASK_PLAN_RESERVED_TRANSIENT_ROWS, transientRows)
+    : transientRows;
   const overlayRows = choice
     ? Math.min(8, choice.actions.length) + estimateWrappedRows(choice.body, Math.max(1, terminalWidth - 6)) + 3
     : snapshot.sessionPicker
       ? Math.min(7, snapshot.sessionPicker.items.length) + 3
       : Math.min(6, suggestionCount);
-  return base + taskRows + transientRows + overlayRows;
+  return base + taskRows + stableTransientRows + overlayRows;
 }
 
 function estimateWrappedRows(text: string | undefined, width: number): number {
