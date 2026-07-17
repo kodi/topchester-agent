@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 
-import { type SyntaxStyle } from "@opentui/core";
+import { BoxRenderable, CodeRenderable, type MarkdownOptions, type SyntaxStyle } from "@opentui/core";
 import { formatStartupTranscriptText, type TranscriptEntry } from "../../chat/index.js";
 import { type TopchesterTheme } from "./theme.js";
 
@@ -8,6 +8,28 @@ export interface ThreadEntryProps {
   entry: TranscriptEntry;
   theme: TopchesterTheme;
   syntaxStyle: SyntaxStyle;
+}
+
+function createFencedCodeRenderer(theme: TopchesterTheme): MarkdownOptions["renderNode"] {
+  return (token, context) => {
+    if (token.type !== "code") {
+      return;
+    }
+
+    const code = context.defaultRender();
+    if (!(code instanceof CodeRenderable)) {
+      return code;
+    }
+
+    code.bg = theme.surface;
+    const container = new BoxRenderable(code.ctx, {
+      width: "100%",
+      flexShrink: 0,
+      backgroundColor: theme.surface,
+    });
+    container.add(code);
+    return container;
+  };
 }
 
 export function ThreadEntry(props: ThreadEntryProps) {
@@ -50,6 +72,7 @@ export function ThreadEntry(props: ThreadEntryProps) {
             streaming
             fg={props.theme.text}
             tableOptions={{ widthMode: "content" }}
+            renderNode={createFencedCodeRenderer(props.theme)}
           />
           {entry.meta ? <text fg={props.theme.muted}>↳ {entry.meta}</text> : null}
         </box>

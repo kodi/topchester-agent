@@ -208,12 +208,14 @@ async function testTranscriptWriter(): Promise<void> {
     assert.match(output[0]?.text ?? "", /TOPCHESTER/u);
 
     let keywordColor: number[] | undefined;
+    let keywordBackground: number[] | undefined;
     const captureHighlight = (event: CliRendererExternalOutputEvent) => {
       const keyword = event.snapshot
         .getSpanLines()
         .flatMap((line) => line.spans)
         .find((span) => span.text === "const");
       keywordColor = keyword?.fg.toInts();
+      keywordBackground = keyword?.bg.toInts();
     };
     setup.renderer.on(CliRenderEvents.EXTERNAL_OUTPUT, captureHighlight);
     try {
@@ -266,7 +268,9 @@ async function testTranscriptWriter(): Promise<void> {
       assert.match(markdownText, new RegExp(marker, "u"));
     }
     assert.doesNotMatch(markdownText, /```|###/u);
+    assert.match(markdownText, /^const answer: number = 42;[ \t]*$/mu);
     assert.deepEqual(keywordColor, RGBA.fromHex(theme.accent).toInts());
+    assert.deepEqual(keywordBackground, RGBA.fromHex(theme.surface).toInts());
 
     writer.sync(
       setup.renderer,
