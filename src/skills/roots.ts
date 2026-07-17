@@ -3,6 +3,8 @@ import { dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type SkillRoot } from "./types.js";
 
+declare const TOPCHESTER_PACKAGE_ROOT: string | undefined;
+
 export interface BuildSkillRootsOptions {
   workspaceRoot: string;
   homeDir?: string;
@@ -58,6 +60,10 @@ export function buildSkillRoots(options: BuildSkillRootsOptions): SkillRoot[] {
 }
 
 function getDefaultPackageRoot(): string {
+  if (typeof TOPCHESTER_PACKAGE_ROOT === "string") {
+    return TOPCHESTER_PACKAGE_ROOT;
+  }
+
   const currentFile = fileURLToPath(import.meta.url);
 
   return resolve(currentFile, "../../..");

@@ -83,3 +83,11 @@ run = "vp run knowledge-product-check"
 [tasks.package-check]
 dir = "{{config_root}}"
 run = "vp run package-check"
+
+[tasks.build-standalone]
+dir = "{{config_root}}"
+run = "vp run build:standalone"
+
+[tasks.standalone-check]
+dir = "{{config_root}}"
+run = "vp run standalone-check"

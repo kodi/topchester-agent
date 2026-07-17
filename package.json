@@ -20,6 +20,7 @@
   "type": "module",
   "scripts": {
     "build": "bun scripts/build.ts",
+    "build:standalone": "bun scripts/build-standalone.ts",
     "dev": "bun src/bin.ts dev --config config/example.jsonc",
     "format": "vp fmt .",
     "format-check": "vp fmt . --check",
@@ -37,7 +38,8 @@
     "prepublishOnly": "vp run knowledge-product-check && vp run package-check && vp run build",
     "knowledge-product-sync": "node --import tsx scripts/knowledge/build-topchester-pack.ts",
     "knowledge-product-check": "node --import tsx scripts/knowledge/check-topchester-pack.ts",
-    "package-check": "node --import tsx scripts/package/check-package-contents.ts"
+    "package-check": "node --import tsx scripts/package/check-package-contents.ts",
+    "standalone-check": "node --import tsx scripts/package/check-standalone.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.48",

@@ -285,6 +285,24 @@ export async function loadL1KnowledgeIndexFromRoot(
 ): Promise<LoadedL1KnowledgeIndex> {
   const loadResult = await loadL1FileEntries(kbPath);
 
+  return createLoadedL1KnowledgeIndex(workspaceRoot, kbPath, loadResult);
+}
+
+export async function loadL1KnowledgeIndexFromPaths(
+  workspaceRoot: string,
+  kbPath: string,
+  entryPaths: string[]
+): Promise<LoadedL1KnowledgeIndex> {
+  const loadResult = await loadL1FileEntriesFromPaths(entryPaths);
+
+  return createLoadedL1KnowledgeIndex(workspaceRoot, kbPath, loadResult);
+}
+
+function createLoadedL1KnowledgeIndex(
+  workspaceRoot: string,
+  kbPath: string,
+  loadResult: { entries: L1FileEntry[]; invalidEntryCount: number }
+): LoadedL1KnowledgeIndex {
   return {
     workspaceRoot,
     kbPath,
@@ -515,7 +533,13 @@ export async function loadL1FileEntries(
 
     throw error;
   });
-  const parsedEntries = await Promise.all(entryPaths.map(loadL1FileEntry));
+  return loadL1FileEntriesFromPaths(entryPaths);
+}
+
+export async function loadL1FileEntriesFromPaths(
+  entryPaths: string[]
+): Promise<{ entries: L1FileEntry[]; invalidEntryCount: number }> {
+  const parsedEntries = await Promise.all([...entryPaths].sort().map(loadL1FileEntry));
   const entries = parsedEntries.filter((entry): entry is L1FileEntry => Boolean(entry));
   const invalidEntryCount = parsedEntries.length - entries.length;
 
