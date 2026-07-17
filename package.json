@@ -1,7 +1,7 @@
 {
   "name": "topchester-ai",
   "version": "0.76.0",
-  "private": false,
+  "private": true,
   "description": "Terminal-native TUI coding agent tightly coupled to a project knowledge base.",
   "license": "MIT",
   "repository": {
@@ -19,8 +19,13 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "vp pack src/bin.ts src/cli.ts --format esm --dts --out-dir dist --clean --sourcemap",
-    "dev": "tsx src/bin.ts dev --config config/example.jsonc",
+    "build": "bun scripts/build.ts",
+    "build:standalone": "bun scripts/build-standalone.ts",
+    "build:standalone:all": "bun scripts/build-standalone.ts --all",
+    "build:npm-release": "node --import tsx scripts/package/build-npm-release.ts",
+    "build:npm-release:all": "node --import tsx scripts/package/build-npm-release.ts --all",
+    "prepare:standalone-targets": "node --import tsx scripts/standalone/install-target-dependencies.ts",
+    "dev": "bun src/bin.ts dev --config config/example.jsonc",
     "format": "vp fmt .",
     "format-check": "vp fmt . --check",
     "prepare": "vp config --no-agent",
@@ -31,31 +36,34 @@
     "format:check": "vp fmt . --check",
     "lint": "vp lint",
     "smoke": "tsx scripts/smoke/run-smoke.ts",
-    "test": "vp test run --dir test",
+    "test": "vp test run --dir test && bun scripts/opentui/production-test.tsx",
     "typecheck": "vp check --no-fmt --no-lint",
-    "check": "vp check && vp test run --dir test",
-    "prepublishOnly": "vp run knowledge-product-check && vp run package-check && vp run build",
+    "check": "vp check && pnpm test",
+    "release:build": "vp run prepare:standalone-targets && vp run build:standalone:all && vp run build:npm-release:all",
+    "release:publish": "node --import tsx scripts/package/publish-npm-release.ts",
     "knowledge-product-sync": "node --import tsx scripts/knowledge/build-topchester-pack.ts",
     "knowledge-product-check": "node --import tsx scripts/knowledge/check-topchester-pack.ts",
-    "package-check": "node --import tsx scripts/package/check-package-contents.ts"
+    "package-check": "node --import tsx scripts/package/check-package-contents.ts",
+    "standalone-check": "node --import tsx scripts/package/check-standalone.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.48",
-    "@earendil-works/pi-tui": "^0.78.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@opentui/core": "0.4.4",
+    "@opentui/solid": "0.4.4",
     "ai": "^6.0.196",
-    "cli-highlight": "^2.1.11",
     "commander": "^15.0.0",
-    "diff": "^9.0.0",
     "htmlparser2": "^12.0.0",
     "picomatch": "^4.0.4",
     "pino": "^10.3.1",
+    "solid-js": "1.9.12",
     "turndown": "^7.2.4",
     "uuidv7": "1.2.1",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/bun": "1.3.14",
     "@types/node": "^24.12.3",
     "@types/picomatch": "^4.0.3",
     "@types/turndown": "^5.0.6",
@@ -64,11 +72,11 @@
     "tsx": "^4.22.4",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vite": "catalog:",
+    "vite-plugin-solid": "2.11.10",
     "vite-plus": "catalog:"
   },
   "engines": {
-    "node": ">=24",
-    "pnpm": ">=11"
+    "bun": ">=1.3"
   },
   "packageManager": "pnpm@11.0.8"
 }

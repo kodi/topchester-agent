@@ -10,7 +10,8 @@ If you have used tools like Codex, Claude Code, or OpenCode, the shape should fe
 
 Requirements:
 
-- Node.js `>=24`
+- Node.js `>=18` and npm for installation. The installed Topchester runtime is a standalone executable and does not require Bun.
+- macOS on Apple Silicon, or glibc Linux on ARM64 or x64. Intel macOS, Windows, and musl Linux are not supported by the standalone release.
 - A model provider key. The example below uses OpenRouter.
 
 Install the CLI:
@@ -143,20 +144,23 @@ Common KB states:
 This section is for contributors working in this repository.
 
 ```sh
+mise install
 pnpm install
-pnpm build
-node dist/cli.mjs --help
+mise run build
+mise exec -- bun dist/bin.mjs --help
 ```
 
 Common repo checks:
 
 ```sh
-pnpm check
-pnpm test
-pnpm typecheck
-pnpm lint
-pnpm format-check
+mise run local-ci
+mise run check
+mise run test
+mise run package-check
+mise run opentui-pty-smoke
 ```
+
+The repository pins Bun, Node, and pnpm through mise. Bun builds and runs the CLI from source; published npm installs run the compiled standalone executable.
 
 The package name is `topchester-ai`; the installed command is `topchester`.
 

@@ -13,7 +13,7 @@ import {
 } from "../src/app/context.js";
 import { topchesterConfigSchema } from "../src/config/index.js";
 import { applyRuntimeConfigOverrides, emptyRuntimeConfigOverrides } from "../src/config/runtime.js";
-import { persistBashApproval } from "../src/tui/shell-helpers.js";
+import { persistBashApproval } from "../src/chat/controller-helpers.js";
 
 const originalHome = process.env.HOME;
 const originalConfig = process.env.TOPCHESTER_CONFIG;

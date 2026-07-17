@@ -7,7 +7,7 @@
   "language": "markdown",
   "content_hash": "sha256:8bb6ec1a66ec5cb20393b46cc5bc084c9fbf67145c263b90807cd360a9d2e2f4",
   "size_bytes": 5687,
-  "last_scanned_at": "2026-07-15T10:14:45.831Z",
+  "last_scanned_at": "2026-07-17T03:25:20.517Z",
   "scan_status": "current",
   "file_role": "config",
   "summary": "Configure Topchester project and user settings. Use when editing or explaining `topchester.jsonc`, `~/.config/topchester/config.jsonc`, model providers, command policy, ignore paths, hooks, project instruction files, or repo-scoped command approvals.",

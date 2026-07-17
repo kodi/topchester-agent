@@ -7,7 +7,7 @@
   "language": "markdown",
   "content_hash": "sha256:fae54fae4a8a6d62400c916492902f8e5d020722760a37f2689406aab5ab1185",
   "size_bytes": 2668,
-  "last_scanned_at": "2026-07-15T10:14:45.831Z",
+  "last_scanned_at": "2026-07-17T03:25:20.517Z",
   "scan_status": "current",
   "file_role": "doc",
   "summary": "Configure model slots and OpenAI-compatible providers.",

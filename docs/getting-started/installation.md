@@ -10,12 +10,19 @@ public: true
 
 Topchester is distributed as the `topchester-ai` package. The executable is `topchester`.
 
+The supported npm package targets are:
+
+- macOS ARM64 (Apple Silicon);
+- glibc Linux ARM64 and x64.
+
+Node.js `>=18` and npm are required to install the package. The installed `topchester` command is a standalone executable and does not require Bun. Intel macOS, Windows, and musl Linux are not supported by the standalone release.
+
 ```sh
 npm install -g topchester-ai
 topchester --version
 ```
 
-If you installed with pnpm or bun, use the matching global install command for your setup.
+Use npm for the supported standalone installation path. Bun `>=1.3` is required only when running or building Topchester from source.
 
 ## Update
 

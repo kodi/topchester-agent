@@ -1,6 +1,7 @@
 [tools]
 node = "24"
 "npm:pnpm" = "11"
+bun = "1.3"
 
 [env]
 _.file = ".env"
@@ -22,8 +23,19 @@ dir = "{{config_root}}"
 run = "vp lint"
 
 [tasks.test]
+depends = ["test-node", "opentui-test"]
+
+[tasks.test-node]
 dir = "{{config_root}}"
 run = "vp test run --dir test"
+
+[tasks.opentui-test]
+dir = "{{config_root}}"
+run = "bun scripts/opentui/production-test.tsx"
+
+[tasks.opentui-pty-smoke]
+dir = "{{config_root}}"
+run = "node --import tsx scripts/opentui/pty-smoke.ts"
 
 [tasks.smoke]
 dir = "{{config_root}}"
@@ -54,7 +66,11 @@ dir = "{{config_root}}"
 run = "vp check"
 
 [tasks.local-ci]
-depends = ["check", "knowledge-product-check", "package-check"]
+depends = ["format-check", "lint", "typecheck"]
+
+[tasks.local-ci-extended]
+depends = ["local-ci", "test", "knowledge-product-check"]
+run = "mise run native-package-check"
 
 [tasks.knowledge-product-sync]
 dir = "{{config_root}}"
@@ -67,3 +83,31 @@ run = "vp run knowledge-product-check"
 [tasks.package-check]
 dir = "{{config_root}}"
 run = "vp run package-check"
+
+[tasks.native-package-check]
+depends = ["package-check"]
+run = "mise run opentui-pty-smoke"
+
+[tasks.build-standalone]
+dir = "{{config_root}}"
+run = "vp run build:standalone"
+
+[tasks.build-standalone-all]
+dir = "{{config_root}}"
+run = "vp run build:standalone:all"
+
+[tasks.build-npm-release]
+dir = "{{config_root}}"
+run = "vp run build:npm-release"
+
+[tasks.prepare-standalone-targets]
+dir = "{{config_root}}"
+run = "vp run prepare:standalone-targets"
+
+[tasks.release-build]
+dir = "{{config_root}}"
+run = "vp run release:build"
+
+[tasks.standalone-check]
+dir = "{{config_root}}"
+run = "vp run standalone-check"

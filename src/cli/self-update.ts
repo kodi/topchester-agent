@@ -61,23 +61,36 @@ export function detectSelfUpdateManager(options: DetectSelfUpdateManagerOptions 
 
   const modulePath = options.modulePath ?? fileURLToPath(import.meta.url);
   const execPath = options.execPath ?? process.execPath;
-  const joinedPath = `${modulePath}\0${execPath}`.toLowerCase().replace(/\\/g, "/");
+  const normalizedModulePath = modulePath.toLowerCase().replace(/\\/g, "/");
+  const normalizedExecPath = execPath.toLowerCase().replace(/\\/g, "/");
 
-  if (joinedPath.includes("/.pnpm/") || joinedPath.includes("/pnpm/")) {
+  if (normalizedModulePath.includes("/.pnpm/") || normalizedModulePath.includes("/pnpm/")) {
     return "pnpm";
   }
 
   if (
-    joinedPath.includes("/.bun/") ||
-    joinedPath.includes("/bun/") ||
-    joinedPath.includes("/install/global/node_modules/")
+    normalizedModulePath.includes("/.bun/") ||
+    normalizedModulePath.includes("/bun/") ||
+    normalizedModulePath.includes("/install/global/node_modules/")
   ) {
     return "bun";
   }
 
-  if (joinedPath.includes("/node_modules/")) {
+  if (normalizedModulePath.includes("/node_modules/")) {
     return "npm";
   }
+
+  if (normalizedExecPath.includes("/.pnpm/") || normalizedExecPath.includes("/pnpm/")) return "pnpm";
+
+  if (
+    normalizedExecPath.includes("/.bun/") ||
+    normalizedExecPath.includes("/bun/") ||
+    normalizedExecPath.includes("/install/global/node_modules/")
+  ) {
+    return "bun";
+  }
+
+  if (normalizedExecPath.includes("/node_modules/")) return "npm";
 
   return undefined;
 }

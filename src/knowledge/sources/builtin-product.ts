@@ -3,9 +3,12 @@ import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getTopchesterVersion } from "../../version.js";
+import { getL1FileEntryPath } from "../compiler/path-encoding.js";
 import { parseProductKnowledgeManifest } from "../product/manifest.js";
-import { loadL1KnowledgeIndexFromRoot } from "../search.js";
+import { loadL1KnowledgeIndexFromPaths } from "../search.js";
 import { type KnowledgeSourceDescriptor, type LoadedKnowledgeSource } from "./types.js";
+
+declare const TOPCHESTER_PACKAGE_ROOT: string | undefined;
 
 export interface BuiltinProductSourceOptions {
   packageRoot?: string;
@@ -71,7 +74,11 @@ export async function loadBuiltinProductKnowledgeSource(
   let cached = loadedSourceCache.get(cacheKey);
   if (!cached) {
     cached = (async () => {
-      const loaded = await loadL1KnowledgeIndexFromRoot(descriptor.rootPath, descriptor.rootPath);
+      const manifest = parseProductKnowledgeManifest(
+        JSON.parse(await readFile(join(descriptor.rootPath, "manifest.json"), "utf8"))
+      );
+      const entryPaths = manifest.sourceFiles.map((source) => getL1FileEntryPath(descriptor.rootPath, source.path));
+      const loaded = await loadL1KnowledgeIndexFromPaths(descriptor.rootPath, descriptor.rootPath, entryPaths);
       return {
         ...descriptor,
         index: loaded.index,
@@ -88,8 +95,12 @@ export async function loadBuiltinProductKnowledgeSource(
 }
 
 export function resolveTopchesterPackageRoot(currentFile = fileURLToPath(import.meta.url)): string {
+  if (typeof TOPCHESTER_PACKAGE_ROOT === "string") {
+    return TOPCHESTER_PACKAGE_ROOT;
+  }
+
   const currentDir = dirname(currentFile);
-  const candidates = [resolve(currentDir, "../../.."), resolve(currentDir, "..")];
+  const candidates = [resolve(currentDir, ".."), resolve(currentDir, "../../..")];
   return candidates.find((candidate) => existsSync(join(candidate, "package.json"))) ?? candidates[0]!;
 }
 

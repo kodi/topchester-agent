@@ -21,8 +21,62 @@ jobs:
           node-version: "24"
           cache: true
 
+      - name: Set up mise tools
+        uses: jdx/mise-action@v3
+        with:
+          install: true
+          cache: true
+
+      - name: Install PTY test dependency
+        run: sudo apt-get update && sudo apt-get install -y expect
+
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
-      - name: Run checks
-        run: vp check
+      - name: Run local CI
+        run: mise run local-ci
+
+  package-platforms:
+    name: Native npm package (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: linux-x64
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+          - runner: macos-latest
+            target: darwin-arm64
+    runs-on: ${{ matrix.runner }}
+    env:
+      VITE_GIT_HOOKS: "0"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: "24"
+          cache: true
+
+      - name: Set up mise tools
+        uses: jdx/mise-action@v3
+        with:
+          install: true
+          cache: true
+
+      - name: Install PTY test dependency
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y expect
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Check isolated native npm package
+        run: mise run package-check
+
+      - name: Check native npm PTY lifecycle
+        run: mise run opentui-pty-smoke

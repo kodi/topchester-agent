@@ -17,6 +17,8 @@ topchester --resume latest
 
 The TUI has a thread area, a visible plan block when the agent is working through a plan, a prompt box, and a status line.
 
+The packaged CLI runs on Bun `>=1.3` and renders with OpenTUI Solid. It uses split-footer mode: completed transcript entries are appended to ordinary terminal scrollback exactly once, while the composer, suggestions, plan, live status, and dialogs repaint in a bounded footer.
+
 The status line shows readiness, folder name, active model, provider, and knowledge-base state:
 
 ```text
@@ -29,11 +31,14 @@ ready · my-project · qwen/qwen3-coder [openrouter] · kb: ready
 - `Shift+Enter` adds a new prompt line in terminals that report it distinctly.
 - `/` opens slash command suggestions.
 - Type `@` plus part of a file name to search project files; `Tab` completes the selected path.
-- `Up` and `Down` browse prompt history or slash suggestions, depending on focus.
+- `Up` and `Down` browse prompt history, suggestions, or dialog actions, depending on focus.
 - `Tab` completes the selected slash suggestion.
+- `Escape` dismisses the active suggestion/dialog or cancels active work when cancellation is available.
 - `Ctrl-C` once asks for confirmation; `Ctrl-C` again exits.
 
-Topchester renders inline instead of using the terminal alternate screen, so terminal scrollback remains available.
+Topchester does not use the terminal alternate screen and leaves mouse reporting disabled, so terminal-native selection and scrollback remain available. New, forked, and restored sessions append a visible session boundary; they do not clear unrelated terminal history.
+
+Large multi-line pastes are shown as compact placeholders in the composer and expanded back to their exact original text when submitted. Dialogs trap keyboard input above suggestions and the composer, and restore composer focus when closed. The semantic theme follows detected dark/light terminal appearance; selection remains visible when `NO_COLOR` is set.
 
 ## Tool visibility
 

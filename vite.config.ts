@@ -1,6 +1,14 @@
 import { defineConfig } from "vite-plus";
+import solidPlugin from "vite-plugin-solid";
 
 export default defineConfig({
+  plugins: [
+    solidPlugin({
+      hot: false,
+      solid: { generate: "universal", moduleName: "@opentui/solid" },
+    }),
+  ],
+  test: { environment: "node" },
   staged: {
     "*.{js,jsx,ts,tsx,json,jsonc,css,html,yml,yaml}": "vp check --fix",
   },

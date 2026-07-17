@@ -8,6 +8,12 @@ public: true
 
 # Quickstart
 
+## Requirements
+
+- Node.js `>=18` and npm for installation. The installed Topchester runtime does not require Bun.
+- macOS on Apple Silicon, or glibc Linux on ARM64 or x64.
+- An API key for your model provider. The example below uses OpenRouter.
+
 ## Install
 
 Install the CLI with your package manager:

@@ -10,7 +10,7 @@ import { startFakeApi } from "./fake-api.js";
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, "..", "..");
 const cliPath = join(repoRoot, "src/bin.ts");
-const tsxPath = join(repoRoot, "node_modules/.bin/tsx");
+const cliRuntime = "bun";
 const scenariosRoot = join(import.meta.dirname, "scenarios");
 
 const expectedContentSchema = z.object({
@@ -436,7 +436,7 @@ async function runTopchester(options: {
   args.push(options.prompt);
 
   try {
-    const result = await execFileAsync(tsxPath, args, {
+    const result = await execFileAsync(cliRuntime, args, {
       cwd: repoRoot,
       env: {
         ...process.env,

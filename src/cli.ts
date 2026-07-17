@@ -26,7 +26,7 @@ import {
   stripEmptyContainers,
 } from "./knowledge/search.js";
 import { forkSession, loadSession, loadSessionForAppend, rehydrateSession } from "./session/store.js";
-import { TopchesterTuiShell } from "./tui/index.js";
+import { runOpenTui } from "./tui/opentui/index.js";
 import { getTopchesterVersion } from "./version.js";
 import { executeRunCommand } from "./cli/run.js";
 import {
@@ -85,16 +85,16 @@ function createTopchesterProgram(): Command {
         const rehydrated = rehydrateSession(loaded.events);
         const runtimeConfigWarnings = restoreRuntimeConfigOverrides(context, rehydrated.runtimeConfigOverrides);
 
-        await new TopchesterTuiShell(context, undefined, {
+        await runOpenTui(context, undefined, {
           session,
-          initialMessages: rehydrated.messages,
+          initialTranscript: rehydrated.transcript,
           initialTaskPlan: rehydrated.taskPlan,
           runtimeConfigWarnings,
-        }).render();
+        });
         return;
       }
 
-      await new TopchesterTuiShell(context).render();
+      await runOpenTui(context);
     } catch (error) {
       console.error(formatStartupError(error));
       process.exitCode = 1;
@@ -586,12 +586,12 @@ async function openForkedSession(context: ReturnType<typeof createContextFromOpt
   const rehydrated = rehydrateSession(loaded.events);
   const runtimeConfigWarnings = restoreRuntimeConfigOverrides(context, rehydrated.runtimeConfigOverrides);
 
-  await new TopchesterTuiShell(context, undefined, {
+  await runOpenTui(context, undefined, {
     session,
-    initialMessages: rehydrated.messages,
+    initialTranscript: rehydrated.transcript,
     initialTaskPlan: rehydrated.taskPlan,
     runtimeConfigWarnings,
-  }).render();
+  });
 }
 
 function createContextFromOptions(program: Command) {

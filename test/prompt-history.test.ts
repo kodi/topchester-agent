@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { PromptHistory } from "../src/tui/prompt-history.js";
+import { PromptHistory } from "../src/chat/prompt-history.js";
 
 describe("PromptHistory", () => {
   it("walks from newest to oldest and clamps at the oldest prompt", () => {

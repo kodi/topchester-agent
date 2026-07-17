@@ -9,6 +9,7 @@ import {
 } from "./types.js";
 
 const LINKED_FILE_GROUPS = ["references", "templates", "scripts", "assets"] as const;
+declare const TOPCHESTER_BUILTIN_SKILL_FILES: readonly string[] | undefined;
 
 export async function scanSkillRoots(roots: readonly SkillRoot[]): Promise<DiscoveredSkillCandidate[]> {
   const candidates = await Promise.all(roots.map((root) => scanSkillRoot(root)));
@@ -17,6 +18,10 @@ export async function scanSkillRoots(roots: readonly SkillRoot[]): Promise<Disco
 }
 
 export async function scanSkillRoot(root: SkillRoot): Promise<DiscoveredSkillCandidate[]> {
+  if (root.source === "builtin" && typeof TOPCHESTER_BUILTIN_SKILL_FILES !== "undefined") {
+    return scanEmbeddedSkillRoot(root, TOPCHESTER_BUILTIN_SKILL_FILES);
+  }
+
   const entries = await readDirectorySafe(root.root);
   const candidates: DiscoveredSkillCandidate[] = [];
 
@@ -41,10 +46,32 @@ export async function scanSkillRoot(root: SkillRoot): Promise<DiscoveredSkillCan
   return candidates;
 }
 
+async function scanEmbeddedSkillRoot(
+  root: SkillRoot,
+  embeddedFiles: readonly string[]
+): Promise<DiscoveredSkillCandidate[]> {
+  const candidates: DiscoveredSkillCandidate[] = [];
+  const skillNames = embeddedFiles
+    .filter((path) => path.endsWith("/SKILL.md") && !path.slice(0, -"/SKILL.md".length).includes("/"))
+    .map((path) => path.slice(0, -"/SKILL.md".length))
+    .sort();
+
+  for (const skillName of skillNames) {
+    const skillDir = join(root.root, skillName);
+    const candidate = await readSkillCandidate(root, skillDir, join(skillDir, "SKILL.md"), embeddedFiles);
+    if (candidate) {
+      candidates.push(candidate);
+    }
+  }
+
+  return candidates;
+}
+
 async function readSkillCandidate(
   root: SkillRoot,
   skillDir: string,
-  skillFile: string
+  skillFile: string,
+  embeddedFiles?: readonly string[]
 ): Promise<DiscoveredSkillCandidate | undefined> {
   try {
     const content = await readFile(skillFile, "utf8");
@@ -61,11 +88,32 @@ async function readSkillCandidate(
       shadowed: false,
       compatibilitySource: root.compatibilitySource as SkillCompatibilitySource | undefined,
       frontmatter: metadata.frontmatter,
-      linkedFiles: await listLinkedFiles(skillDir),
+      linkedFiles: embeddedFiles
+        ? listEmbeddedLinkedFiles(relative(root.root, skillDir), embeddedFiles)
+        : await listLinkedFiles(skillDir),
     };
   } catch {
     return undefined;
   }
+}
+
+function listEmbeddedLinkedFiles(skillName: string, embeddedFiles: readonly string[]): SkillLinkedFiles {
+  const groups: SkillLinkedFiles = {
+    references: [],
+    templates: [],
+    scripts: [],
+    assets: [],
+  };
+
+  for (const group of LINKED_FILE_GROUPS) {
+    const prefix = `${skillName}/${group}/`;
+    groups[group] = embeddedFiles
+      .filter((path) => path.startsWith(prefix))
+      .map((path) => path.slice(prefix.length))
+      .sort();
+  }
+
+  return groups;
 }
 
 export async function listLinkedFiles(skillDir: string): Promise<SkillLinkedFiles> {

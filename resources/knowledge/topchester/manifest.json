@@ -7,7 +7,7 @@
     "name": "topchester-knowledge-compiler",
     "version": 1
   },
-  "generatedAt": "2026-07-15T10:14:45.831Z",
+  "generatedAt": "2026-07-17T03:25:20.517Z",
   "packSpecHash": "sha256:8d279afcd49f232730a090bab4b795486cfc819732a23f2d9d207e410dc8f7cd",
   "sourceFileCount": 32,
   "entryCount": 32,
@@ -54,7 +54,7 @@
     },
     {
       "path": "docs/features/tui.md",
-      "contentHash": "sha256:dd891aef1c4225d4f7e46996ee7fdb90bf2ca10e40e5d861d0503be22a897506"
+      "contentHash": "sha256:7c5c83db79a81a35e2884c77b35fcdecd788464cd44a4ee9b201acad591823b4"
     },
     {
       "path": "docs/getting-started/first-project.md",
@@ -62,11 +62,11 @@
     },
     {
       "path": "docs/getting-started/installation.md",
-      "contentHash": "sha256:74e21fe946d4f2b917dae347dee8e2cb7bab5122ec52925bd0f9ad940c142fb0"
+      "contentHash": "sha256:453f36240c37631a2964b04f3d5f76eafde0fb0af6d238ecc9feb52eebc76706"
     },
     {
       "path": "docs/getting-started/quickstart.md",
-      "contentHash": "sha256:6793706739111911606b9b7f076f0f0ac409db15a03649f5333d95856df83ba9"
+      "contentHash": "sha256:9236722e82e21768381be481a848d94bc31d2931af4c899536b22f66f29001e9"
     },
     {
       "path": "docs/hooks/events.md",

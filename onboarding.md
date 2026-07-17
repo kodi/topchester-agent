@@ -4,7 +4,7 @@ This is the shortest path to a working Topchester agent in a project.
 
 ## Requirements
 
-- Node.js `>=24`
+- Bun `>=1.3`
 - A model provider key. The examples below use OpenRouter through `OPENROUTER_API_KEY`.
 
 ## 1. Install Topchester
@@ -142,7 +142,8 @@ More detail lives in:
 If you are working from the source checkout instead of the npm package:
 
 ```sh
+mise install
 pnpm install
-pnpm build
-node dist/cli.mjs --help
+mise run build
+mise exec -- bun dist/bin.mjs --help
 ```
