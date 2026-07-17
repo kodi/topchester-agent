@@ -26,6 +26,7 @@ import {
 } from "./events.js";
 
 const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const SESSION_TITLE_MAX_LENGTH = 72;
 
 export interface SessionHandle {
   sessionId: string;
@@ -170,6 +171,7 @@ export async function forkSession(
 ): Promise<SessionHandle> {
   const source = await loadSession(workspaceRoot, sourceSessionIdOrLatest);
   const copiedEvents = await readFile(join(source.sessionDir, "events.jsonl"), "utf8");
+  const title = options.title ?? source.metadata.title ?? deriveSessionTitle(firstUserPrompt(source.events));
   const sessionsPath = getTopchesterSessionsPath(workspaceRoot);
   const createdAt = new Date().toISOString();
 
@@ -185,7 +187,7 @@ export async function forkSession(
       forkedFromSessionId: source.sessionId,
       forkedFromRootSessionId: source.metadata.rootSessionId,
       source: "user",
-      ...(options.title === undefined ? {} : { title: options.title }),
+      ...(title === undefined ? {} : { title }),
       workspaceRoot,
       createdAt,
       updatedAt: createdAt,
@@ -314,11 +316,12 @@ export async function listSessionSummaries(
     }
 
     const prompt = firstUserPrompt(events);
+    const title = metadata.title ?? (prompt === undefined ? undefined : deriveSessionTitle(prompt));
     summaries.push({
       sessionId,
       createdAt: metadata.createdAt,
       updatedAt: metadata.updatedAt,
-      ...(metadata.title === undefined ? {} : { title: metadata.title }),
+      ...(title === undefined ? {} : { title }),
       ...(metadata.forkedFromSessionId === undefined ? {} : { forkedFromSessionId: metadata.forkedFromSessionId }),
       ...(prompt === undefined ? {} : { firstUserPrompt: prompt }),
     });
@@ -520,10 +523,18 @@ function buildHandle(sessionDir: string, metadata: SessionMetadata): SessionHand
           ts: new Date().toISOString(),
           ...payload,
         });
+        const nextTitle =
+          handle.metadata.title === undefined &&
+          nextEvent.kind === "message" &&
+          nextEvent.role === "user" &&
+          !isVisibleOnlySlashCommandMessage(nextEvent.meta)
+            ? deriveSessionTitle(nextEvent.text)
+            : handle.metadata.title;
         const nextMetadata = {
           ...handle.metadata,
           updatedAt: nextEvent.ts,
           lastEventId: nextEvent.id,
+          ...(nextTitle === undefined ? {} : { title: nextTitle }),
         };
         await writeFile(handle.eventsPath, `${JSON.stringify(nextEvent)}\n`, { flag: "a" });
         try {
@@ -671,6 +682,25 @@ function firstUserPrompt(events: SessionEvent[]): string | undefined {
   }
 
   return undefined;
+}
+
+function deriveSessionTitle(text: string | undefined, maxLength = SESSION_TITLE_MAX_LENGTH): string | undefined {
+  if (text === undefined) {
+    return undefined;
+  }
+  const normalized = text.replace(/\s+/gu, " ").trim();
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  const shortened = normalized.slice(0, maxLength - 1);
+  const wordBoundary = shortened.lastIndexOf(" ");
+  const title = wordBoundary >= Math.floor(maxLength * 0.6) ? shortened.slice(0, wordBoundary) : shortened;
+
+  return `${title.trimEnd()}…`;
 }
 
 function isVisibleOnlySlashCommandMessage(meta: unknown): boolean {

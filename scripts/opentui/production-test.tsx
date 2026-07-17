@@ -14,15 +14,20 @@ import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createSignal } from "solid-js";
 import { agentEvent } from "../../src/agent/events.js";
 import { type AgentRuntime } from "../../src/agent/runtime/index.js";
 import { formatTuiSyncStatus } from "../../src/agent/runtime/knowledge.js";
 import { TopchesterTuiController } from "../../src/chat/controller.js";
+import { type TaskPlanState } from "../../src/chat/controller-state.js";
 import { reasoningTranscriptEntry, type TranscriptEntry } from "../../src/chat/index.js";
 import { formatKnowledgeCompileStatusResult } from "../../src/knowledge/compiler/index.js";
 import { getKnowledgeStatus } from "../../src/knowledge/status.js";
 import { TopchesterApp } from "../../src/tui/opentui/app.js";
+import { ThemeProvider } from "../../src/tui/opentui/context.js";
+import { SessionPicker } from "../../src/tui/opentui/dialog-host.js";
 import { runOpenTui } from "../../src/tui/opentui/renderer.js";
+import { TaskPlan } from "../../src/tui/opentui/task-plan.js";
 import { ThreadEntry } from "../../src/tui/opentui/thread-entry.js";
 import { createTopchesterSyntaxStyle, resolveTopchesterTheme } from "../../src/tui/opentui/theme.js";
 import { TranscriptWriter } from "../../src/tui/opentui/transcript-writer.js";
@@ -55,6 +60,8 @@ await testThreadEntryVariants();
 await testAssistantMessage();
 await testReasoningStyle();
 await testNoColorSelection();
+await testTaskPlanUpdates();
+await testSessionPickerTitle();
 await testRenderFailureCleanup();
 
 process.stdout.write("Production OpenTUI Bun renderer: pass\n");
@@ -544,6 +551,97 @@ async function testNoColorSelection(): Promise<void> {
     await controller.dispose();
     setup.renderer.destroy();
     syntaxStyle.destroy();
+  }
+}
+
+async function testTaskPlanUpdates(): Promise<void> {
+  const theme = resolveTopchesterTheme();
+  const [plan, setPlan] = createSignal<TaskPlanState>({
+    updatedAt: "2026-07-17T00:00:00.000Z",
+    items: [
+      { text: "Implement deterministic session titles and fork inheritance", status: "in_progress" },
+      { text: "Update tests and session docs", status: "pending" },
+      { text: "Run focused repo checks", status: "pending" },
+    ],
+  });
+  const setup = await testRender(
+    () => (
+      <ThemeProvider theme={theme}>
+        <TaskPlan plan={plan()} />
+      </ThemeProvider>
+    ),
+    { width: 80, height: 10 }
+  );
+
+  try {
+    await setup.renderOnce();
+    assertPlanRows(setup.captureCharFrame(), [
+      "◐ Implement deterministic session titles and fork inheritance",
+      "○ Update tests and session docs",
+      "○ Run focused repo checks",
+    ]);
+
+    setPlan({
+      updatedAt: "2026-07-17T00:00:01.000Z",
+      items: [
+        { text: "Implemented deterministic session titles and fork inheritance", status: "completed" },
+        { text: "Update tests and session docs", status: "in_progress" },
+        { text: "Run focused repo checks", status: "pending" },
+      ],
+    });
+    await setup.flush();
+    const updatedFrame = setup.captureCharFrame();
+    assertPlanRows(updatedFrame, [
+      "✓ Implemented deterministic session titles and fork inheritance",
+      "◐ Update tests and session docs",
+      "○ Run focused repo checks",
+    ]);
+  } finally {
+    setup.renderer.destroy();
+  }
+}
+
+async function testSessionPickerTitle(): Promise<void> {
+  const theme = resolveTopchesterTheme();
+  const setup = await testRender(
+    () => (
+      <ThemeProvider theme={theme}>
+        <SessionPicker
+          picker={{
+            items: [
+              {
+                sessionId: "01900000-0000-7000-8000-000000000000",
+                createdAt: "2026-07-17T00:00:00.000Z",
+                updatedAt: "2026-07-17T00:00:00.000Z",
+                title: "Short stored title",
+                firstUserPrompt: "The full first prompt should not appear in the picker row",
+              },
+            ],
+          }}
+          selectedIndex={0}
+        />
+      </ThemeProvider>
+    ),
+    { width: 100, height: 10 }
+  );
+
+  try {
+    await setup.renderOnce();
+    const frame = setup.captureCharFrame();
+    assert.match(frame, /Short stored title/u);
+    assert.doesNotMatch(frame, /The full first prompt/u);
+  } finally {
+    setup.renderer.destroy();
+  }
+}
+
+function assertPlanRows(frame: string, expectedRows: string[]): void {
+  const rows = frame.split("\n");
+  for (const expected of expectedRows) {
+    assert.ok(
+      rows.some((row) => row.includes(expected)),
+      `missing intact task-plan row: ${expected}\n\n${frame}`
+    );
   }
 }
 

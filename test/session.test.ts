@@ -124,6 +124,45 @@ describe("session store", () => {
     expect(metadata.updatedAt >= firstMetadata.updatedAt).toBe(true);
   });
 
+  it("stores a normalized title from the first normal user prompt", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+
+    await session.append({
+      kind: "message",
+      role: "user",
+      text: "/restore",
+      meta: { source: "slash_command", visibleOnly: true },
+    });
+    expect(session.metadata.title).toBeUndefined();
+
+    await session.append({
+      kind: "message",
+      role: "user",
+      text: "  Fix the restore picker\n\n so it shows useful session titles  ",
+    });
+    await session.append({ kind: "message", role: "user", text: "Do not replace the title" });
+
+    expect(session.metadata.title).toBe("Fix the restore picker so it shows useful session titles");
+    expect(await readJson(session.metadataPath)).toMatchObject({
+      title: "Fix the restore picker so it shows useful session titles",
+    });
+  });
+
+  it("shortens long session titles to 72 characters with an ellipsis", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+
+    await session.append({
+      kind: "message",
+      role: "user",
+      text: "Investigate why the restore session picker displays the complete first user prompt instead of a short useful session title",
+    });
+
+    expect(session.metadata.title?.length).toBeLessThanOrEqual(72);
+    expect(session.metadata.title?.endsWith("…")).toBe(true);
+  });
+
   it("rehydrates the latest runtime config snapshot without adding transcript messages", async () => {
     const workspace = await tempWorkspace();
     const session = await createSession(workspace);
@@ -558,6 +597,7 @@ describe("session store", () => {
     const fork = await forkSession(workspace, "latest");
 
     expect(fork.metadata.forkedFromSessionId).toBe(latest.sessionId);
+    expect(fork.metadata.title).toBe("latest");
     expect((await loadSession(workspace, fork.sessionId)).events).toMatchObject([{ text: "latest" }]);
   });
 
@@ -642,9 +682,11 @@ describe("session store", () => {
       { sessionId: tieOrder[1], updatedAt: "2025-01-02T00:00:00.000Z" },
       { sessionId: older.sessionId, firstUserPrompt: "older prompt" },
     ]);
-    expect(summaries.find((summary) => summary.sessionId === tieLow.sessionId)?.firstUserPrompt).toBe(
-      "normal prompt after slash"
-    );
+    expect(summaries.find((summary) => summary.sessionId === tieLow.sessionId)).toMatchObject({
+      firstUserPrompt: "normal prompt after slash",
+      title: "normal prompt after slash",
+    });
+    expect(summaries.find((summary) => summary.sessionId === older.sessionId)?.title).toBe("older prompt");
   });
 
   it("filters session summaries by active session, subagent source, and limit", async () => {

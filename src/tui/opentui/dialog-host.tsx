@@ -87,7 +87,7 @@ export function SessionPicker(props: { picker: NonNullable<TuiViewState["session
           return (
             <text width="100%" wrapMode="none" fg={selected() ? theme.accent : theme.text}>
               {selected() ? ACTIVE_ROW_MARKER : " "} {item.updatedAt.slice(0, 16).replace("T", " ")}{" "}
-              {item.sessionId.slice(0, 8)} {item.firstUserPrompt ?? "(no user prompt)"}
+              {item.sessionId.slice(0, 8)} {item.title ?? item.firstUserPrompt ?? "(no user prompt)"}
             </text>
           );
         }}

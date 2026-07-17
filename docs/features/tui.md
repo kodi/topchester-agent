@@ -38,7 +38,7 @@ ready · my-project · qwen/qwen3-coder [openrouter] · kb: ready
 
 Topchester does not use the terminal alternate screen and leaves mouse reporting disabled, so terminal-native selection and scrollback remain available. New, forked, and restored sessions append a visible session boundary; they do not clear unrelated terminal history.
 
-Large multi-line pastes are shown as compact placeholders in the composer and expanded back to their exact original text when submitted. Dialogs trap keyboard input above suggestions and the composer, and restore composer focus when closed. The semantic theme follows detected dark/light terminal appearance; selection remains visible when `NO_COLOR` is set.
+Large multi-line pastes are shown as compact placeholders in the composer and expanded back to their exact original text when submitted. Dialogs trap keyboard input above suggestions and the composer, and restore composer focus when closed. The restore-session picker shows a short title based on the first normal user prompt instead of the full prompt text. The semantic theme follows detected dark/light terminal appearance; selection remains visible when `NO_COLOR` is set.
 
 ## Tool visibility
 

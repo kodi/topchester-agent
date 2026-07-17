@@ -360,7 +360,10 @@ describe("framework-neutral TUI controller", () => {
 
     controller.submitCommand("/restore");
     await controller.waitForIdle();
-    expect(controller.getSnapshot().sessionPicker?.items.map((item) => item.sessionId)).toContain(source.sessionId);
+    const sourcePickerItem = controller
+      .getSnapshot()
+      .sessionPicker?.items.find((item) => item.sessionId === source.sessionId);
+    expect(sourcePickerItem).toMatchObject({ title: "source prompt", firstUserPrompt: "source prompt" });
     controller.selectSession(source.sessionId);
     await controller.waitForIdle();
     expect(controller.getSnapshot()).toMatchObject({ sessionId: source.sessionId, sessionEpoch: 1 });
@@ -375,6 +378,7 @@ describe("framework-neutral TUI controller", () => {
     await controller.waitForIdle();
     expect(controller.getSnapshot().sessionId).not.toBe(source.sessionId);
     expect(controller.getSnapshot().sessionEpoch).toBe(2);
+    expect((await loadSession(workspace, controller.getSnapshot().sessionId)).metadata.title).toBe("source prompt");
     expect(controller.getSnapshot().transcript).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "system", text: expect.stringContaining("Forked session") }),
