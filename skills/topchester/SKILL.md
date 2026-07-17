@@ -1,6 +1,6 @@
 ---
 name: topchester
-description: Explain Topchester commands, configuration, knowledge-base behavior, skills, hooks, sessions, and troubleshooting using version-matched product guidance and current workspace facts.
+description: Explain Topchester commands, configuration, knowledge-base behavior, skills, hooks, sessions, and troubleshooting using packaged product guidance and current workspace facts.
 ---
 
 # Topchester Product Help
@@ -14,6 +14,7 @@ Available references:
 - `references/configuration.md`
 - `references/knowledge-base.md`
 - `references/commands.md`
+- `references/skills-hooks-sessions.md`
 - `references/troubleshooting.md`
 
 Use `skill_read` only for the reference needed by the question. Treat the current source and tests as authoritative when changing Topchester itself. Do not point `TOPCHESTER_KB_DIR` at the Topchester repository to obtain product help; that variable selects the current workspace's mutable project KB.

@@ -15,9 +15,6 @@ interface RootPackageMetadata {
 const root = process.cwd();
 const outputRoot = join(root, "dist", "npm");
 const rootMetadata = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as RootPackageMetadata;
-const productManifest = JSON.parse(
-  await readFile(join(root, "resources", "knowledge", "topchester", "manifest.json"), "utf8")
-) as { productVersion?: unknown };
 
 if (rootMetadata.name !== NPM_PACKAGE_NAME) {
   throw new Error(`The npm release builder expects the root package name to be ${NPM_PACKAGE_NAME}.`);
@@ -26,11 +23,6 @@ if (typeof rootMetadata.version !== "string" || rootMetadata.version.length === 
   throw new Error("package.json does not contain a valid version.");
 }
 const releaseVersion = rootMetadata.version;
-if (productManifest.productVersion !== releaseVersion) {
-  throw new Error(
-    `Product knowledge is version ${String(productManifest.productVersion)}, but the npm release is ${releaseVersion}. Run the product-knowledge sync after bumping the version.`
-  );
-}
 
 const targets = resolveStandaloneTargets(process.argv.slice(2));
 await rm(outputRoot, { recursive: true, force: true });

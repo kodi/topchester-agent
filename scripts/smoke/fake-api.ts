@@ -191,18 +191,6 @@ function parseFakeToolCall(content: string): { tool: string; args: Record<string
 }
 
 function chooseResponse(prompt: string): string {
-  if (prompt.includes("PRODUCT_KNOWLEDGE_SMOKE")) {
-    if (
-      prompt.includes('"sourceId":"topchester"') &&
-      prompt.includes('"sourceKind":"builtin-product"') &&
-      prompt.includes('"sourceVersion":"0.76.0"')
-    ) {
-      return "PRODUCT_KNOWLEDGE_SMOKE grounded in built-in Topchester 0.76.0 knowledge";
-    }
-
-    return "PRODUCT_KNOWLEDGE_SMOKE missing built-in product context";
-  }
-
   if (prompt.includes("Create an L1 file entry for this workspace-relative path.")) {
     return JSON.stringify({
       language: "typescript",

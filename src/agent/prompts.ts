@@ -57,6 +57,7 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
       : []),
     ...(canUseTool("skill_view") && canUseTool("skill_read")
       ? [
+          "- For questions about Topchester itself, load the `topchester` skill with skill_view before answering. Use its linked references for commands, configuration, knowledge-base behavior, skills, hooks, sessions, and troubleshooting.",
           "- After skill_view, use skill_read only for a linked file listed by that skill and only when the current task needs it.",
         ]
       : []),

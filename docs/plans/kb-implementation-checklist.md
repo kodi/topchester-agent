@@ -32,10 +32,7 @@ Status legend:
 - [x] L1 in-memory search over paths, symbols, exports, responsibilities, summaries, imports, relationships, evidence, and tests
 - [x] L1 context pack generation for CLI and runtime prompt injection
 - [x] Agent runtime injects relevant L1 context packs when the KB is ready
-- [x] Separate mutable `project` and read-only version-matched `topchester` L1 sources
-- [x] Automatic product-intent routing works without a project KB and preserves source provenance
-- [x] CLI `topchester kb sources` and `--source project|topchester|all` diagnostics
-- [x] Deterministic product-pack freshness and built-package content checks
+- [x] Packaged static `topchester` skill provides product help without a project KB
 - [x] L1 post-processing infers file roles and reverse test links
 - [x] Provider-exposed reasoning can stream into the TUI without persisting thinking text into session/model context
 

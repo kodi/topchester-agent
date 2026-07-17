@@ -1,5 +1,7 @@
 # Built-In Topchester Product Knowledge
 
+> Superseded on 2026-07-17 by `2026-07-17-remove-embedded-product-knowledge-plan.md`. Product help now uses packaged static skills; the generated product-KB source and release-time regeneration were removed.
+
 ## Summary
 
 Give Topchester accurate, version-matched knowledge about its own configuration, commands, knowledge-base behavior, skills, hooks, sessions, and troubleshooting while it is working in any repository.

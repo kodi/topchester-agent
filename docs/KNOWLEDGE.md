@@ -11,14 +11,11 @@ Before the agent can do serious work in a project, the project must be scanned a
 
 The knowledge base is not an optional memory backend. It is the semantic backend of the coding agent.
 
-## Implemented source distinction
+## Implemented knowledge boundary
 
-Topchester now keeps two L1 sources separate:
+The KB is mutable workspace knowledge under `topchester-kb/` (or `TOPCHESTER_KB_DIR`) and is managed by project KB commands. Automatic retrieval uses that project source when it is ready.
 
-- `project` is the mutable workspace source under `topchester-kb/` (or `TOPCHESTER_KB_DIR`) and is managed by project KB commands.
-- `topchester` is a read-only package resource under `resources/knowledge/topchester/`, validated against the installed package version and never synced, reset, or drift-checked as workspace content.
-
-Automatic retrieval searches the ready project source for normal work and adds the product source only for deterministic Topchester-shaped requests. Search results and prompt context preserve source id, kind, version, path, read-only state, and content hash. The product pack uses portable L1 entries only; L2, L3, and graph generation remain out of scope for it.
+Topchester-specific product help is not another KB source. It lives in packaged static skills so it remains available when the current workspace has no project KB.
 
 The agent should use this knowledge base to understand:
 

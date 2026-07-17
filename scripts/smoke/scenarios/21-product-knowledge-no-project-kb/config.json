@@ -1,9 +1,0 @@
-{
-  "id": "21-product-knowledge-no-project-kb",
-  "name": "Product knowledge without project KB",
-  "description": "Checks a Topchester product question is grounded in the version-matched built-in source when the fixture has no project KB.",
-  "timeoutMs": 15000,
-  "prompt": "PRODUCT_KNOWLEDGE_SMOKE explain how Topchester configuration works from the matching built-in product knowledge.",
-  "expectedOutputContains": ["PRODUCT_KNOWLEDGE_SMOKE grounded in built-in Topchester 0.76.0 knowledge"],
-  "expectedMissingFiles": ["topchester-kb/manifest.json"]
-}

@@ -117,17 +117,6 @@ jobs:
       - name: Bump package version
         run: npm version ${{ inputs.release }} --no-git-tag-version
 
-      - name: Sync versioned product knowledge
-        run: vp run knowledge-product-sync
-
-      - name: Format versioned product knowledge
-        run: vp fmt resources/knowledge/topchester
-
-      - name: Check versioned product knowledge
-        run: |
-          vp fmt resources/knowledge/topchester --check
-          mise run knowledge-product-check
-
       - name: Build standalone npm release packages
         run: mise run release-build
 
@@ -139,7 +128,7 @@ jobs:
 
       - name: Commit version bump
         run: |
-          git add package.json resources/knowledge/topchester
+          git add package.json
           git commit -m "chore: release topchester-ai v${{ steps.package.outputs.version }}"
           git tag "v${{ steps.package.outputs.version }}"
 

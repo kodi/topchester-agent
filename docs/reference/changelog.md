@@ -10,6 +10,14 @@ public: true
 
 Topchester changes grouped by day. This file is the source of truth for the public changelog.
 
+## 2026-07-17
+
+### Simplification
+
+- Replaced the generated, embedded Topchester product-KB source with packaged static `topchester` skill references.
+- Removed product-source CLI options, generated L1 resources, freshness tasks, and release-time resource regeneration.
+- Kept project KB behavior focused on the current workspace and retained built-in skill checks in standalone packages.
+
 ## 2026-07-15
 
 ### Features

@@ -38,10 +38,6 @@ export interface L1SearchMatch {
   contentHash: string;
   scanStatus: L1FileEntry["scan_status"];
   reasons: string[];
-  sourceId?: "project" | "topchester";
-  sourceKind?: "workspace" | "builtin-product";
-  sourceVersion?: string;
-  readOnly?: boolean;
 }
 
 export interface L1KnowledgeSearchResult {
@@ -78,10 +74,6 @@ export interface L1ContextPackFile {
   scanStatus: L1FileEntry["scan_status"];
   l1: L1ContextPackKnowledge;
   fullL1?: L1FileEntry;
-  sourceId?: "project" | "topchester";
-  sourceKind?: "workspace" | "builtin-product";
-  sourceVersion?: string;
-  readOnly?: boolean;
 }
 
 export interface L1ContextPackResult {
@@ -95,16 +87,12 @@ export interface L1ContextPackResult {
     minScore: number;
   };
   drift: {
-    status: "unchecked" | "immutable";
+    status: "unchecked";
     warnings: string[];
   };
   summary: string;
   warnings: string[];
   relevantFiles: L1ContextPackFile[];
-  sourceId?: "project" | "topchester";
-  sourceKind?: "workspace" | "builtin-product";
-  sourceVersion?: string;
-  readOnly?: boolean;
 }
 
 export interface LoadedL1KnowledgeIndex {
@@ -112,10 +100,6 @@ export interface LoadedL1KnowledgeIndex {
   kbPath: string;
   index: L1InMemoryIndex;
   invalidEntryCount: number;
-  sourceId?: "project" | "topchester";
-  sourceKind?: "workspace" | "builtin-product";
-  sourceVersion?: string;
-  readOnly?: boolean;
 }
 
 export class L1InMemoryIndex {
@@ -276,36 +260,11 @@ export async function loadL1KnowledgeIndex(workspaceRoot: string): Promise<Loade
     throw new Error("Run `topchester kb init` and `topchester kb sync` before loading the L1 knowledge index.");
   }
 
-  return loadL1KnowledgeIndexFromRoot(workspaceRoot, status.kbPath);
-}
+  const loadResult = await loadL1FileEntries(status.kbPath);
 
-export async function loadL1KnowledgeIndexFromRoot(
-  workspaceRoot: string,
-  kbPath: string
-): Promise<LoadedL1KnowledgeIndex> {
-  const loadResult = await loadL1FileEntries(kbPath);
-
-  return createLoadedL1KnowledgeIndex(workspaceRoot, kbPath, loadResult);
-}
-
-export async function loadL1KnowledgeIndexFromPaths(
-  workspaceRoot: string,
-  kbPath: string,
-  entryPaths: string[]
-): Promise<LoadedL1KnowledgeIndex> {
-  const loadResult = await loadL1FileEntriesFromPaths(entryPaths);
-
-  return createLoadedL1KnowledgeIndex(workspaceRoot, kbPath, loadResult);
-}
-
-function createLoadedL1KnowledgeIndex(
-  workspaceRoot: string,
-  kbPath: string,
-  loadResult: { entries: L1FileEntry[]; invalidEntryCount: number }
-): LoadedL1KnowledgeIndex {
   return {
     workspaceRoot,
-    kbPath,
+    kbPath: status.kbPath,
     index: buildL1InMemoryIndex(loadResult.entries),
     invalidEntryCount: loadResult.invalidEntryCount,
   };
@@ -362,10 +321,6 @@ export function createL1ContextPackFromIndex(
         scanStatus: match.scanStatus,
         l1: compactL1Entry(entry),
         fullL1: options.includeFullL1 ? entry : undefined,
-        sourceId: source.sourceId,
-        sourceKind: source.sourceKind,
-        sourceVersion: source.sourceVersion,
-        readOnly: source.readOnly,
       };
     })
     .filter((file): file is L1ContextPackFile => Boolean(file));
@@ -378,22 +333,13 @@ export function createL1ContextPackFromIndex(
     entryCount: source.index.size,
     invalidEntryCount: source.invalidEntryCount,
     selection: { limit, minScore },
-    drift: source.readOnly
-      ? {
-          status: "immutable",
-          warnings: ["Packaged product knowledge is read-only and validated against the installed product version."],
-        }
-      : {
-          status: "unchecked",
-          warnings: ["L1 context pack includes stored scan statuses; exact file-hash drift check has not run yet."],
-        },
+    drift: {
+      status: "unchecked",
+      warnings: ["L1 context pack includes stored scan statuses; exact file-hash drift check has not run yet."],
+    },
     summary: summarizeContextPack(query, relevantFiles),
     warnings,
     relevantFiles,
-    sourceId: source.sourceId,
-    sourceKind: source.sourceKind,
-    sourceVersion: source.sourceVersion,
-    readOnly: source.readOnly,
   };
 }
 
@@ -464,7 +410,7 @@ export function formatL1ContextPackResult(result: L1ContextPackResult): string[]
     ...result.warnings.map((warning) => `warning: ${warning}`),
     "",
     ...result.relevantFiles.flatMap((file) => [
-      `${file.score}\t${file.sourceId ? `${file.sourceId}:` : ""}${file.path}\t${file.scanStatus}\t${file.contentHash}`,
+      `${file.score}\t${file.path}\t${file.scanStatus}\t${file.contentHash}`,
       `  reasons: ${file.reasons.join("; ") || "score match"}`,
       `  responsibilities: ${(file.l1.responsibilities ?? []).join("; ") || "(none)"}`,
       `  symbols: ${(file.l1.symbols ?? []).map((symbol) => symbol.name).join(", ") || "(none)"}`,
@@ -496,10 +442,6 @@ export function formatL1ContextPackForPrompt(result: L1ContextPackResult): strin
           reasons: file.reasons,
           contentHash: file.contentHash,
           scanStatus: file.scanStatus,
-          sourceId: file.sourceId,
-          sourceKind: file.sourceKind,
-          sourceVersion: file.sourceVersion,
-          readOnly: file.readOnly,
           l1: {
             summary: file.l1.summary,
             file_role: file.l1.file_role,
@@ -523,9 +465,7 @@ export function formatL1ContextPackForPrompt(result: L1ContextPackResult): strin
   ].join("\n");
 }
 
-export async function loadL1FileEntries(
-  kbPath: string
-): Promise<{ entries: L1FileEntry[]; invalidEntryCount: number }> {
+async function loadL1FileEntries(kbPath: string): Promise<{ entries: L1FileEntry[]; invalidEntryCount: number }> {
   const entryPaths = await listJsonFiles(join(kbPath, "l1-files")).catch((error: unknown) => {
     if (isFileNotFoundError(error)) {
       return [];
@@ -533,13 +473,7 @@ export async function loadL1FileEntries(
 
     throw error;
   });
-  return loadL1FileEntriesFromPaths(entryPaths);
-}
-
-export async function loadL1FileEntriesFromPaths(
-  entryPaths: string[]
-): Promise<{ entries: L1FileEntry[]; invalidEntryCount: number }> {
-  const parsedEntries = await Promise.all([...entryPaths].sort().map(loadL1FileEntry));
+  const parsedEntries = await Promise.all(entryPaths.map(loadL1FileEntry));
   const entries = parsedEntries.filter((entry): entry is L1FileEntry => Boolean(entry));
   const invalidEntryCount = parsedEntries.length - entries.length;
 

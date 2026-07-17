@@ -30,20 +30,6 @@ try {
     throw new Error(`Standalone CLI returned ${version.stdout.trim()}, expected ${String(packageMetadata.version)}.`);
   }
 
-  const sources = await run(executable, ["--workspace", workspace, "kb", "sources"], { env });
-  if (!sources.stdout.includes("topchester\tbuiltin-product\tready\tread-only")) {
-    throw new Error("Standalone CLI did not load its embedded product-knowledge source.");
-  }
-
-  const search = await run(
-    executable,
-    ["--workspace", workspace, "kb", "search", "--source", "topchester", "ignore", "paths"],
-    { env }
-  );
-  if (!search.stdout.includes("topchester:docs/configuration/ignore-paths.md")) {
-    throw new Error("Standalone CLI could not search its embedded product-knowledge source.");
-  }
-
   const skills = await run(executable, ["--workspace", workspace, "run", "/skills", "list"], { env });
   if (!skills.stdout.includes("topchester")) {
     throw new Error("Standalone CLI did not load its embedded built-in skills.");

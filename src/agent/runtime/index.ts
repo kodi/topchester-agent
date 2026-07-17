@@ -2,7 +2,7 @@ import { type AppContext } from "../../app/context.js";
 import { type BenchmarkProfile } from "../benchmark-profile.js";
 import { dryRunKnowledgeCompile, filterNonCleanKnowledgeCompileResult } from "../../knowledge/compiler/index.js";
 import { type KnowledgeProgressReporter } from "../../knowledge/progress.js";
-import { createAutomaticKnowledgeContext, formatL1ContextPackForPrompt } from "../../knowledge/sources/index.js";
+import { createL1ContextPack, formatL1ContextPackForPrompt } from "../../knowledge/search.js";
 import { getKnowledgeStatus, type KnowledgeStatus } from "../../knowledge/status.js";
 import { executeSlashCommand } from "../commands.js";
 import { type ConversationTurn, buildConversationPrompt } from "../conversation.js";
@@ -1528,20 +1528,23 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       return prompt;
     }
 
+    const status = getKnowledgeStatus(this.context.workspaceRoot);
+
+    if (!status.kbExists || !status.kbIsDirectory || status.kbContentState !== "ready") {
+      return prompt;
+    }
+
     try {
-      const knowledge = await createAutomaticKnowledgeContext(this.context.workspaceRoot, message);
-      const contextPack = knowledge.contextPack;
+      const contextPack = await createL1ContextPack(this.context.workspaceRoot, message, { limit: 8, minScore: 12 });
 
       this.context.logger.debug(
         {
           event: "kb_context_pack",
           query: message,
-          selectedSourceIds: knowledge.selectedSourceIds,
-          sourceMatchCounts: knowledge.sourceMatchCounts,
-          entryCount: contextPack?.entryCount ?? 0,
-          relevantFileCount: contextPack?.relevantFiles.length ?? 0,
-          paths: contextPack?.relevantFiles.map((file) => `${file.sourceId ?? "project"}:${file.path}`) ?? [],
-          warnings: knowledge.warnings,
+          entryCount: contextPack.entryCount,
+          relevantFileCount: contextPack.relevantFiles.length,
+          paths: contextPack.relevantFiles.map((file) => file.path),
+          warnings: contextPack.warnings,
         },
         "kb context pack"
       );
@@ -1553,7 +1556,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         "kb context pack payload"
       );
 
-      if (!contextPack || contextPack.relevantFiles.length === 0) {
+      if (contextPack.relevantFiles.length === 0) {
         return prompt;
       }
 

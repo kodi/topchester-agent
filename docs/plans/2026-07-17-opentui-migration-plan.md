@@ -1,5 +1,7 @@
 # OpenTUI migration plan
 
+> Product-knowledge references below describe the migration's historical verification state. The generated product-KB source was removed later on 2026-07-17; standalone builds now embed and verify static built-in skills only.
+
 Status: complete; implementation and final `mise run local-ci` verification passed
 
 Created: 2026-07-17

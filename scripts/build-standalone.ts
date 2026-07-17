@@ -19,7 +19,6 @@ if (typeof packageMetadata.version !== "string" || packageMetadata.version.lengt
 const assetPaths = [
   "package.json",
   ...(await listFiles(join(root, "skills"))).map((path) => relative(root, path)),
-  ...(await listFiles(join(root, "resources", "knowledge"))).map((path) => relative(root, path)),
 ].sort();
 const builtinSkillFiles = assetPaths
   .filter((path) => path.startsWith("skills/"))

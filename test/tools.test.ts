@@ -978,6 +978,10 @@ describe("agent tools", () => {
     );
   });
 
+  it("routes Topchester product questions through the static built-in skill", () => {
+    expect(getChatSystemPrompt()).toContain("load the `topchester` skill with skill_view before answering");
+  });
+
   it("tells the model when to use plan_todo", () => {
     const prompt = getChatSystemPrompt();
 

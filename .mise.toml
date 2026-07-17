@@ -70,15 +70,7 @@ run = "vp check"
 depends = ["format-check", "lint", "typecheck"]
 
 [tasks.local-ci-extended]
-run = ["mise run local-ci", "mise run knowledge-product-check", "mise run test", "mise run native-package-check"]
-
-[tasks.knowledge-product-sync]
-dir = "{{config_root}}"
-run = "vp run knowledge-product-sync"
-
-[tasks.knowledge-product-check]
-dir = "{{config_root}}"
-run = "vp run knowledge-product-check"
+run = ["mise run local-ci", "mise run test", "mise run native-package-check"]
 
 [tasks.package-check]
 dir = "{{config_root}}"

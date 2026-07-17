@@ -18,7 +18,7 @@ They are different from project instructions and generated knowledge:
 
 Topchester ships a built-in `topchester` skill for product help and a focused `topchester-config` skill for configuration work. Workspace and user skills can still shadow built-ins with the same name.
 
-The `topchester` skill routes explicit product-help requests and names compact linked references. Automatic product knowledge retrieval is independent of skill precedence, so shadowing the skill does not hide the matching read-only product source.
+The system prompt tells the agent to load the `topchester` skill for questions about Topchester itself. The skill and its compact linked references ship with the installed package, so product help works in repositories that have no project KB. Explicit `/skill topchester` and `@topchester` activation remain available.
 
 ## Activate skills
 

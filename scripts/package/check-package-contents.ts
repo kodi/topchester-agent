@@ -82,18 +82,6 @@ try {
   if (version.stdout.trim() !== packageMetadata.version) {
     throw new Error(`Installed native CLI returned ${version.stdout.trim()}, expected ${packageMetadata.version}.`);
   }
-  const sources = await run(cli, ["--workspace", workspace, "kb", "sources"], { env, maxBuffer });
-  if (!sources.stdout.includes("topchester\tbuiltin-product\tready\tread-only")) {
-    throw new Error("Installed native CLI did not load its embedded product-knowledge source.");
-  }
-  const search = await run(
-    cli,
-    ["--workspace", workspace, "kb", "search", "--source", "topchester", "ignore", "paths"],
-    { env, maxBuffer }
-  );
-  if (!search.stdout.includes("topchester:docs/configuration/ignore-paths.md")) {
-    throw new Error("Installed native CLI could not search its embedded product-knowledge source.");
-  }
   const skills = await run(cli, ["--workspace", workspace, "run", "/skills", "list"], { env, maxBuffer });
   if (!skills.stdout.includes("topchester")) {
     throw new Error("Installed native CLI did not load its embedded built-in skills.");

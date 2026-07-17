@@ -22,4 +22,4 @@ Ignore paths belong in `topchester.jsonc` when the rule is shared project policy
 
 Keep generated state out of Git unless a Topchester doc explicitly says it is canonical project knowledge.
 
-These rules apply only to project knowledge. The built-in Topchester product source is compiled from its own allowlisted package inputs and is never controlled by the current repository's `ignore.paths` or `TOPCHESTER_KB_DIR`.
+These rules apply to the current workspace's project knowledge. Packaged skills are static product instructions and are not controlled by `ignore.paths` or `TOPCHESTER_KB_DIR`.

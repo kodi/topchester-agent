@@ -14,7 +14,6 @@
   "files": [
     "dist",
     "skills",
-    "resources/knowledge",
     "agents.json"
   ],
   "type": "module",
@@ -41,8 +40,6 @@
     "check": "vp check && pnpm test",
     "release:build": "vp run prepare:standalone-targets && vp run build:standalone:all && vp run build:npm-release:all",
     "release:publish": "node --import tsx scripts/package/publish-npm-release.ts",
-    "knowledge-product-sync": "node --import tsx scripts/knowledge/build-topchester-pack.ts",
-    "knowledge-product-check": "node --import tsx scripts/knowledge/check-topchester-pack.ts",
     "package-check": "node --import tsx scripts/package/check-package-contents.ts",
     "standalone-check": "node --import tsx scripts/package/check-standalone.ts"
   },

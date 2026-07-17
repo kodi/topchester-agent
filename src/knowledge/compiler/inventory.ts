@@ -47,7 +47,6 @@ const DEFAULT_EXCLUDED_DIRS = new Set([
   ".agents/topchester",
   ".agents/topchester-kb-cache",
   "topchester-kb",
-  "resources/knowledge/topchester",
 ]);
 
 const DEFAULT_EXCLUDED_FILES = new Set(["topchester.jsonc"]);
