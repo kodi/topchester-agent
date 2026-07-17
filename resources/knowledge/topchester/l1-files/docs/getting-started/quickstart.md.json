@@ -7,7 +7,7 @@
   "language": "markdown",
   "content_hash": "sha256:9236722e82e21768381be481a848d94bc31d2931af4c899536b22f66f29001e9",
   "size_bytes": 1662,
-  "last_scanned_at": "2026-07-17T03:25:20.517Z",
+  "last_scanned_at": "2026-07-17T03:53:39.652Z",
   "scan_status": "current",
   "file_role": "doc",
   "summary": "Install Topchester, configure OpenRouter, and start the TUI.",

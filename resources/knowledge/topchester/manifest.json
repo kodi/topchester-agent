@@ -2,12 +2,12 @@
   "formatVersion": 1,
   "sourceId": "topchester",
   "sourceKind": "builtin-product",
-  "productVersion": "0.76.0",
+  "productVersion": "0.77.0",
   "compiler": {
     "name": "topchester-knowledge-compiler",
     "version": 1
   },
-  "generatedAt": "2026-07-17T03:25:20.517Z",
+  "generatedAt": "2026-07-17T03:53:39.652Z",
   "packSpecHash": "sha256:8d279afcd49f232730a090bab4b795486cfc819732a23f2d9d207e410dc8f7cd",
   "sourceFileCount": 32,
   "entryCount": 32,
