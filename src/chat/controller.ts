@@ -7,6 +7,7 @@ import {
   type BashApprovalRequest,
   type RuntimeSteeringBuffer,
 } from "../agent/runtime/index.js";
+import { createRuntimeEventQueue } from "../agent/runtime/event-queue.js";
 import { formatTaskPlanNotice, type TaskPlanState } from "../agent/task-plan.js";
 import {
   reloadAppBaseConfig,
@@ -104,6 +105,21 @@ export const STARTUP_PROMPT_HINT =
   "Prompt hint: Enter sends, Shift+Enter adds a line, / opens commands, ↑↓ browse history.";
 
 const HOOK_STATUS_EXPIRE_AFTER_MS = 2000;
+export const RUNTIME_EVENT_QUEUE_CAPACITY = 128;
+export const RUNTIME_EVENT_MAX_BATCH = 128;
+export const RUNTIME_EVENT_MAX_SYNC_SLICE_MS = 4;
+
+export type TuiRuntimeDrainClock = () => number;
+export type TuiRuntimeDrainScheduler = () => Promise<void>;
+
+export const defaultTuiRuntimeDrainClock: TuiRuntimeDrainClock = () => performance.now();
+export const defaultTuiRuntimeDrainScheduler: TuiRuntimeDrainScheduler = () =>
+  new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+interface RuntimeViewBatchState {
+  clearTaskPlanNotice: boolean;
+  latestHookStatus?: string;
+}
 
 export interface TuiControllerOptions {
   session?: SessionHandle;
@@ -113,6 +129,8 @@ export interface TuiControllerOptions {
   banner?: string;
   herdrReporter?: HerdrAgentReporter;
   transientScheduler?: TuiTransientScheduler;
+  runtimeDrainClock?: TuiRuntimeDrainClock;
+  runtimeDrainScheduler?: TuiRuntimeDrainScheduler;
 }
 
 export interface TuiController {
@@ -336,27 +354,119 @@ export class TopchesterTuiController implements TuiController {
 
   async applyRuntimeEvents(events: AgentRuntimeEvent[], owner: SessionHandle = this.session): Promise<void> {
     if (this.session !== owner || this.persistenceBlockedSessions.has(owner)) return;
-    let clearTaskPlanNotice = false;
-    let latestHookStatus: string | undefined;
+    const state: RuntimeViewBatchState = { clearTaskPlanNotice: false };
     this.view.batch(() => {
-      for (const event of events) {
-        if (event.type === "status") this.view.setStatus(event.status);
-        if (event.type === "knowledge_status") this.view.setKnowledgeStatus(event.status);
-        if (event.type === "task_plan") {
-          const change = this.view.setTaskPlan(event.plan);
-          this.view.setTaskPlanNotice(formatTaskPlanNotice(change, event.plan));
-          clearTaskPlanNotice = true;
-        }
-        if (event.type === "hook_status") latestHookStatus = event.label;
-        else this.view.addEntries(runtimeEventToTranscriptEntries(event));
-      }
+      for (const event of events) this.reduceRuntimeEvent(event, state);
     });
-    if (clearTaskPlanNotice) this.scheduleTaskPlanNoticeClear();
-    if (latestHookStatus !== undefined)
-      this.view.setTransientTemporaryLine(latestHookStatus, HOOK_STATUS_EXPIRE_AFTER_MS);
+    this.finishRuntimeViewBatch(state);
+    await this.persistRuntimeEvents(events, owner);
+  }
+
+  private reduceRuntimeEvent(event: AgentRuntimeEvent, state: RuntimeViewBatchState): void {
+    if (event.type === "status") this.view.setStatus(event.status);
+    if (event.type === "knowledge_status") this.view.setKnowledgeStatus(event.status);
+    if (event.type === "task_plan") {
+      const change = this.view.setTaskPlan(event.plan);
+      this.view.setTaskPlanNotice(formatTaskPlanNotice(change, event.plan));
+      state.clearTaskPlanNotice = true;
+    }
+    if (event.type === "hook_status") state.latestHookStatus = event.label;
+    else this.view.addEntries(runtimeEventToTranscriptEntries(event));
+  }
+
+  private finishRuntimeViewBatch(state: RuntimeViewBatchState): void {
+    if (state.clearTaskPlanNotice) this.scheduleTaskPlanNoticeClear();
+    if (state.latestHookStatus !== undefined)
+      this.view.setTransientTemporaryLine(state.latestHookStatus, HOOK_STATUS_EXPIRE_AFTER_MS);
+  }
+
+  private async persistRuntimeEvents(events: readonly AgentRuntimeEvent[], owner: SessionHandle): Promise<void> {
     for (const event of events) {
       const backpressure = this.persistPayloadWithWarning(runtimeEventToSessionPayload(event), undefined, owner);
       if (backpressure) await backpressure;
+    }
+  }
+
+  private async consumeRuntimeEventStream(
+    stream: AsyncIterable<AgentRuntimeEvent>,
+    owner: SessionHandle,
+    abortSignal: AbortSignal,
+    beforeConsume?: (event: AgentRuntimeEvent) => void
+  ): Promise<void> {
+    const queue = createRuntimeEventQueue(undefined, { capacity: RUNTIME_EVENT_QUEUE_CAPACITY });
+    const iterator = stream[Symbol.asyncIterator]();
+    let producerDone = false;
+    let sourceDone = false;
+    let producerFailure: unknown;
+    const abortQueue = () => queue.abort(abortSignal.reason ?? new Error("Runtime stream aborted"));
+    abortSignal.addEventListener("abort", abortQueue, { once: true });
+    if (abortSignal.aborted) abortQueue();
+
+    const producer = (async () => {
+      try {
+        while (!this.disposed && this.session === owner && !abortSignal.aborted) {
+          const next = await iterator.next();
+          if (next.done) {
+            sourceDone = true;
+            break;
+          }
+          if (this.disposed || this.session !== owner || abortSignal.aborted) break;
+          const backpressure = queue.push(next.value);
+          if (backpressure) await backpressure;
+        }
+      } catch (error) {
+        producerFailure = error;
+      } finally {
+        if (!sourceDone) {
+          try {
+            await iterator.return?.();
+          } catch (error) {
+            producerFailure ??= error;
+          }
+        }
+        producerDone = true;
+        queue.close(producerFailure);
+      }
+    })();
+
+    let consumerFailure: unknown;
+    try {
+      for (;;) {
+        if (this.disposed || this.session !== owner) {
+          queue.abort(new Error("Runtime stream owner is no longer active"));
+          break;
+        }
+        await queue.waitForEvents();
+        const state: RuntimeViewBatchState = { clearTaskPlanNotice: false };
+        let drained!: ReturnType<typeof queue.drainReady>;
+        this.view.batch(() => {
+          drained = queue.drainReady({
+            maxEvents: RUNTIME_EVENT_MAX_BATCH,
+            maxElapsedMs: RUNTIME_EVENT_MAX_SYNC_SLICE_MS,
+            now: this.options.runtimeDrainClock ?? defaultTuiRuntimeDrainClock,
+            consume: (event) => {
+              beforeConsume?.(event);
+              this.reduceRuntimeEvent(event, state);
+            },
+          });
+        });
+        this.finishRuntimeViewBatch(state);
+        await this.persistRuntimeEvents(drained.events, owner);
+        if (drained.events.length > 0 && (drained.hasMore || !producerDone)) {
+          await (this.options.runtimeDrainScheduler ?? defaultTuiRuntimeDrainScheduler)();
+        } else if (producerDone && drained.events.length === 0) {
+          break;
+        }
+      }
+      await producer;
+      if (producerFailure !== undefined) throw producerFailure;
+    } catch (error) {
+      consumerFailure = error;
+      throw error;
+    } finally {
+      abortSignal.removeEventListener("abort", abortQueue);
+      if (!producerDone) queue.abort(consumerFailure ?? new Error("Runtime stream consumer stopped"));
+      await producer;
     }
   }
 
@@ -483,21 +593,22 @@ export class TopchesterTuiController implements TuiController {
         : message;
       const conversation =
         modelMessage === message ? this.view.getConversationTurns() : this.view.getConversationTurns().slice(0, -1);
-      for await (const event of this.runtime.submitMessageStream(conversation, modelMessage, abortController.signal, {
-        onReasoning: reasoningDisplay?.sink,
-        session: this.session,
-        requestBashApproval: (request) => this.requestBashApproval(busy, request, abortController.signal),
-        steering,
-      })) {
-        if (this.session !== activeSession) {
-          break;
+      await this.consumeRuntimeEventStream(
+        this.runtime.submitMessageStream(conversation, modelMessage, abortController.signal, {
+          onReasoning: reasoningDisplay?.sink,
+          session: this.session,
+          requestBashApproval: (request) => this.requestBashApproval(busy, request, abortController.signal),
+          steering,
+        }),
+        activeSession,
+        abortController.signal,
+        (event) => {
+          if (event.type === "message" && event.role === "assistant") {
+            reasoningDisplay?.commit();
+            busy.clearActivity();
+          }
         }
-        if (event.type === "message" && event.role === "assistant") {
-          reasoningDisplay?.commit();
-          busy.clearActivity();
-        }
-        await this.applyRuntimeEvents([event], activeSession);
-      }
+      );
     } catch (error) {
       if (this.session !== activeSession) {
         // A session switch owns the next visible state; the abandoned turn must not write into it.
@@ -784,25 +895,26 @@ export class TopchesterTuiController implements TuiController {
     });
     try {
       const conversation = this.view.getConversationTurns().slice(0, -1);
-      for await (const event of this.runtime.submitMessageStream(
-        conversation,
-        formatSkillActivationPrompt([activation]),
+      await this.consumeRuntimeEventStream(
+        this.runtime.submitMessageStream(
+          conversation,
+          formatSkillActivationPrompt([activation]),
+          abortController.signal,
+          {
+            onReasoning: reasoningDisplay?.sink,
+            session: this.session,
+            requestBashApproval: (request) => this.requestBashApproval(busy, request, abortController.signal),
+          }
+        ),
+        activeSession,
         abortController.signal,
-        {
-          onReasoning: reasoningDisplay?.sink,
-          session: this.session,
-          requestBashApproval: (request) => this.requestBashApproval(busy, request, abortController.signal),
+        (event) => {
+          if (event.type === "message" && event.role === "assistant") {
+            reasoningDisplay?.commit();
+            busy.clearActivity();
+          }
         }
-      )) {
-        if (this.session !== activeSession) {
-          break;
-        }
-        if (event.type === "message" && event.role === "assistant") {
-          reasoningDisplay?.commit();
-          busy.clearActivity();
-        }
-        await this.applyRuntimeEvents([event], activeSession);
-      }
+      );
     } catch (error) {
       if (this.session !== activeSession) {
         // Ignore output from a skill turn abandoned by a session switch.

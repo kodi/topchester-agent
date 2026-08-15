@@ -4,9 +4,72 @@ import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 import { type AppContext } from "../src/app/context.js";
 import { TopchesterAgentRuntime } from "../src/agent/runtime/index.js";
+import { createRuntimeEventQueue } from "../src/agent/runtime/event-queue.js";
 import { createSession } from "../src/session/store.js";
 
 const mcpFixtureServerPath = join(process.cwd(), "test/fixtures/mcp/stdio-server.js");
+
+describe("runtime event queue", () => {
+  it("preserves FIFO order, applies count/time limits around consume, and records yields", async () => {
+    const profile = { runtimeEvents: 0, maximumQueueDepth: 0, runtimeBatches: 0, maximumBatchSize: 0, hostYields: 0 };
+    const queue = createRuntimeEventQueue(profile, { capacity: 4 });
+    for (const status of ["one", "two", "three"]) void queue.push({ type: "status", status });
+    let clock = 0;
+    const consumed: string[] = [];
+    const batch = await queue.drain({
+      maxEvents: 3,
+      maxElapsedMs: 0,
+      now: () => clock,
+      consume: (event) => {
+        consumed.push(event.type === "status" ? event.status : "unexpected");
+        clock += 1;
+      },
+      yieldHost: async () => {},
+    });
+    expect(batch.map((event) => (event.type === "status" ? event.status : "unexpected"))).toEqual(["one"]);
+    expect(consumed).toEqual(["one"]);
+    expect(profile).toMatchObject({ runtimeBatches: 1, maximumBatchSize: 1, hostYields: 1 });
+    expect((await queue.drain({ maxEvents: 2 })).map((event) => (event.type === "status" ? event.status : ""))).toEqual(
+      ["two", "three"]
+    );
+  });
+
+  it("backpressures the 129th producer until a consumer frees capacity and cleans up close/abort waiters", async () => {
+    const queue = createRuntimeEventQueue(undefined, { capacity: 2 });
+    void queue.push({ type: "status", status: "one" });
+    void queue.push({ type: "status", status: "two" });
+    const blocked = queue.push({ type: "status", status: "three" });
+    expect(blocked).toBeInstanceOf(Promise);
+    await queue.drain({ maxEvents: 1 });
+    await expect(Promise.resolve(blocked)).resolves.toBeUndefined();
+    expect((await queue.drain({ maxEvents: 2 })).map((event) => (event.type === "status" ? event.status : ""))).toEqual(
+      ["two", "three"]
+    );
+
+    const aborted = createRuntimeEventQueue(undefined, { capacity: 1 });
+    void aborted.push({ type: "status", status: "one" });
+    const waiting = aborted.push({ type: "status", status: "two" });
+    aborted.abort(new Error("cancelled"));
+    await expect(Promise.resolve(waiting)).rejects.toThrow("cancelled");
+    await expect(aborted.drain()).rejects.toThrow("cancelled");
+  });
+
+  it("drains buffered work before a producer error and wakes an empty aborted consumer", async () => {
+    const failed = createRuntimeEventQueue(undefined, { capacity: 2 });
+    void failed.push({ type: "status", status: "before failure" });
+    failed.close(new Error("producer failed"));
+    await expect(failed.drain()).resolves.toEqual([{ type: "status", status: "before failure" }]);
+    await expect(failed.drain()).rejects.toThrow("producer failed");
+    expect(() => failed.push({ type: "status", status: "too late" })).toThrow("producer failed");
+
+    const aborted = createRuntimeEventQueue();
+    const waiting = aborted.waitForEvents();
+    aborted.abort(new Error("consumer cancelled"));
+    await expect(waiting).rejects.toThrow("consumer cancelled");
+
+    expect(() => createRuntimeEventQueue(undefined, { capacity: 0 })).toThrow("capacity must be positive");
+  });
+});
 
 describe("agent runtime project instructions", () => {
   it("logs session-scoped turn, model, and setup timing records", async () => {

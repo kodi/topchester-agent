@@ -204,18 +204,81 @@ async function runScenario(name: ScenarioName): Promise<Record<string, number>> 
       };
     }
     case "runtime-event-burst": {
-      const queueProfile = { runtimeEvents: 0, maximumQueueDepth: 0 };
+      const queueProfile = {
+        runtimeEvents: 0,
+        maximumQueueDepth: 0,
+        runtimeBatches: 0,
+        maximumBatchSize: 0,
+        hostYields: 0,
+      };
       const queue = createRuntimeEventQueue(queueProfile);
-      for (let index = 0; index < 1000; index += 1) queue.push({ type: "status", status: "fixture" });
-      queue.close();
+      let maximumBlockedProducers = 0;
+      const producer = (async () => {
+        for (let index = 0; index < 1000; index += 1) {
+          const status =
+            index === 511
+              ? "input injected"
+              : index === 512
+                ? "cancellation injected"
+                : index === 513
+                  ? "dialog action injected"
+                  : "fixture";
+          const result = queue.push({ type: "status", status });
+          if (result instanceof Promise) {
+            maximumBlockedProducers = Math.max(maximumBlockedProducers, 1);
+            await result;
+          }
+        }
+        queue.close();
+      })();
       let drained = 0;
-      for await (const _event of queue) drained += 1;
+      let inputInjections = 0;
+      let cancellations = 0;
+      let dialogActions = 0;
+      let inputBeforeCompleteDrain = 0;
+      let consumed = 0;
+      const composer = new ComposerState();
+      while (drained < 1000) {
+        const batch = await queue.drain({
+          maxEvents: 128,
+          consume: (event) => {
+            consumed += 1;
+            if (event.type !== "status") return;
+            if (event.status === "input injected") {
+              composer.preparePaste("x");
+              inputInjections += 1;
+              if (consumed < 1000) inputBeforeCompleteDrain = 1;
+            } else if (event.status === "cancellation injected") {
+              view.setCanCancel(true);
+              view.setCanCancel(false);
+              cancellations += 1;
+            } else if (event.status === "dialog action injected") {
+              view.batch(() => {
+                view.setManagedDialog(true);
+                view.addEntry({
+                  kind: "choice",
+                  persistence: "session",
+                  tone: "info",
+                  title: "fixture dialog",
+                  actions: [{ label: "Continue", value: "continue" }],
+                });
+              });
+              view.removeActiveChoice();
+              dialogActions += 1;
+            }
+          },
+          yieldHost: async () => {},
+        });
+        drained += batch.length;
+      }
+      await producer;
       return {
         ...queueProfile,
-        runtimeBatches: drained,
-        maximumBatchSize: 1,
-        hostYields: 0,
-        inputInjections: 1,
+        inputInjections,
+        cancellations,
+        dialogActions,
+        inputBeforeCompleteDrain,
+        maximumBlockedProducers,
         dropped: 0,
         duplicated: 0,
         reordered: 0,

@@ -1285,9 +1285,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     const queue = createRuntimeEventQueue();
     const result = this.runHookEvent(event, payload, {
       ...options,
-      onHookStart: (status) => {
-        queue.push(agentEvent.hookStatus(status.event, status.statusMessage));
-      },
+      onHookStart: (status) => queue.push(agentEvent.hookStatus(status.event, status.statusMessage)),
     }).finally(() => {
       queue.close();
     });

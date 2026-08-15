@@ -490,6 +490,136 @@ describe("framework-neutral TUI controller", () => {
     await controller.dispose();
   });
 
+  it("handles an immediate follow-up during a yielded runtime flood", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-runtime-flood-input-"));
+    const submitted: string[] = [];
+    const runtime = createControllerRuntime({
+      async *submitMessageStream(_conversation, message) {
+        submitted.push(message);
+        if (message === "flood") {
+          for (let index = 0; index < 300; index += 1) yield agentEvent.status(`flood-${index}`);
+          yield agentEvent.status("ready");
+        } else {
+          yield agentEvent.assistantMessage(`answer: ${message}`, "model");
+        }
+      },
+    });
+    let clock = 0;
+    let injected = false;
+    let statusAtInjection: string | undefined;
+    let controller!: TopchesterTuiController;
+    controller = await TopchesterTuiController.create(createTestContext(workspace), runtime, {
+      runtimeDrainClock: () => (clock += 5),
+      runtimeDrainScheduler: async () => {
+        if (!injected) {
+          injected = true;
+          statusAtInjection = controller.getSnapshot().status;
+          expect(controller.submit("follow-up")).toBe("queued");
+          expect(controller.getSnapshot().queuedFollowUpCount).toBe(1);
+        }
+      },
+    });
+
+    controller.submit("flood");
+    await controller.waitForIdle();
+
+    expect(injected).toBe(true);
+    expect(statusAtInjection).not.toBe("flood-299");
+    expect(submitted).toEqual(["flood", "follow-up"]);
+    await controller.dispose();
+  });
+
+  it("cancels a saturated runtime producer during a host yield and returns its source iterator", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-runtime-flood-cancel-"));
+    let produced = 0;
+    let sourceReturned = false;
+    const runtime = createControllerRuntime({
+      async *submitMessageStream() {
+        try {
+          for (let index = 0; index < 300; index += 1) {
+            produced += 1;
+            yield agentEvent.status(`cancel-flood-${index}`);
+          }
+        } finally {
+          sourceReturned = true;
+        }
+      },
+    });
+    let clock = 0;
+    let producedAtCancel = 0;
+    let controller!: TopchesterTuiController;
+    controller = await TopchesterTuiController.create(createTestContext(workspace), runtime, {
+      runtimeDrainClock: () => (clock += 5),
+      runtimeDrainScheduler: async () => {
+        if (producedAtCancel === 0) {
+          producedAtCancel = produced;
+          controller.cancel();
+        }
+      },
+    });
+
+    controller.submit("cancel flood");
+    await controller.waitForIdle();
+
+    expect(producedAtCancel).toBeGreaterThan(0);
+    expect(producedAtCancel).toBeLessThan(300);
+    expect(sourceReturned).toBe(true);
+    expect(controller.getSnapshot()).toMatchObject({ canCancel: false, status: "ready" });
+    await controller.dispose();
+  });
+
+  it("disposal aborts a saturated runtime producer and unblocks its source iterator", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-runtime-flood-dispose-"));
+    let sourceReturned = false;
+    const runtime = createControllerRuntime({
+      async *submitMessageStream() {
+        try {
+          for (let index = 0; index < 300; index += 1) yield agentEvent.status(`dispose-flood-${index}`);
+        } finally {
+          sourceReturned = true;
+        }
+      },
+    });
+    let clock = 0;
+    let disposal: Promise<void> | undefined;
+    let controller!: TopchesterTuiController;
+    controller = await TopchesterTuiController.create(createTestContext(workspace), runtime, {
+      runtimeDrainClock: () => (clock += 5),
+      runtimeDrainScheduler: async () => {
+        disposal ??= controller.dispose();
+      },
+    });
+
+    controller.submit("dispose flood");
+    await vi.waitFor(() => expect(disposal).toBeDefined());
+    await disposal;
+
+    expect(sourceReturned).toBe(true);
+  });
+
+  it("propagates a runtime producer failure after draining events produced before it", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-runtime-producer-error-"));
+    const runtime = createControllerRuntime({
+      async *submitMessageStream() {
+        yield agentEvent.systemMessage("before producer failure");
+        throw new Error("producer exploded");
+      },
+    });
+    const controller = await TopchesterTuiController.create(createTestContext(workspace), runtime);
+
+    controller.submit("fail stream");
+    await controller.waitForIdle();
+
+    expect(controller.getSnapshot().transcript).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "system", text: "before producer failure" }),
+        expect.objectContaining({ kind: "system", text: expect.stringContaining("Chat failed: producer exploded") }),
+      ])
+    );
+    expect(controller.getSnapshot().status).toBe("chat failed");
+    await controller.dispose();
+  });
+
   it("routes runtime choices back through the semantic submit path", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-choice-"));
     const submitted: string[] = [];
@@ -574,6 +704,51 @@ describe("framework-neutral TUI controller", () => {
     expect(herdrReports.at(-1)?.state).toBe("idle");
     await controller.dispose();
     expect(herdrReleased).toBe(true);
+  });
+
+  it("resolves an approval dialog during a yielded runtime backlog", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-runtime-flood-approval-"));
+    let decision: string | undefined;
+    const runtime = createControllerRuntime({
+      async *submitMessageStream(_conversation, _message, _signal, options) {
+        for (let index = 0; index < 10; index += 1) yield agentEvent.status(`before-approval-${index}`);
+        decision = await options?.requestBashApproval?.({
+          command: "pnpm test",
+          workdir: workspace,
+          reason: "run tests",
+          candidates: { exact: ["pnpm test"], prefix: ["pnpm"] },
+        });
+        for (let index = 0; index < 300; index += 1) yield agentEvent.status(`after-approval-${index}`);
+        yield agentEvent.assistantMessage(`approval: ${decision}`, "model");
+      },
+    });
+    let clock = 0;
+    let choseDuringYield = false;
+    let statusAtChoice: string | undefined;
+    let controller!: TopchesterTuiController;
+    controller = await TopchesterTuiController.create(createTestContext(workspace), runtime, {
+      runtimeDrainClock: () => (clock += 5),
+      runtimeDrainScheduler: async () => {
+        if (choseDuringYield) return;
+        await vi.waitFor(() => expect(controller.getSnapshot().managedDialog).toBe(true));
+        choseDuringYield = true;
+        statusAtChoice = controller.getSnapshot().status;
+        controller.choose({ label: "Run once", value: "run_once" });
+        expect(controller.getSnapshot().managedDialog).toBe(false);
+      },
+    });
+
+    controller.submit("approval flood");
+    await controller.waitForIdle();
+
+    expect(choseDuringYield).toBe(true);
+    expect(statusAtChoice).not.toBe("after-approval-299");
+    expect(decision).toBe("run_once");
+    expect(controller.getSnapshot().transcript.at(-1)).toMatchObject({
+      kind: "assistant",
+      text: "approval: run_once",
+    });
+    await controller.dispose();
   });
 
   it("applies model and effort choices as session-scoped overrides", async () => {

@@ -147,10 +147,15 @@ describe("agent hooks", () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-status-"));
     const script = join(workspace, "status.cjs");
     const order: string[] = [];
+    let releaseStatus: () => void = () => {};
+    const statusBarrier = new Promise<void>((resolve) => {
+      releaseStatus = resolve;
+    });
 
     await writeFile(script, "process.stdout.write(JSON.stringify({ message: 'hook complete' }));\n");
 
-    const result = await runTopchesterHooks(
+    let settled = false;
+    const pending = runTopchesterHooks(
       createHookTestContext(workspace, {
         hooks: {
           Stop: [
@@ -164,11 +169,20 @@ describe("agent hooks", () => {
       "Stop",
       createPayload(workspace, "Stop", { finalMessage: "Done.", status: "completed" }),
       {
-        onHookStart(status) {
+        async onHookStart(status) {
           order.push(`${status.event}: ${status.statusMessage}`);
+          await statusBarrier;
         },
       }
-    );
+    ).then((result) => {
+      settled = true;
+      return result;
+    });
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    releaseStatus();
+    const result = await pending;
 
     expect(order).toEqual(["Stop: Sending ClankerLog clank"]);
     expect(result.messages).toEqual(["hook complete"]);

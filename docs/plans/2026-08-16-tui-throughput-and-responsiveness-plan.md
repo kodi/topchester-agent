@@ -464,7 +464,7 @@ Acceptance criteria:
 
 ### Slice 5: Bounded runtime-event draining with input priority
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Consume model, tool, hook, and subagent bursts efficiently without starving keyboard handling, painting, cancellation, or session transitions.
 
@@ -499,6 +499,34 @@ Verification:
 - `git diff --check`.
 
 Dependencies: Slices 1–4.
+
+Completed in this slice:
+
+- replaced array `shift()` with an amortized O(1) head-index FIFO queue and a single bounded producer API that applies FIFO backpressure at 128 queued events;
+- added explicit wait/readable and synchronous `drainReady()` seams so each controller batch reduces inside one view transaction and the injected 4 ms clock measures actual reducer work, not just dequeue work;
+- capped a batch at 128 events or 4 ms, always makes at least one event of progress, persists exactly the consumed events, and yields through an injected macrotask scheduler before continuing a ready stream;
+- moved chat and skill streams behind a producer/consumer boundary; cancellation, disposal, session replacement, producer errors, and iterator return now close or abort the queue and unblock all producer/consumer waiters;
+- made tool, subagent, and hook event sinks honor the same backpressure path, including awaited asynchronous hook-start publication;
+- preserved reasoning commitment inside the semantic view batch, approval/dialog pauses, steering, ordered persistence, and active-session ownership;
+- added deterministic FIFO, saturation, count/time limit, close/error/abort, ready-stream fairness, immediate follow-up, cancellation, disposal, dialog action, source-return, and error-propagation coverage.
+
+Chosen bounds and measured result (2026-08-16, Darwin arm64, Bun 1.3.2):
+
+- queue capacity and maximum event count per reducer batch are both 128; the synchronous reducer deadline is 4 ms, leaving substantial headroom inside the renderer's 33.3 ms frame interval while retaining burst throughput;
+- `runtime-event-burst` changed from depth 1,000, 1,000 single-event batches, and zero yields to depth 128, 8 batches, maximum batch 128, and 7 host yields;
+- one producer at most was blocked, and injected input, cancellation, and dialog actions ran before the 1,000-event drain completed; dropped, duplicated, reordered, and cross-session counters remain zero;
+- the integration rerun reported p50 0.24 ms and p95/max 0.40 ms, compared with the Slice 4 pre-change p95 of 0.67 ms.
+
+Verification:
+
+- `mise run test-node -- test/agent-runtime.test.ts test/tui-controller.test.ts test/opentui-state.test.ts test/hooks.test.ts test/opentui-performance.test.ts` (5 files, 78 tests pass);
+- `mise run opentui-test` (pass);
+- `mise run opentui-perf -- --scenario runtime-event-burst --scenario reasoning-flood` (pass);
+- `mise run test` (39 files, 646 tests pass before the final queue API consolidation; final broad verification follows this checkpoint);
+- `mise run local-ci` (pass);
+- `git diff --check` (pass).
+
+Implication: the five implementation slices are complete. The remaining work is the plan's broad final verification, including the full performance suite and `local-ci-extended`; live terminal exercises remain a manual verification item if they cannot be automated in this environment.
 
 Acceptance criteria:
 
@@ -597,7 +625,8 @@ The final handoff must state measured before/after results, any unsupported host
 - 2026-08-16: Slice 2 removed transcript-length-dependent footer work. The writer now owns an epoch-scoped cursor, while the public and persisted transcript entry shapes remain unchanged.
 - 2026-08-16: Slice 3 made semantic view changes atomic and capped cosmetic publication to the renderer cadence. The accepted workloads now gate both publication counts and the number of transient replacements.
 - 2026-08-16: Slice 4 established a terminal-on-failure, bounded session journal. A 1,000-event burst is durable in eight JSONL/metadata batches, and session boundaries now stop on failed source barriers instead of reading or switching past them.
+- 2026-08-16: Slice 5 bounded both runtime backlog and synchronous reducer work. Ready-promise streams now yield through a macrotask even when the queue briefly empties between events, closing the starvation path exposed by asynchronous generators.
 
 ## Next Slice
 
-Start Slice 5. Replace the shift-based runtime queue with a bounded FIFO batch queue, then consume runtime streams through count- and time-limited reducer batches with an injectable host yield. Preserve approval, steering, cancellation, and session ownership while proving injected input is handled before a 1,000-event backlog finishes.
+All five implementation slices are checkpoint-ready. Run the complete focused test set, full OpenTUI performance suite, `mise run local-ci-extended`, and `git diff --check`; record any manual live-terminal verification that remains, then finish with the explicitly requested `mise run local-ci`.
