@@ -324,7 +324,7 @@ Acceptance criteria:
 
 ### Slice 3: Batched view transactions and transient coalescing
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Publish one coherent semantic view change per controller operation and cap transient view-publication work to the display cadence.
 
@@ -357,6 +357,31 @@ Verification:
 - `git diff --check`.
 
 Dependencies: Slices 1 and 2.
+
+Completed in this slice:
+
+- added nested-safe, rollback-capable `TuiViewStore.batch()` transactions with a transaction-local transcript-change accumulator, so a batch publishes at most once without replaying a previously published append/reset;
+- canonicalized reset/append/remove combinations inside a transaction and deferred temporary-line timer changes until commit, preserving both state and existing timer behavior when a reducer throws;
+- added an injectable framework-neutral transient scheduler paced at the production 30 FPS cadence, with optional profiling for updates replaced before publication;
+- moved spinner/reasoning-tail and hook-progress updates onto the transient scheduler while keeping stable transcript, dialog, cancellation, and session mutations immediate;
+- batched runtime-event reduction, chat/check/skill busy transitions, cancellation state, prompt hints, queued state, dialog transitions, and paired error/status changes into coherent publications;
+- added fake-scheduler/fake-time coverage for nested rollback, timer cleanup, immediate bypass, final delivery, disposal, hook bursts, and chat start publication counts.
+
+Measured result (2026-08-16, Darwin arm64, Bun 1.3.2):
+
+- `reasoning-flood` reduced 240 transient updates from 240 publications to 9 publications, with 232 pending updates replaced before publication; the integration rerun reported p50 0.09 ms and p95/max 0.14 ms;
+- `resize-and-dialog` reduced 60 transient updates plus the dialog transition from 61 publications to 3, with 58 pending updates replaced; the integration rerun reported p50 36.58 ms and p95/max 37.19 ms;
+- both workloads retained zero transcript-history inspections and their accepted input, cancellation, resize, dialog, and renderer correctness counters.
+
+Verification:
+
+- `mise run test-node -- test/tui-controller.test.ts test/opentui-state.test.ts test/opentui-performance.test.ts` (3 files, 32 tests pass);
+- `mise run opentui-test` (pass);
+- `mise run opentui-perf -- --scenario reasoning-flood --scenario resize-and-dialog` (pass);
+- `mise run local-ci` (pass);
+- `git diff --check` (pass).
+
+Implication for later slices: persistence enqueue/failure feedback and bounded event draining should enter the view through one transaction per semantic batch. Durability barriers and host-yield callbacks must not defer input-critical view changes behind the transient scheduler.
 
 Acceptance criteria:
 
@@ -544,7 +569,8 @@ The final handoff must state measured before/after results, any unsupported host
 - 2026-08-16: Existing production-frame regressions prove component-only tests are insufficient. The performance harness must retain a real production/PTY path in addition to deterministic counters.
 - 2026-08-16: Slice 1 established the first measured baseline. The roughly 14.7-second PTY input-to-paint result exposes the existing settle/publication pipeline cost and is intentionally retained as the before value rather than normalized away.
 - 2026-08-16: Slice 2 removed transcript-length-dependent footer work. The writer now owns an epoch-scoped cursor, while the public and persisted transcript entry shapes remain unchanged.
+- 2026-08-16: Slice 3 made semantic view changes atomic and capped cosmetic publication to the renderer cadence. The accepted workloads now gate both publication counts and the number of transient replacements.
 
 ## Next Slice
 
-Start Slice 3. Add nested-safe atomic batching and an injectable 30 FPS transient scheduler in `src/chat/controller-state.ts` and `src/chat/controller-busy.ts`, then reduce each `applyRuntimeEvents()` call into one semantic publication without losing Slice 2 append/reset changes. Verify fake-clock cleanup and the reasoning/resize scenarios before checkpointing.
+Start Slice 4. Add a bounded ordered session journal behind `SessionHandle`, batch JSONL and metadata writes with whole-batch rollback, and introduce explicit durability barriers at turn/session/disposal boundaries. Preserve reload/fork/debug consistency and verify failure injection plus the persistence-burst amplification counters before checkpointing.

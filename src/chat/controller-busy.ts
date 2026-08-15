@@ -23,8 +23,10 @@ export class ControllerBusyIndicator {
   ) {}
 
   start(): void {
-    this.view.setStatus(this.options.status);
-    this.view.setPromptHint(this.options.promptHint);
+    this.view.batch(() => {
+      this.view.setStatus(this.options.status);
+      this.view.setPromptHint(this.options.promptHint);
+    });
     this.render();
     this.timer = setInterval(() => {
       this.index = (this.index + 1) % this.frames.length;
@@ -39,12 +41,10 @@ export class ControllerBusyIndicator {
       clearInterval(this.timer);
       this.timer = undefined;
     }
-    if (options.clearPromptHint ?? true) {
-      this.view.setPromptHint(undefined);
-    }
-    if (options.clearEphemeral ?? true) {
-      this.view.setEphemeral(undefined);
-    }
+    this.view.batch(() => {
+      if (options.clearPromptHint ?? true) this.view.setPromptHint(undefined);
+      if (options.clearEphemeral ?? true) this.view.setEphemeral(undefined);
+    });
   }
 
   setActivity(text: string, tone: "normal" | "muted" = "normal"): void {
@@ -75,7 +75,7 @@ export class ControllerBusyIndicator {
     const text = lines
       .map((line, index) => (index === activeLineIndex ? `${this.frames[this.index]} ${line}${hint}` : `  ${line}`))
       .join("\n");
-    this.view.setEphemeral({ text, tone: activity.tone });
+    this.view.setTransientEphemeral({ text, tone: activity.tone });
   }
 }
 

@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { agentEvent } from "../src/agent/events.js";
 import { type AgentRuntime } from "../src/agent/runtime/index.js";
 import { TopchesterTuiController } from "../src/chat/controller.js";
+import { type TuiTransientScheduler } from "../src/chat/controller-state.js";
 import { type TopchesterConfig } from "../src/config/index.js";
 import { type HerdrAgentReport, type HerdrAgentReporter } from "../src/integrations/herdr.js";
 import { createSession, loadSession } from "../src/session/store.js";
@@ -32,6 +33,67 @@ function createControllerRuntime(overrides: Partial<AgentRuntime> = {}): AgentRu
 }
 
 describe("framework-neutral TUI controller", () => {
+  it("publishes each chat start and final busy transition once", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-publications-"));
+    let release: () => void = () => {};
+    let started = false;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const controller = await TopchesterTuiController.create(
+      createTestContext(workspace),
+      createControllerRuntime({
+        async *submitMessageStream() {
+          started = true;
+          await pending;
+          yield agentEvent.assistantMessage("done", "fixture");
+        },
+      }),
+      { transientScheduler: new FakeTransientScheduler() }
+    );
+    const snapshots: Array<{ status: string; canCancel: boolean; promptHint?: string; queued: number }> = [];
+    controller.subscribe((snapshot) =>
+      snapshots.push({
+        status: snapshot.status,
+        canCancel: snapshot.canCancel,
+        promptHint: snapshot.promptHint,
+        queued: snapshot.queuedFollowUpCount,
+      })
+    );
+    controller.submit("one turn");
+    await vi.waitFor(() => expect(started).toBe(true));
+
+    expect(snapshots.filter((snapshot) => snapshot.status === "thinking")).toEqual([
+      expect.objectContaining({ canCancel: true, queued: 0 }),
+    ]);
+    release();
+    await controller.waitForIdle();
+
+    expect(snapshots.at(-1)).toMatchObject({ status: "ready", canCancel: false, queued: 0 });
+    await controller.dispose();
+  });
+
+  it("coalesces hook bursts behind stable runtime updates", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-hook-scheduler-"));
+    const scheduler = new FakeTransientScheduler();
+    const controller = await TopchesterTuiController.create(createTestContext(workspace), createControllerRuntime(), {
+      transientScheduler: scheduler,
+    });
+    const publications: string[] = [];
+    controller.subscribe((snapshot) => publications.push(snapshot.temporaryLine ?? snapshot.status));
+
+    await controller.applyRuntimeEvents([
+      agentEvent.hookStatus("PreToolUse", "first"),
+      agentEvent.status("thinking"),
+      agentEvent.hookStatus("PostToolUse", "last"),
+    ]);
+    expect(controller.getSnapshot().status).toBe("thinking");
+    expect(controller.getSnapshot().temporaryLine).toBeUndefined();
+    expect(publications).toEqual(["thinking"]);
+    scheduler.flush();
+    expect(controller.getSnapshot().temporaryLine).toContain("last");
+    await controller.dispose();
+  });
   it("initializes a semantic snapshot and persists structured startup", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-startup-"));
     const controller = await TopchesterTuiController.create(createTestContext(workspace), createControllerRuntime(), {
@@ -449,9 +511,9 @@ describe("framework-neutral TUI controller", () => {
       agentEvent.hookStatus("PreToolUse", "Checking"),
       agentEvent.knowledgeStatus(knowledgeStatus, "Run /kb init"),
     ]);
+    await vi.waitFor(() => expect(controller.getSnapshot().temporaryLine).toContain("Checking"));
     expect(controller.getSnapshot()).toMatchObject({
       taskPlan: { items: [{ text: "Implement UI", status: "in_progress" }] },
-      temporaryLine: expect.stringContaining("Checking"),
       knowledgeStatus,
     });
 
@@ -466,3 +528,21 @@ describe("framework-neutral TUI controller", () => {
     await controller.dispose();
   });
 });
+
+class FakeTransientScheduler implements TuiTransientScheduler {
+  private callback: (() => void) | undefined;
+  schedule(callback: () => void): void {
+    this.callback = callback;
+  }
+  cancel(): void {
+    this.callback = undefined;
+  }
+  dispose(): void {
+    this.cancel();
+  }
+  flush(): void {
+    const callback = this.callback;
+    this.callback = undefined;
+    callback?.();
+  }
+}

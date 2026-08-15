@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { createRuntimeEventQueue } from "../../src/agent/runtime/event-queue.js";
-import { TuiViewStore } from "../../src/chat/controller-state.js";
+import { type TuiTransientScheduler, TuiViewStore } from "../../src/chat/controller-state.js";
 import { ComposerState } from "../../src/tui/opentui/composer-state.js";
 import { TranscriptAppendCursor } from "../../src/tui/opentui/transcript-writer.js";
 import { createSession } from "../../src/session/store.js";
@@ -149,7 +149,8 @@ export async function runInProcessScenario(name: ScenarioName, samples = 5): Pro
 }
 
 async function runScenario(name: ScenarioName): Promise<Record<string, number>> {
-  const profile = { viewPublications: 0, transcriptRecordsInspected: 0 };
+  const profile = { viewPublications: 0, transcriptRecordsInspected: 0, coalescedUpdates: 0 };
+  const transientScheduler = new ManualTransientScheduler();
   const entries = Array.from({ length: 1000 }, () => ({
     kind: "system" as const,
     persistence: "session" as const,
@@ -161,6 +162,7 @@ async function runScenario(name: ScenarioName): Promise<Record<string, number>> 
     transcript: entries,
     modelLabel: "fixture",
     profile,
+    transientScheduler,
   });
   switch (name) {
     case "long-transcript-input": {
@@ -185,8 +187,12 @@ async function runScenario(name: ScenarioName): Promise<Record<string, number>> 
       };
     }
     case "reasoning-flood": {
-      for (let index = 0; index < 240; index += 1) view.setStatus(`reasoning-${index}`);
+      for (let index = 0; index < 240; index += 1) {
+        view.setTransientEphemeral({ text: `reasoning-${index}`, tone: "muted" });
+        if ((index + 1) % 30 === 0) transientScheduler.flush();
+      }
       new ComposerState().preparePaste("x");
+      view.setCanCancel(true);
       return {
         transientUpdates: 240,
         ...profile,
@@ -245,11 +251,32 @@ async function runScenario(name: ScenarioName): Promise<Record<string, number>> 
       return renderer.counters;
     }
     case "resize-and-dialog": {
-      for (let index = 0; index < 60; index += 1) view.setStatus(`transient-${index}`);
+      for (let index = 0; index < 60; index += 1) {
+        view.setTransientEphemeral({ text: `transient-${index}`, tone: "muted" });
+        if ((index + 1) % 30 === 0) transientScheduler.flush();
+      }
       view.setManagedDialog(true);
       const renderer = await runRendererScenario(name);
       return { transientUpdates: 60, ...profile, ...renderer.counters };
     }
+  }
+}
+
+class ManualTransientScheduler implements TuiTransientScheduler {
+  private callback: (() => void) | undefined;
+  schedule(callback: () => void): void {
+    this.callback = callback;
+  }
+  cancel(): void {
+    this.callback = undefined;
+  }
+  dispose(): void {
+    this.cancel();
+  }
+  flush(): void {
+    const callback = this.callback;
+    this.callback = undefined;
+    callback?.();
   }
 }
 

@@ -22,7 +22,8 @@
     "reasoning-flood": {
       "counters": {
         "transientUpdates": 240,
-        "viewPublications": 240,
+        "viewPublications": 9,
+        "coalescedUpdates": 232,
         "transcriptRecordsInspected": 0,
         "inputInjections": 1,
         "cancellations": 1,
@@ -74,7 +75,8 @@
     "resize-and-dialog": {
       "counters": {
         "transientUpdates": 60,
-        "viewPublications": 61,
+        "viewPublications": 3,
+        "coalescedUpdates": 58,
         "transcriptRecordsInspected": 0,
         "resizes": 3,
         "terminalSizes": 3,

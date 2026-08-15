@@ -69,7 +69,12 @@ import {
   parseSteerCommandPrompt,
   persistBashApproval,
 } from "./controller-helpers.js";
-import { TuiViewStore, type TuiViewListener, type TuiViewState } from "./controller-state.js";
+import {
+  TuiViewStore,
+  type TuiTransientScheduler,
+  type TuiViewListener,
+  type TuiViewState,
+} from "./controller-state.js";
 import {
   fetchOpenRouterChoicesWithFallback,
   filterOpenRouterChoices,
@@ -107,6 +112,7 @@ export interface TuiControllerOptions {
   runtimeConfigWarnings?: string[];
   banner?: string;
   herdrReporter?: HerdrAgentReporter;
+  transientScheduler?: TuiTransientScheduler;
 }
 
 export interface TuiController {
@@ -161,6 +167,7 @@ export class TopchesterTuiController implements TuiController {
       modelLabel: getModelLabel(context),
       taskPlan: options.initialTaskPlan,
       ...(options.session === undefined ? { startupHint: STARTUP_PROMPT_HINT } : {}),
+      ...(options.transientScheduler === undefined ? {} : { transientScheduler: options.transientScheduler }),
     });
     this.herdrReporter = options.herdrReporter ?? createHerdrAgentReporter();
     this.stopHerdrStateSync = this.view.subscribe(() => this.syncHerdrState());
@@ -214,8 +221,10 @@ export class TopchesterTuiController implements TuiController {
       this.enqueueChatMessage(message);
       return "queued";
     }
-    this.view.addEntry(userTranscriptEntry(message));
-    this.clearInputNotices();
+    this.view.batch(() => {
+      this.view.addEntry(userTranscriptEntry(message));
+      this.clearInputNotices();
+    });
     this.startBackgroundTask("Chat", () => this.submitChatMessage(message));
     return "submitted";
   }
@@ -232,8 +241,10 @@ export class TopchesterTuiController implements TuiController {
       this.submitSteerCommand(steeringPrompt);
       return "queued";
     }
-    this.view.addEntry(userTranscriptEntry(command));
-    this.clearInputNotices();
+    this.view.batch(() => {
+      this.view.addEntry(userTranscriptEntry(command));
+      this.clearInputNotices();
+    });
     this.startBackgroundTask("Command", () => this.dispatchSlashCommand(command));
     return "submitted";
   }
@@ -245,7 +256,7 @@ export class TopchesterTuiController implements TuiController {
   choose(action: ChoiceTranscriptAction): void {
     const handler = this.dialogHandler;
     this.dialogHandler = undefined;
-    this.view.removeActiveChoice();
+    this.view.batch(() => this.view.removeActiveChoice());
     if (handler) {
       handler(action);
       return;
@@ -267,8 +278,10 @@ export class TopchesterTuiController implements TuiController {
       this.choose({ label: "Cancel", value: "cancel" });
       return;
     }
-    this.view.removeActiveChoice();
-    this.view.addEntry(userTranscriptEntry("Cancel"));
+    this.view.batch(() => {
+      this.view.removeActiveChoice();
+      this.view.addEntry(userTranscriptEntry("Cancel"));
+    });
   }
 
   selectSession(sessionId: string): void {
@@ -312,23 +325,25 @@ export class TopchesterTuiController implements TuiController {
   }
 
   async applyRuntimeEvents(events: AgentRuntimeEvent[]): Promise<void> {
+    let clearTaskPlanNotice = false;
+    let latestHookStatus: string | undefined;
+    this.view.batch(() => {
+      for (const event of events) {
+        if (event.type === "status") this.view.setStatus(event.status);
+        if (event.type === "knowledge_status") this.view.setKnowledgeStatus(event.status);
+        if (event.type === "task_plan") {
+          const change = this.view.setTaskPlan(event.plan);
+          this.view.setTaskPlanNotice(formatTaskPlanNotice(change, event.plan));
+          clearTaskPlanNotice = true;
+        }
+        if (event.type === "hook_status") latestHookStatus = event.label;
+        else this.view.addEntries(runtimeEventToTranscriptEntries(event));
+      }
+    });
+    if (clearTaskPlanNotice) this.scheduleTaskPlanNoticeClear();
+    if (latestHookStatus !== undefined)
+      this.view.setTransientTemporaryLine(latestHookStatus, HOOK_STATUS_EXPIRE_AFTER_MS);
     for (const event of events) {
-      if (event.type === "status") {
-        this.view.setStatus(event.status);
-      }
-      if (event.type === "knowledge_status") {
-        this.view.setKnowledgeStatus(event.status);
-      }
-      if (event.type === "task_plan") {
-        const change = this.view.setTaskPlan(event.plan);
-        this.view.setTaskPlanNotice(formatTaskPlanNotice(change, event.plan));
-        this.scheduleTaskPlanNoticeClear();
-      }
-      if (event.type === "hook_status") {
-        this.view.setTemporaryLine(event.label, HOOK_STATUS_EXPIRE_AFTER_MS);
-      } else {
-        this.view.addEntries(runtimeEventToTranscriptEntries(event));
-      }
       await this.persistPayloadWithWarning(runtimeEventToSessionPayload(event));
     }
   }
@@ -350,9 +365,11 @@ export class TopchesterTuiController implements TuiController {
     const promise = task()
       .catch((error: unknown) => {
         if (!this.disposed) {
-          this.view.addEntry(systemTranscriptEntry(`${label} failed: ${formatPlainError(error)}`));
-          this.view.setStatus("ready");
-          this.setCancelPending(undefined);
+          this.view.batch(() => {
+            this.view.addEntry(systemTranscriptEntry(`${label} failed: ${formatPlainError(error)}`));
+            this.view.setStatus("ready");
+            this.setCancelPending(undefined);
+          });
         }
       })
       .finally(() => this.backgroundTasks.delete(promise));
@@ -371,23 +388,33 @@ export class TopchesterTuiController implements TuiController {
       cancelled = true;
       abortController.abort();
     };
-    this.setCancelPending(cancelRequest);
-    busy.start();
+    this.view.batch(() => {
+      this.setCancelPending(cancelRequest);
+      busy.start();
+    });
     try {
       await this.applyRuntimeEvents(await this.runtime.checkAgent(abortController.signal));
     } catch (error) {
       if (cancelled) {
-        this.view.addEntry(systemTranscriptEntry("Agent check stopped."));
-        this.view.setStatus("ready");
+        this.view.batch(() => {
+          this.view.addEntry(systemTranscriptEntry("Agent check stopped."));
+          this.view.setStatus("ready");
+        });
       } else {
         const message = formatPlainError(error);
         const setupHint = formatAgentCheckSetupHint(message, this.context);
-        this.view.addEntry(systemTranscriptEntry(`Agent check failed: ${message}${setupHint ? `\n${setupHint}` : ""}`));
-        this.view.setStatus("agent check failed");
+        this.view.batch(() => {
+          this.view.addEntry(
+            systemTranscriptEntry(`Agent check failed: ${message}${setupHint ? `\n${setupHint}` : ""}`)
+          );
+          this.view.setStatus("agent check failed");
+        });
       }
     } finally {
-      this.clearCancelPending(cancelRequest);
-      busy.stop();
+      this.view.batch(() => {
+        this.clearCancelPending(cancelRequest);
+        busy.stop();
+      });
     }
     if (this.view.isReady()) {
       await this.applyRuntimeEvents(await this.runtime.checkKnowledgeBase());
@@ -416,10 +443,12 @@ export class TopchesterTuiController implements TuiController {
       cancelled = true;
       abortController.abort();
     };
-    this.setCancelPending(cancelRequest);
     this.chatRunning = true;
-    this.refreshQueuedChatStatus();
-    busy.start();
+    this.view.batch(() => {
+      this.setCancelPending(cancelRequest);
+      this.refreshQueuedChatStatus();
+      busy.start();
+    });
     try {
       await this.clearTaskPlanForNewTurn();
       await this.persistPayloadWithWarning({ kind: "message", role: "user", text: message });
@@ -448,24 +477,28 @@ export class TopchesterTuiController implements TuiController {
       if (this.session !== activeSession) {
         // A session switch owns the next visible state; the abandoned turn must not write into it.
       } else if (cancelled) {
-        this.view.addEntry(systemTranscriptEntry("Response stopped."));
-        this.view.setStatus("ready");
+        this.view.batch(() => {
+          this.view.addEntry(systemTranscriptEntry("Response stopped."));
+          this.view.setStatus("ready");
+        });
       } else {
-        this.view.addEntry(systemTranscriptEntry(`Chat failed: ${formatPlainError(error)}`));
-        this.view.setStatus("chat failed");
+        this.view.batch(() => {
+          this.view.addEntry(systemTranscriptEntry(`Chat failed: ${formatPlainError(error)}`));
+          this.view.setStatus("chat failed");
+        });
         await this.persistPayloadWithWarning({ kind: "status", status: "chat failed" });
       }
     } finally {
-      this.clearCancelPending(cancelRequest);
       this.chatRunning = false;
       if (this.activeSteeringBuffer === steering) {
         this.activeSteeringBuffer = undefined;
       }
       const sessionStillActive = this.session === activeSession;
-      busy.stop({ clearEphemeral: sessionStillActive, clearPromptHint: sessionStillActive });
-      if (sessionStillActive && this.view.getSnapshot().status === "thinking") {
-        this.view.setStatus("ready");
-      }
+      this.view.batch(() => {
+        this.clearCancelPending(cancelRequest);
+        busy.stop({ clearEphemeral: sessionStillActive, clearPromptHint: sessionStillActive });
+        if (sessionStillActive && this.view.getSnapshot().status === "thinking") this.view.setStatus("ready");
+      });
     }
     if (this.session === activeSession) {
       this.handleUnconsumedSteering(steering, cancelled);
@@ -699,8 +732,10 @@ export class TopchesterTuiController implements TuiController {
       cancelled = true;
       abortController.abort();
     };
-    this.setCancelPending(cancelRequest);
-    busy.start();
+    this.view.batch(() => {
+      this.setCancelPending(cancelRequest);
+      busy.start();
+    });
     try {
       const conversation = this.view.getConversationTurns().slice(0, -1);
       for await (const event of this.runtime.submitMessageStream(
@@ -726,17 +761,23 @@ export class TopchesterTuiController implements TuiController {
       if (this.session !== activeSession) {
         // Ignore output from a skill turn abandoned by a session switch.
       } else if (cancelled) {
-        this.view.addEntry(systemTranscriptEntry("Response stopped."));
-        this.view.setStatus("ready");
+        this.view.batch(() => {
+          this.view.addEntry(systemTranscriptEntry("Response stopped."));
+          this.view.setStatus("ready");
+        });
       } else {
-        this.view.addEntry(systemTranscriptEntry(`Chat failed: ${formatPlainError(error)}`));
-        this.view.setStatus("chat failed");
+        this.view.batch(() => {
+          this.view.addEntry(systemTranscriptEntry(`Chat failed: ${formatPlainError(error)}`));
+          this.view.setStatus("chat failed");
+        });
         await this.persistPayloadWithWarning({ kind: "status", status: "chat failed" });
       }
     } finally {
-      this.clearCancelPending(cancelRequest);
       const sessionStillActive = this.session === activeSession;
-      busy.stop({ clearEphemeral: sessionStillActive, clearPromptHint: sessionStillActive });
+      this.view.batch(() => {
+        this.clearCancelPending(cancelRequest);
+        busy.stop({ clearEphemeral: sessionStillActive, clearPromptHint: sessionStillActive });
+      });
     }
   }
 
@@ -1328,8 +1369,10 @@ export class TopchesterTuiController implements TuiController {
 
   private openManagedDialog(entry: ChoiceTranscriptEntry, handler: (action: ChoiceTranscriptAction) => void): void {
     this.dialogHandler = handler;
-    this.view.setManagedDialog(true);
-    this.view.addEntry(entry);
+    this.view.batch(() => {
+      this.view.setManagedDialog(true);
+      this.view.addEntry(entry);
+    });
   }
 
   private setCancelPending(cancel: (() => void) | undefined): void {

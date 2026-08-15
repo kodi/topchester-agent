@@ -57,6 +57,44 @@ export type TuiViewListener = (snapshot: TuiViewState) => void;
 export interface TuiViewProfile {
   viewPublications: number;
   transcriptRecordsInspected: number;
+  /** Transient updates replaced before their scheduled publication. */
+  coalescedUpdates?: number;
+}
+
+/** Framework-neutral scheduling seam for display-only view updates. */
+export interface TuiTransientScheduler {
+  schedule(callback: () => void): void;
+  cancel(): void;
+  dispose(): void;
+}
+
+export function createTransientScheduler(frameMs = 1000 / 30): TuiTransientScheduler {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let callback: (() => void) | undefined;
+  let disposed = false;
+  return {
+    schedule(next) {
+      if (disposed) return;
+      callback = next;
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        const pending = callback;
+        callback = undefined;
+        pending?.();
+      }, frameMs);
+      timer.unref?.();
+    },
+    cancel() {
+      callback = undefined;
+      if (timer) clearTimeout(timer);
+      timer = undefined;
+    },
+    dispose() {
+      disposed = true;
+      this.cancel();
+    },
+  };
 }
 
 export class TuiViewStore {
@@ -64,6 +102,13 @@ export class TuiViewStore {
   private temporaryLineTimer: ReturnType<typeof setTimeout> | undefined;
   private state: TuiViewState;
   private nextTranscriptRecordId = 0;
+  private batchDepth = 0;
+  private batchChanged = false;
+  private batchTranscriptChange: TuiTranscriptChange | undefined;
+  private batchTemporaryLineUpdate: { temporaryLine: string | undefined; expireAfterMs?: number } | undefined;
+  private transientPending = false;
+  private readonly transientScheduler: TuiTransientScheduler;
+  private disposed = false;
 
   constructor(options: {
     sessionId: string;
@@ -73,8 +118,10 @@ export class TuiViewStore {
     taskPlan?: TaskPlanState;
     startupHint?: string;
     profile?: TuiViewProfile;
+    transientScheduler?: TuiTransientScheduler;
   }) {
     this.profile = options.profile;
+    this.transientScheduler = options.transientScheduler ?? createTransientScheduler();
     const transcript = [...options.transcript];
     const transcriptRecords = this.createTranscriptRecords(transcript, 0);
     this.state = {
@@ -111,15 +158,57 @@ export class TuiViewStore {
     return () => this.listeners.delete(listener);
   }
 
+  /** Applies synchronous view mutations atomically and emits at most once. */
+  batch<T>(reducer: () => T): T {
+    const checkpoint = { state: this.state, nextTranscriptRecordId: this.nextTranscriptRecordId };
+    const checkpointChanged = this.batchChanged;
+    const checkpointTranscriptChange = this.batchTranscriptChange;
+    const checkpointTemporaryLineUpdate = this.batchTemporaryLineUpdate;
+    const outermost = this.batchDepth === 0;
+    if (outermost) {
+      this.batchChanged = false;
+      this.batchTranscriptChange = { kind: "none", sessionEpoch: this.state.sessionEpoch };
+      this.batchTemporaryLineUpdate = undefined;
+    }
+    this.batchDepth += 1;
+    try {
+      const result = reducer();
+      this.batchDepth -= 1;
+      if (outermost) {
+        const changed = this.batchChanged;
+        const temporaryLineUpdate = this.batchTemporaryLineUpdate;
+        this.batchChanged = false;
+        this.batchTranscriptChange = undefined;
+        this.batchTemporaryLineUpdate = undefined;
+        if (temporaryLineUpdate)
+          this.scheduleTemporaryLine(temporaryLineUpdate.temporaryLine, temporaryLineUpdate.expireAfterMs);
+        if (changed) this.emit();
+      }
+      return result;
+    } catch (error) {
+      this.state = checkpoint.state;
+      this.nextTranscriptRecordId = checkpoint.nextTranscriptRecordId;
+      this.batchChanged = checkpointChanged;
+      this.batchTranscriptChange = checkpointTranscriptChange;
+      this.batchTemporaryLineUpdate = checkpointTemporaryLineUpdate;
+      this.batchDepth -= 1;
+      if (outermost) {
+        this.batchChanged = false;
+        this.batchTranscriptChange = undefined;
+        this.batchTemporaryLineUpdate = undefined;
+      }
+      throw error;
+    }
+  }
+
   addEntry(entry: TranscriptEntry): void {
     const record = this.createTranscriptRecord(entry, this.state.sessionEpoch);
-    this.state = {
+    this.replaceState({
       ...this.state,
       transcript: [...this.state.transcript, entry],
       transcriptRecords: [...this.state.transcriptRecords, record],
       transcriptChange: { kind: "append", sessionEpoch: this.state.sessionEpoch, records: [record] },
-    };
-    this.emit();
+    });
   }
 
   addEntries(entries: readonly TranscriptEntry[]): void {
@@ -127,13 +216,12 @@ export class TuiViewStore {
       return;
     }
     const records = this.createTranscriptRecords(entries, this.state.sessionEpoch);
-    this.state = {
+    this.replaceState({
       ...this.state,
       transcript: [...this.state.transcript, ...entries],
       transcriptRecords: [...this.state.transcriptRecords, ...records],
       transcriptChange: { kind: "append", sessionEpoch: this.state.sessionEpoch, records },
-    };
-    this.emit();
+    });
   }
 
   removeActiveChoice(): void {
@@ -141,7 +229,6 @@ export class TuiViewStore {
       return;
     }
     this.removeLastTranscriptRecord({ managedDialog: false });
-    this.emit();
   }
 
   discardLastUserEntry(text: string): void {
@@ -150,7 +237,6 @@ export class TuiViewStore {
       return;
     }
     this.removeLastTranscriptRecord();
-    this.emit();
   }
 
   reset(options: {
@@ -161,12 +247,13 @@ export class TuiViewStore {
     status?: string;
     startupHint?: string;
   }): void {
-    this.clearTemporaryLineTimer();
+    if (this.batchDepth > 0) this.batchTemporaryLineUpdate = { temporaryLine: undefined };
+    else this.clearTemporaryLineTimer();
     const sessionEpoch = this.state.sessionEpoch + 1;
     this.nextTranscriptRecordId = 0;
     const transcript = [...options.transcript];
     const transcriptRecords = this.createTranscriptRecords(transcript, sessionEpoch);
-    this.state = {
+    this.replaceState({
       sessionId: options.sessionId,
       sessionEpoch,
       workspaceLabel: this.state.workspaceLabel,
@@ -180,8 +267,7 @@ export class TuiViewStore {
       managedDialog: false,
       ...(options.taskPlan === undefined ? {} : { taskPlan: options.taskPlan }),
       ...(options.startupHint === undefined ? {} : { startupHint: options.startupHint }),
-    };
-    this.emit();
+    });
   }
 
   setStatus(status: string): void {
@@ -227,18 +313,28 @@ export class TuiViewStore {
     this.patch({ ephemeral });
   }
 
+  setTransientEphemeral(ephemeral: TuiEphemeralState | undefined): void {
+    this.scheduleTransient(() => {
+      if (this.disposed) return;
+      this.state = {
+        ...this.state,
+        ephemeral,
+        transcriptChange: { kind: "none", sessionEpoch: this.state.sessionEpoch },
+      };
+      this.publish();
+    });
+  }
+
   setTemporaryLine(temporaryLine: string | undefined, expireAfterMs?: number): void {
-    this.clearTemporaryLineTimer();
     this.patch({ temporaryLine });
-    if (temporaryLine && expireAfterMs && expireAfterMs > 0) {
-      this.temporaryLineTimer = setTimeout(() => {
-        this.temporaryLineTimer = undefined;
-        if (this.state.temporaryLine === temporaryLine) {
-          this.patch({ temporaryLine: undefined });
-        }
-      }, expireAfterMs);
-      this.temporaryLineTimer.unref?.();
-    }
+    if (this.batchDepth > 0) this.batchTemporaryLineUpdate = { temporaryLine, expireAfterMs };
+    else this.scheduleTemporaryLine(temporaryLine, expireAfterMs);
+  }
+
+  setTransientTemporaryLine(temporaryLine: string | undefined, expireAfterMs?: number): void {
+    this.scheduleTransient(() => {
+      if (!this.disposed) this.setTemporaryLine(temporaryLine, expireAfterMs);
+    });
   }
 
   setNoticeLine(noticeLine: string | undefined): void {
@@ -286,17 +382,56 @@ export class TuiViewStore {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.clearTemporaryLineTimer();
+    this.transientScheduler.dispose();
     this.listeners.clear();
   }
 
   private patch(patch: Partial<TuiViewState>): void {
-    this.state = {
+    this.cancelTransient();
+    this.replaceState({
       ...this.state,
       ...patch,
       transcriptChange: { kind: "none", sessionEpoch: this.state.sessionEpoch },
-    };
+    });
+  }
+
+  private replaceState(next: TuiViewState): void {
+    this.cancelTransient();
+    if (this.batchDepth > 0) {
+      this.batchTranscriptChange = mergeTranscriptChanges(
+        this.batchTranscriptChange ?? { kind: "none", sessionEpoch: this.state.sessionEpoch },
+        next.transcriptChange
+      );
+      this.state = { ...next, transcriptChange: this.batchTranscriptChange };
+    } else {
+      this.state = next;
+    }
+    this.publish();
+  }
+
+  private publish(): void {
+    if (this.disposed) return;
+    if (this.batchDepth > 0) {
+      this.batchChanged = true;
+      return;
+    }
     this.emit();
+  }
+
+  private cancelTransient(): void {
+    this.transientPending = false;
+    this.transientScheduler.cancel();
+  }
+
+  private scheduleTransient(callback: () => void): void {
+    if (this.transientPending && this.profile) this.profile.coalescedUpdates = (this.profile.coalescedUpdates ?? 0) + 1;
+    this.transientPending = true;
+    this.transientScheduler.schedule(() => {
+      this.transientPending = false;
+      callback();
+    });
   }
 
   private emit(): void {
@@ -325,7 +460,7 @@ export class TuiViewStore {
     if (!removed) {
       return;
     }
-    this.state = {
+    this.replaceState({
       ...this.state,
       ...patch,
       transcript: this.state.transcript.slice(0, -1),
@@ -335,7 +470,7 @@ export class TuiViewStore {
         sessionEpoch: this.state.sessionEpoch,
         recordIds: [removed.id],
       },
-    };
+    });
   }
 
   private clearTemporaryLineTimer(): void {
@@ -344,4 +479,43 @@ export class TuiViewStore {
       this.temporaryLineTimer = undefined;
     }
   }
+
+  private scheduleTemporaryLine(temporaryLine: string | undefined, expireAfterMs?: number): void {
+    this.clearTemporaryLineTimer();
+    if (!temporaryLine || !expireAfterMs || expireAfterMs <= 0) return;
+    this.temporaryLineTimer = setTimeout(() => {
+      this.temporaryLineTimer = undefined;
+      if (this.state.temporaryLine === temporaryLine) this.patch({ temporaryLine: undefined });
+    }, expireAfterMs);
+    this.temporaryLineTimer.unref?.();
+  }
+}
+
+function mergeTranscriptChanges(previous: TuiTranscriptChange, next: TuiTranscriptChange): TuiTranscriptChange {
+  if (next.kind === "reset") return next;
+  if (previous.kind === "reset") {
+    if (next.kind === "append" && previous.sessionEpoch === next.sessionEpoch) {
+      return { kind: "reset", sessionEpoch: previous.sessionEpoch, records: [...previous.records, ...next.records] };
+    }
+    if (next.kind === "remove" && previous.sessionEpoch === next.sessionEpoch) {
+      const removed = new Set(next.recordIds);
+      return {
+        kind: "reset",
+        sessionEpoch: previous.sessionEpoch,
+        records: previous.records.filter((record) => !removed.has(record.id)),
+      };
+    }
+    return previous;
+  }
+  if (previous.kind === "append" && next.kind === "append" && previous.sessionEpoch === next.sessionEpoch) {
+    return { kind: "append", sessionEpoch: next.sessionEpoch, records: [...previous.records, ...next.records] };
+  }
+  if (previous.kind === "append" && next.kind === "remove" && previous.sessionEpoch === next.sessionEpoch) {
+    const removed = new Set(next.recordIds);
+    const records = previous.records.filter((record) => !removed.has(record.id));
+    return records.length > 0
+      ? { kind: "append", sessionEpoch: previous.sessionEpoch, records }
+      : { kind: "none", sessionEpoch: next.sessionEpoch };
+  }
+  return next.kind === "none" ? previous : next;
 }

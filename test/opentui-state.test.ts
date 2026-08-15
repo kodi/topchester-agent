@@ -1,11 +1,198 @@
-import { describe, expect, it } from "vite-plus/test";
-import { TuiViewStore } from "../src/chat/controller-state.js";
+import { describe, expect, it, vi } from "vite-plus/test";
+import { type TuiTransientScheduler, TuiViewStore } from "../src/chat/controller-state.js";
 import { ComposerState } from "../src/tui/opentui/composer-state.js";
 import { formatQueuedFollowUpPreview } from "../src/tui/opentui/live-footer.js";
 import { getListWindowStart } from "../src/tui/opentui/list-window.js";
 import { isLightTerminalPalette, resolveTopchesterTheme } from "../src/tui/opentui/theme.js";
 
 describe("OpenTUI local UI state", () => {
+  it("atomically publishes nested batches and preserves all stable transcript changes", () => {
+    const profile = { viewPublications: 0, transcriptRecordsInspected: 0 };
+    const view = new TuiViewStore({
+      sessionId: "first",
+      workspaceLabel: "fixture",
+      transcript: [],
+      modelLabel: "fixture",
+      profile,
+    });
+    const publications: string[] = [];
+    view.subscribe((snapshot) => publications.push(snapshot.status));
+
+    view.batch(() => {
+      view.setStatus("working");
+      view.batch(() => {
+        view.addEntry({ kind: "assistant", persistence: "session", text: "first" });
+        view.addEntry({ kind: "assistant", persistence: "session", text: "second" });
+      });
+    });
+
+    expect(profile.viewPublications).toBe(1);
+    expect(publications).toEqual(["working"]);
+    expect(view.getSnapshot().transcriptChange).toMatchObject({
+      kind: "append",
+      records: [expect.objectContaining({ entry: expect.objectContaining({ text: "first" }) }), expect.anything()],
+    });
+  });
+
+  it("rolls back a failed batch and preserves the prior state", () => {
+    const view = new TuiViewStore({
+      sessionId: "first",
+      workspaceLabel: "fixture",
+      transcript: [],
+      modelLabel: "fixture",
+    });
+    expect(() =>
+      view.batch(() => {
+        view.setStatus("working");
+        view.addEntry({ kind: "assistant", persistence: "session", text: "discarded" });
+        throw new Error("fixture");
+      })
+    ).toThrow("fixture");
+    expect(view.getSnapshot()).toMatchObject({ status: "ready", transcript: [] });
+  });
+
+  it("does not disturb an existing temporary-line timer when a batch rolls back", () => {
+    vi.useFakeTimers();
+    try {
+      const view = new TuiViewStore({
+        sessionId: "first",
+        workspaceLabel: "fixture",
+        transcript: [],
+        modelLabel: "fixture",
+      });
+      view.setTemporaryLine("prior", 20);
+      expect(() =>
+        view.batch(() => {
+          view.setTemporaryLine("discarded", 20);
+          throw new Error("fixture");
+        })
+      ).toThrow("fixture");
+      expect(view.getSnapshot().temporaryLine).toBe("prior");
+      vi.advanceTimersByTime(20);
+      expect(view.getSnapshot().temporaryLine).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not replay a previously published transcript append in a footer-only batch", () => {
+    const view = new TuiViewStore({
+      sessionId: "first",
+      workspaceLabel: "fixture",
+      transcript: [],
+      modelLabel: "fixture",
+    });
+    view.addEntry({ kind: "assistant", persistence: "session", text: "published" });
+    view.batch(() => {
+      view.setStatus("working");
+      view.setCanCancel(true);
+    });
+    expect(view.getSnapshot().transcriptChange).toEqual({ kind: "none", sessionEpoch: 0 });
+  });
+
+  it("keeps reset-plus-append and append-plus-remove changes canonical within a batch", () => {
+    const view = new TuiViewStore({
+      sessionId: "first",
+      workspaceLabel: "fixture",
+      transcript: [],
+      modelLabel: "fixture",
+    });
+    view.batch(() => {
+      view.reset({ sessionId: "second", transcript: [], modelLabel: "fixture" });
+      view.addEntry({ kind: "assistant", persistence: "session", text: "after reset" });
+    });
+    expect(view.getSnapshot().transcriptChange).toMatchObject({
+      kind: "reset",
+      records: [expect.objectContaining({ entry: expect.objectContaining({ text: "after reset" }) })],
+    });
+
+    const appendView = new TuiViewStore({
+      sessionId: "third",
+      workspaceLabel: "fixture",
+      transcript: [],
+      modelLabel: "fixture",
+    });
+    appendView.setStatus("ready");
+    appendView.batch(() => {
+      appendView.addEntry({ kind: "assistant", persistence: "session", text: "keep me" });
+      appendView.addEntry({ kind: "choice", persistence: "session", tone: "info", title: "remove me", actions: [] });
+      appendView.removeActiveChoice();
+    });
+    expect(appendView.getSnapshot().transcriptChange).toMatchObject({
+      kind: "append",
+      records: [expect.objectContaining({ entry: expect.objectContaining({ text: "keep me" }) })],
+    });
+
+    const removedOnly = new TuiViewStore({
+      sessionId: "fourth",
+      workspaceLabel: "fixture",
+      transcript: [],
+      modelLabel: "fixture",
+    });
+    removedOnly.setStatus("ready");
+    removedOnly.batch(() => {
+      removedOnly.addEntry({ kind: "choice", persistence: "session", tone: "info", title: "remove", actions: [] });
+      removedOnly.removeActiveChoice();
+    });
+    expect(removedOnly.getSnapshot().transcriptChange).toEqual({ kind: "none", sessionEpoch: 0 });
+  });
+
+  it("coalesces transient updates and cancels them for immediate state and disposal", () => {
+    const scheduler = new FakeTransientScheduler();
+    const profile = { viewPublications: 0, transcriptRecordsInspected: 0, coalescedUpdates: 0 };
+    const view = new TuiViewStore({
+      sessionId: "first",
+      workspaceLabel: "fixture",
+      transcript: [],
+      modelLabel: "fixture",
+      transientScheduler: scheduler,
+      profile,
+    });
+    const snapshots: string[] = [];
+    view.subscribe((snapshot) => snapshots.push(snapshot.ephemeral?.text ?? snapshot.status));
+
+    view.setTransientEphemeral({ text: "first", tone: "muted" });
+    view.setTransientEphemeral({ text: "last", tone: "muted" });
+    expect(snapshots).toEqual([]);
+    expect(profile.coalescedUpdates).toBe(1);
+    scheduler.flush();
+    expect(snapshots).toEqual(["last"]);
+
+    view.setTransientEphemeral({ text: "stale", tone: "muted" });
+    view.setManagedDialog(true);
+    scheduler.flush();
+    expect(view.getSnapshot().ephemeral?.text).toBe("last");
+
+    view.setTransientEphemeral({ text: "disposed", tone: "muted" });
+    view.dispose();
+    scheduler.flush();
+    expect(view.getSnapshot().ephemeral?.text).toBe("last");
+  });
+
+  it("uses the 30 FPS scheduler cadence with fake time", () => {
+    vi.useFakeTimers();
+    try {
+      const view = new TuiViewStore({
+        sessionId: "first",
+        workspaceLabel: "fixture",
+        transcript: [],
+        modelLabel: "fixture",
+      });
+      const publications: string[] = [];
+      view.subscribe((snapshot) => publications.push(snapshot.ephemeral?.text ?? "none"));
+      view.setTransientEphemeral({ text: "scheduled", tone: "muted" });
+      vi.advanceTimersByTime(32);
+      expect(publications).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(publications).toEqual(["scheduled"]);
+      view.setTransientEphemeral({ text: "cancelled", tone: "muted" });
+      view.dispose();
+      vi.runAllTimers();
+      expect(publications).toEqual(["scheduled"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("publishes epoch-scoped incremental transcript changes without inspecting history on footer updates", () => {
     const profile = { viewPublications: 0, transcriptRecordsInspected: 0 };
     const view = new TuiViewStore({
@@ -132,3 +319,21 @@ describe("OpenTUI local UI state", () => {
     expect(formatQueuedFollowUpPreview("anything", 8)).toBe("[QUEUED]");
   });
 });
+
+class FakeTransientScheduler implements TuiTransientScheduler {
+  private callback: (() => void) | undefined;
+  schedule(callback: () => void): void {
+    this.callback = callback;
+  }
+  cancel(): void {
+    this.callback = undefined;
+  }
+  dispose(): void {
+    this.cancel();
+  }
+  flush(): void {
+    const callback = this.callback;
+    this.callback = undefined;
+    callback?.();
+  }
+}
