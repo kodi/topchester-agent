@@ -236,6 +236,18 @@ describe("CLI integration", () => {
     expect(textResult.stdout).toContain("Topchester session debug");
     expect(textResult.stdout).toContain(session.sessionId);
     expect(textResult.stdout).toContain("Exact timing is unavailable");
+    expect(textResult.stdout).toContain("● SESSION");
+    expect(textResult.stdout).toContain("◆ ARTIFACTS");
+    expect(textResult.stdout).toContain("◷ TIMING BREAKDOWN");
+    expect(textResult.stdout).not.toContain("\u001b[");
+
+    const colorResult = await runCli(
+      ["--workspace", fixture.workspace, "session", "debug", session.sessionId],
+      fixture.root,
+      { FORCE_COLOR: "1", NO_COLOR: "" }
+    );
+    expect(colorResult.stdout).toContain("\u001b[");
+    expect(colorResult.stdout).toContain("● SESSION");
 
     const jsonResult = await runCli(
       ["--workspace", fixture.workspace, "session", "debug", session.sessionId, "--json"],

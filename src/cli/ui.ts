@@ -3,6 +3,7 @@ import { stderr, stdout } from "node:process";
 const colors = {
   bgSoftGray: "\u001b[48;5;236m",
   blue: "\u001b[34m",
+  bold: "\u001b[1m",
   cyan: "\u001b[36m",
   darkGray: "\u001b[90m",
   dim: "\u001b[2m",
@@ -23,6 +24,15 @@ export const ui = {
   },
   label(text: string): string {
     return color(text, "dim");
+  },
+  emphasis(text: string): string {
+    return color(text, "bold");
+  },
+  accent(text: string): string {
+    return color(text, "cyan");
+  },
+  secondary(text: string): string {
+    return color(text, "purple");
   },
   muted(text: string): string {
     return color(text, "darkGray");

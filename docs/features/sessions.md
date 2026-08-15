@@ -42,4 +42,6 @@ Child `task` sessions are stored as normal session folders under the same projec
 
 Use `topchester session debug <session>` to inspect a saved session and its child-session tree. The selector accepts `latest`, an exact session ID, or a unique prefix. The default report includes event and tool counts, child outcomes, longest event gaps, artifact coverage, and any available model, tool, hook, setup, approval, subagent-wait, and other timing percentages. Add `--json` for the complete machine-readable report.
 
+The terminal report groups those details into labeled sections, shows timing percentages as compact bars, and marks healthy, active, failed, missing, and warning states with both icons and semantic color. It remains readable without color and does not emit color codes when output is redirected or `NO_COLOR` is set.
+
 Session events always provide order and mixed event gaps. Exact timing breakdowns require `TOPCHESTER_LOG_LEVEL=debug` or `trace` before the measured work starts. New timing records include session and turn identifiers, so the report can separate concurrent root and child work. Old unscoped log entries are not assigned to a session.

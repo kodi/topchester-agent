@@ -105,6 +105,19 @@ export interface SessionEventGap {
   to: { id: number; ts: string; kind: string };
 }
 
+export interface SessionDebugTextStyle {
+  title(text: string): string;
+  section(text: string): string;
+  label(text: string): string;
+  emphasis(text: string): string;
+  accent(text: string): string;
+  secondary(text: string): string;
+  success(text: string): string;
+  warning(text: string): string;
+  error(text: string): string;
+  muted(text: string): string;
+}
+
 interface LogRecord {
   event?: string;
   time?: string;
@@ -221,86 +234,189 @@ export async function createSessionDebugReport(workspaceRoot: string, selector: 
   };
 }
 
-export function formatSessionDebugReport(report: SessionDebugReport): string[] {
+export function formatSessionDebugReport(
+  report: SessionDebugReport,
+  style: SessionDebugTextStyle = plainSessionDebugStyle
+): string[] {
+  const sessionState = report.session.active ? style.warning("● active") : style.success("✓ complete");
   const lines = [
-    "Topchester session debug",
-    `session: ${report.session.sessionId}${report.session.active ? " [active]" : ""}`,
-    `created: ${report.session.createdAt}`,
-    `updated: ${report.session.updatedAt}`,
-    `observed span: ${formatDuration(report.session.observedSpanMs)}`,
-    `children: ${report.session.childSessionCount}`,
-    `events: ${report.events.total} (${formatCounts(report.events.byKind)})`,
-    `messages: user=${report.events.userMessages}, assistant=${report.events.assistantMessages}`,
-    `artifacts: ${report.artifacts.eventsPath}, ${report.artifacts.logPath} ${report.artifacts.logExists ? "[found]" : "[missing]"}`,
-    `timing records: ${report.artifacts.scopedTimingRecords}, malformed log lines: ${report.artifacts.malformedLogLines}`,
+    style.title("Topchester session debug"),
+    style.muted("─".repeat(64)),
     "",
-    "Timing breakdown",
+    style.section("● SESSION"),
+    detailRow("ID", style.emphasis(report.session.sessionId), style),
+    detailRow("State", sessionState, style),
+    ...(report.session.title ? [detailRow("Title", report.session.title, style)] : []),
+    detailRow("Source", report.session.source, style),
+    detailRow("Span", formatDuration(report.session.observedSpanMs), style),
+    detailRow("Created", report.session.createdAt, style),
+    detailRow("Updated", report.session.updatedAt, style),
+    detailRow(
+      "Activity",
+      `${countLabel(report.events.total, "event")} · ${countLabel(report.events.userMessages, "user message")} · ${countLabel(report.events.assistantMessages, "assistant message")} · ${countLabel(report.session.childSessionCount, "child")}`,
+      style
+    ),
+    detailRow("Event mix", formatCounts(report.events.byKind) || "none", style),
+    "",
+    style.section("◆ ARTIFACTS"),
+    artifactRow("events", report.artifacts.eventsPath, true, undefined, style),
+    artifactRow(
+      "debug log",
+      report.artifacts.logPath,
+      report.artifacts.logExists,
+      report.artifacts.logExists
+        ? `${formatBytes(report.artifacts.logBytes ?? 0)} · ${countLabel(report.artifacts.scopedTimingRecords, "timing record")} · ${countLabel(report.artifacts.malformedLogLines, "malformed line")}`
+        : "missing",
+      style
+    ),
+    "",
+    style.section("◷ TIMING BREAKDOWN"),
   ];
 
   if (!report.timing.available) {
-    lines.push("  Exact timing is unavailable for this session.");
+    lines.push(`  ${style.warning("! Exact timing is unavailable for this session.")}`);
   } else {
-    for (const timing of report.timing.sessions) {
+    for (const [index, timing] of report.timing.sessions.entries()) {
       const label = timing.source === "user" ? "root" : timing.title ? `child ${timing.title}` : "child";
+      if (index > 0) lines.push("");
       lines.push(
-        `  ${label} ${shortSessionId(timing.sessionId)}: ${formatDuration(timing.activeTurnMs)} across ${timing.completedTurns} completed turn(s), coverage ${formatPercent(timing.coveragePercent)}`
+        `  ${style.emphasis(label)} ${style.muted(shortSessionId(timing.sessionId))}`,
+        `    ${formatDuration(timing.activeTurnMs)} active · ${countLabel(timing.completedTurns, "completed turn")} · ${style.accent(`${formatPercent(timing.coveragePercent)} measured`)}`
       );
       for (const category of timing.categories) {
+        const categoryStyle = timingCategoryStyle(category.category, style);
+        const recordCount = category.category === "other" ? "untracked" : countLabel(category.records, "record");
         lines.push(
-          `    ${category.category.padEnd(9)} ${formatDuration(category.durationMs).padStart(9)} ${formatPercent(category.percent).padStart(7)}  ${category.records} record(s)`
+          `    ${categoryStyle(category.category.padEnd(9))} ${timingBar(category.percent, categoryStyle, style)}  ${formatPercent(category.percent).padStart(6)}  ${formatDuration(category.durationMs).padStart(8)}  ${recordCount}`
         );
       }
       if (timing.incompleteTurns > 0) {
-        lines.push(`    incomplete turns: ${timing.incompleteTurns}`);
+        lines.push(`    ${style.warning(`! ${countLabel(timing.incompleteTurns, "incomplete turn")}`)}`);
+      }
+      if (timing.models.length > 0) {
+        lines.push(`    ${style.label("Models")}`);
       }
       for (const model of timing.models) {
         lines.push(
-          `    model ${model.model}: ${model.calls} call(s), ${formatDuration(model.durationMs)}, max ${formatDuration(model.maxMs)}`
+          `      ${style.accent(model.model)} · ${countLabel(model.calls, "call")} · ${formatDuration(model.durationMs)} total · ${formatDuration(model.maxMs)} max`
         );
       }
     }
   }
 
-  lines.push("", "Tool calls");
+  lines.push("", style.section("◇ TOOL CALLS"));
   if (report.tools.length === 0) {
-    lines.push("  none");
+    lines.push(`  ${style.muted("none")}`);
   } else {
     for (const tool of report.tools) {
+      const marker = tool.failures > 0 ? style.error("×") : style.success("✓");
+      const failures = tool.failures > 0 ? style.error(`${tool.failures} failed`) : "0 failed";
       const measured =
         tool.measuredCalls > 0
-          ? `, measured work ${formatDuration(tool.measuredWorkMs)}, max ${formatDuration(tool.maxMs)}`
-          : "";
-      lines.push(`  ${tool.tool}: ${tool.calls} call(s), ${tool.failures} failed${measured}`);
-    }
-  }
-
-  lines.push("", "Subagents");
-  if (report.subagents.length === 0) {
-    lines.push("  none");
-  } else {
-    for (const child of report.subagents) {
+          ? `${formatDuration(tool.measuredWorkMs)} measured · ${formatDuration(tool.maxMs)} max`
+          : style.muted("timing unavailable");
       lines.push(
-        `  ${shortSessionId(child.sessionId)} ${child.status}: ${formatDuration(child.observedSpanMs)}, ${child.events} event(s), ${child.toolCalls} tool call(s)${child.title ? `, ${child.title}` : ""}`
+        `  ${marker} ${style.emphasis(tool.tool)}  ${countLabel(tool.calls, "call")} · ${failures} · ${countLabel(tool.measuredCalls, "measured call")} · ${measured}`
       );
     }
   }
 
-  lines.push("", "Longest mixed event gaps");
-  if (report.longestEventGaps.length === 0) {
-    lines.push("  none");
+  lines.push("", style.section("↳ SUBAGENTS"));
+  if (report.subagents.length === 0) {
+    lines.push(`  ${style.muted("none")}`);
   } else {
-    for (const gap of report.longestEventGaps) {
+    for (const child of report.subagents) {
+      const status = formatSubagentStatus(child.status, style);
       lines.push(
-        `  ${formatDuration(gap.durationMs)}: #${gap.from.id} ${gap.from.kind} -> #${gap.to.id} ${gap.to.kind}`
+        `  ${status} ${style.emphasis(child.title ?? "untitled")} ${style.muted(shortSessionId(child.sessionId))}`,
+        `    ${formatDuration(child.observedSpanMs)} span · ${countLabel(child.events, "event")} · ${countLabel(child.toolCalls, "tool call")}${child.profile ? ` · ${child.profile}` : ""}`
+      );
+    }
+  }
+
+  lines.push("", style.section("⧖ LONGEST MIXED EVENT GAPS"));
+  if (report.longestEventGaps.length === 0) {
+    lines.push(`  ${style.muted("none")}`);
+  } else {
+    for (const [index, gap] of report.longestEventGaps.entries()) {
+      lines.push(
+        `  ${style.label(`${String(index + 1).padStart(2)}.`)} ${style.warning(formatDuration(gap.durationMs).padStart(8))}  #${gap.from.id} ${gap.from.kind} → #${gap.to.id} ${gap.to.kind}`
       );
     }
   }
 
   if (report.warnings.length > 0) {
-    lines.push("", "Notes", ...report.warnings.map((warning) => `  - ${warning}`));
+    lines.push("", style.section("! NOTES"), ...report.warnings.map((warning) => `  ${style.warning("!")} ${warning}`));
   }
 
   return lines;
+}
+
+const plainSessionDebugStyle: SessionDebugTextStyle = {
+  title: identity,
+  section: identity,
+  label: identity,
+  emphasis: identity,
+  accent: identity,
+  secondary: identity,
+  success: identity,
+  warning: identity,
+  error: identity,
+  muted: identity,
+};
+
+function identity(text: string): string {
+  return text;
+}
+
+function detailRow(label: string, value: string, style: SessionDebugTextStyle): string {
+  return `  ${style.label(label.padEnd(10))} ${value}`;
+}
+
+function artifactRow(
+  label: string,
+  path: string,
+  exists: boolean,
+  detail: string | undefined,
+  style: SessionDebugTextStyle
+): string {
+  const marker = exists ? style.success("✓") : style.error("×");
+  const state = detail ? ` ${style.muted(`(${detail})`)}` : "";
+  return `  ${marker} ${style.label(label.padEnd(10))} ${path}${state}`;
+}
+
+function timingBar(percent: number, filledStyle: (text: string) => string, style: SessionDebugTextStyle): string {
+  const width = 20;
+  const filled = Math.max(0, Math.min(width, Math.round((percent / 100) * width)));
+  return `${filledStyle("█".repeat(filled))}${style.muted("░".repeat(width - filled))}`;
+}
+
+function timingCategoryStyle(category: SessionTimingCategory, style: SessionDebugTextStyle): (text: string) => string {
+  if (category === "model") return (text) => style.accent(text);
+  if (category === "tool") return (text) => style.success(text);
+  if (category === "subagent") return (text) => style.secondary(text);
+  if (category === "approval") return (text) => style.warning(text);
+  if (category === "other") return (text) => style.muted(text);
+  return (text) => style.label(text);
+}
+
+function formatSubagentStatus(status: SessionSubagentSummary["status"], style: SessionDebugTextStyle): string {
+  if (status === "completed") return style.success("✓ completed");
+  if (status === "failed") return style.error("× failed");
+  if (status === "active") return style.warning("● active");
+  return style.muted("? unknown");
+}
+
+function countLabel(count: number, singular: string): string {
+  return `${count} ${singular}${count === 1 ? "" : "s"}`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1_024) return `${bytes} B`;
+  const kibibytes = bytes / 1_024;
+  if (kibibytes < 1_024) return `${kibibytes.toFixed(kibibytes < 10 ? 1 : 0)} KiB`;
+  const mebibytes = kibibytes / 1_024;
+  return `${mebibytes.toFixed(mebibytes < 10 ? 1 : 0)} MiB`;
 }
 
 async function resolveSessionDebugSelector(workspaceRoot: string, selector: string): Promise<string> {

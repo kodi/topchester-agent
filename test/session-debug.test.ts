@@ -120,7 +120,14 @@ describe("session debug report", () => {
     expect(report.subagents).toEqual([
       expect.objectContaining({ sessionId: child.sessionId, status: "completed", toolCalls: 1 }),
     ]);
-    expect(formatSessionDebugReport(report).join("\n")).toContain("Timing breakdown");
+    const text = formatSessionDebugReport(report).join("\n");
+    expect(text).toContain("◷ TIMING BREAKDOWN");
+    expect(text).toMatch(/██████░░░░░░░░░░░░░░\s+30\.0%/u);
+    expect(text).toContain("◇ TOOL CALLS");
+    expect(text).toContain("✓ read_file");
+    expect(text).toContain("× grep");
+    expect(text).toContain("↳ SUBAGENTS");
+    expect(text).toContain("✓ completed Inspect runtime");
   });
 
   it("does not attribute old unscoped log records", async () => {

@@ -26,7 +26,7 @@ import {
   stripEmptyContainers,
 } from "./knowledge/search.js";
 import { forkSession, loadSession, loadSessionForAppend, rehydrateSession } from "./session/store.js";
-import { createSessionDebugReport, formatSessionDebugReport } from "./session/debug.js";
+import { createSessionDebugReport, formatSessionDebugReport, type SessionDebugTextStyle } from "./session/debug.js";
 import { runOpenTui } from "./tui/opentui/index.js";
 import { getTopchesterVersion } from "./version.js";
 import { executeRunCommand } from "./cli/run.js";
@@ -42,6 +42,19 @@ import {
   configureCodexGlobalProvider,
   getGlobalTopchesterConfigPath,
 } from "./config/index.js";
+
+const sessionDebugCliStyle: SessionDebugTextStyle = {
+  title: (text) => ui.emphasis(ui.accent(text)),
+  section: (text) => ui.emphasis(ui.accent(text)),
+  label: (text) => ui.label(text),
+  emphasis: (text) => ui.emphasis(text),
+  accent: (text) => ui.accent(text),
+  secondary: (text) => ui.secondary(text),
+  success: (text) => ui.ok(text),
+  warning: (text) => ui.warn(text),
+  error: (text) => ui.error(text),
+  muted: (text) => ui.muted(text),
+};
 
 export async function runTopchesterCli(argv = process.argv, options: { exitOverride?: boolean } = {}): Promise<void> {
   const program = createTopchesterProgram();
@@ -128,7 +141,11 @@ function createTopchesterProgram(): Command {
 
       try {
         const report = await createSessionDebugReport(workspaceRoot, sessionSelector);
-        console.log(options.json ? JSON.stringify(report, null, 2) : formatSessionDebugReport(report).join("\n"));
+        console.log(
+          options.json
+            ? JSON.stringify(report, null, 2)
+            : formatSessionDebugReport(report, sessionDebugCliStyle).join("\n")
+        );
       } catch (error) {
         console.error(formatStartupError(error));
         process.exitCode = 1;

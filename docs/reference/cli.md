@@ -99,6 +99,8 @@ Exact percentages require session-scoped timing records. Topchester writes these
 
 `--json` prints the complete versioned report for scripts. The text and JSON reports distinguish active turn time from the full observed session span. Time between user messages is not treated as agent work. Child sessions get separate timing sections because parallel child work can exceed root wall time when summed.
 
+In a terminal, the text report uses status icons, semantic colors, and compact percentage bars to separate the session summary, artifacts, timing, tools, subagents, event gaps, and notes. Color is disabled automatically when output is redirected and whenever `NO_COLOR` is set; `FORCE_COLOR=1` enables it explicitly. The icons and layout keep every status readable without color.
+
 ## `topchester auth login codex --device`
 
 Starts the SSH-friendly Codex ChatGPT device login flow. Topchester prints a verification URL, one-time user code, expiry time, and phishing warning. Open the URL in any browser, enter the code, and return to the terminal while Topchester polls for approval.
