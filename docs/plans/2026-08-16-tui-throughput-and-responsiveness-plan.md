@@ -522,7 +522,7 @@ Verification:
 - `mise run test-node -- test/agent-runtime.test.ts test/tui-controller.test.ts test/opentui-state.test.ts test/hooks.test.ts test/opentui-performance.test.ts` (5 files, 78 tests pass);
 - `mise run opentui-test` (pass);
 - `mise run opentui-perf -- --scenario runtime-event-burst --scenario reasoning-flood` (pass);
-- `mise run test` (39 files, 646 tests pass before the final queue API consolidation; final broad verification follows this checkpoint);
+- `mise run test` (39 files, 647 tests pass after the final queue API consolidation);
 - `mise run local-ci` (pass);
 - `git diff --check` (pass).
 
@@ -608,13 +608,23 @@ After Slice 5:
 
 The final handoff must state measured before/after results, any unsupported host metrics, and any verification that remained manual.
 
+Final verification results (2026-08-16, Darwin arm64, Bun 1.3.2):
+
+- combined focused state/runtime/session/hook/performance tests passed: 7 files, 122 tests;
+- `mise run opentui-perf` passed all six deterministic scenarios and accepted correctness budgets;
+- `mise run opentui-perf -- --pty` passed with input-to-visible-paint p50 14,717 ms and p95/max 14,805 ms, below the accepted 20,000 ms Darwin arm64 ceiling;
+- `mise run local-ci-extended` passed: format/lint/typecheck, 39 files and 647 tests, production OpenTUI renderer, native package install without Bun on `PATH`, and native PTY restoration smoke;
+- `git diff --check` and the final requested `mise run local-ci` passed;
+- a live interactive development-wrapper exercise was not performed. The automated production renderer, packaged PTY smoke, and real PTY performance driver cover the non-interactive portions of that check;
+- `bun src/bin.ts --workspace . session debug latest --json` was attempted, but the existing latest session was rejected because its recorded `workspaceRoot` does not match this checkout. No session data was modified; timing-category inspection therefore remains manual for a valid live session.
+
 ## Open Questions
 
-- Which development and CI host classes produce stable enough PTY timings for an enforced wall-clock budget? Resolve in Slice 1 from repeated measurements.
-- Should the real PTY timing gate run on every `local-ci-extended`, in one dedicated CI job, or both? Resolve in Slice 1 based on runtime and variance.
-- What queue capacity, maximum event batch, and maximum synchronous time slice provide the best fairness/throughput tradeoff? Measure in Slice 1 and finalize in Slice 5.
-- Should a session journal writer retry after a failed batch or become terminally failed until session replacement? Decide in Slice 4 before implementing failure recovery.
-- Does OpenTUI's current stats surface expose enough output-byte information, or should the PTY harness count emitted bytes externally? Resolve in Slice 1 without patching OpenTUI.
+- Resolved in Slice 1: deterministic counters gate every host; PTY wall-clock enforcement currently has an accepted Darwin arm64 budget, while other hosts report unsupported timing until baselined.
+- Resolved in Slice 1: the real PTY timing workload remains opt-in because it takes roughly 75 seconds; `local-ci-extended` runs the shorter packaged PTY restoration smoke.
+- Resolved in Slice 5: capacity 128, maximum batch 128, and a 4 ms synchronous reducer slice provide bounded fairness with seven host yields in the 1,000-event workload.
+- Resolved in Slice 4: a journal becomes terminally failed after a durable-batch failure; session replacement creates or loads a fresh handle.
+- Resolved in Slice 1: native frame/cell statistics are collected when supported, unsupported native fields remain explicit, and the external PTY layer measures input-to-visible-paint without patching OpenTUI.
 
 ## Working Notes
 
@@ -626,7 +636,8 @@ The final handoff must state measured before/after results, any unsupported host
 - 2026-08-16: Slice 3 made semantic view changes atomic and capped cosmetic publication to the renderer cadence. The accepted workloads now gate both publication counts and the number of transient replacements.
 - 2026-08-16: Slice 4 established a terminal-on-failure, bounded session journal. A 1,000-event burst is durable in eight JSONL/metadata batches, and session boundaries now stop on failed source barriers instead of reading or switching past them.
 - 2026-08-16: Slice 5 bounded both runtime backlog and synchronous reducer work. Ready-promise streams now yield through a macrotask even when the queue briefly empties between events, closing the starvation path exposed by asynchronous generators.
+- 2026-08-16: Final automated verification passed, including the packaged native CLI and the real PTY latency budget. Live interactive exercise and timing-category inspection remain manual because the stored `latest` session belongs to a mismatched workspace root.
 
 ## Next Slice
 
-All five implementation slices are checkpoint-ready. Run the complete focused test set, full OpenTUI performance suite, `mise run local-ci-extended`, and `git diff --check`; record any manual live-terminal verification that remains, then finish with the explicitly requested `mise run local-ci`.
+Implementation and automated verification are complete. The only remaining optional follow-up is a live interactive exercise followed by `session debug` against a valid session created in this checkout.
