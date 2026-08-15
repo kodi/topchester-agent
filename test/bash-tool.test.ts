@@ -81,6 +81,20 @@ describe("command policy", () => {
       ["biome format --check src", "format_check"],
       ["pnpm exec oxfmt . --check", "format_check"],
       ["pnpm exec -- oxfmt . --check", "format_check"],
+      ["mise run test-node", "test"],
+      ["mise run typecheck", "typecheck"],
+      ["mise run format-check", "format_check"],
+      ["mise run smoke-scenario 17-run-validator 1", "smoke"],
+      ["mise run opentui-pty-smoke", "smoke"],
+      ["mise run package-check", "check"],
+      ["mise run release-build", "build"],
+      ["vp test run --dir test", "test"],
+      ["vp lint", "lint"],
+      ["vp check", "check"],
+      ["vp check --no-fmt --no-lint", "typecheck"],
+      ["vp build", "build"],
+      ["vp fmt . --check", "format_check"],
+      ["vp run smoke --fake-api", "smoke"],
     ] as const) {
       const decision = await validateValidatorCommand({ command }, { workspaceRoot: workspace });
 
@@ -109,8 +123,15 @@ describe("command policy", () => {
       "go test -c",
       "go test -exec /tmp/runner ./...",
       "cargo build",
+      "mise exec -- pnpm test",
+      "mise run dev",
+      "mise run format",
       "npx vitest run",
       "npx --yes tsx --test test/pool.test.ts",
+      "vp dev",
+      "vp fmt .",
+      "vp install",
+      "vp run dev",
     ]) {
       const decision = await validateValidatorCommand({ command }, { workspaceRoot: workspace });
 

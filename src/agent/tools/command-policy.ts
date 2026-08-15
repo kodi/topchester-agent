@@ -452,6 +452,14 @@ function classifyValidator(
   command: SimpleCommand,
   metadata: PackageMetadata | undefined
 ): { allowed: true; validator: ValidatorKind; packageManager?: PackageManager } | { allowed: false; reason: string } {
+  if (command.executable === "mise") {
+    return classifyMiseValidator(command);
+  }
+
+  if (command.executable === "vp") {
+    return classifyVitePlusValidator(command);
+  }
+
   if (isPackageManager(command.executable)) {
     return classifyPackageManagerCommand(command, metadata);
   }
@@ -461,6 +469,61 @@ function classifyValidator(
   }
 
   return classifyDirectValidator(command);
+}
+
+function classifyMiseValidator(
+  command: SimpleCommand
+): { allowed: true; validator: ValidatorKind } | { allowed: false; reason: string } {
+  if (command.args[0] !== "run") {
+    return { allowed: false, reason: "command policy rejected 'mise' because only 'mise run' validators are allowed." };
+  }
+
+  const taskName = command.args[1];
+  const validator = taskName ? classifyTaskName(taskName) : undefined;
+
+  return validator
+    ? { allowed: true, validator }
+    : {
+        allowed: false,
+        reason: `command policy rejected '${taskName ?? "mise run"}' because it is not a validator task.`,
+      };
+}
+
+function classifyVitePlusValidator(
+  command: SimpleCommand
+): { allowed: true; validator: ValidatorKind } | { allowed: false; reason: string } {
+  switch (command.args[0]) {
+    case "test":
+      return { allowed: true, validator: "test" };
+    case "lint":
+      return { allowed: true, validator: "lint" };
+    case "check":
+      return command.args.includes("--no-fmt") && command.args.includes("--no-lint")
+        ? { allowed: true, validator: "typecheck" }
+        : { allowed: true, validator: "check" };
+    case "build":
+      return { allowed: true, validator: "build" };
+    case "fmt":
+      return command.args.includes("--check")
+        ? { allowed: true, validator: "format_check" }
+        : {
+            allowed: false,
+            reason: "command policy rejected 'vp fmt' because format validators must use --check.",
+          };
+    case "run": {
+      const taskName = command.args[1];
+      const validator = taskName ? classifyTaskName(taskName) : undefined;
+
+      return validator
+        ? { allowed: true, validator }
+        : {
+            allowed: false,
+            reason: `command policy rejected '${taskName ?? "vp run"}' because it is not a validator task.`,
+          };
+    }
+  }
+
+  return { allowed: false, reason: "command policy rejected 'vp' because it does not name a validator command." };
 }
 
 function classifyPackageExecutorCommand(
@@ -693,6 +756,42 @@ function classifyScriptName(scriptName: string): ValidatorKind | undefined {
   }
   if (scriptName === "smoke" || scriptName.startsWith("smoke:")) {
     return "smoke";
+  }
+
+  return undefined;
+}
+
+function classifyTaskName(taskName: string): ValidatorKind | undefined {
+  const exact = classifyScriptName(taskName);
+
+  if (exact) {
+    return exact;
+  }
+  if (taskName.startsWith("test-") || taskName.endsWith("-test")) {
+    return "test";
+  }
+  if (taskName.startsWith("lint-") || taskName.endsWith("-lint")) {
+    return "lint";
+  }
+  if (taskName.startsWith("typecheck-") || taskName.endsWith("-typecheck")) {
+    return "typecheck";
+  }
+  if (taskName.startsWith("format-check-") || taskName.endsWith("-format-check")) {
+    return "format_check";
+  }
+  if (taskName.startsWith("smoke-") || taskName.endsWith("-smoke")) {
+    return "smoke";
+  }
+  if (taskName.startsWith("build-") || taskName.endsWith("-build")) {
+    return "build";
+  }
+  if (
+    taskName.startsWith("check-") ||
+    taskName.endsWith("-check") ||
+    taskName.startsWith("ci-") ||
+    taskName.endsWith("-ci")
+  ) {
+    return "check";
   }
 
   return undefined;
