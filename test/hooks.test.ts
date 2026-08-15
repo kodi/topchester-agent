@@ -174,6 +174,80 @@ describe("agent hooks", () => {
     expect(result.messages).toEqual(["hook complete"]);
   });
 
+  it("logs privacy-safe handler identity and precise process timing", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-timing-"));
+    const script = join(workspace, "timed-hook.cjs");
+    const logLines: Array<Record<string, unknown>> = [];
+    const context = createHookTestContext(workspace, {
+      hooks: {
+        Stop: [
+          { command: `PRIVATE_HOOK_TOKEN=do-not-log node ${shellQuote(script)}`, timeoutMs: 1_000 },
+          { command: "/usr/bin/true", timeoutMs: 2_000 },
+        ],
+      },
+    });
+    context.logger = createCaptureLogger(logLines);
+
+    await writeFile(script, "process.stdin.resume(); process.stdin.on('end', () => {});\n");
+    await runTopchesterHooks(
+      context,
+      "Stop",
+      createPayload(workspace, "Stop", { finalMessage: "Done.", status: "completed" })
+    );
+
+    const runs = logLines.filter((line) => line.event === "hook_run");
+    expect(runs).toEqual([
+      expect.objectContaining({
+        hookEventName: "Stop",
+        handlerOrdinal: 1,
+        handlerCount: 2,
+        handlerLabel: "timed-hook.cjs",
+        timeoutMs: 1_000,
+        durationMs: expect.any(Number),
+        exitDurationMs: expect.any(Number),
+        closeWaitMs: expect.any(Number),
+        exitCode: 0,
+        timedOut: false,
+      }),
+      expect.objectContaining({
+        hookEventName: "Stop",
+        handlerOrdinal: 2,
+        handlerCount: 2,
+        handlerLabel: "true",
+        timeoutMs: 2_000,
+      }),
+    ]);
+    expect(JSON.stringify(runs)).not.toContain("do-not-log");
+    expect(JSON.stringify(runs)).not.toContain(script);
+  });
+
+  it("separates timeout, process exit, and final stream close timing", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-timeout-"));
+    const script = join(workspace, "slow-hook.cjs");
+    const logLines: Array<Record<string, unknown>> = [];
+    const context = createHookTestContext(workspace, {
+      hooks: { Stop: [{ command: `node ${shellQuote(script)}`, timeoutMs: 20 }] },
+    });
+    context.logger = createCaptureLogger(logLines);
+
+    await writeFile(script, "setTimeout(() => {}, 150);\n");
+    await runTopchesterHooks(context, "Stop", createPayload(workspace, "Stop"));
+
+    const run = logLines.find((line) => line.event === "hook_run")!;
+    expect(run).toMatchObject({
+      handlerLabel: "slow-hook.cjs",
+      timeoutMs: 20,
+      timedOut: true,
+      timeoutTriggeredMs: expect.any(Number),
+      exitDurationMs: expect.any(Number),
+      closeWaitMs: expect.any(Number),
+      durationMs: expect.any(Number),
+    });
+    expect(run.timeoutTriggeredMs as number).toBeLessThanOrEqual(run.durationMs as number);
+    expect(run.exitDurationMs as number).toBeLessThanOrEqual(run.durationMs as number);
+    expect(run.closeWaitMs).toBe((run.durationMs as number) - (run.exitDurationMs as number));
+  });
+
   it("adds active model metadata to runtime hook payloads when available", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-model-"));
     const script = join(workspace, "capture-model.cjs");
@@ -761,6 +835,21 @@ function createHookTestContext(workspaceRoot: string, config: TopchesterConfig):
       },
     } as unknown as AppContext["logger"],
   };
+}
+
+function createCaptureLogger(logLines: Array<Record<string, unknown>>): AppContext["logger"] {
+  return {
+    debug(payload: Record<string, unknown>) {
+      logLines.push(payload);
+    },
+    trace() {},
+    info() {},
+    warn() {},
+    error() {},
+    child() {
+      return this;
+    },
+  } as unknown as AppContext["logger"];
 }
 
 function createPayload(

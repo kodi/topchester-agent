@@ -149,6 +149,95 @@ describe("session debug report", () => {
     expect(report.timing.available).toBe(false);
     expect(report.warnings.join(" ")).toContain("Older unscoped entries are not attributed");
   });
+
+  it("keeps every hook run in JSON data and limits text to slow runs plus failures", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+    const base = Date.now();
+    const turnId = "turn-hooks";
+    const successfulRuns = Array.from({ length: 11 }, (_, index) =>
+      log(base + 2_000 + index, session.sessionId, session.metadata.rootSessionId, turnId, {
+        event: "hook_run",
+        hookEventName: "PreToolUse",
+        handlerType: "command",
+        handlerLabel: "lint-hook.sh",
+        handlerOrdinal: 1,
+        handlerCount: 1,
+        timeoutMs: 5_000,
+        durationMs: (index + 1) * 100,
+        exitDurationMs: (index + 1) * 100,
+        closeWaitMs: 0,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        aborted: false,
+      })
+    );
+    const peonRuns = [
+      log(base + 4_000, session.sessionId, session.metadata.rootSessionId, turnId, {
+        event: "hook_run",
+        hookEventName: "Stop",
+        handlerType: "command",
+        handlerLabel: "peon.sh",
+        handlerOrdinal: 1,
+        handlerCount: 3,
+        timeoutMs: 5,
+        timeoutTriggeredMs: 5,
+        durationMs: 10,
+        exitDurationMs: 7,
+        closeWaitMs: 3,
+        exitCode: 0,
+        signal: null,
+        timedOut: true,
+        aborted: false,
+      }),
+      log(base + 4_001, session.sessionId, session.metadata.rootSessionId, turnId, {
+        event: "hook_run",
+        hookEventName: "Stop",
+        handlerType: "command",
+        handlerLabel: "peon.sh",
+        handlerOrdinal: 3,
+        handlerCount: 3,
+        timeoutMs: 5,
+        timeoutTriggeredMs: 5,
+        durationMs: 9,
+        exitDurationMs: 6,
+        closeWaitMs: 3,
+        exitCode: 0,
+        signal: null,
+        timedOut: true,
+        aborted: false,
+      }),
+    ];
+    await writeLog(workspace, [
+      log(base, session.sessionId, session.metadata.rootSessionId, turnId, { event: "session_turn_started" }),
+      ...successfulRuns,
+      ...peonRuns,
+      log(base + 5_000, session.sessionId, session.metadata.rootSessionId, turnId, {
+        event: "session_turn_finished",
+        durationMs: 5_000,
+      }),
+    ]);
+
+    const report = await createSessionDebugReport(workspace, session.sessionId);
+    const timing = report.timing.sessions[0]!;
+    expect(timing.hookRuns).toHaveLength(13);
+    expect(timing.hookSummaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ handlerLabel: "lint-hook.sh", runs: 11, failedRuns: 0 }),
+        expect.objectContaining({ handlerLabel: "peon.sh", handlerOrdinal: 1, timedOutRuns: 1 }),
+        expect.objectContaining({ handlerLabel: "peon.sh", handlerOrdinal: 3, timedOutRuns: 1 }),
+      ])
+    );
+    expect(report.warnings.join(" ")).toContain("ran Stop handler peon.sh 2 times");
+
+    const text = formatSessionDebugReport(report).join("\n");
+    expect(text).toContain("🪝 HOOK RUNS");
+    expect(text).toContain("Slowest runs (12 of 13; all unsuccessful included)");
+    expect(text).toContain("1 faster successful run omitted");
+    expect(text).toContain("Stop #1/3 peon.sh");
+    expect(text).toContain("timed out at 5ms · process exit at 7ms · 3ms close wait");
+  });
 });
 
 function log(

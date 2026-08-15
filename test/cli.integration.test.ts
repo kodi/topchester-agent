@@ -1,11 +1,12 @@
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vite-plus/test";
 import { CODEX_CLIENT_ID, CODEX_ISSUER } from "../src/auth/codex.js";
 import { writeAuthStore } from "../src/auth/store.js";
+import { getTopchesterLogFilePath } from "../src/app/paths.js";
 import { runTopchesterCli } from "../src/cli.js";
 import { createSession, type SessionHandle } from "../src/session/store.js";
 
@@ -257,6 +258,63 @@ describe("CLI integration", () => {
       version: 1,
       session: { sessionId: session.sessionId },
       timing: { available: false },
+    });
+  });
+
+  it("prints complete hook-run diagnostics in JSON", async () => {
+    const fixture = await makeFixture();
+    const session = await createSession(fixture.workspace);
+    const logPath = getTopchesterLogFilePath(fixture.workspace);
+    await mkdir(dirname(logPath), { recursive: true });
+    await writeFile(
+      logPath,
+      `${JSON.stringify({
+        level: 20,
+        time: new Date().toISOString(),
+        sessionId: session.sessionId,
+        rootSessionId: session.metadata.rootSessionId,
+        event: "hook_run",
+        hookEventName: "Stop",
+        handlerType: "command",
+        handlerLabel: "peon.sh",
+        handlerOrdinal: 1,
+        handlerCount: 1,
+        timeoutMs: 5_000,
+        timeoutTriggeredMs: 5_001,
+        durationMs: 10_011,
+        exitDurationMs: 5_010,
+        closeWaitMs: 5_001,
+        exitCode: 0,
+        signal: null,
+        timedOut: true,
+        aborted: false,
+      })}\n`
+    );
+
+    const jsonResult = await runCli(
+      ["--workspace", fixture.workspace, "session", "debug", session.sessionId, "--json"],
+      fixture.root
+    );
+    const report = JSON.parse(jsonResult.stdout) as Record<string, unknown>;
+
+    expect(report).toMatchObject({
+      timing: {
+        sessions: [
+          {
+            hookRuns: [
+              {
+                event: "Stop",
+                handlerLabel: "peon.sh",
+                durationMs: 10_011,
+                timeoutTriggeredMs: 5_001,
+                closeWaitMs: 5_001,
+                timedOut: true,
+                failed: true,
+              },
+            ],
+          },
+        ],
+      },
     });
   });
 

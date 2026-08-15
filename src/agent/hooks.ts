@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { basename } from "node:path";
+import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import { hookEventNames, type HookEventName, type HookHandlerConfig } from "../config/index.js";
 import { type AppContext } from "../app/context.js";
@@ -75,6 +77,10 @@ interface HookProcessResult {
   aborted: boolean;
   spawnError?: string;
   durationMs: number;
+  exitDurationMs?: number;
+  closeWaitMs?: number;
+  timeoutTriggeredMs?: number;
+  abortTriggeredMs?: number;
 }
 
 type HookResponse = z.infer<typeof hookResponseSchema>;
@@ -88,7 +94,7 @@ export async function runTopchesterHooks(
   const handlers = getConfiguredHookHandlers(context, event, options.toolName);
   const result: HookRunResult = { contexts: [], messages: [], handlerCount: 0 };
 
-  for (const handler of handlers) {
+  for (const [index, handler] of handlers.entries()) {
     result.handlerCount += 1;
     const statusMessage = handler.statusMessage?.trim();
 
@@ -96,7 +102,15 @@ export async function runTopchesterHooks(
       options.onHookStart?.({ event, statusMessage });
     }
 
-    const handlerResult = await runCommandHandler(context, event, payload, handler, options);
+    const handlerResult = await runCommandHandler(
+      context,
+      event,
+      payload,
+      handler,
+      index + 1,
+      handlers.length,
+      options
+    );
 
     result.contexts.push(...handlerResult.contexts);
     result.messages.push(...handlerResult.messages);
@@ -157,16 +171,19 @@ async function runCommandHandler(
   event: HookEventName,
   payload: HookRunPayload,
   handler: HookHandlerConfig,
+  handlerOrdinal: number,
+  handlerCount: number,
   options: RunTopchesterHooksOptions
 ): Promise<HookRunResult> {
+  const timeoutMs = handler.timeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS;
   const result = await runHookProcess(handler.command ?? "", payload, {
     cwd: context.workspaceRoot,
-    timeoutMs: handler.timeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS,
+    timeoutMs,
     abortSignal: options.abortSignal,
     env: buildHookEnv(event, options.toolName),
   });
 
-  logHookProcessResult(context, event, handler, result);
+  logHookProcessResult(context, event, handler, handlerOrdinal, handlerCount, timeoutMs, result);
 
   if (result.timedOut || result.aborted || result.spawnError || result.exitCode !== 0) {
     return emptyHookRunResult();
@@ -267,7 +284,7 @@ async function runHookProcess(
     abortSignal?: AbortSignal;
   }
 ): Promise<HookProcessResult> {
-  const startedAt = Date.now();
+  const startedAt = performance.now();
   const shell = process.env.SHELL || "/bin/sh";
 
   return new Promise((resolve) => {
@@ -276,6 +293,10 @@ async function runHookProcess(
     let settled = false;
     let timedOut = false;
     let aborted = false;
+    let exitDurationMs: number | undefined;
+    let timeoutTriggeredMs: number | undefined;
+    let abortTriggeredMs: number | undefined;
+    const elapsedMs = () => Math.max(0, Math.round(performance.now() - startedAt));
     const child = spawn(shell, ["-lc", command], {
       cwd: options.cwd,
       env: options.env,
@@ -290,6 +311,8 @@ async function runHookProcess(
       settled = true;
       clearTimeout(timeout);
       options.abortSignal?.removeEventListener("abort", abort);
+      const durationMs = elapsedMs();
+      const finalExitDurationMs = partial.exitDurationMs ?? exitDurationMs;
       resolve({
         stdout,
         stderr,
@@ -297,18 +320,25 @@ async function runHookProcess(
         signal: null,
         timedOut,
         aborted,
-        durationMs: Date.now() - startedAt,
+        durationMs,
+        ...(finalExitDurationMs === undefined
+          ? {}
+          : { exitDurationMs: finalExitDurationMs, closeWaitMs: Math.max(0, durationMs - finalExitDurationMs) }),
+        ...(timeoutTriggeredMs === undefined ? {} : { timeoutTriggeredMs }),
+        ...(abortTriggeredMs === undefined ? {} : { abortTriggeredMs }),
         ...partial,
       });
     };
 
     const timeout = setTimeout(() => {
       timedOut = true;
+      timeoutTriggeredMs = elapsedMs();
       child.kill("SIGTERM");
     }, options.timeoutMs);
 
     const abort = () => {
       aborted = true;
+      abortTriggeredMs = elapsedMs();
       child.kill("SIGTERM");
     };
 
@@ -329,6 +359,9 @@ async function runHookProcess(
     child.on("error", (error) => {
       finish({ spawnError: error.message });
     });
+    child.on("exit", () => {
+      exitDurationMs = elapsedMs();
+    });
     child.on("close", (exitCode, signal) => {
       finish({ exitCode, signal });
     });
@@ -341,6 +374,9 @@ function logHookProcessResult(
   context: AppContext,
   event: HookEventName,
   handler: HookHandlerConfig,
+  handlerOrdinal: number,
+  handlerCount: number,
+  timeoutMs: number,
   result: HookProcessResult
 ): void {
   context.logger.debug(
@@ -348,18 +384,67 @@ function logHookProcessResult(
       event: "hook_run",
       hookEventName: event,
       handlerType: handler.type ?? "command",
+      handlerOrdinal,
+      handlerCount,
+      handlerLabel: safeHookHandlerLabel(handler.command),
       matcher: handler.matcher,
+      timeoutMs,
       exitCode: result.exitCode,
       signal: result.signal,
       timedOut: result.timedOut,
       aborted: result.aborted,
       spawnError: result.spawnError,
       durationMs: result.durationMs,
+      exitDurationMs: result.exitDurationMs,
+      closeWaitMs: result.closeWaitMs,
+      timeoutTriggeredMs: result.timeoutTriggeredMs,
+      abortTriggeredMs: result.abortTriggeredMs,
       stdoutLength: result.stdout.length,
       stderrLength: result.stderr.length,
     },
     "hook run"
   );
+}
+
+function safeHookHandlerLabel(command: string): string {
+  const tokens = command.trim().split(/\s+/u).filter(Boolean);
+  let index = 0;
+
+  if (safeCommandToken(tokens[index]) === "env") {
+    index += 1;
+  }
+  while (index < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/u.test(tokens[index]!)) {
+    index += 1;
+  }
+
+  const executable = safeCommandToken(tokens[index]);
+  const executableLabel = safeBasename(executable) ?? "command";
+  const interpreters = new Set(["bash", "bun", "dash", "node", "nodejs", "python", "python3", "sh", "zsh"]);
+
+  if (!interpreters.has(executableLabel)) {
+    return executableLabel;
+  }
+
+  const remaining = tokens.slice(index + 1);
+  if (remaining.some((token) => token === "-c" || token === "--eval" || token === "-e")) {
+    return executableLabel;
+  }
+
+  const script = remaining.find((token) => !token.startsWith("-"));
+  const scriptLabel = safeBasename(safeCommandToken(script));
+
+  return scriptLabel && /\.(?:bash|c?js|command|mjs|py|sh|ts|zsh)$/u.test(scriptLabel) ? scriptLabel : executableLabel;
+}
+
+function safeCommandToken(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value.replace(/^["']|["']$/gu, "");
+}
+
+function safeBasename(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const label = basename(value);
+  return /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u.test(label) ? label : undefined;
 }
 
 function logHookWarning(context: AppContext, payload: Record<string, unknown>): void {

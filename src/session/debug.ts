@@ -9,6 +9,7 @@ import { listSessionSummaries, loadSessionTree, type LoadedSession, type LoadedS
 const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const SESSION_PREFIX_PATTERN = /^[0-9a-f-]{4,35}$/u;
 const MAX_GAPS = 10;
+const MAX_TEXT_HOOK_ENTRIES = 10;
 
 export type SessionTimingCategory = "model" | "tool" | "subagent" | "hook" | "approval" | "setup" | "other";
 
@@ -86,6 +87,44 @@ export interface SessionTimingSummary {
     durationMs: number;
     maxMs: number;
   }>;
+  hookRuns: SessionHookRun[];
+  hookSummaries: SessionHookSummary[];
+}
+
+export interface SessionHookRun {
+  finishedAt: string;
+  turnId?: string;
+  event: string;
+  handlerType: string;
+  handlerLabel: string;
+  handlerOrdinal?: number;
+  handlerCount?: number;
+  durationMs: number;
+  timeoutMs?: number;
+  timeoutTriggeredMs?: number;
+  abortTriggeredMs?: number;
+  exitDurationMs?: number;
+  closeWaitMs?: number;
+  exitCode?: number | null;
+  signal?: string | null;
+  timedOut: boolean;
+  aborted: boolean;
+  spawnError?: string;
+  failed: boolean;
+}
+
+export interface SessionHookSummary {
+  event: string;
+  handlerType: string;
+  handlerLabel: string;
+  handlerOrdinal?: number;
+  handlerCount?: number;
+  runs: number;
+  failedRuns: number;
+  timedOutRuns: number;
+  abortedRuns: number;
+  durationMs: number;
+  maxMs: number;
 }
 
 export interface SessionSubagentSummary {
@@ -132,6 +171,20 @@ interface LogRecord {
   toolCallId?: string;
   modelId?: string;
   hookEventName?: string;
+  handlerType?: string;
+  handlerLabel?: string;
+  handlerOrdinal?: number;
+  handlerCount?: number;
+  timeoutMs?: number;
+  timeoutTriggeredMs?: number;
+  abortTriggeredMs?: number;
+  exitDurationMs?: number;
+  closeWaitMs?: number;
+  exitCode?: number | null;
+  signal?: string | null;
+  timedOut?: boolean;
+  aborted?: boolean;
+  spawnError?: string;
   error?: unknown;
 }
 
@@ -188,6 +241,7 @@ export async function createSessionDebugReport(workspaceRoot: string, selector: 
           `${shortSessionId(summary.sessionId)} has ${formatPercent(summary.coveragePercent)} measured timing coverage; remaining time is reported as other.`
         );
       }
+      warnings.push(...buildRepeatedLifecycleHookWarnings(summary));
     }
   }
 
@@ -304,6 +358,56 @@ export function formatSessionDebugReport(
     }
   }
 
+  lines.push("", style.section("🪝 HOOK RUNS"));
+  const hookTimings = report.timing.sessions.filter((timing) => timing.hookRuns.length > 0);
+  if (hookTimings.length === 0) {
+    lines.push(`  ${style.muted("none")}`);
+  } else {
+    for (const [index, timing] of hookTimings.entries()) {
+      const label = timing.source === "user" ? "root" : timing.title ? `child ${timing.title}` : "child";
+      const failedRuns = timing.hookRuns.filter((run) => run.failed).length;
+      if (index > 0) lines.push("");
+      lines.push(
+        `  ${style.emphasis(label)} ${style.muted(shortSessionId(timing.sessionId))}`,
+        `    ${countLabel(timing.hookRuns.length, "run")} · ${countLabel(timing.hookSummaries.length, "handler group")} · ${failedRuns > 0 ? style.error(`${failedRuns} unsuccessful`) : style.success("all successful")}`,
+        `    ${style.label("Handlers")}`
+      );
+
+      const handlerSummaries = selectHookSummariesForText(timing.hookSummaries);
+      for (const summary of handlerSummaries) {
+        const marker = summary.failedRuns > 0 ? style.error("×") : style.success("✓");
+        const outcomes = [
+          summary.failedRuns > 0 ? `${summary.failedRuns} unsuccessful` : undefined,
+          summary.timedOutRuns > 0 ? `${summary.timedOutRuns} timed out` : undefined,
+          summary.abortedRuns > 0 ? `${summary.abortedRuns} aborted` : undefined,
+        ].filter((entry): entry is string => entry !== undefined);
+        lines.push(
+          `      ${marker} ${style.emphasis(formatHookIdentity(summary))} · ${countLabel(summary.runs, "run")} · ${formatDuration(summary.durationMs)} total · ${formatDuration(summary.maxMs)} max${outcomes.length > 0 ? ` · ${style.error(outcomes.join(" · "))}` : ""}`
+        );
+      }
+      if (handlerSummaries.length < timing.hookSummaries.length) {
+        const omittedSummaries = timing.hookSummaries.length - handlerSummaries.length;
+        lines.push(`      ${style.muted(`${countLabel(omittedSummaries, "successful handler summary")} omitted`)}`);
+      }
+
+      const displayedRuns = selectHookRunsForText(timing.hookRuns);
+      const omittedRuns = timing.hookRuns.length - displayedRuns.length;
+      lines.push(
+        `    ${style.label(`Slowest runs (${displayedRuns.length} of ${timing.hookRuns.length}${displayedRuns.length > MAX_TEXT_HOOK_ENTRIES ? "; all unsuccessful included" : ""})`)}`
+      );
+      for (const run of displayedRuns) {
+        const marker = run.failed ? style.error("×") : style.success("✓");
+        const outcome = run.failed ? style.error(formatHookOutcome(run)) : style.muted(formatHookOutcome(run));
+        lines.push(
+          `      ${marker} ${style.emphasis(formatHookIdentity(run))} · ${style.warning(formatDuration(run.durationMs))} · ${outcome}`
+        );
+      }
+      if (omittedRuns > 0) {
+        lines.push(`      ${style.muted(`${countLabel(omittedRuns, "faster successful run")} omitted`)}`);
+      }
+    }
+  }
+
   lines.push("", style.section("◇ TOOL CALLS"));
   if (report.tools.length === 0) {
     lines.push(`  ${style.muted("none")}`);
@@ -350,6 +454,61 @@ export function formatSessionDebugReport(
   }
 
   return lines;
+}
+
+function selectHookRunsForText(runs: SessionHookRun[]): SessionHookRun[] {
+  const sorted = [...runs].sort(
+    (left, right) => right.durationMs - left.durationMs || left.finishedAt.localeCompare(right.finishedAt)
+  );
+  const selected = new Set(sorted.slice(0, MAX_TEXT_HOOK_ENTRIES));
+  for (const run of sorted) {
+    if (run.failed) selected.add(run);
+  }
+  return sorted.filter((run) => selected.has(run));
+}
+
+function selectHookSummariesForText(summaries: SessionHookSummary[]): SessionHookSummary[] {
+  const selected = new Set(summaries.slice(0, MAX_TEXT_HOOK_ENTRIES));
+  for (const summary of summaries) {
+    if (summary.failedRuns > 0) selected.add(summary);
+  }
+  return summaries.filter((summary) => selected.has(summary));
+}
+
+function formatHookIdentity(
+  hook: Pick<SessionHookRun, "event" | "handlerLabel" | "handlerOrdinal" | "handlerCount">
+): string {
+  const ordinal =
+    hook.handlerOrdinal === undefined
+      ? ""
+      : ` #${hook.handlerOrdinal}${hook.handlerCount === undefined ? "" : `/${hook.handlerCount}`}`;
+  return `${hook.event}${ordinal} ${hook.handlerLabel}`;
+}
+
+function formatHookOutcome(run: SessionHookRun): string {
+  const parts: string[] = [];
+
+  if (run.spawnError) {
+    parts.push("spawn failed");
+  } else if (run.timedOut) {
+    const timeoutAt = run.timeoutTriggeredMs ?? run.timeoutMs;
+    parts.push(timeoutAt === undefined ? "timed out" : `timed out at ${formatDuration(timeoutAt)}`);
+  } else if (run.aborted) {
+    parts.push(run.abortTriggeredMs === undefined ? "aborted" : `aborted at ${formatDuration(run.abortTriggeredMs)}`);
+  } else if (run.exitCode !== undefined || run.signal !== undefined) {
+    parts.push(`exit ${run.exitCode ?? run.signal ?? "unknown"}`);
+  } else {
+    parts.push("completed");
+  }
+
+  if (run.exitDurationMs !== undefined && (run.timedOut || run.aborted || (run.closeWaitMs ?? 0) > 0)) {
+    parts.push(`process exit at ${formatDuration(run.exitDurationMs)}`);
+  }
+  if ((run.closeWaitMs ?? 0) > 0) {
+    parts.push(`${formatDuration(run.closeWaitMs!)} close wait`);
+  }
+
+  return parts.join(" · ");
 }
 
 const plainSessionDebugStyle: SessionDebugTextStyle = {
@@ -621,6 +780,7 @@ function buildTimingSummary(session: LoadedSession, allRecords: LogRecord[]): Se
     model.maxMs = Math.max(model.maxMs, durationMs);
     models.set(record.modelId, model);
   }
+  const hookRuns = buildHookRuns(records);
 
   return {
     sessionId: session.sessionId,
@@ -633,7 +793,100 @@ function buildTimingSummary(session: LoadedSession, allRecords: LogRecord[]): Se
     coveragePercent: percentage(Math.min(activeTurnMs, measuredMs), activeTurnMs),
     categories,
     models: [...models.values()].sort((left, right) => right.durationMs - left.durationMs),
+    hookRuns,
+    hookSummaries: buildHookSummaries(hookRuns),
   };
+}
+
+function buildHookRuns(records: LogRecord[]): SessionHookRun[] {
+  return records.flatMap((record) => {
+    if (record.event !== "hook_run" || !record.time || !isFiniteDuration(record.durationMs)) return [];
+    const failed =
+      record.timedOut === true ||
+      record.aborted === true ||
+      Boolean(record.spawnError) ||
+      (record.signal !== undefined && record.signal !== null) ||
+      (record.exitCode !== undefined && record.exitCode !== null && record.exitCode !== 0);
+
+    return [
+      {
+        finishedAt: record.time,
+        ...(record.turnId === undefined ? {} : { turnId: record.turnId }),
+        event: record.hookEventName ?? "unknown",
+        handlerType: record.handlerType ?? "command",
+        handlerLabel: record.handlerLabel ?? "command",
+        ...(record.handlerOrdinal === undefined ? {} : { handlerOrdinal: record.handlerOrdinal }),
+        ...(record.handlerCount === undefined ? {} : { handlerCount: record.handlerCount }),
+        durationMs: record.durationMs,
+        ...(record.timeoutMs === undefined ? {} : { timeoutMs: record.timeoutMs }),
+        ...(record.timeoutTriggeredMs === undefined ? {} : { timeoutTriggeredMs: record.timeoutTriggeredMs }),
+        ...(record.abortTriggeredMs === undefined ? {} : { abortTriggeredMs: record.abortTriggeredMs }),
+        ...(record.exitDurationMs === undefined ? {} : { exitDurationMs: record.exitDurationMs }),
+        ...(record.closeWaitMs === undefined ? {} : { closeWaitMs: record.closeWaitMs }),
+        ...(record.exitCode === undefined ? {} : { exitCode: record.exitCode }),
+        ...(record.signal === undefined ? {} : { signal: record.signal }),
+        timedOut: record.timedOut === true,
+        aborted: record.aborted === true,
+        ...(record.spawnError === undefined ? {} : { spawnError: record.spawnError }),
+        failed,
+      },
+    ];
+  });
+}
+
+function buildHookSummaries(runs: SessionHookRun[]): SessionHookSummary[] {
+  const summaries = new Map<string, SessionHookSummary>();
+
+  for (const run of runs) {
+    const key = [run.event, run.handlerType, run.handlerOrdinal ?? "", run.handlerLabel].join("\u0000");
+    const summary = summaries.get(key) ?? {
+      event: run.event,
+      handlerType: run.handlerType,
+      handlerLabel: run.handlerLabel,
+      ...(run.handlerOrdinal === undefined ? {} : { handlerOrdinal: run.handlerOrdinal }),
+      ...(run.handlerCount === undefined ? {} : { handlerCount: run.handlerCount }),
+      runs: 0,
+      failedRuns: 0,
+      timedOutRuns: 0,
+      abortedRuns: 0,
+      durationMs: 0,
+      maxMs: 0,
+    };
+    summary.runs += 1;
+    if (run.failed) summary.failedRuns += 1;
+    if (run.timedOut) summary.timedOutRuns += 1;
+    if (run.aborted) summary.abortedRuns += 1;
+    summary.durationMs += run.durationMs;
+    summary.maxMs = Math.max(summary.maxMs, run.durationMs);
+    summaries.set(key, summary);
+  }
+
+  return [...summaries.values()].sort(
+    (left, right) =>
+      right.durationMs - left.durationMs ||
+      left.event.localeCompare(right.event) ||
+      (left.handlerOrdinal ?? 0) - (right.handlerOrdinal ?? 0)
+  );
+}
+
+function buildRepeatedLifecycleHookWarnings(summary: SessionTimingSummary): string[] {
+  const lifecycleEvents = new Set(["UserPromptSubmit", "PreCompact", "Stop"]);
+  const groups = new Map<string, SessionHookRun[]>();
+
+  for (const run of summary.hookRuns) {
+    if (!lifecycleEvents.has(run.event) || run.handlerOrdinal === undefined || run.handlerLabel === "command") continue;
+    const occurrence = run.turnId ?? "session";
+    const key = [occurrence, run.event, run.handlerLabel].join("\u0000");
+    groups.set(key, [...(groups.get(key) ?? []), run]);
+  }
+
+  return [...groups.values()].flatMap((runs) => {
+    if (runs.length < 2) return [];
+    const first = runs[0]!;
+    return [
+      `${shortSessionId(summary.sessionId)} ran ${first.event} handler ${first.handlerLabel} ${runs.length} times in one lifecycle event; inspect duplicate or alias hook configuration.`,
+    ];
+  });
 }
 
 function toTimingInterval(record: LogRecord): TimingInterval[] {

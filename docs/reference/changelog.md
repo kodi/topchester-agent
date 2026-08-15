@@ -16,6 +16,7 @@ Topchester changes grouped by day. This file is the source of truth for the publ
 
 - Added `topchester session debug` with event, tool, child-session, timing, coverage, and JSON diagnostics, plus a structured terminal report with status icons, semantic color, and percentage bars.
 - Added session-scoped turn, model, tool, hook, approval, and setup timing records for reliable concurrent-session analysis.
+- Added per-handler hook diagnostics with complete JSON data and a compact terminal view of the ten slowest runs plus every additional unsuccessful run.
 
 ## 2026-07-17
 

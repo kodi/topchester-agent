@@ -13,6 +13,9 @@ Add `topchester session debug <session-id>` so developers can inspect one projec
 - Do not infer exact model or tool percentages from unscoped legacy log entries. Show event-gap evidence and a low-coverage warning instead.
 - Add compact session-scoped timing records at debug level. Trace remains necessary only for full content inspection.
 - Report both summed work time and wall-clock time. Parallel child work can make summed work exceed wall-clock time.
+- Preserve every hook run in JSON, but keep terminal output compact by showing the ten slowest runs plus any additional failed, timed-out, or aborted runs.
+- Identify hook handlers with privacy-safe labels and ordinals. Do not persist full configured commands in diagnostic logs.
+- Distinguish configured timeout, process exit, and final process/stream close timing so delayed descendant cleanup is visible.
 
 ## Scope
 
@@ -21,6 +24,7 @@ Included:
 - session metadata, event counts, turn counts, tool counts, failures, subagent outcomes, and longest event gaps
 - model, tool, hook, setup, and other timing percentages when scoped timing records exist
 - per-tool and per-session timing tables
+- per-hook run timing and outcome details, plus repeated-handler summaries
 - log coverage and actionable warnings
 - text and JSON output
 - focused unit and CLI integration tests
@@ -95,6 +99,34 @@ Completed:
 
 Dependencies: Slices 1 and 2.
 
+### Slice 4: Hook-run diagnostics
+
+Status: `[x]` Done
+
+- enrich compact `hook_run` records with handler ordinal, safe label, effective timeout, and process-exit timing
+- preserve all hook runs in the JSON report and aggregate repeated handler/event combinations
+- render the ten slowest hook runs plus every additional failed, timed-out, aborted, or spawn-failed run
+- show how many successful runs were omitted from the text report
+- add focused runtime, analyzer, formatter, and CLI JSON coverage
+- update public CLI/session diagnostics documentation
+
+Verification:
+
+- `mise run test-node -- test/hooks.test.ts test/session-debug.test.ts test/cli.integration.test.ts` passed: 74 tests.
+- `mise run local-ci` passed.
+- `mise run test-node` passed: 613 tests in 38 files.
+- `mise run package-check` passed; the packed native CLI installed and ran without Bun on `PATH`.
+- `/Users/kodi/.local/bin/topchester-dev session debug latest` rendered the existing Gantempo session and its legacy hook records without errors.
+
+Completed:
+
+- Added monotonic hook timing with effective timeout, actual timeout/abort trigger, process exit, and final close-wait fields.
+- Added privacy-safe handler labels and effective handler ordinals without logging full commands or arguments.
+- Added complete JSON hook runs, repeated-handler summaries, duplicate lifecycle-handler warnings, and the compact ten-slowest-plus-all-unsuccessful text view.
+- Added focused producer, analyzer, formatter, and CLI JSON coverage and updated public session, CLI, and changelog pages.
+
+Dependencies: completed Slices 1-3 and existing session-scoped `hook_run` records.
+
 ## Edge Cases
 
 - missing log file or logging disabled
@@ -107,9 +139,19 @@ Dependencies: Slices 1 and 2.
 - failed or aborted child sessions
 - zero-duration and empty sessions
 - ambiguous session ID prefixes
+- more than ten hook runs, with failures outside the slowest ten
+- duplicate handlers created by canonical and compatibility-alias hook configuration
+- sensitive arguments in configured hook commands
+- a timeout that fires before the shell exits or inherited streams close
 
 ## Working Notes
 
 - 2026-08-15: The observed Gantempo trace has `model_response.durationMs`, `tool_result.durationMs`, and `hook_run.durationMs`, but no session, turn, or tool-call identifiers. Concurrent root and child logs are therefore not safe to attribute exactly.
 - 2026-08-15: Session `events.jsonl` emits tool-call rows after tool completion. Gaps between rows combine model wait, setup, hooks, and tool work, so event-only reports must label gaps as mixed time.
 - 2026-08-15: The sandboxed full suite could not bind local HTTP fixtures. The same `mise run test-node` command passed outside the restricted sandbox.
+- 2026-08-15: Gantempo session `01a0074d-1dac-7901-803b-2557199bd70e` spent 22.159 seconds in hooks. Two effective `Stop` handlers for `peon.sh` timed out and closed after 10.011 and 9.850 seconds, while `clankerlog-dev` completed in 1.868 seconds. The aggregate report did not identify the handlers or show the timeout-to-close delay.
+- 2026-08-15: The effective Gantempo configuration contains both `Stop` and compatibility-alias `TaskComplete` Peon handlers. Alias normalization appends `TaskComplete` to `Stop`, so the same notification handler runs twice.
+
+## Next Slice
+
+No follow-up slice is queued. If live use exposes a hook whose descendants survive after the configured timeout, inspect process-group termination as a separate runtime-behavior change; this slice only makes that delay precise and visible.

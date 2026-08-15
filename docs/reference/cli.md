@@ -93,11 +93,12 @@ The selector can be `latest`, an exact lowercase UUIDv7, or a unique lowercase I
 - child-session status, span, event count, and tool count
 - the longest gaps between persisted root-session events
 - model, tool, subagent wait, hook, approval, setup, and other time as durations and percentages
+- repeated hook-handler summaries and the ten slowest hook runs, plus every additional timed-out, aborted, spawn-failed, or nonzero-exit run
 - timing coverage and warnings for missing, old, incomplete, or unscoped logs
 
 Exact percentages require session-scoped timing records. Topchester writes these compact records when `TOPCHESTER_LOG_LEVEL=debug` or `trace` is set before the session work starts. `trace` adds full prompt, response, and tool-result content, but the debug command does not print that raw content. Old logs without session identifiers are not attributed because concurrent root and child work can be mixed.
 
-`--json` prints the complete versioned report for scripts. The text and JSON reports distinguish active turn time from the full observed session span. Time between user messages is not treated as agent work. Child sessions get separate timing sections because parallel child work can exceed root wall time when summed.
+`--json` prints the complete versioned report for scripts, including every hook run. Hook data includes a privacy-safe handler label and ordinal, the effective timeout, total duration, process-exit time, close wait, and outcome. It does not include the full configured hook command. The text and JSON reports distinguish active turn time from the full observed session span. Time between user messages is not treated as agent work. Child sessions get separate timing sections because parallel child work can exceed root wall time when summed.
 
 In a terminal, the text report uses status icons, semantic colors, and compact percentage bars to separate the session summary, artifacts, timing, tools, subagents, event gaps, and notes. Color is disabled automatically when output is redirected and whenever `NO_COLOR` is set; `FORCE_COLOR=1` enables it explicitly. The icons and layout keep every status readable without color.
 
