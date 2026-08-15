@@ -62,10 +62,10 @@
     "persistence-burst": {
       "counters": {
         "sessionEvents": 1000,
-        "jsonlWriteBatches": 1000,
-        "metadataWrites": 1000,
-        "maximumPendingPersistenceDepth": 1,
-        "flushes": 1000,
+        "jsonlWriteBatches": 8,
+        "metadataWrites": 8,
+        "maximumPendingPersistenceDepth": 128,
+        "flushes": 1,
         "dropped": 0,
         "duplicated": 0,
         "reordered": 0,

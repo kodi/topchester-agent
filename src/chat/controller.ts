@@ -134,6 +134,8 @@ export class TopchesterTuiController implements TuiController {
   private readonly backgroundTasks = new Set<Promise<void>>();
   private readonly view: TuiViewStore;
   private session: SessionHandle;
+  private readonly reportedSessionPersistenceFailures = new WeakSet<SessionHandle>();
+  private readonly persistenceBlockedSessions = new WeakSet<SessionHandle>();
   private sessionStartedAt = Date.now();
   private taskPlanNoticeTimer: ReturnType<typeof setTimeout> | undefined;
   private knowledgeStatusTimer: ReturnType<typeof setInterval> | undefined;
@@ -305,6 +307,7 @@ export class TopchesterTuiController implements TuiController {
     while (this.backgroundTasks.size > 0) {
       await Promise.allSettled(this.backgroundTasks);
     }
+    await this.flushSessionWithWarning(this.session);
   }
 
   async dispose(): Promise<void> {
@@ -318,13 +321,21 @@ export class TopchesterTuiController implements TuiController {
       clearTimeout(this.taskPlanNoticeTimer);
       this.taskPlanNoticeTimer = undefined;
     }
-    this.view.dispose();
     await Promise.allSettled(this.backgroundTasks);
+    const session = this.session;
+    await this.flushSessionWithWarning(session);
+    try {
+      await session.dispose();
+    } catch (error) {
+      this.reportSessionPersistenceFailure(session, error);
+    }
     this.stopHerdrStateSync();
     await this.herdrReporter.release();
+    this.view.dispose();
   }
 
-  async applyRuntimeEvents(events: AgentRuntimeEvent[]): Promise<void> {
+  async applyRuntimeEvents(events: AgentRuntimeEvent[], owner: SessionHandle = this.session): Promise<void> {
+    if (this.session !== owner || this.persistenceBlockedSessions.has(owner)) return;
     let clearTaskPlanNotice = false;
     let latestHookStatus: string | undefined;
     this.view.batch(() => {
@@ -344,7 +355,8 @@ export class TopchesterTuiController implements TuiController {
     if (latestHookStatus !== undefined)
       this.view.setTransientTemporaryLine(latestHookStatus, HOOK_STATUS_EXPIRE_AFTER_MS);
     for (const event of events) {
-      await this.persistPayloadWithWarning(runtimeEventToSessionPayload(event));
+      const backpressure = this.persistPayloadWithWarning(runtimeEventToSessionPayload(event), undefined, owner);
+      if (backpressure) await backpressure;
     }
   }
 
@@ -352,16 +364,19 @@ export class TopchesterTuiController implements TuiController {
     this.sessionStartedAt = Date.now();
     if (!isResumed) {
       for (const entry of this.view.getSnapshot().transcript) {
-        await this.persistPayloadWithWarning(transcriptEntryToSessionPayload(entry));
+        const backpressure = this.persistPayloadWithWarning(transcriptEntryToSessionPayload(entry));
+        if (backpressure) await backpressure;
       }
     }
     await this.appendStartupRuntimeEvents(
       (await this.runtime.runSessionStartHooks?.(this.session, { isResumed })) ?? []
     );
     await this.appendStartupRuntimeEvents((await this.runtime.checkProjectInstructions?.()) ?? []);
+    await this.flushSessionWithWarning(this.session);
   }
 
   private startBackgroundTask(label: string, task: () => Promise<void>): void {
+    const owner = this.session;
     const promise = task()
       .catch((error: unknown) => {
         if (!this.disposed) {
@@ -372,11 +387,15 @@ export class TopchesterTuiController implements TuiController {
           });
         }
       })
-      .finally(() => this.backgroundTasks.delete(promise));
+      .finally(async () => {
+        if (this.session === owner) await this.flushSessionWithWarning(owner);
+        this.backgroundTasks.delete(promise);
+      });
     this.backgroundTasks.add(promise);
   }
 
   private async checkAgent(): Promise<void> {
+    const activeSession = this.session;
     const busy = new ControllerBusyIndicator(this.view, {
       status: "checking agent",
       promptHint: "press Esc to stop",
@@ -393,7 +412,7 @@ export class TopchesterTuiController implements TuiController {
       busy.start();
     });
     try {
-      await this.applyRuntimeEvents(await this.runtime.checkAgent(abortController.signal));
+      await this.applyRuntimeEvents(await this.runtime.checkAgent(abortController.signal), activeSession);
     } catch (error) {
       if (cancelled) {
         this.view.batch(() => {
@@ -417,7 +436,7 @@ export class TopchesterTuiController implements TuiController {
       });
     }
     if (this.view.isReady()) {
-      await this.applyRuntimeEvents(await this.runtime.checkKnowledgeBase());
+      await this.applyRuntimeEvents(await this.runtime.checkKnowledgeBase(), activeSession);
     }
   }
 
@@ -451,7 +470,13 @@ export class TopchesterTuiController implements TuiController {
     });
     try {
       await this.clearTaskPlanForNewTurn();
-      await this.persistPayloadWithWarning({ kind: "message", role: "user", text: message });
+      const userMessageBackpressure = this.persistPayloadWithWarning(
+        { kind: "message", role: "user", text: message },
+        undefined,
+        activeSession
+      );
+      if (userMessageBackpressure) await userMessageBackpressure;
+      if (this.session !== activeSession) return;
       const pendingSkills = this.pendingSkillActivations.splice(0);
       const modelMessage = pendingSkills.length
         ? formatSkillActivationPrompt(pendingSkills.map((skill) => ({ skill, instruction: message })))
@@ -471,7 +496,7 @@ export class TopchesterTuiController implements TuiController {
           reasoningDisplay?.commit();
           busy.clearActivity();
         }
-        await this.applyRuntimeEvents([event]);
+        await this.applyRuntimeEvents([event], activeSession);
       }
     } catch (error) {
       if (this.session !== activeSession) {
@@ -486,7 +511,12 @@ export class TopchesterTuiController implements TuiController {
           this.view.addEntry(systemTranscriptEntry(`Chat failed: ${formatPlainError(error)}`));
           this.view.setStatus("chat failed");
         });
-        await this.persistPayloadWithWarning({ kind: "status", status: "chat failed" });
+        const failureBackpressure = this.persistPayloadWithWarning(
+          { kind: "status", status: "chat failed" },
+          undefined,
+          activeSession
+        );
+        if (failureBackpressure) await failureBackpressure;
       }
     } finally {
       this.chatRunning = false;
@@ -650,14 +680,17 @@ export class TopchesterTuiController implements TuiController {
   }
 
   private async dispatchSlashCommand(command: string): Promise<void> {
+    const activeSession = this.session;
     const activation = await this.resolveSkillActivationCommand(command);
+    if (this.session !== activeSession) return;
     if (activation) {
-      await this.submitSkillActivationCommand(command, activation);
+      await this.submitSkillActivationCommand(command, activation, activeSession);
       return;
     }
     if (this.isSkillsOverlayCommand(command)) {
       await this.clearTaskPlanForNewTurn();
-      await this.persistPayloadWithWarning(slashCommandToSessionPayload(command));
+      const backpressure = this.persistPayloadWithWarning(slashCommandToSessionPayload(command));
+      if (backpressure) await backpressure;
       await this.showSkillsOverlay(this.getSkillsOverlayFilter(command));
       return;
     }
@@ -694,22 +727,36 @@ export class TopchesterTuiController implements TuiController {
     busy.start();
     try {
       await this.clearTaskPlanForNewTurn();
-      await this.persistPayloadWithWarning(slashCommandToSessionPayload(command));
+      const commandBackpressure = this.persistPayloadWithWarning(slashCommandToSessionPayload(command));
+      if (commandBackpressure) await commandBackpressure;
+      if (this.session !== activeSession) return;
       await this.applyRuntimeEvents(
-        await this.runtime.submitSlashCommand(command, (event) => busy.setActivity(event.message))
+        await this.runtime.submitSlashCommand(command, (event) => busy.setActivity(event.message)),
+        activeSession
       );
     } catch (error) {
       this.view.addEntry(systemTranscriptEntry(`Command failed: ${formatPlainError(error)}`));
       this.view.setStatus("command failed");
-      await this.persistPayloadWithWarning({ kind: "status", status: "command failed" });
+      const failureBackpressure = this.persistPayloadWithWarning({ kind: "status", status: "command failed" });
+      if (failureBackpressure) await failureBackpressure;
     } finally {
       busy.stop();
     }
   }
 
-  private async submitSkillActivationCommand(command: string, activation: SkillActivation): Promise<void> {
+  private async submitSkillActivationCommand(
+    command: string,
+    activation: SkillActivation,
+    activeSession: SessionHandle
+  ): Promise<void> {
     await this.clearTaskPlanForNewTurn();
-    await this.persistPayloadWithWarning(slashCommandToSessionPayload(command));
+    const commandBackpressure = this.persistPayloadWithWarning(
+      slashCommandToSessionPayload(command),
+      undefined,
+      activeSession
+    );
+    if (commandBackpressure) await commandBackpressure;
+    if (this.session !== activeSession) return;
     const hasInstruction = activation.instruction.trim().length > 0;
     this.view.addEntry(systemTranscriptEntry(formatSkillActivationNotice(activation.skill.name, hasInstruction)));
     if (!hasInstruction) {
@@ -727,7 +774,6 @@ export class TopchesterTuiController implements TuiController {
       ? createControllerReasoningSink(this.view, busy)
       : undefined;
     let cancelled = false;
-    const activeSession = this.session;
     const cancelRequest = () => {
       cancelled = true;
       abortController.abort();
@@ -755,7 +801,7 @@ export class TopchesterTuiController implements TuiController {
           reasoningDisplay?.commit();
           busy.clearActivity();
         }
-        await this.applyRuntimeEvents([event]);
+        await this.applyRuntimeEvents([event], activeSession);
       }
     } catch (error) {
       if (this.session !== activeSession) {
@@ -770,7 +816,12 @@ export class TopchesterTuiController implements TuiController {
           this.view.addEntry(systemTranscriptEntry(`Chat failed: ${formatPlainError(error)}`));
           this.view.setStatus("chat failed");
         });
-        await this.persistPayloadWithWarning({ kind: "status", status: "chat failed" });
+        const failureBackpressure = this.persistPayloadWithWarning(
+          { kind: "status", status: "chat failed" },
+          undefined,
+          activeSession
+        );
+        if (failureBackpressure) await failureBackpressure;
       }
     } finally {
       const sessionStillActive = this.session === activeSession;
@@ -871,7 +922,8 @@ export class TopchesterTuiController implements TuiController {
 
   private async submitConnectCommand(command: string): Promise<void> {
     await this.clearTaskPlanForNewTurn();
-    await this.persistPayloadWithWarning(slashCommandToSessionPayload(command));
+    const backpressure = this.persistPayloadWithWarning(slashCommandToSessionPayload(command));
+    if (backpressure) await backpressure;
     const args = getSlashCommandArgs(command);
     if (args.length === 0) {
       this.showProviderPicker();
@@ -884,7 +936,8 @@ export class TopchesterTuiController implements TuiController {
 
   private async submitModelCommand(command: string): Promise<void> {
     await this.clearTaskPlanForNewTurn();
-    await this.persistPayloadWithWarning(slashCommandToSessionPayload(command));
+    const backpressure = this.persistPayloadWithWarning(slashCommandToSessionPayload(command));
+    if (backpressure) await backpressure;
     const args = getSlashCommandArgs(command);
     if (args[0]?.toLowerCase() === "all") {
       await this.showOpenRouterCatalogPicker(args.slice(1).join(" "));
@@ -906,7 +959,8 @@ export class TopchesterTuiController implements TuiController {
 
   private async submitReasoningEffortCommand(command: string): Promise<void> {
     await this.clearTaskPlanForNewTurn();
-    await this.persistPayloadWithWarning(slashCommandToSessionPayload(command));
+    const backpressure = this.persistPayloadWithWarning(slashCommandToSessionPayload(command));
+    if (backpressure) await backpressure;
     const args = getSlashCommandArgs(command);
     const value = args[0]?.toLowerCase();
     if (args.length === 0) {
@@ -1148,68 +1202,86 @@ export class TopchesterTuiController implements TuiController {
   }
 
   private async startNewSession(): Promise<void> {
+    const previousSession = this.session;
+    this.persistenceBlockedSessions.add(previousSession);
     this.cancelPending?.();
     const droppedNotice = this.clearQueuedChatMessages();
     this.clearTaskPlanNoticeTimer();
-    resetRuntimeConfigOverrides(this.context);
-    const session = await createSession(this.context.workspaceRoot);
-    const transcript: TranscriptEntry[] = [createStartupTranscriptEntry(this.context, { banner: this.options.banner })];
-    if (droppedNotice) {
-      transcript.push(systemTranscriptEntry(droppedNotice));
+    try {
+      if (!(await this.flushSessionWithWarning(previousSession))) return;
+      resetRuntimeConfigOverrides(this.context);
+      const session = await createSession(this.context.workspaceRoot);
+      const transcript: TranscriptEntry[] = [
+        createStartupTranscriptEntry(this.context, { banner: this.options.banner }),
+      ];
+      if (droppedNotice) {
+        transcript.push(systemTranscriptEntry(droppedNotice));
+      }
+      this.session = session;
+      this.sessionStartedAt = Date.now();
+      this.pendingSkillActivations = [];
+      await this.persistInitialTranscript(transcript);
+      await this.appendStartupRuntimeEvents(
+        (await this.runtime.runSessionStartHooks?.(session, { isResumed: false })) ?? [],
+        transcript
+      );
+      await this.appendStartupRuntimeEvents((await this.runtime.checkProjectInstructions?.()) ?? [], transcript);
+      await this.flushSessionWithWarning(session, transcript);
+      this.view.reset({
+        sessionId: session.sessionId,
+        transcript,
+        modelLabel: getModelLabel(this.context),
+        startupHint: STARTUP_PROMPT_HINT,
+      });
+      await this.checkAgent();
+    } finally {
+      if (this.session === previousSession) this.persistenceBlockedSessions.delete(previousSession);
     }
-    this.session = session;
-    this.sessionStartedAt = Date.now();
-    this.pendingSkillActivations = [];
-    await this.persistInitialTranscript(transcript);
-    await this.appendStartupRuntimeEvents(
-      (await this.runtime.runSessionStartHooks?.(session, { isResumed: false })) ?? [],
-      transcript
-    );
-    await this.appendStartupRuntimeEvents((await this.runtime.checkProjectInstructions?.()) ?? [], transcript);
-    this.view.reset({
-      sessionId: session.sessionId,
-      transcript,
-      modelLabel: getModelLabel(this.context),
-      startupHint: STARTUP_PROMPT_HINT,
-    });
-    await this.checkAgent();
   }
 
   private async forkCurrentSession(): Promise<void> {
-    this.cancelPending?.();
-    const droppedNotice = this.clearQueuedChatMessages();
-    this.clearTaskPlanNoticeTimer();
     const source = this.session;
     if (!source) {
       this.view.addEntry(systemTranscriptEntry("Fork failed: no active session."));
       return;
     }
-    const fork = await forkSession(this.context.workspaceRoot, source.sessionId);
-    const loaded = await loadSession(this.context.workspaceRoot, fork.sessionId);
-    const rehydrated = rehydrateSession(loaded.events);
-    const warnings = restoreRuntimeConfigOverrides(this.context, rehydrated.runtimeConfigOverrides);
-    const noticeText = `Forked session from ${source.sessionId.slice(0, 8)}.`;
-    const transcript = [
-      ...rehydrated.transcript,
-      ...warnings.map((warning) => systemTranscriptEntry(`Session config warning: ${warning}`)),
-      systemTranscriptEntry(noticeText),
-      ...(droppedNotice ? [systemTranscriptEntry(droppedNotice)] : []),
-    ];
-    this.session = fork;
-    this.sessionStartedAt = Date.now();
-    this.pendingSkillActivations = [];
+    this.persistenceBlockedSessions.add(source);
+    this.cancelPending?.();
+    const droppedNotice = this.clearQueuedChatMessages();
+    this.clearTaskPlanNoticeTimer();
     try {
-      await fork.append({ kind: "message", role: "system", text: noticeText });
-    } catch (error) {
-      transcript.push(systemTranscriptEntry(`Session save failed: ${formatPlainError(error)}`));
+      if (!(await this.flushSessionWithWarning(source))) return;
+      const fork = await forkSession(this.context.workspaceRoot, source.sessionId);
+      const loaded = await loadSession(this.context.workspaceRoot, fork.sessionId);
+      const rehydrated = rehydrateSession(loaded.events);
+      const warnings = restoreRuntimeConfigOverrides(this.context, rehydrated.runtimeConfigOverrides);
+      const noticeText = `Forked session from ${source.sessionId.slice(0, 8)}.`;
+      const transcript = [
+        ...rehydrated.transcript,
+        ...warnings.map((warning) => systemTranscriptEntry(`Session config warning: ${warning}`)),
+        systemTranscriptEntry(noticeText),
+        ...(droppedNotice ? [systemTranscriptEntry(droppedNotice)] : []),
+      ];
+      this.session = fork;
+      this.sessionStartedAt = Date.now();
+      this.pendingSkillActivations = [];
+      const backpressure = this.persistPayloadWithWarning(
+        { kind: "message", role: "system", text: noticeText },
+        transcript,
+        fork
+      );
+      if (backpressure) await backpressure;
+      await this.flushSessionWithWarning(fork, transcript);
+      this.view.reset({
+        sessionId: fork.sessionId,
+        transcript,
+        modelLabel: getModelLabel(this.context),
+        taskPlan: rehydrated.taskPlan,
+        status: rehydrated.status,
+      });
+    } finally {
+      if (this.session === source) this.persistenceBlockedSessions.delete(source);
     }
-    this.view.reset({
-      sessionId: fork.sessionId,
-      transcript,
-      modelLabel: getModelLabel(this.context),
-      taskPlan: rehydrated.taskPlan,
-      status: rehydrated.status,
-    });
   }
 
   private async openRestoreSessionPicker(command: string): Promise<void> {
@@ -1218,6 +1290,7 @@ export class TopchesterTuiController implements TuiController {
       this.view.addEntry(systemTranscriptEntry("Restore is unavailable while another operation is running."));
       return;
     }
+    if (!(await this.flushSessionWithWarning(this.session))) return;
     const summaries = await listSessionSummaries(this.context.workspaceRoot, {
       excludeSessionId: this.session.sessionId,
     });
@@ -1229,13 +1302,16 @@ export class TopchesterTuiController implements TuiController {
   }
 
   private async restoreSelectedSession(sessionId: string): Promise<void> {
+    const previousSession = this.session;
+    this.persistenceBlockedSessions.add(previousSession);
     this.cancelPending?.();
+    const droppedNotice = this.clearQueuedChatMessages();
     try {
+      if (!(await this.flushSessionWithWarning(previousSession))) return;
       const restoredSession = await loadSessionForAppend(this.context.workspaceRoot, sessionId);
       const rehydrated = rehydrateSession((await loadSession(this.context.workspaceRoot, sessionId)).events);
       const warnings = restoreRuntimeConfigOverrides(this.context, rehydrated.runtimeConfigOverrides);
       const noticeText = `Restored session ${sessionId.slice(0, 8)}.`;
-      const droppedNotice = this.clearQueuedChatMessages();
       const transcript = [
         ...rehydrated.transcript,
         ...warnings.map((warning) => systemTranscriptEntry(`Session config warning: ${warning}`)),
@@ -1246,11 +1322,13 @@ export class TopchesterTuiController implements TuiController {
       this.sessionStartedAt = Date.now();
       this.pendingSkillActivations = [];
       this.clearTaskPlanNoticeTimer();
-      try {
-        await restoredSession.append({ kind: "message", role: "system", text: noticeText });
-      } catch (error) {
-        transcript.push(systemTranscriptEntry(`Session save failed: ${formatPlainError(error)}`));
-      }
+      const backpressure = this.persistPayloadWithWarning(
+        { kind: "message", role: "system", text: noticeText },
+        transcript,
+        restoredSession
+      );
+      if (backpressure) await backpressure;
+      await this.flushSessionWithWarning(restoredSession, transcript);
       this.view.closeSessionPicker();
       this.view.reset({
         sessionId: restoredSession.sessionId,
@@ -1262,10 +1340,13 @@ export class TopchesterTuiController implements TuiController {
     } catch (error) {
       this.view.closeSessionPicker();
       this.view.addEntry(systemTranscriptEntry(`Restore failed: ${formatPlainError(error)}`));
+    } finally {
+      if (this.session === previousSession) this.persistenceBlockedSessions.delete(previousSession);
     }
   }
 
   private async appendStartupRuntimeEvents(events: AgentRuntimeEvent[], target?: TranscriptEntry[]): Promise<void> {
+    const owner = this.session;
     for (const event of events) {
       const entries = runtimeEventToTranscriptEntries(event);
       if (target) {
@@ -1277,17 +1358,9 @@ export class TopchesterTuiController implements TuiController {
       if (!payload) {
         continue;
       }
-      try {
-        await this.session.append(payload);
-      } catch (error) {
-        const warning = systemTranscriptEntry(`Session save failed: ${formatPlainError(error)}`);
-        if (target) {
-          target.push(warning);
-        } else {
-          this.view.addEntry(warning);
-        }
-        return;
-      }
+      const backpressure = this.persistPayloadWithWarning(payload, target, owner);
+      if (backpressure) await backpressure;
+      if (this.reportedSessionPersistenceFailures.has(owner)) return;
     }
   }
 
@@ -1310,30 +1383,38 @@ export class TopchesterTuiController implements TuiController {
   private async clearTaskPlanForNewTurn(): Promise<void> {
     const cleared = this.view.clearTaskPlan();
     if (cleared) {
-      await this.persistPayloadWithWarning({
+      const backpressure = this.persistPayloadWithWarning({
         kind: "task_plan",
         items: cleared.items,
         updatedAt: cleared.updatedAt,
       });
+      if (backpressure) await backpressure;
     }
   }
 
-  private async persistPayloadWithWarning(
+  private persistPayloadWithWarning(
     payload: SessionEventPayload | undefined,
-    warningTarget?: TranscriptEntry[]
-  ): Promise<void> {
-    if (!payload) {
+    warningTarget?: TranscriptEntry[],
+    owner: SessionHandle = this.session
+  ): Promise<void> | undefined {
+    if (
+      !payload ||
+      this.session !== owner ||
+      this.persistenceBlockedSessions.has(owner) ||
+      this.reportedSessionPersistenceFailures.has(owner)
+    ) {
       return;
     }
     try {
-      await this.session.append(payload);
-    } catch (error) {
-      const warning = systemTranscriptEntry(`Session save failed: ${formatPlainError(error)}`);
-      if (warningTarget) {
-        warningTarget.push(warning);
-      } else {
-        this.view.addEntry(warning);
+      const enqueued = owner.enqueue(payload);
+      if (enqueued instanceof Promise) {
+        return enqueued.then(
+          () => undefined,
+          (error: unknown) => this.reportSessionPersistenceFailure(owner, error, warningTarget)
+        );
       }
+    } catch (error) {
+      this.reportSessionPersistenceFailure(owner, error, warningTarget);
     }
   }
 
@@ -1348,23 +1429,43 @@ export class TopchesterTuiController implements TuiController {
       if (!payload) {
         continue;
       }
-      try {
-        await this.session.append(payload);
-      } catch (error) {
-        transcript.push(systemTranscriptEntry(`Session save failed: ${formatPlainError(error)}`));
-        return;
-      }
+      const backpressure = this.persistPayloadWithWarning(payload, transcript);
+      if (backpressure) await backpressure;
+      if (this.reportedSessionPersistenceFailures.has(this.session)) return;
     }
   }
 
+  private async flushSessionWithWarning(session: SessionHandle, warningTarget?: TranscriptEntry[]): Promise<boolean> {
+    try {
+      await session.flush();
+      return true;
+    } catch (error) {
+      this.reportSessionPersistenceFailure(session, error, warningTarget);
+      return false;
+    }
+  }
+
+  private reportSessionPersistenceFailure(
+    session: SessionHandle,
+    error: unknown,
+    warningTarget?: TranscriptEntry[]
+  ): void {
+    if (this.reportedSessionPersistenceFailures.has(session)) return;
+    this.reportedSessionPersistenceFailures.add(session);
+    const warning = systemTranscriptEntry(`Session save failed: ${formatPlainError(error)}`);
+    if (warningTarget) warningTarget.push(warning);
+    else if (this.session === session) this.view.addEntry(warning);
+  }
+
   private async persistRuntimeConfigWithWarning(): Promise<void> {
-    await this.persistPayloadWithWarning({
+    const backpressure = this.persistPayloadWithWarning({
       kind: "runtime_config",
       ...(this.context.runtimeConfigOverrides.activeModel === undefined
         ? {}
         : { activeModel: this.context.runtimeConfigOverrides.activeModel }),
       reasoningEffortByProvider: { ...this.context.runtimeConfigOverrides.reasoningEffortByProvider },
     });
+    if (backpressure) await backpressure;
   }
 
   private openManagedDialog(entry: ChoiceTranscriptEntry, handler: (action: ChoiceTranscriptAction) => void): void {

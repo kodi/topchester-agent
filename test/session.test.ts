@@ -27,6 +27,97 @@ async function readJson(path: string): Promise<unknown> {
 }
 
 describe("session store", () => {
+  it("batches queued events behind an explicit durability barrier", async () => {
+    const workspace = await tempWorkspace();
+    const profile = {
+      sessionEvents: 0,
+      jsonlWriteBatches: 0,
+      metadataWrites: 0,
+      maximumPendingPersistenceDepth: 0,
+      flushes: 0,
+    };
+    const session = await createSession(workspace, { profile });
+    const first = session.enqueue({ kind: "message", role: "user", text: "first" });
+    const second = session.enqueue({ kind: "message", role: "assistant", text: "second" });
+    expect(first).not.toBeInstanceOf(Promise);
+    expect(second).not.toBeInstanceOf(Promise);
+    if (first instanceof Promise || second instanceof Promise) throw new Error("unexpected journal backpressure");
+    expect([first.id, second.id]).toEqual([1, 2]);
+    await session.flush();
+    expect(profile).toMatchObject({
+      sessionEvents: 2,
+      jsonlWriteBatches: 1,
+      metadataWrites: 1,
+      maximumPendingPersistenceDepth: 2,
+      flushes: 1,
+    });
+    expect((await loadSession(workspace, session.sessionId)).events.map((event) => event.id)).toEqual([1, 2]);
+    await session.dispose();
+  });
+
+  it("bounds ready journal work at 128 and unblocks FIFO producers after a batch", async () => {
+    const workspace = await tempWorkspace();
+    const profile = {
+      sessionEvents: 0,
+      jsonlWriteBatches: 0,
+      metadataWrites: 0,
+      maximumPendingPersistenceDepth: 0,
+      flushes: 0,
+    };
+    const session = await createSession(workspace, { profile });
+    for (let index = 0; index < 128; index += 1) {
+      expect(session.enqueue({ kind: "message", role: "system", text: `${index}` })).not.toBeInstanceOf(Promise);
+    }
+    const blocked = session.enqueue({ kind: "message", role: "assistant", text: "unblocked" });
+    expect(blocked).toBeInstanceOf(Promise);
+    let unblocked = false;
+    void Promise.resolve(blocked).then(() => {
+      unblocked = true;
+    });
+    await Promise.resolve();
+    expect(unblocked).toBe(false);
+    await expect(Promise.resolve(blocked)).resolves.toMatchObject({ id: 129, text: "unblocked" });
+    await session.flush();
+    expect(profile.maximumPendingPersistenceDepth).toBe(128);
+    expect((await loadSession(workspace, session.sessionId)).events).toHaveLength(129);
+  });
+
+  it("rolls back a JSONL batch and becomes terminal when metadata commit fails", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+    await rm(session.metadataPath);
+    await mkdir(session.metadataPath);
+
+    await expect(session.append({ kind: "message", role: "user", text: "not durable" })).rejects.toThrow();
+    await expect(readFile(session.eventsPath, "utf8")).resolves.toBe("");
+    await expect(session.flush()).rejects.toThrow();
+    expect(() => session.enqueue({ kind: "message", role: "assistant", text: "rejected" })).toThrow();
+  });
+
+  it("reports JSONL append failure and flushes accepted work during disposal", async () => {
+    const workspace = await tempWorkspace();
+    const broken = await createSession(workspace);
+    await rm(broken.eventsPath);
+    await mkdir(broken.eventsPath);
+    await expect(broken.append({ kind: "message", role: "user", text: "cannot append" })).rejects.toThrow();
+    await expect(broken.flush()).rejects.toThrow();
+
+    const session = await createSession(workspace);
+    void session.enqueue({ kind: "message", role: "user", text: "durable on dispose" });
+    await session.dispose();
+    expect((await loadSession(workspace, session.sessionId)).events).toMatchObject([
+      { id: 1, text: "durable on dispose" },
+    ]);
+    expect(() => session.enqueue({ kind: "message", role: "assistant", text: "too late" })).toThrow(/disposed/u);
+  });
+
+  it("makes a missing events file terminal before append barriers can hang", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+    await rm(session.eventsPath);
+    await expect(session.append({ kind: "message", role: "user", text: "missing file" })).rejects.toThrow();
+    await expect(session.flush()).rejects.toThrow();
+  });
   it("uses the uuidv7 package for session ID generation", async () => {
     const source = await readFile(join(process.cwd(), "src", "session", "store.ts"), "utf8");
 

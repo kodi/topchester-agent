@@ -392,7 +392,7 @@ Acceptance criteria:
 
 ### Slice 4: Asynchronous session journal writer and durability barriers
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Remove routine filesystem latency and metadata write amplification from runtime event consumption while preserving ordered crash-consistent sessions.
 
@@ -427,6 +427,32 @@ Verification:
 - `git diff --check`.
 
 Dependencies: Slice 1 for write-amplification metrics and Slice 3 for coherent controller failure publication.
+
+Completed in this slice:
+
+- replaced the per-event append chain with an ordered per-`SessionHandle` journal that admits at most 128 non-durable events, assigns IDs in admission order, and applies FIFO backpressure only at the high-water mark;
+- batch-appends up to 128 JSONL events and commits metadata once per durable batch while preserving title derivation, timestamps, and `lastEventId` semantics;
+- made a write/stat/metadata failure terminal for that handle, rolls JSONL back to the pre-batch byte offset when possible, and preserves both the write and rollback failures when rollback itself fails;
+- added watermark-based `flush()` and draining `dispose()` barriers; retained durable `append()` compatibility as enqueue plus flush;
+- changed routine controller persistence to enqueue without awaiting filesystem durability, awaiting only a returned saturation promise, and deduplicated terminal failure feedback once per session handle;
+- added ownership cutoffs and source flush barriers for new/fork/restore, plus initialization, turn/background completion, `waitForIdle`, debug-read, and disposal barriers so late old-session work cannot enter a replacement session;
+- added deterministic batching, saturation, reload, JSONL/stat/metadata failure, rollback, disposal, concurrent ordering, transition failure/recovery, and debug-after-flush coverage.
+
+Measured result (2026-08-16, Darwin arm64, Bun 1.3.2):
+
+- `persistence-burst` reduced 1,000 JSONL appends and 1,000 metadata rewrites to 8 JSONL batches and 8 metadata writes for 1,000 ordered events;
+- maximum accepted non-durable depth is now gated at 128, one explicit flush completes the workload, and dropped/duplicated/reordered/cross-session counters remain zero;
+- the integration rerun reported p50 4.64 ms and p95/max 5.06 ms, compared with the Slice 1 persistence p95 range of 145-191 ms.
+
+Verification:
+
+- `mise run test-node -- test/session.test.ts test/tui-controller.test.ts test/session-debug.test.ts test/opentui-performance.test.ts` (4 files, 68 tests pass);
+- `mise run opentui-test` (pass);
+- `mise run opentui-perf -- --scenario persistence-burst --scenario reasoning-flood` (pass);
+- `mise run local-ci` (pass);
+- `git diff --check` (pass).
+
+Implication for Slice 5: runtime consumers may enqueue a whole reducer batch without routine filesystem waits, but must conditionally await the journal's saturation promise and flush at the existing turn/session/disposal barriers. Queue cancellation must unblock a producer waiting on persistence backpressure without transferring ownership to a replacement session.
 
 Acceptance criteria:
 
@@ -570,7 +596,8 @@ The final handoff must state measured before/after results, any unsupported host
 - 2026-08-16: Slice 1 established the first measured baseline. The roughly 14.7-second PTY input-to-paint result exposes the existing settle/publication pipeline cost and is intentionally retained as the before value rather than normalized away.
 - 2026-08-16: Slice 2 removed transcript-length-dependent footer work. The writer now owns an epoch-scoped cursor, while the public and persisted transcript entry shapes remain unchanged.
 - 2026-08-16: Slice 3 made semantic view changes atomic and capped cosmetic publication to the renderer cadence. The accepted workloads now gate both publication counts and the number of transient replacements.
+- 2026-08-16: Slice 4 established a terminal-on-failure, bounded session journal. A 1,000-event burst is durable in eight JSONL/metadata batches, and session boundaries now stop on failed source barriers instead of reading or switching past them.
 
 ## Next Slice
 
-Start Slice 4. Add a bounded ordered session journal behind `SessionHandle`, batch JSONL and metadata writes with whole-batch rollback, and introduce explicit durability barriers at turn/session/disposal boundaries. Preserve reload/fork/debug consistency and verify failure injection plus the persistence-burst amplification counters before checkpointing.
+Start Slice 5. Replace the shift-based runtime queue with a bounded FIFO batch queue, then consume runtime streams through count- and time-limited reducer batches with an injectable host yield. Preserve approval, steering, cancellation, and session ownership while proving injected input is handled before a 1,000-event backlog finishes.

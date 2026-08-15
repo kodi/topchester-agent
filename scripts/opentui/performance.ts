@@ -233,8 +233,13 @@ async function runScenario(name: ScenarioName): Promise<Record<string, number>> 
           flushes: 0,
         };
         const session = await createSession(workspace, { profile: persistenceProfile });
-        for (let index = 0; index < 1000; index += 1)
-          await session.append({ kind: "message", role: "system", text: "fixture" });
+        const backpressure: Promise<unknown>[] = [];
+        for (let index = 0; index < 1000; index += 1) {
+          const enqueued = session.enqueue({ kind: "message", role: "system", text: "fixture" });
+          if (enqueued instanceof Promise) backpressure.push(enqueued);
+        }
+        await Promise.all(backpressure);
+        await session.flush();
         return {
           ...persistenceProfile,
           dropped: 0,

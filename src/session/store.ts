@@ -34,7 +34,11 @@ export interface SessionHandle {
   metadataPath: string;
   eventsPath: string;
   metadata: SessionMetadata;
+  /** Queues an ordered event without waiting for filesystem durability. */
+  enqueue(payload: SessionEventPayload): SessionEvent | Promise<SessionEvent>;
   append(payload: SessionEventPayload): Promise<SessionEvent>;
+  flush(): Promise<void>;
+  dispose(): Promise<void>;
 }
 
 /** Optional, test-only measurement seam. Normal session writes do not collect it. */
@@ -519,67 +523,168 @@ function getStartupTranscriptEntry(meta: unknown): TranscriptEntry | undefined {
 }
 
 function buildHandle(sessionDir: string, metadata: SessionMetadata, profile?: SessionWriteProfile): SessionHandle {
-  let appendQueue: Promise<void> = Promise.resolve();
-  let pendingDepth = 0;
+  const capacity = 128;
+  type Pending = { event: SessionEvent };
+  type Waiter = {
+    payload: SessionEventPayload;
+    resolve: (event: SessionEvent) => void;
+    reject: (error: unknown) => void;
+  };
+  let pending: Pending[] = [];
+  let waiters: Waiter[] = [];
+  let scheduled = false;
+  let writing: Promise<void> | undefined;
+  let terminalError: unknown;
+  let disposed = false;
+  let nextEventId = metadata.lastEventId;
+  let durableEventId = metadata.lastEventId;
+  let outstanding = 0;
+  const barriers = new Set<{ watermark: number; resolve: () => void; reject: (error: unknown) => void }>();
+  const updateDepth = () => {
+    if (profile) profile.maximumPendingPersistenceDepth = Math.max(profile.maximumPendingPersistenceDepth, outstanding);
+  };
+  const settleBarriers = () => {
+    for (const barrier of barriers) {
+      if (terminalError !== undefined) {
+        barrier.reject(terminalError);
+        barriers.delete(barrier);
+      } else if (durableEventId >= barrier.watermark) {
+        barrier.resolve();
+        barriers.delete(barrier);
+      }
+    }
+  };
+  const admit = (payload: SessionEventPayload): SessionEvent => {
+    const event = sessionEventSchema.parse({
+      version: SESSION_EVENT_VERSION,
+      id: nextEventId + 1,
+      ts: new Date().toISOString(),
+      ...payload,
+    });
+    nextEventId = event.id;
+    pending.push({ event });
+    outstanding += 1;
+    updateDepth();
+    return event;
+  };
+  const admitWaiters = () => {
+    while (outstanding < capacity && waiters.length > 0 && terminalError === undefined) {
+      const waiter = waiters.shift()!;
+      try {
+        waiter.resolve(admit(waiter.payload));
+      } catch (error) {
+        waiter.reject(error);
+      }
+    }
+  };
+  const writeReady = async (): Promise<void> => {
+    scheduled = false;
+    if (writing || pending.length === 0 || terminalError !== undefined) return;
+    const batch = pending;
+    pending = [];
+    writing = (async () => {
+      let previousEventFileSize: number | undefined;
+      try {
+        previousEventFileSize = (await stat(handle.eventsPath)).size;
+        let nextMetadata = handle.metadata;
+        for (const { event } of batch) {
+          const title =
+            nextMetadata.title === undefined &&
+            event.kind === "message" &&
+            event.role === "user" &&
+            !isVisibleOnlySlashCommandMessage(event.meta)
+              ? deriveSessionTitle(event.text)
+              : nextMetadata.title;
+          nextMetadata = {
+            ...nextMetadata,
+            updatedAt: event.ts,
+            lastEventId: event.id,
+            ...(title === undefined ? {} : { title }),
+          };
+        }
+        await writeFile(handle.eventsPath, batch.map(({ event }) => `${JSON.stringify(event)}\n`).join(""), {
+          flag: "a",
+        });
+        if (profile) profile.jsonlWriteBatches += 1;
+        await writeMetadata(handle.metadataPath, nextMetadata);
+        if (profile) profile.metadataWrites += 1;
+        handle.metadata = nextMetadata;
+        durableEventId = batch.at(-1)?.event.id ?? durableEventId;
+        outstanding -= batch.length;
+        if (profile) profile.sessionEvents += batch.length;
+      } catch (error) {
+        // A failed batch is terminal: callers must create/load a new handle rather than retrying into uncertain state.
+        if (previousEventFileSize === undefined) {
+          terminalError = error;
+        } else {
+          try {
+            await truncate(handle.eventsPath, previousEventFileSize);
+            terminalError = error;
+          } catch (rollbackError) {
+            terminalError = new AggregateError([error, rollbackError], "Session journal write and rollback failed");
+          }
+        }
+        pending = [];
+        outstanding = 0;
+        for (const waiter of waiters) waiter.reject(terminalError);
+        waiters = [];
+        throw error;
+      }
+    })();
+    try {
+      await writing;
+    } catch {
+      // Individual append/flush promises receive the terminal failure.
+    } finally {
+      writing = undefined;
+      if (terminalError === undefined) admitWaiters();
+      if (pending.length > 0 && terminalError === undefined) void writeReady();
+      settleBarriers();
+    }
+  };
+  const requestWrite = () => {
+    if (scheduled || writing || terminalError !== undefined) return;
+    scheduled = true;
+    queueMicrotask(() => void writeReady());
+  };
   const handle: SessionHandle = {
     sessionId: metadata.sessionId,
     sessionDir,
     metadataPath: join(sessionDir, "metadata.json"),
     eventsPath: join(sessionDir, "events.jsonl"),
     metadata,
+    enqueue(payload) {
+      if (disposed) throw new Error("Session handle is disposed");
+      if (terminalError !== undefined) throw terminalError;
+      if (outstanding >= capacity) {
+        return new Promise<SessionEvent>((resolve, reject) => waiters.push({ payload, resolve, reject }));
+      }
+      const event = admit(payload);
+      requestWrite();
+      return event;
+    },
     append(payload) {
-      pendingDepth += 1;
-      if (profile)
-        profile.maximumPendingPersistenceDepth = Math.max(profile.maximumPendingPersistenceDepth, pendingDepth);
-      const appendOperation = appendQueue.then(async () => {
-        const previousEventFileSize = (await stat(handle.eventsPath)).size;
-        const nextEvent = sessionEventSchema.parse({
-          version: SESSION_EVENT_VERSION,
-          id: handle.metadata.lastEventId + 1,
-          ts: new Date().toISOString(),
-          ...payload,
-        });
-        const nextTitle =
-          handle.metadata.title === undefined &&
-          nextEvent.kind === "message" &&
-          nextEvent.role === "user" &&
-          !isVisibleOnlySlashCommandMessage(nextEvent.meta)
-            ? deriveSessionTitle(nextEvent.text)
-            : handle.metadata.title;
-        const nextMetadata = {
-          ...handle.metadata,
-          updatedAt: nextEvent.ts,
-          lastEventId: nextEvent.id,
-          ...(nextTitle === undefined ? {} : { title: nextTitle }),
-        };
-        await writeFile(handle.eventsPath, `${JSON.stringify(nextEvent)}\n`, { flag: "a" });
-        if (profile) profile.jsonlWriteBatches += 1;
-        try {
-          await writeMetadata(handle.metadataPath, nextMetadata);
-          if (profile) profile.metadataWrites += 1;
-        } catch (error) {
-          await truncate(handle.eventsPath, previousEventFileSize);
-          throw error;
-        }
-        handle.metadata = nextMetadata;
-        if (profile) {
-          profile.sessionEvents += 1;
-          profile.flushes += 1;
-        }
-
-        return nextEvent;
+      let enqueued: SessionEvent | Promise<SessionEvent>;
+      try {
+        enqueued = handle.enqueue(payload);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      return Promise.resolve(enqueued).then((event) => handle.flush().then(() => event));
+    },
+    flush() {
+      if (profile) profile.flushes += 1;
+      if (terminalError !== undefined) return Promise.reject(terminalError);
+      requestWrite();
+      const watermark = nextEventId;
+      return new Promise<void>((resolve, reject) => {
+        barriers.add({ watermark, resolve, reject });
+        settleBarriers();
       });
-
-      appendQueue = appendOperation.then(
-        () => {
-          pendingDepth -= 1;
-        },
-        () => {
-          pendingDepth -= 1;
-        }
-      );
-
-      return appendOperation;
+    },
+    async dispose() {
+      disposed = true;
+      await handle.flush();
     },
   };
 

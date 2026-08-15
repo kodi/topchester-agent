@@ -33,6 +33,171 @@ function createControllerRuntime(overrides: Partial<AgentRuntime> = {}): AgentRu
 }
 
 describe("framework-neutral TUI controller", () => {
+  it("reduces runtime events without awaiting routine session durability", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-nonblocking-persistence-"));
+    const session = await createSession(workspace);
+    const controller = await TopchesterTuiController.create(createTestContext(workspace), createControllerRuntime(), {
+      session,
+    });
+    const enqueue = vi.spyOn(session, "enqueue").mockReturnValue({} as never);
+    const flush = vi.spyOn(session, "flush");
+
+    await controller.applyRuntimeEvents([agentEvent.status("visible before durable")]);
+
+    expect(controller.getSnapshot().status).toBe("visible before durable");
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(flush).not.toHaveBeenCalled();
+    enqueue.mockRestore();
+    flush.mockRestore();
+    await controller.dispose();
+  });
+
+  it("surfaces a terminal session writer failure exactly once at durability barriers", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-persistence-failure-"));
+    const session = await createSession(workspace);
+    const controller = await TopchesterTuiController.create(createTestContext(workspace), createControllerRuntime(), {
+      session,
+    });
+    vi.spyOn(session, "flush").mockRejectedValue(new Error("journal unavailable"));
+
+    await controller.waitForIdle();
+    await controller.waitForIdle();
+
+    const warnings = controller
+      .getSnapshot()
+      .transcript.filter((entry) => entry.kind === "system" && entry.text.includes("Session save failed"));
+    expect(warnings).toEqual([expect.objectContaining({ text: expect.stringContaining("journal unavailable") })]);
+    await controller.dispose();
+  });
+
+  it("waits for the active session durability barrier before disposal", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-dispose-durability-"));
+    const session = await createSession(workspace);
+    const controller = await TopchesterTuiController.create(createTestContext(workspace), createControllerRuntime(), {
+      session,
+    });
+    await controller.applyRuntimeEvents([agentEvent.status("durable on dispose")]);
+    const originalFlush = session.flush.bind(session);
+    let releaseFlush: () => void = () => {};
+    const blockedFlush = new Promise<void>((resolve) => {
+      releaseFlush = resolve;
+    });
+    vi.spyOn(session, "flush")
+      .mockImplementationOnce(() => blockedFlush)
+      .mockImplementation(originalFlush);
+    let disposed = false;
+
+    const disposal = controller.dispose().then(() => {
+      disposed = true;
+    });
+    await Promise.resolve();
+    expect(disposed).toBe(false);
+    releaseFlush();
+    await disposal;
+
+    expect((await loadSession(workspace, session.sessionId)).events).toEqual([
+      expect.objectContaining({ kind: "status", status: "durable on dispose" }),
+    ]);
+  });
+
+  it("does not switch sessions until the source durability barrier resolves", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-switch-durability-"));
+    const source = await createSession(workspace);
+    const controller = await TopchesterTuiController.create(createTestContext(workspace), createControllerRuntime(), {
+      session: source,
+    });
+    const originalFlush = source.flush.bind(source);
+    let releaseFlush: () => void = () => {};
+    const blockedFlush = new Promise<void>((resolve) => {
+      releaseFlush = resolve;
+    });
+    const flush = vi
+      .spyOn(source, "flush")
+      .mockImplementationOnce(() => blockedFlush)
+      .mockImplementation(originalFlush);
+
+    controller.submitCommand("/new");
+    await vi.waitFor(() => expect(flush).toHaveBeenCalled());
+    expect(controller.getSnapshot().sessionId).toBe(source.sessionId);
+    releaseFlush();
+    await controller.waitForIdle();
+
+    expect(controller.getSnapshot().sessionId).not.toBe(source.sessionId);
+    await controller.dispose();
+  });
+
+  it("unblocks the active session when a restore transition fails", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-restore-recovery-"));
+    const source = await createSession(workspace);
+    const controller = await TopchesterTuiController.create(createTestContext(workspace), createControllerRuntime(), {
+      session: source,
+    });
+    controller.submitCommand("/restore");
+    await controller.waitForIdle();
+    controller.selectSession("00000000-0000-7000-8000-000000000001");
+    await controller.waitForIdle();
+    const enqueue = vi.spyOn(source, "enqueue");
+
+    await controller.applyRuntimeEvents([agentEvent.status("persist after failed restore")]);
+    await controller.waitForIdle();
+
+    expect(controller.getSnapshot().sessionId).toBe(source.sessionId);
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(controller.getSnapshot().transcript).toEqual(
+      expect.arrayContaining([expect.objectContaining({ text: expect.stringContaining("Restore failed") })])
+    );
+    await controller.dispose();
+  });
+
+  it("aborts a session boundary when the source durability barrier fails", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-failed-boundary-"));
+    const source = await createSession(workspace);
+    const controller = await TopchesterTuiController.create(createTestContext(workspace), createControllerRuntime(), {
+      session: source,
+    });
+    vi.spyOn(source, "flush").mockRejectedValue(new Error("source barrier failed"));
+
+    controller.submitCommand("/fork");
+    await controller.waitForIdle();
+    const enqueue = vi.spyOn(source, "enqueue");
+    await controller.applyRuntimeEvents([agentEvent.status("must not enqueue after terminal failure")]);
+
+    expect(controller.getSnapshot().sessionId).toBe(source.sessionId);
+    expect(enqueue).not.toHaveBeenCalled();
+    const warnings = controller
+      .getSnapshot()
+      .transcript.filter((entry) => entry.kind === "system" && entry.text.includes("Session save failed"));
+    expect(warnings).toEqual([expect.objectContaining({ text: expect.stringContaining("source barrier failed") })]);
+    expect(JSON.stringify(controller.getSnapshot().transcript)).not.toContain("Forked session");
+    await controller.dispose();
+  });
+
+  it("does not redirect backpressured old-session events into a replacement session", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-old-session-persistence-"));
+    const oldSession = await createSession(workspace);
+    const controller = await TopchesterTuiController.create(createTestContext(workspace), createControllerRuntime(), {
+      session: oldSession,
+    });
+    let releaseBackpressure: () => void = () => {};
+    const backpressure = new Promise<never>((resolve) => {
+      releaseBackpressure = () => resolve({} as never);
+    });
+    const enqueue = vi.spyOn(oldSession, "enqueue").mockReturnValueOnce(backpressure);
+    const applying = controller.applyRuntimeEvents([agentEvent.status("old one"), agentEvent.status("old two")]);
+
+    controller.submitCommand("/new");
+    await vi.waitFor(() => expect(controller.getSnapshot().sessionId).not.toBe(oldSession.sessionId));
+    releaseBackpressure();
+    await applying;
+    await controller.waitForIdle();
+
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    const replacement = await loadSession(workspace, controller.getSnapshot().sessionId);
+    expect(JSON.stringify(replacement.events)).not.toContain("old one");
+    expect(JSON.stringify(replacement.events)).not.toContain("old two");
+    await controller.dispose();
+  });
+
   it("publishes each chat start and final busy transition once", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-publications-"));
     let release: () => void = () => {};

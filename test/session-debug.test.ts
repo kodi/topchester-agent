@@ -12,6 +12,21 @@ async function tempWorkspace(): Promise<string> {
 }
 
 describe("session debug report", () => {
+  it("reads controller-style enqueued events after an explicit durability barrier", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+    const first = session.enqueue({ kind: "message", role: "user", text: "queued prompt" });
+    if (first instanceof Promise) await first;
+    const second = session.enqueue({ kind: "message", role: "assistant", text: "queued answer" });
+    if (second instanceof Promise) await second;
+
+    await session.flush();
+    const report = await createSessionDebugReport(workspace, session.sessionId);
+
+    expect(report.events).toMatchObject({ total: 2, userMessages: 1, assistantMessages: 1 });
+    await session.dispose();
+  });
+
   it("combines session events, child sessions, and scoped timing records", async () => {
     const workspace = await tempWorkspace();
     const root = await createSession(workspace);
