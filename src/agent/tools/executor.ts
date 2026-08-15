@@ -124,7 +124,7 @@ export async function executeToolCall(
 
     return result;
   } catch (error) {
-    const message = formatToolExecutionErrorMessage(call, formatErrorMessage(error));
+    const message = formatErrorMessage(error);
 
     const logPayload = {
       event: "tool_result",
@@ -163,17 +163,6 @@ function isToolExecutionAllowed(
     : isToolName(toolName) && isToolAllowed(permissionView, toolName);
 }
 
-function formatToolExecutionErrorMessage(call: ToolCall, message: string): string {
-  if (
-    call.tool === "run_validator" &&
-    (message.includes("not a validator script") || message.includes("format validators must use --check"))
-  ) {
-    return `${message} Use run_validator with a check-only command such as pnpm format-check for verification, or use bash for mutating formatter commands such as pnpm format when policy allows it.`;
-  }
-
-  return message;
-}
-
 function summarizeToolArgs(call: ToolCall<string, any>): unknown {
   if (call.tool === "plan_todo") {
     const activeItem = call.args.items.find(
@@ -210,15 +199,6 @@ function summarizeToolArgs(call: ToolCall<string, any>): unknown {
     if (call.tool === "bash") {
       return {
         command: call.args.command,
-        workdir: call.args.workdir,
-        timeoutMs: call.args.timeout_ms,
-      };
-    }
-
-    if (call.tool === "run_validator") {
-      return {
-        command: call.args.command,
-        validator: call.args.validator,
         workdir: call.args.workdir,
         timeoutMs: call.args.timeout_ms,
       };
@@ -266,21 +246,6 @@ function summarizeToolResult(result: any): Record<string, unknown> {
       decision: result.decision,
       stdoutLength: result.stdout.length,
       stderrLength: result.stderr.length,
-    };
-  }
-
-  if (result.tool === "run_validator") {
-    return {
-      cwd: result.cwd,
-      command: result.command,
-      exitCode: result.exitCode,
-      durationMs: result.durationMs,
-      timedOut: result.timedOut,
-      truncated: result.truncated,
-      policy: result.policy,
-      stdoutLength: result.stdout.length,
-      stderrLength: result.stderr.length,
-      workspaceMayHaveChanged: result.workspaceMayHaveChanged,
     };
   }
 

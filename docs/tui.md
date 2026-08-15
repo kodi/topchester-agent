@@ -151,8 +151,7 @@ The agent can use these workspace-scoped tools from the TUI:
 - `find_file` — find existing workspace files by fuzzy path or filename.
 - `edit_file` — edit existing UTF-8 files with exact `old_text` and `new_text` replacements.
 - `inspect_command` — run a small allowlisted set of read-only discovery commands.
-- `run_validator` — run a strict test, lint, typecheck, build, check, format-check, or smoke command.
-- `bash` — run an approval-gated shell command inside the workspace.
+- `bash` — run an approval-gated shell command inside the workspace, including tests, lint, typecheck, builds, checks, and smoke scripts.
 - `skills_list` — list available skills as compact metadata.
 - `skill_view` — load full `SKILL.md` content for one skill.
 
@@ -173,8 +172,7 @@ read_file: README.md
 ↳ task: Inspect runtime (completed)
 edit_file: src/example.ts (changed +1/-1)
 inspect_command: pwd && rg --files docs/plans | head -20
-run_validator: pnpm test test/tools.test.ts (exit 0, 2.1s)
-bash: node scripts/check-fixtures.mjs (exit 0, 0.7s)
+bash: pnpm test test/tools.test.ts (exit 0, 2.1s)
 ```
 
 ## Progress And Busy States

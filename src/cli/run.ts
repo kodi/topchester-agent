@@ -9,6 +9,7 @@ import { type AgentRuntimeEvent } from "../agent/events.js";
 import { TopchesterAgentRuntime } from "../agent/runtime/index.js";
 import { formatTaskPlanNotice } from "../agent/task-plan.js";
 import { type AppContext } from "../app/context.js";
+import { createHerdrAgentReporter } from "../integrations/herdr.js";
 import { createStartupTranscriptEntry } from "../chat/index.js";
 import {
   createSession,
@@ -45,6 +46,7 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
   const runtime = new TopchesterAgentRuntime(runContext);
   const jsonEvents: RunJsonEvent[] = [];
   const session = await resolveRunSession(runContext.workspaceRoot, options.resume);
+  const herdrReporter = createHerdrAgentReporter();
   const conversation = options.resume ? await loadConversation(runContext.workspaceRoot, options.resume) : [];
   const startedAt = Date.now();
   const timeoutMs = options.timeoutMs;
@@ -78,6 +80,7 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
   });
 
   try {
+    await herdrReporter.report({ state: "working", sessionId: session.sessionId });
     if (!options.resume) {
       await persistStartupMessages(session, runContext);
     }
@@ -150,7 +153,11 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
       clearTimeout(timeout);
     }
 
-    await writeJsonEvents(jsonEvents, options);
+    try {
+      await writeJsonEvents(jsonEvents, options);
+    } finally {
+      await herdrReporter.release();
+    }
   }
 }
 

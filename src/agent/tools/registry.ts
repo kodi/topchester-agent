@@ -9,7 +9,6 @@ import { inspectCommandTool } from "./inspect-command.js";
 import { listFilesTool } from "./list-files.js";
 import { planTodoTool } from "./plan-todo.js";
 import { readFileTool } from "./read-file.js";
-import { runValidatorTool } from "./run-validator.js";
 import { skillReadTool, skillViewTool, skillsListTool } from "./skills.js";
 import { taskTool } from "./task.js";
 import { type ToolCallForDefinition, type ToolResultForDefinition } from "./types.js";
@@ -32,7 +31,6 @@ export const toolRegistry = {
   [gitAddTool.name]: gitAddTool,
   [gitCommitTool.name]: gitCommitTool,
   [inspectCommandTool.name]: inspectCommandTool,
-  [runValidatorTool.name]: runValidatorTool,
   [bashTool.name]: bashTool,
   [webFetchTool.name]: webFetchTool,
   [finishTaskTool.name]: finishTaskTool,

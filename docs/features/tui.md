@@ -38,6 +38,8 @@ ready · my-project · qwen/qwen3-coder [openrouter] · kb: ready
 
 Topchester does not use the terminal alternate screen and leaves mouse reporting disabled, so terminal-native selection and scrollback remain available. New, forked, and restored sessions append a visible session boundary; they do not clear unrelated terminal history.
 
+When Topchester runs inside a Herdr pane, it reports its native lifecycle automatically. Herdr shows the pane as `topchester`, marks model and tool work as working, marks a bash approval prompt as blocked, returns to idle when Topchester is ready, and releases the report when Topchester exits. The integration is a no-op outside Herdr and does not require a Topchester hook configuration.
+
 Large multi-line pastes are shown as compact placeholders in the composer and expanded back to their exact original text when submitted. Dialogs trap keyboard input above suggestions and the composer, and restore composer focus when closed. The restore-session picker shows a short title based on the first normal user prompt instead of the full prompt text. The semantic theme follows detected dark/light terminal appearance; selection remains visible when `NO_COLOR` is set.
 
 ## Tool visibility

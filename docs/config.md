@@ -338,7 +338,7 @@ You can change the instruction filenames in project config:
 }
 ```
 
-Deny rules win over allow rules. `allowExact` matches a complete command string, while `allow` matches a command prefix plus a following space. `allowExact`, `allow`, and `deny` arrays concatenate across config layers. Use `run_validator` for tests, lint, typecheck, build, check, format-check, and smoke whenever it fits.
+Deny rules win over allow rules. `allowExact` matches a complete command string, while `allow` matches a command prefix plus a following space. `allowExact`, `allow`, and `deny` arrays concatenate across config layers. Tests, lint, typecheck, builds, checks, format checks, and smoke commands use the same `bash` approval rules as other shell work.
 
 For benchmark or automation runs, `topchester run --dangerously-auto-approve` can auto-approve approval-required `bash` prompts without writing allow rules to `topchester.jsonc`. This is a runtime mode, not config. Deny rules, destructive command detection, workspace boundary checks, and hook blocks still win over auto-approval.
 

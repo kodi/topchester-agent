@@ -39,7 +39,7 @@ export const bashTool = defineTool({
   name: "bash",
   description: "Run an approval-gated shell command inside the workspace.",
   prompt:
-    'bash: run an approval-gated shell command for terminal work that needs shell syntax, one-off user-requested commands, package manager commands, scripts, pipelines, redirects, or chaining. Use run_validator, not bash, for tests and checks that fit strict validator shapes such as pnpm test, go test, cargo test, node --test, local npx tsx --test, lint, typecheck, build, check, format-check, and smoke. To use it, reply with only JSON: {"tool":"bash","args":{"command":"printf hi | wc -c","workdir":".","timeout_ms":120000,"description":"count bytes"}}',
+    'bash: run an approval-gated shell command inside the workspace for tests, lint, typecheck, builds, smoke checks, package-manager commands, scripts, pipelines, redirects, chaining, and other terminal work. Failed command exits are useful evidence: inspect stdout and stderr, fix in-scope failures, and rerun the narrowest useful check. To use it, reply with only JSON: {"tool":"bash","args":{"command":"pnpm test","workdir":".","timeout_ms":120000,"description":"run the test suite"}}',
   argsSchema: bashArgsSchema,
   requiresExclusiveWorkspace: true,
   execute: async (context, args) =>

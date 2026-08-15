@@ -159,57 +159,6 @@ describe("logging", () => {
     });
   });
 
-  it("logs run_validator metadata without debug-level command output", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "topchester-logging-"));
-    const bin = await mkdtemp(join(tmpdir(), "topchester-logging-bin-"));
-    await writeFile(join(workspace, "package.json"), JSON.stringify({ scripts: { test: "vitest run" } }));
-    await writeExecutable(join(bin, "pnpm"), "printf 'SECRET_VALIDATOR_OUTPUT\\n'\nexit 0");
-
-    await withEnv({ TOPCHESTER_LOG_LEVEL: "debug", TOPCHESTER_LOG_FILE: "" }, async () => {
-      const loggerInfo = createTopchesterLogger(workspace);
-      const call = parseToolCall('{"tool":"run_validator","args":{"command":"pnpm test","timeout_ms":10000}}');
-
-      if (!call) {
-        throw new Error("Expected run_validator tool call to parse.");
-      }
-
-      await executeToolCall(workspace, call, { logger: loggerInfo.logger, pathEnv: bin });
-
-      const logFilePath = loggerInfo.logFilePath;
-
-      if (!logFilePath) {
-        throw new Error("Expected logger to create a log file path.");
-      }
-
-      const logText = await readFile(logFilePath, "utf8");
-      const logLines = logText
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line) as Record<string, unknown>);
-
-      expect(logLines).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            event: "tool_call",
-            tool: "run_validator",
-            args: expect.objectContaining({ command: "pnpm test", timeoutMs: 10000 }),
-          }),
-          expect.objectContaining({
-            event: "tool_result",
-            tool: "run_validator",
-            command: "pnpm test",
-            exitCode: 0,
-            timedOut: false,
-            truncated: false,
-            stdoutLength: 24,
-            stderrLength: 0,
-          }),
-        ])
-      );
-      expect(logText).not.toContain("SECRET_VALIDATOR_OUTPUT");
-    });
-  });
-
   it("logs bash metadata without debug-level command output", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-logging-"));
     const bin = await mkdtemp(join(tmpdir(), "topchester-logging-bin-"));

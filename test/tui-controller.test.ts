@@ -6,6 +6,7 @@ import { agentEvent } from "../src/agent/events.js";
 import { type AgentRuntime } from "../src/agent/runtime/index.js";
 import { TopchesterTuiController } from "../src/chat/controller.js";
 import { type TopchesterConfig } from "../src/config/index.js";
+import { type HerdrAgentReport, type HerdrAgentReporter } from "../src/integrations/herdr.js";
 import { createSession, loadSession } from "../src/session/store.js";
 import { createTestContext } from "./app-context.fixtures.js";
 
@@ -300,6 +301,16 @@ describe("framework-neutral TUI controller", () => {
   it("resolves bash approval without leaking renderer state into the runtime", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-approval-"));
     let decision: string | undefined;
+    const herdrReports: HerdrAgentReport[] = [];
+    let herdrReleased = false;
+    const herdrReporter: HerdrAgentReporter = {
+      async report(report) {
+        herdrReports.push(report);
+      },
+      async release() {
+        herdrReleased = true;
+      },
+    };
     const runtime = createControllerRuntime({
       async *submitMessageStream(_conversation, _message, _signal, options) {
         decision = await options?.requestBashApproval?.({
@@ -311,12 +322,18 @@ describe("framework-neutral TUI controller", () => {
         yield agentEvent.assistantMessage(`approval: ${decision}`, "model");
       },
     });
-    const controller = await TopchesterTuiController.create(createTestContext(workspace), runtime);
+    const controller = await TopchesterTuiController.create(createTestContext(workspace), runtime, {
+      herdrReporter,
+    });
 
     controller.submit("verify");
     await vi.waitFor(() =>
       expect(controller.getSnapshot().transcript.at(-1)).toMatchObject({ kind: "choice", title: "Run bash command?" })
     );
+    expect(herdrReports.at(-1)).toMatchObject({
+      state: "blocked",
+      message: "Waiting for bash approval",
+    });
     controller.choose({ label: "Run once", value: "run_once" });
     await controller.waitForIdle();
 
@@ -326,7 +343,10 @@ describe("framework-neutral TUI controller", () => {
       kind: "assistant",
       text: "approval: run_once",
     });
+    expect(herdrReports.map((report) => report.state)).toContain("working");
+    expect(herdrReports.at(-1)?.state).toBe("idle");
     await controller.dispose();
+    expect(herdrReleased).toBe(true);
   });
 
   it("applies model and effort choices as session-scoped overrides", async () => {

@@ -242,50 +242,6 @@ describe("agent tools", () => {
     });
   });
 
-  it("parses run_validator tool calls from JSON", () => {
-    expect(
-      parseToolCall(
-        '{"tool":"run_validator","args":{"command":"pnpm test test/tools.test.ts","validator":"test","timeout_ms":120000}}'
-      )
-    ).toEqual({
-      tool: "run_validator",
-      args: {
-        command: "pnpm test test/tools.test.ts",
-        validator: "test",
-        workdir: ".",
-        timeout_ms: 120_000,
-      },
-    });
-
-    expect(
-      parseToolCall(
-        '{"tool":"run_validator","args":{"command":"pnpm format-check","validator":"format-check","workdir":".","timeout_ms":60000}}'
-      )
-    ).toEqual({
-      tool: "run_validator",
-      args: {
-        command: "pnpm format-check",
-        validator: "format_check",
-        workdir: ".",
-        timeout_ms: 60_000,
-      },
-    });
-
-    expect(
-      parseToolCall(
-        '{"tool":"run_validator","args":{"command":"pnpm exec oxfmt . --check","validator":"format","workdir":".","timeout_ms":30000}}'
-      )
-    ).toEqual({
-      tool: "run_validator",
-      args: {
-        command: "pnpm exec oxfmt . --check",
-        validator: "format_check",
-        workdir: ".",
-        timeout_ms: 30_000,
-      },
-    });
-  });
-
   it("reports known text tool calls with invalid arguments", () => {
     expect(parseToolCallRejection('{"tool":"read_file","args":{"path":123}}')).toMatchObject({
       source: "text-json",
@@ -879,28 +835,6 @@ describe("agent tools", () => {
     expect(result.content).toContain('Tool "edit_file" is not allowed for agent profile "explore"');
   });
 
-  it("explains how to recover when run_validator receives a mutating formatter command", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
-    await writeFile(
-      join(workspace, "package.json"),
-      JSON.stringify({ scripts: { "format": "oxfmt .", "format-check": "oxfmt . --check" } })
-    );
-    const call = parseToolCall(
-      '{"tool":"run_validator","args":{"command":"pnpm format","validator":"format_check","timeout_ms":10000}}'
-    );
-
-    if (!call) {
-      throw new Error("Expected run_validator tool call to parse.");
-    }
-
-    const result = await executeToolCall(workspace, call);
-
-    expect(isToolErrorResult(result)).toBe(true);
-    expect(result.content).toContain("command policy rejected 'format' because it is not a validator script");
-    expect(result.content).toContain("Use run_validator with a check-only command such as pnpm format-check");
-    expect(result.content).toContain("use bash for mutating formatter commands such as pnpm format");
-  });
-
   it("inherits parent denied tools when building child profile permissions", () => {
     const profile = resolveAgentProfile("explore");
     const permissions = createToolPermissionView(profile, { deniedTools: ["read_file"] });
@@ -936,7 +870,7 @@ describe("agent tools", () => {
 
     expect(isToolErrorResult(result)).toBe(true);
     expect(result.content).toContain('task subagent "explore" cannot run bash');
-    expect(result.content).toContain("Use the parent bash/run_validator tools directly");
+    expect(result.content).toContain("Use the parent bash tool directly");
   });
 
   it("gets model prompt lines from the tool registry", () => {
@@ -956,14 +890,14 @@ describe("agent tools", () => {
       'git_add: stage only explicit paths the user asked to stage; first inspect git_status, reject broad paths, and pass expected_status for each path. To use it, reply with only JSON: {"tool":"git_add","args":{"paths":["src/example.ts"],"expected_status":[{"path":"src/example.ts","status":"modified"}]}}',
       'git_commit: commit only after the user explicitly asks and staged paths exactly match expected_staged_paths. To use it, reply with only JSON: {"tool":"git_commit","args":{"message":"Add feature","expected_staged_paths":["src/example.ts"]}}',
       'inspect_command: run a safe read-only discovery command inside the workspace for quick repo orientation; prefer read_file, list_files, grep, and find_file for exact file tasks, and do not use it for builds, tests, installs, network, shell scripts, edits, or user-requested specific commands such as node --version, which node, or pnpm --version. To use it, reply with only JSON: {"tool":"inspect_command","args":{"command":"pwd && rg --files docs/plans | head -20","workdir":".","timeout_ms":10000}}',
-      'run_validator: run a strict verification command after edits, such as pnpm test, go test ./..., cargo test, node --test, local npx tsx --test, lint, typecheck, build, check, format-check, or smoke; format means check-only commands such as pnpm format-check, not mutating formatter commands such as pnpm format; failed exits are useful evidence and should be inspected before retrying. To use it, reply with only JSON: {"tool":"run_validator","args":{"command":"pnpm test test/tools.test.ts","validator":"test","workdir":".","timeout_ms":120000}}',
-      'bash: run an approval-gated shell command for terminal work that needs shell syntax, one-off user-requested commands, package manager commands, scripts, pipelines, redirects, or chaining. Use run_validator, not bash, for tests and checks that fit strict validator shapes such as pnpm test, go test, cargo test, node --test, local npx tsx --test, lint, typecheck, build, check, format-check, and smoke. To use it, reply with only JSON: {"tool":"bash","args":{"command":"printf hi | wc -c","workdir":".","timeout_ms":120000,"description":"count bytes"}}',
+      'bash: run an approval-gated shell command inside the workspace for tests, lint, typecheck, builds, smoke checks, package-manager commands, scripts, pipelines, redirects, chaining, and other terminal work. Failed command exits are useful evidence: inspect stdout and stderr, fix in-scope failures, and rerun the narrowest useful check. To use it, reply with only JSON: {"tool":"bash","args":{"command":"pnpm test","workdir":".","timeout_ms":120000,"description":"run the test suite"}}',
       'web_fetch: fetch a public HTTP(S) URL for current docs, changelogs, API references, issue pages, or package behavior; private network and localhost URLs are blocked. Prefer this over bash curl/wget. To use it, reply with only JSON: {"tool":"web_fetch","args":{"url":"https://example.com/docs","format":"markdown","timeout_seconds":30}}',
       'finish_task: complete the task with a brief final response only after tool results prove the work is done. In benchmark or require-finish mode, this is the only valid terminal action; normal assistant messages are progress notes and do not finish the task, and remaining_issues must be empty. For implementation tasks, do not call finish_task until source files were changed by edit_file, write_file, apply_patch, or another mutating tool, unless no code change is truly required. Example: {"tool":"finish_task","args":{"final_response":"Changed src/foo.ts and ran pnpm test foo.test.ts.","files_changed":["src/foo.ts"],"validation":["pnpm test foo.test.ts"],"remaining_issues":[]}}',
       'skills_list: List available on-demand skills without loading full skill bodies. Args: {}. Example: {"tool":"skills_list","args":{}}',
       'skill_view: Load full SKILL.md content for one skill by name. Args: {"name":"skill-name"}. Example: {"tool":"skill_view","args":{"name":"code-review"}}',
       'skill_read: Read a linked reference, template, script, or asset named by skill_view. Args: {"name":"skill-name","group":"references|templates|scripts|assets","path":"relative/path"}. Example: {"tool":"skill_read","args":{"name":"topchester","group":"references","path":"configuration.md"}}',
     ]);
+    expect(toolRegistry).not.toHaveProperty("run_validator");
   });
 
   it("tells the model to verify paths mentioned inside grep output", () => {
@@ -1016,22 +950,20 @@ describe("agent tools", () => {
     expect(prompt).toContain("Do not use inspect_command for file creation or file mutation");
   });
 
-  it("tells the model to verify edits with run_validator", () => {
+  it("tells the model to verify edits with bash", () => {
     const prompt = getChatSystemPrompt();
 
-    expect(prompt).toContain("After code edits, use run_validator when there is a relevant test");
-    expect(prompt).toContain("Use run_validator for format-check only");
-    expect(prompt).toContain("Use bash for mutating formatter commands such as pnpm format");
-    expect(prompt).toContain("Failed run_validator exits are evidence");
-    expect(prompt).toContain("retry with bash when approval or project policy allows it");
+    expect(prompt).toContain("After code edits, use bash to run the narrowest relevant test");
+    expect(prompt).toContain("Failed bash exits are evidence");
     expect(prompt).toContain("Do not use inspect_command for tests, builds, lint, typecheck");
     expect(prompt).toContain("When the user explicitly asks to run a command or asks for command output");
     expect(prompt).toContain("bash is the approval-gated shell runner");
     expect(prompt).toContain("let permission policy return the allowed, rejected, or approval result");
     expect(prompt).toContain("Prefer dedicated tools for file reads, file writes, edits, Git inspection, and searches");
     expect(prompt).toContain("Use bash for arbitrary shell syntax");
-    expect(prompt).toContain("Do not use bash for file reads, file writes, Git inspection");
+    expect(prompt).toContain("Do not use bash for file reads, file writes, or Git inspection");
     expect(prompt).toContain("Use web_fetch, not bash curl or wget");
+    expect(prompt).not.toContain("run_validator");
   });
 
   it("tells the model inspect_command is only for read-only orientation", () => {
@@ -1045,7 +977,7 @@ describe("agent tools", () => {
     expect(prompt).toContain("inspect_command is not a shell");
     expect(prompt).toContain("Unsafe commands, shell expansion, scripts, installs, builds, tests, network access");
     expect(prompt).toContain("Do not use inspect_command when the user asks to run a specific command");
-    expect(prompt).toContain("use bash or run_validator instead");
+    expect(prompt).toContain("use bash instead");
   });
 
   it("logs tool calls and result metadata without debug-level content", async () => {

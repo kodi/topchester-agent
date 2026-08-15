@@ -28,6 +28,7 @@ import {
   type ReasoningEffort,
 } from "../config/index.js";
 import { fallbackOpenRouterStarterChoices, selectOpenRouterStarterChoices } from "../model/openrouter.js";
+import { createHerdrAgentReporter, type HerdrAgentReporter, type HerdrAgentState } from "../integrations/herdr.js";
 import { type SessionEventPayload } from "../session/events.js";
 import { basename } from "node:path";
 import { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
@@ -105,6 +106,7 @@ export interface TuiControllerOptions {
   initialTaskPlan?: TaskPlanState;
   runtimeConfigWarnings?: string[];
   banner?: string;
+  herdrReporter?: HerdrAgentReporter;
 }
 
 export interface TuiController {
@@ -138,6 +140,9 @@ export class TopchesterTuiController implements TuiController {
   private sessionPickerSelectionHandler: ((sessionId: string) => void) | undefined;
   private sessionPickerCancelHandler: (() => void) | undefined;
   private disposed = false;
+  private readonly herdrReporter: HerdrAgentReporter;
+  private readonly stopHerdrStateSync: () => void;
+  private herdrBlocked = false;
 
   private constructor(
     private readonly context: AppContext,
@@ -157,6 +162,8 @@ export class TopchesterTuiController implements TuiController {
       taskPlan: options.initialTaskPlan,
       ...(options.session === undefined ? { startupHint: STARTUP_PROMPT_HINT } : {}),
     });
+    this.herdrReporter = options.herdrReporter ?? createHerdrAgentReporter();
+    this.stopHerdrStateSync = this.view.subscribe(() => this.syncHerdrState());
   }
 
   static async create(
@@ -179,6 +186,7 @@ export class TopchesterTuiController implements TuiController {
       options
     );
     await controller.initialize(options.session !== undefined);
+    controller.syncHerdrState();
     return controller;
   }
 
@@ -299,6 +307,8 @@ export class TopchesterTuiController implements TuiController {
     }
     this.view.dispose();
     await Promise.allSettled(this.backgroundTasks);
+    this.stopHerdrStateSync();
+    await this.herdrReporter.release();
   }
 
   async applyRuntimeEvents(events: AgentRuntimeEvent[]): Promise<void> {
@@ -560,11 +570,19 @@ export class TopchesterTuiController implements TuiController {
         abortSignal.removeEventListener("abort", abort);
         this.dialogHandler = undefined;
         this.view.removeActiveChoice();
+        this.herdrBlocked = false;
+        this.syncHerdrState();
         busy.clearActivity();
         resolve(decision);
       };
       const abort = () => settle("cancel");
       abortSignal.addEventListener("abort", abort, { once: true });
+      this.herdrBlocked = true;
+      void this.herdrReporter.report({
+        state: "blocked",
+        sessionId: this.session.sessionId,
+        message: "Waiting for bash approval",
+      });
       this.openManagedDialog(
         {
           kind: "choice",
@@ -1331,12 +1349,30 @@ export class TopchesterTuiController implements TuiController {
     this.view.setEphemeral(undefined);
   }
 
+  private syncHerdrState(): void {
+    if (this.disposed || this.herdrBlocked) {
+      return;
+    }
+    const snapshot = this.view.getSnapshot();
+    const state: HerdrAgentState =
+      snapshot.canCancel || topchesterWorkingStatuses.has(snapshot.status) ? "working" : "idle";
+    void this.herdrReporter.report({ state, sessionId: this.session.sessionId });
+  }
+
   private ensureActive(): void {
     if (this.disposed) {
       throw new Error("TUI controller is disposed");
     }
   }
 }
+
+const topchesterWorkingStatuses = new Set([
+  "checking agent",
+  "thinking",
+  "running command",
+  "loading models",
+  "connecting provider",
+]);
 
 function formatBashApprovalBody(request: BashApprovalRequest): string {
   const reason = request.reason.includes(request.command) ? "This bash command is not allowed yet." : request.reason;

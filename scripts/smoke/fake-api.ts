@@ -269,19 +269,6 @@ function chooseResponse(prompt: string): string {
     return toolCall("read_file", { path: "docs/task-subagent-note.txt" });
   }
 
-  if (prompt.includes("RUN_VALIDATOR_SMOKE") && prompt.includes("Tool result from run_validator")) {
-    return "Validator smoke passed: RUN_VALIDATOR_SMOKE passed";
-  }
-
-  if (prompt.includes("RUN_VALIDATOR_SMOKE")) {
-    return toolCall("run_validator", {
-      command: "pnpm test",
-      validator: "test",
-      workdir: ".",
-      timeout_ms: 15000,
-    });
-  }
-
   if (prompt.includes("BASH_SMOKE") && prompt.includes("Tool result from bash")) {
     return "BASH_SMOKE shell ok\nBASH_SMOKE passed";
   }
@@ -289,6 +276,9 @@ function chooseResponse(prompt: string): string {
   if (prompt.includes("BASH_SMOKE")) {
     if (prompt.includes("run_command:")) {
       return "RUN_COMMAND_VISIBLE";
+    }
+    if (prompt.includes("run_validator:")) {
+      return "RUN_VALIDATOR_VISIBLE";
     }
 
     return toolCall("bash", {

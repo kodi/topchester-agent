@@ -1,7 +1,7 @@
 {
   "id": "20-bash",
   "name": "Bash tool",
-  "description": "Checks approved bash usage through topchester run and verifies run_command is absent from the model prompt.",
+  "description": "Checks approved bash verification through topchester run and verifies removed command tools are absent from the model prompt.",
   "timeoutMs": 15000,
   "bootstrapFiles": [
     {

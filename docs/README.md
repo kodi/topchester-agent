@@ -30,7 +30,7 @@ Use these docs when you want to install Topchester, configure a model provider, 
 
 ## What it can use
 
-The agent can read and edit workspace files, search the repo, run approved shell commands, run strict validators, use Git tools, activate skills, call configured local MCP tools, and run lifecycle hooks.
+The agent can read and edit workspace files, search the repo, run approved shell commands for verification and other terminal work, use Git tools, activate skills, call configured local MCP tools, and run lifecycle hooks.
 
 The TUI is the main interface. `topchester run` is available for one-shot prompts and automation.
 

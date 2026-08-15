@@ -68,7 +68,7 @@ function rejectUnsupportedSubagentPrompt(args: TaskToolArgs): void {
   }
 
   throw new Error(
-    `task subagent "${profile.id}" cannot run bash, shell commands, Python/Node scripts, validators, or other execution tools. Use the parent bash/run_validator tools directly, or delegate only read-only file/search/git research.`
+    `task subagent "${profile.id}" cannot run bash, shell commands, Python/Node scripts, validators, or other execution tools. Use the parent bash tool directly, or delegate only read-only file/search/git research.`
   );
 }
 

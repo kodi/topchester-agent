@@ -148,25 +148,6 @@ export function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult
       .join("\n");
   }
 
-  if (result.tool === "run_validator") {
-    return [
-      `Tool result from ${result.tool} via ${result.command}:`,
-      `cwd: ${result.cwd}`,
-      `exit_code: ${result.exitCode}`,
-      `duration_ms: ${result.durationMs}`,
-      `timed_out: ${result.timedOut}`,
-      `truncated: ${result.truncated}`,
-      `policy: ${result.policy.reason}`,
-      `workspace_may_have_changed: ${result.workspaceMayHaveChanged}`,
-      warning ? warning.trimStart() : "",
-      "```",
-      result.content,
-      "```",
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }
-
   if (result.tool === "bash") {
     return [
       `Tool result from ${result.tool} via ${result.command}:`,
@@ -343,9 +324,6 @@ export function formatInvalidToolCallRepairInstruction(rejection: ToolCallParseR
     `Your previous response looked like a ${rejection.tool} tool call, but its arguments did not match the tool schema.`,
     `Validation error: ${rejection.reason}`,
     "Do not answer with that JSON as chat text.",
-    rejection.tool === "run_validator"
-      ? "If this command is not a strict validator shape but the user still needs command output, retry with bash when approval or project policy allows it."
-      : "",
     "Reply now with one valid tool call JSON object for the next action, or answer in plain text if no tool is needed.",
   ]
     .filter(Boolean)
@@ -469,10 +447,6 @@ export function formatToolCallMessage(call: ToolCall, result?: ToolExecutionResu
       return `git_commit: ${result?.tool === "git_commit" ? `${result.commit.shortSha} ${result.commit.subject}` : call.args.message}`;
     case "inspect_command":
       return `inspect_command: ${call.args.command}`;
-    case "run_validator":
-      return result?.tool === "run_validator" && !isToolErrorResult(result)
-        ? `run_validator: ${call.args.command} (${result.timedOut ? "timed out" : `exit ${result.exitCode}`}, ${formatSeconds(result.durationMs)})`
-        : `run_validator: ${call.args.command}`;
     case "bash":
       return result?.tool === "bash" && !isToolErrorResult(result)
         ? `bash: ${call.args.command} (${result.timedOut ? "timed out" : `exit ${result.exitCode}`}, ${formatSeconds(result.durationMs)})`

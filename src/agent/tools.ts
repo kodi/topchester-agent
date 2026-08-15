@@ -151,15 +151,6 @@ export {
   type BashPermissionDecision,
 } from "./tools/bash-policy.js";
 export {
-  runValidatorArgsSchema,
-  runValidatorCommand,
-  runValidatorTool,
-  validatorKindSchema,
-  type RunValidatorArgs,
-  type RunValidatorToolCall,
-  type RunValidatorToolResult,
-} from "./tools/run-validator.js";
-export {
   listFilesTool,
   listWorkspaceFiles,
   type ListFilesToolArgs,

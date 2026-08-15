@@ -26,7 +26,7 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
     "- Start by understanding the user's intent and the surrounding code before proposing or changing anything non-trivial.",
     "- Prefer local project evidence over assumptions. Use search and read tools to find relevant files, examples, tests, commands, and conventions.",
     "- Break multi-step work into a short internal plan. If a planning or todo tool is available, use it for non-trivial tasks and keep it current as work progresses.",
-    "- Use the most specific available tool for the job. Prefer dedicated file/search/edit/test tools over shell commands when both are available.",
+    "- Use the most specific available tool for the job. Prefer dedicated file, search, edit, and Git tools over shell commands when both are available.",
     "- When the request involves creating, modifying, or running code or files, use the appropriate tools to do the actual work. Code or patches shown only in chat are not saved and do not count as completion.",
     "- Follow existing project style, naming, dependencies, and test patterns. Do not introduce new libraries or broad abstractions unless the existing code clearly supports that choice.",
     "- Verify changes with the narrowest relevant test or check when tools allow it. If verification is not possible, say what was not run and why.",
@@ -89,19 +89,8 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
           "- Use inspect_command only for quick read-only repo orientation when the user did not ask to run a specific command and a short familiar command chain is clearer than several dedicated tool calls.",
           "- inspect_command is not a shell. Unsafe commands, shell expansion, scripts, installs, builds, tests, network access, and file mutation are not available through it.",
           canUseTool("bash")
-            ? "- Do not use inspect_command when the user asks to run a specific command such as node --version, which node, or pnpm --version; use bash or run_validator instead."
+            ? "- Do not use inspect_command when the user asks to run a specific command such as node --version, which node, or pnpm --version; use bash instead."
             : "",
-        ].filter(Boolean)
-      : []),
-    ...(canUseTool("run_validator")
-      ? [
-          "- After code edits, use run_validator when there is a relevant test, lint, typecheck, build, check, format-check, or smoke command that can prove the change.",
-          "- Use run_validator for format-check only. Use bash for mutating formatter commands such as pnpm format when the user asks to format or project policy allows it.",
-          "- Failed run_validator exits are evidence. Read stdout and stderr, fix the issue when it is in scope, and rerun the narrowest useful validator.",
-          canUseTool("bash")
-            ? "- If run_validator is rejected because the command is not a strict validator shape but the user still needs command output, retry with bash when approval or project policy allows it."
-            : "",
-          "- Do not use inspect_command for tests, builds, lint, typecheck, format checks, or smoke checks. Use run_validator for verification.",
         ].filter(Boolean)
       : []),
     ...(canUseTool("web_fetch")
@@ -115,7 +104,10 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
           "- bash is the approval-gated shell runner. Do not avoid it because a command might need approval; call bash and let permission policy return the allowed, rejected, or approval result.",
           "- Prefer dedicated tools for file reads, file writes, edits, Git inspection, and searches.",
           "- Use bash for arbitrary shell syntax, package manager commands, scripts, pipelines, redirects, and command chaining.",
-          "- Do not use bash for file reads, file writes, Git inspection, or validation when a dedicated tool can do it.",
+          "- After code edits, use bash to run the narrowest relevant test, lint, typecheck, build, check, format-check, or smoke command that can prove the change.",
+          "- Failed bash exits are evidence. Read stdout and stderr, fix the issue when it is in scope, and rerun the narrowest useful check.",
+          "- Do not use inspect_command for tests, builds, lint, typecheck, format checks, or smoke checks. Use bash for verification.",
+          "- Do not use bash for file reads, file writes, or Git inspection when a dedicated tool can do it.",
         ]
       : []),
     ...(canUseTool("edit_file") && canUseTool("read_file")
@@ -170,9 +162,6 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
       ? [
           "- Use finish_task to complete implementation tasks after the requested work is actually done. Do not call finish_task to claim edits or validation that tool results did not confirm.",
         ]
-      : []),
-    ...(canUseTool("inspect_command") || canUseTool("run_validator")
-      ? ["- Use command/test tools when they are available and you need to inspect the environment or verify behavior."]
       : []),
     "- After each tool result, decide the next useful action from the new evidence. Continue until the request is handled or blocked.",
     "Do not make up file contents or search results.",

@@ -316,7 +316,7 @@ Config ignores are applied after built-in safety exclusions and `.gitignore`. Ne
 }
 ```
 
-Rules match command strings by exact command or prefix plus a following space. Deny rules win over allow rules. Use `run_validator` instead of `bash` for tests, lint, typecheck, build, check, format-check, and smoke whenever it fits.
+Rules match command strings by exact command or prefix plus a following space. Deny rules win over allow rules. Tests, lint, typecheck, builds, checks, format checks, and smoke commands use the same `bash` approval rules as other shell work.
 
 `tools.bash.allowExact` matches only the complete command. `tools.bash.allow`, `tools.bash.allowExact`, and `tools.bash.deny` arrays concatenate across config layers in the same load order as `ignore.paths`.
 
