@@ -1,10 +1,73 @@
 import { describe, expect, it } from "vite-plus/test";
+import { TuiViewStore } from "../src/chat/controller-state.js";
 import { ComposerState } from "../src/tui/opentui/composer-state.js";
 import { formatQueuedFollowUpPreview } from "../src/tui/opentui/live-footer.js";
 import { getListWindowStart } from "../src/tui/opentui/list-window.js";
 import { isLightTerminalPalette, resolveTopchesterTheme } from "../src/tui/opentui/theme.js";
 
 describe("OpenTUI local UI state", () => {
+  it("publishes epoch-scoped incremental transcript changes without inspecting history on footer updates", () => {
+    const profile = { viewPublications: 0, transcriptRecordsInspected: 0 };
+    const view = new TuiViewStore({
+      sessionId: "first",
+      workspaceLabel: "fixture",
+      transcript: Array.from({ length: 1000 }, (_, index) => ({
+        kind: "system" as const,
+        persistence: "session" as const,
+        text: `entry ${index}`,
+      })),
+      modelLabel: "fixture",
+      profile,
+    });
+    const initial = view.getSnapshot();
+
+    expect(initial.transcriptRecords[0]).toMatchObject({ sessionEpoch: 0, id: 0 });
+    expect(initial.transcriptRecords.at(-1)).toMatchObject({ sessionEpoch: 0, id: 999 });
+    expect(initial.transcriptChange).toMatchObject({ kind: "reset", sessionEpoch: 0 });
+
+    view.setStatus("typing");
+    const footerOnly = view.getSnapshot();
+    expect(footerOnly.transcript).toBe(initial.transcript);
+    expect(footerOnly.transcriptRecords).toBe(initial.transcriptRecords);
+    expect(footerOnly.transcriptChange).toEqual({ kind: "none", sessionEpoch: 0 });
+    expect(profile.transcriptRecordsInspected).toBe(0);
+
+    view.addEntry({
+      kind: "choice",
+      persistence: "session",
+      tone: "info",
+      title: "Continue?",
+      actions: [{ label: "Yes" }],
+    });
+    expect(view.getSnapshot().transcriptChange).toMatchObject({
+      kind: "append",
+      sessionEpoch: 0,
+      records: [expect.objectContaining({ id: 1000, sessionEpoch: 0 })],
+    });
+    view.removeActiveChoice();
+    expect(view.getSnapshot().transcriptChange).toEqual({ kind: "remove", sessionEpoch: 0, recordIds: [1000] });
+
+    view.addEntry({ kind: "assistant", persistence: "session", text: "stable" });
+    expect(view.getSnapshot().transcriptChange).toMatchObject({
+      kind: "append",
+      records: [expect.objectContaining({ id: 1001, sessionEpoch: 0 })],
+    });
+
+    view.reset({
+      sessionId: "second",
+      transcript: [{ kind: "user", persistence: "session", text: "restored" }],
+      modelLabel: "fixture",
+    });
+    expect(view.getSnapshot()).toMatchObject({
+      sessionEpoch: 1,
+      transcriptChange: {
+        kind: "reset",
+        sessionEpoch: 1,
+        records: [expect.objectContaining({ id: 0, sessionEpoch: 1 })],
+      },
+    });
+  });
+
   it("previews large pastes and expands them exactly at submission", () => {
     const state = new ComposerState();
     const pasted = Array.from({ length: 7 }, (_, index) => `line ${index + 1}`).join("\r\n");

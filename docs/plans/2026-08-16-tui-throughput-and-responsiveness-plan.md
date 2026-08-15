@@ -255,7 +255,7 @@ Completion evidence to record:
 
 ### Slice 2: Incremental transcript publication and append cursors
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Make footer-only updates independent of transcript length and eliminate content serialization as the transcript identity mechanism.
 
@@ -288,6 +288,32 @@ Verification:
 - `git diff --check`.
 
 Dependencies: Slice 1 metrics and baseline.
+
+Completed in this slice:
+
+- added immutable, epoch-scoped transcript records with monotonic record IDs and explicit `none`, `append`, `remove`, and `reset` publication changes while preserving the existing `TranscriptEntry` view and persisted payloads;
+- made footer-only snapshots reuse both transcript arrays and publish `none`, so view publication no longer clones or inspects stable history;
+- replaced serialized transcript identity and the scheduled-key set with `TranscriptAppendCursor`, which consumes only initial/reset replay records or newly appended records;
+- moved initial writer replay to mount and sends later controller publications directly to the writer so Solid signal coalescing cannot hide appends;
+- retained choice exclusion, settle-before-commit, session-boundary rows, and epoch checks before work, after settle, and during failure reporting so abandoned-session scrollback cannot commit or fail into the new session;
+- migrated production/performance fixtures to create coherent transcript records and changes.
+
+Measured result (2026-08-16, Darwin arm64, Bun 1.3.2):
+
+- after a 1,000-record initial replay, the footer-only long-transcript step changed from 2,000 transcript inspections to 0 inspections, 0 serializations, and 0 scheduled commits;
+- appending one stable record schedules one scrollback commit; an intervening removed choice advances identity without entering scrollback;
+- `mise run opentui-perf -- --scenario long-transcript-input` reported p50 0.07 ms and p95/max 0.11 ms in the integration run. The full performance suite retained all accepted correctness budgets.
+
+Verification:
+
+- `mise run test-node -- test/tui-controller.test.ts test/opentui-state.test.ts` (2 files, 20 tests pass);
+- `mise run opentui-test` (pass, including duplicate publication, choice exclusion, pending reset, and new-epoch commit coverage);
+- `mise run opentui-perf -- --scenario long-transcript-input --output /tmp/topchester-slice2-long-transcript.json` (pass);
+- `mise run test` (39 files, 617 tests pass, plus production OpenTUI test);
+- `mise run local-ci` (pass);
+- `git diff --check` (pass).
+
+Implication for later slices: batching and transient coalescing must preserve the explicit transcript change carried by a transaction. A stable append or reset must never be overwritten by a later footer patch before publication.
 
 Acceptance criteria:
 
@@ -517,7 +543,8 @@ The final handoff must state measured before/after results, any unsupported host
 - 2026-08-16: Topchester already owns the correct renderer-level foundation: OpenTUI's native Zig renderer, split-footer mode, native scrollback surfaces, target frame pacing, and backpressure. The initial optimization target is the TypeScript application pipeline above that renderer.
 - 2026-08-16: Existing production-frame regressions prove component-only tests are insufficient. The performance harness must retain a real production/PTY path in addition to deterministic counters.
 - 2026-08-16: Slice 1 established the first measured baseline. The roughly 14.7-second PTY input-to-paint result exposes the existing settle/publication pipeline cost and is intentionally retained as the before value rather than normalized away.
+- 2026-08-16: Slice 2 removed transcript-length-dependent footer work. The writer now owns an epoch-scoped cursor, while the public and persisted transcript entry shapes remain unchanged.
 
 ## Next Slice
 
-Start Slice 2. Introduce session-epoch-scoped transcript records and an append cursor in `src/chat/controller-state.ts`, `src/tui/opentui/app.tsx`, and `src/tui/opentui/transcript-writer.tsx`; then update the long-transcript scenario and run its focused state, production-renderer, performance, and `local-ci` checks before checkpointing.
+Start Slice 3. Add nested-safe atomic batching and an injectable 30 FPS transient scheduler in `src/chat/controller-state.ts` and `src/chat/controller-busy.ts`, then reduce each `applyRuntimeEvents()` call into one semantic publication without losing Slice 2 append/reset changes. Verify fake-clock cleanup and the reasoning/resize scenarios before checkpointing.

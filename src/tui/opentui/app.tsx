@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 
 import { type CliRenderer, type SyntaxStyle } from "@opentui/core";
-import { createEffect, createSignal, onCleanup } from "solid-js";
+import { createSignal, onCleanup, onMount } from "solid-js";
 import { type TopchesterTuiController } from "../../chat/controller.js";
 import { type TuiViewState } from "../../chat/controller-state.js";
 import { type FileMentionProvider } from "../file-mention-provider.js";
@@ -24,14 +24,16 @@ export interface TopchesterAppProps {
 export function TopchesterApp(props: TopchesterAppProps) {
   const [snapshot, setSnapshot] = createSignal(props.initialSnapshot);
   const writer = new TranscriptWriter((error) => props.onRenderError?.(error));
-  const unsubscribe = props.controller.subscribe(setSnapshot);
-
-  createEffect(() => {
-    const next = snapshot();
+  const syncWriter = (next: TuiViewState) => {
     if (props.renderer) {
       writer.sync(props.renderer, next, props.theme, props.syntaxStyle);
     }
+  };
+  const unsubscribe = props.controller.subscribe((next) => {
+    syncWriter(next);
+    setSnapshot(next);
   });
+  onMount(() => syncWriter(snapshot()));
   onCleanup(() => {
     unsubscribe();
     writer.dispose();

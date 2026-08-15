@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { createRuntimeEventQueue } from "../../src/agent/runtime/event-queue.js";
 import { TuiViewStore } from "../../src/chat/controller-state.js";
 import { ComposerState } from "../../src/tui/opentui/composer-state.js";
+import { TranscriptAppendCursor } from "../../src/tui/opentui/transcript-writer.js";
 import { createSession } from "../../src/session/store.js";
 import { startFakeApi } from "../smoke/fake-api.js";
 import { runRendererScenario } from "./performance-renderer.js";
@@ -163,12 +164,20 @@ async function runScenario(name: ScenarioName): Promise<Record<string, number>> 
   });
   switch (name) {
     case "long-transcript-input": {
-      view.getSnapshot();
+      const writerProfile = { transcriptRecordsInspected: 0, transcriptRecordsSerialized: 0 };
+      const cursor = new TranscriptAppendCursor(writerProfile);
+      const initialReplay = cursor.sync(view.getSnapshot());
+      assert.equal(initialReplay.records.length, entries.length);
+      writerProfile.transcriptRecordsInspected = 0;
       view.setStatus("typing");
+      const footerUpdate = cursor.sync(view.getSnapshot());
+      assert.equal(footerUpdate.records.length, 0);
       new ComposerState().preparePaste("x");
       return {
         transcriptEntriesSeeded: entries.length,
         ...profile,
+        ...writerProfile,
+        transcriptRecordsScheduled: footerUpdate.records.length,
         inputInjections: 1,
         dropped: 0,
         duplicated: 0,

@@ -6,6 +6,7 @@ import { ChoiceDialog } from "../../src/tui/opentui/dialog-host.js";
 import { ThemeProvider } from "../../src/tui/opentui/context.js";
 import { resolveTopchesterTheme } from "../../src/tui/opentui/theme.js";
 import { TranscriptWriter } from "../../src/tui/opentui/transcript-writer.js";
+import { TuiViewStore } from "../../src/chat/controller-state.js";
 import type { ScenarioName } from "./performance.js";
 
 export interface RendererScenarioResult {
@@ -68,26 +69,17 @@ export async function runRendererScenario(
     }
     const profile = { transcriptRecordsInspected: 0, transcriptRecordsSerialized: 0, scrollbackCommits: 0 };
     const writer = new TranscriptWriter(undefined, profile);
-    writer.sync(
-      setup.renderer,
-      {
-        sessionId: "00000000-0000-7000-8000-000000000000",
-        sessionEpoch: 0,
-        workspaceLabel: "fixture",
-        status: "ready",
-        modelLabel: "fixture",
-        queuedFollowUpCount: 0,
-        canCancel: false,
-        managedDialog: false,
-        transcript: [
-          { kind: "assistant", persistence: "session", text: "# fixture\n```ts\nconst value = 1;\n```" },
-          { kind: "assistant", persistence: "session", text: "```diff\n+ fixture\n```" },
-          { kind: "assistant", persistence: "session", text: "## fixture" },
-        ],
-      },
-      theme,
-      syntaxStyle
-    );
+    const view = new TuiViewStore({
+      sessionId: "00000000-0000-7000-8000-000000000000",
+      workspaceLabel: "fixture",
+      modelLabel: "fixture",
+      transcript: [
+        { kind: "assistant", persistence: "session", text: "# fixture\n```ts\nconst value = 1;\n```" },
+        { kind: "assistant", persistence: "session", text: "```diff\n+ fixture\n```" },
+        { kind: "assistant", persistence: "session", text: "## fixture" },
+      ],
+    });
+    writer.sync(setup.renderer, view.getSnapshot(), theme, syntaxStyle);
     await writer.idle();
     await setup.flush();
     return {

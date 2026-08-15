@@ -19,6 +19,7 @@ import { agentEvent } from "../../src/agent/events.js";
 import { type AgentRuntime } from "../../src/agent/runtime/index.js";
 import { formatTuiSyncStatus } from "../../src/agent/runtime/knowledge.js";
 import { TopchesterTuiController } from "../../src/chat/controller.js";
+import { type TuiViewState } from "../../src/chat/controller-state.js";
 import { reasoningTranscriptEntry, type ChoiceTranscriptEntry, type TranscriptEntry } from "../../src/chat/index.js";
 import { formatKnowledgeCompileStatusResult } from "../../src/knowledge/compiler/index.js";
 import { getKnowledgeStatus } from "../../src/knowledge/status.js";
@@ -299,7 +300,8 @@ async function testTranscriptWriter(): Promise<void> {
     screenMode: "split-footer",
     externalOutputMode: "capture-stdout",
   });
-  const writer = new TranscriptWriter();
+  const profile = { transcriptRecordsInspected: 0, transcriptRecordsSerialized: 0, scrollbackCommits: 0 };
+  const writer = new TranscriptWriter(undefined, profile);
 
   try {
     writer.sync(setup.renderer, controller.getSnapshot(), theme, syntaxStyle);
@@ -309,6 +311,8 @@ async function testTranscriptWriter(): Promise<void> {
     const output = setup.externalOutput.take();
     assert.equal(output.length, 1);
     assert.match(output[0]?.text ?? "", /TOPCHESTER/u);
+    assert.equal(profile.transcriptRecordsInspected, controller.getSnapshot().transcript.length);
+    assert.equal(profile.transcriptRecordsSerialized, 0);
 
     const kbStatusText = formatKnowledgeCompileStatusResult(
       {
@@ -335,10 +339,9 @@ async function testTranscriptWriter(): Promise<void> {
       },
       { formatSyncStatus: formatTuiSyncStatus }
     ).join("\n");
-    const kbStatusSnapshot = {
-      ...controller.getSnapshot(),
-      transcript: [{ kind: "system", persistence: "session", text: kbStatusText } satisfies TranscriptEntry],
-    };
+    const kbStatusSnapshot = appendTranscriptSnapshot(controller.getSnapshot(), [
+      { kind: "system", persistence: "session", text: kbStatusText } satisfies TranscriptEntry,
+    ]);
     writer.sync(setup.renderer, kbStatusSnapshot, theme, syntaxStyle);
     writer.sync(setup.renderer, kbStatusSnapshot, theme, syntaxStyle);
     await writer.idle();
@@ -391,7 +394,7 @@ async function testTranscriptWriter(): Promise<void> {
           ].join("\n"),
         },
       ];
-      const markdownSnapshot = { ...controller.getSnapshot(), transcript: markdownTranscript };
+      const markdownSnapshot = appendTranscriptSnapshot(kbStatusSnapshot, markdownTranscript);
       writer.sync(setup.renderer, markdownSnapshot, theme, syntaxStyle);
       writer.sync(setup.renderer, markdownSnapshot, theme, syntaxStyle);
       await writer.idle();
@@ -418,34 +421,71 @@ async function testTranscriptWriter(): Promise<void> {
     assert.deepEqual(keywordColor, RGBA.fromHex(theme.accent).toInts());
     assert.deepEqual(keywordBackground, RGBA.fromHex(theme.surface).toInts());
 
-    writer.sync(
-      setup.renderer,
-      {
-        ...controller.getSnapshot(),
-        sessionId: "restored-session",
-        sessionEpoch: 1,
-        transcript: [{ kind: "user", persistence: "session", text: "restored prompt" }],
-      },
-      theme,
-      syntaxStyle
-    );
-    writer.sync(
-      setup.renderer,
-      {
-        ...controller.getSnapshot(),
-        sessionId: "restored-session",
-        sessionEpoch: 1,
-        transcript: [{ kind: "user", persistence: "session", text: "restored prompt" }],
-      },
-      theme,
-      syntaxStyle
-    );
+    const restoredSnapshot = resetTranscriptSnapshot(controller.getSnapshot(), {
+      sessionId: "restored-session",
+      sessionEpoch: 1,
+      transcript: [{ kind: "user", persistence: "session", text: "restored prompt" }],
+    });
+    writer.sync(setup.renderer, restoredSnapshot, theme, syntaxStyle);
+    writer.sync(setup.renderer, restoredSnapshot, theme, syntaxStyle);
     await writer.idle();
     await setup.flush();
     const replay = setup.externalOutput.take();
     assert.equal(replay.length, 2);
     assert.match(replay.map((entry) => entry.text).join("\n"), /session restored/u);
     assert.match(replay.map((entry) => entry.text).join("\n"), /restored prompt/u);
+
+    const pendingWriter = new TranscriptWriter();
+    const staleSnapshot = resetTranscriptSnapshot(restoredSnapshot, {
+      sessionId: "stale-session",
+      sessionEpoch: 10,
+      transcript: [{ kind: "assistant", persistence: "session", text: "must not commit" }],
+    });
+    const freshSnapshot = resetTranscriptSnapshot(staleSnapshot, {
+      sessionId: "fresh-session",
+      sessionEpoch: 11,
+      transcript: [{ kind: "assistant", persistence: "session", text: "fresh commit" }],
+    });
+    pendingWriter.sync(setup.renderer, staleSnapshot, theme, syntaxStyle);
+    pendingWriter.sync(setup.renderer, freshSnapshot, theme, syntaxStyle);
+    await pendingWriter.idle();
+    await setup.flush();
+    const pendingReset = setup.externalOutput.take();
+    assert.equal(pendingReset.length, 2);
+    assert.doesNotMatch(pendingReset.map((entry) => entry.text).join("\n"), /must not commit/u);
+    assert.match(pendingReset.map((entry) => entry.text).join("\n"), /fresh commit/u);
+    pendingWriter.dispose();
+
+    const choiceWriter = new TranscriptWriter();
+    const choiceSnapshot = resetTranscriptSnapshot(restoredSnapshot, {
+      sessionId: "choice-session",
+      sessionEpoch: 20,
+      transcript: [
+        {
+          kind: "choice",
+          persistence: "session",
+          tone: "info",
+          title: "Do not commit this choice",
+          actions: [{ label: "Continue" }],
+        },
+      ],
+    });
+    choiceWriter.sync(setup.renderer, choiceSnapshot, theme, syntaxStyle);
+    choiceWriter.sync(
+      setup.renderer,
+      appendTranscriptSnapshot(choiceSnapshot, [
+        { kind: "assistant", persistence: "session", text: "stable after choice" },
+      ]),
+      theme,
+      syntaxStyle
+    );
+    await choiceWriter.idle();
+    await setup.flush();
+    const choiceOutput = setup.externalOutput.take();
+    assert.equal(choiceOutput.length, 1);
+    assert.doesNotMatch(choiceOutput[0]?.text ?? "", /Do not commit this choice/u);
+    assert.match(choiceOutput[0]?.text ?? "", /stable after choice/u);
+    choiceWriter.dispose();
   } finally {
     writer.dispose();
     await controller.dispose();
@@ -854,6 +894,36 @@ function assertPlanRows(frame: string, expectedRows: string[]): void {
       `missing intact task-plan row: ${expected}\n\n${frame}`
     );
   }
+}
+
+function appendTranscriptSnapshot(snapshot: TuiViewState, entries: readonly TranscriptEntry[]): TuiViewState {
+  const firstId = snapshot.transcriptRecords.at(-1)?.id ?? -1;
+  const records = entries.map((entry, index) => ({
+    sessionEpoch: snapshot.sessionEpoch,
+    id: firstId + index + 1,
+    entry,
+  }));
+  return {
+    ...snapshot,
+    transcript: [...snapshot.transcript, ...entries],
+    transcriptRecords: [...snapshot.transcriptRecords, ...records],
+    transcriptChange: { kind: "append", sessionEpoch: snapshot.sessionEpoch, records },
+  };
+}
+
+function resetTranscriptSnapshot(
+  snapshot: TuiViewState,
+  options: { sessionId: string; sessionEpoch: number; transcript: readonly TranscriptEntry[] }
+): TuiViewState {
+  const records = options.transcript.map((entry, id) => ({ sessionEpoch: options.sessionEpoch, id, entry }));
+  return {
+    ...snapshot,
+    sessionId: options.sessionId,
+    sessionEpoch: options.sessionEpoch,
+    transcript: [...options.transcript],
+    transcriptRecords: records,
+    transcriptChange: { kind: "reset", sessionEpoch: options.sessionEpoch, records },
+  };
 }
 
 async function testRenderFailureCleanup(): Promise<void> {

@@ -2,7 +2,7 @@
 
 import { type BaseRenderable, type CliRenderer, type SyntaxStyle } from "@opentui/core";
 import { _render, createComponent, RendererContext, type JSX } from "@opentui/solid";
-import { type TuiViewState } from "../../chat/controller-state.js";
+import { type TuiTranscriptRecord, type TuiViewState } from "../../chat/controller-state.js";
 import { ThreadEntry } from "./thread-entry.js";
 import { type TopchesterTheme } from "./theme.js";
 
@@ -20,53 +20,86 @@ export interface TranscriptWriterProfile {
   scrollbackCommits: number;
 }
 
+export interface TranscriptAppendCursorResult {
+  readonly sessionChanged: boolean;
+  readonly sessionEpoch: number;
+  readonly records: readonly TuiTranscriptRecord[];
+}
+
+export class TranscriptAppendCursor {
+  private sessionEpoch = -1;
+  private appendCursor = 0;
+
+  constructor(private readonly profile?: Pick<TranscriptWriterProfile, "transcriptRecordsInspected">) {}
+
+  sync(snapshot: TuiViewState): TranscriptAppendCursorResult {
+    const previousEpoch = this.sessionEpoch;
+    const epochChanged = previousEpoch !== snapshot.sessionEpoch;
+    if (epochChanged) {
+      this.sessionEpoch = snapshot.sessionEpoch;
+      this.appendCursor = 0;
+    }
+    const candidates = epochChanged
+      ? snapshot.transcriptRecords
+      : snapshot.transcriptChange.kind === "append"
+        ? snapshot.transcriptChange.records
+        : [];
+    const records: TuiTranscriptRecord[] = [];
+    for (const record of candidates) {
+      if (record.sessionEpoch !== this.sessionEpoch || record.id < this.appendCursor) {
+        continue;
+      }
+      if (this.profile) this.profile.transcriptRecordsInspected += 1;
+      this.appendCursor = record.id + 1;
+      if (record.entry.kind !== "choice") {
+        records.push(record);
+      }
+    }
+    return {
+      sessionChanged: previousEpoch >= 0 && epochChanged,
+      sessionEpoch: this.sessionEpoch,
+      records,
+    };
+  }
+}
+
 export class TranscriptWriter {
-  private readonly scheduled = new Set<string>();
   private pending = Promise.resolve();
   private failure: { error: unknown } | undefined;
-  private lastSessionEpoch = -1;
+  private readonly cursor: TranscriptAppendCursor;
+  private sessionEpoch = -1;
   private disposed = false;
 
   constructor(
     private readonly onError?: (error: unknown) => void,
     private readonly profile?: TranscriptWriterProfile
-  ) {}
+  ) {
+    this.cursor = new TranscriptAppendCursor(profile);
+  }
 
   sync(renderer: CliRenderer, snapshot: TuiViewState, theme: TopchesterTheme, syntaxStyle: SyntaxStyle): void {
     if (this.disposed || this.failure) {
       return;
     }
 
-    if (this.lastSessionEpoch !== snapshot.sessionEpoch) {
-      if (this.lastSessionEpoch >= 0) {
-        this.scheduleCommit(
-          renderer,
-          `boundary:${snapshot.sessionEpoch}`,
-          {
-            kind: "system",
-            persistence: "session",
-            text: `── session ${snapshot.sessionId.slice(0, 8)} ──`,
-          },
-          theme,
-          syntaxStyle
-        );
-      }
-      this.lastSessionEpoch = snapshot.sessionEpoch;
+    const update = this.cursor.sync(snapshot);
+    this.sessionEpoch = update.sessionEpoch;
+    if (update.sessionChanged) {
+      this.scheduleCommit(
+        renderer,
+        update.sessionEpoch,
+        {
+          kind: "system",
+          persistence: "session",
+          text: `── session ${snapshot.sessionId.slice(0, 8)} ──`,
+        },
+        theme,
+        syntaxStyle
+      );
     }
-
-    snapshot.transcript.forEach((entry, index) => {
-      if (this.profile) this.profile.transcriptRecordsInspected += 1;
-      if (entry.kind !== "choice") {
-        if (this.profile) this.profile.transcriptRecordsSerialized += 1;
-        this.scheduleCommit(
-          renderer,
-          `${snapshot.sessionEpoch}:${index}:${stableEntryKey(entry)}`,
-          entry,
-          theme,
-          syntaxStyle
-        );
-      }
-    });
+    for (const record of update.records) {
+      this.scheduleCommit(renderer, update.sessionEpoch, record.entry, theme, syntaxStyle);
+    }
   }
 
   async idle(): Promise<void> {
@@ -88,23 +121,19 @@ export class TranscriptWriter {
 
   private scheduleCommit(
     renderer: CliRenderer,
-    identity: string,
+    sessionEpoch: number,
     entry: TuiViewState["transcript"][number],
     theme: TopchesterTheme,
     syntaxStyle: SyntaxStyle
   ): void {
-    if (this.scheduled.has(identity)) {
-      return;
-    }
-    this.scheduled.add(identity);
     this.pending = this.pending.then(async () => {
-      if (this.disposed || this.failure) {
+      if (this.disposed || this.failure || sessionEpoch !== this.sessionEpoch) {
         return;
       }
       try {
-        await this.commit(renderer, entry, theme, syntaxStyle);
+        await this.commit(renderer, sessionEpoch, entry, theme, syntaxStyle);
       } catch (error) {
-        if (!this.disposed) {
+        if (!this.disposed && sessionEpoch === this.sessionEpoch) {
           this.reportFailure(error);
         }
       }
@@ -113,6 +142,7 @@ export class TranscriptWriter {
 
   private async commit(
     renderer: CliRenderer,
+    sessionEpoch: number,
     entry: TuiViewState["transcript"][number],
     theme: TopchesterTheme,
     syntaxStyle: SyntaxStyle
@@ -138,7 +168,7 @@ export class TranscriptWriter {
         surface.root
       );
       await surface.settle(SCROLLBACK_SETTLE_TIMEOUT_MS);
-      if (!this.disposed) {
+      if (!this.disposed && sessionEpoch === this.sessionEpoch) {
         surface.commitRows(0, surface.height, { trailingNewline: true });
         if (this.profile) this.profile.scrollbackCommits += 1;
       }
@@ -157,8 +187,4 @@ export class TranscriptWriter {
     this.failure = { error };
     this.onError?.(error);
   }
-}
-
-function stableEntryKey(entry: TuiViewState["transcript"][number]): string {
-  return JSON.stringify(entry);
 }

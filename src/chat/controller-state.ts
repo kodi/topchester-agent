@@ -15,11 +15,25 @@ export interface TuiSessionPickerState {
   items: SessionSummary[];
 }
 
+export interface TuiTranscriptRecord {
+  readonly sessionEpoch: number;
+  readonly id: number;
+  readonly entry: TranscriptEntry;
+}
+
+export type TuiTranscriptChange =
+  | { readonly kind: "none"; readonly sessionEpoch: number }
+  | { readonly kind: "append"; readonly sessionEpoch: number; readonly records: readonly TuiTranscriptRecord[] }
+  | { readonly kind: "remove"; readonly sessionEpoch: number; readonly recordIds: readonly number[] }
+  | { readonly kind: "reset"; readonly sessionEpoch: number; readonly records: readonly TuiTranscriptRecord[] };
+
 export interface TuiViewState {
   sessionId: string;
   sessionEpoch: number;
   workspaceLabel: string;
   transcript: readonly TranscriptEntry[];
+  transcriptRecords: readonly TuiTranscriptRecord[];
+  transcriptChange: TuiTranscriptChange;
   status: string;
   knowledgeStatus?: KnowledgeStatus;
   modelLabel: string;
@@ -49,6 +63,7 @@ export class TuiViewStore {
   private readonly listeners = new Set<TuiViewListener>();
   private temporaryLineTimer: ReturnType<typeof setTimeout> | undefined;
   private state: TuiViewState;
+  private nextTranscriptRecordId = 0;
 
   constructor(options: {
     sessionId: string;
@@ -60,11 +75,15 @@ export class TuiViewStore {
     profile?: TuiViewProfile;
   }) {
     this.profile = options.profile;
+    const transcript = [...options.transcript];
+    const transcriptRecords = this.createTranscriptRecords(transcript, 0);
     this.state = {
       sessionId: options.sessionId,
       sessionEpoch: 0,
       workspaceLabel: options.workspaceLabel,
-      transcript: [...options.transcript],
+      transcript,
+      transcriptRecords,
+      transcriptChange: { kind: "reset", sessionEpoch: 0, records: transcriptRecords },
       status: "ready",
       modelLabel: options.modelLabel,
       queuedFollowUpCount: 0,
@@ -76,10 +95,8 @@ export class TuiViewStore {
   }
 
   getSnapshot(): TuiViewState {
-    if (this.profile) this.profile.transcriptRecordsInspected += this.state.transcript.length;
     return {
       ...this.state,
-      transcript: [...this.state.transcript],
       ...(this.state.taskPlan === undefined
         ? {}
         : { taskPlan: { ...this.state.taskPlan, items: [...this.state.taskPlan.items] } }),
@@ -95,7 +112,13 @@ export class TuiViewStore {
   }
 
   addEntry(entry: TranscriptEntry): void {
-    this.state = { ...this.state, transcript: [...this.state.transcript, entry] };
+    const record = this.createTranscriptRecord(entry, this.state.sessionEpoch);
+    this.state = {
+      ...this.state,
+      transcript: [...this.state.transcript, entry],
+      transcriptRecords: [...this.state.transcriptRecords, record],
+      transcriptChange: { kind: "append", sessionEpoch: this.state.sessionEpoch, records: [record] },
+    };
     this.emit();
   }
 
@@ -103,7 +126,13 @@ export class TuiViewStore {
     if (entries.length === 0) {
       return;
     }
-    this.state = { ...this.state, transcript: [...this.state.transcript, ...entries] };
+    const records = this.createTranscriptRecords(entries, this.state.sessionEpoch);
+    this.state = {
+      ...this.state,
+      transcript: [...this.state.transcript, ...entries],
+      transcriptRecords: [...this.state.transcriptRecords, ...records],
+      transcriptChange: { kind: "append", sessionEpoch: this.state.sessionEpoch, records },
+    };
     this.emit();
   }
 
@@ -111,7 +140,7 @@ export class TuiViewStore {
     if (this.state.transcript.at(-1)?.kind !== "choice") {
       return;
     }
-    this.state = { ...this.state, transcript: this.state.transcript.slice(0, -1), managedDialog: false };
+    this.removeLastTranscriptRecord({ managedDialog: false });
     this.emit();
   }
 
@@ -120,7 +149,7 @@ export class TuiViewStore {
     if (last?.kind !== "user" || last.text !== text) {
       return;
     }
-    this.state = { ...this.state, transcript: this.state.transcript.slice(0, -1) };
+    this.removeLastTranscriptRecord();
     this.emit();
   }
 
@@ -133,11 +162,17 @@ export class TuiViewStore {
     startupHint?: string;
   }): void {
     this.clearTemporaryLineTimer();
+    const sessionEpoch = this.state.sessionEpoch + 1;
+    this.nextTranscriptRecordId = 0;
+    const transcript = [...options.transcript];
+    const transcriptRecords = this.createTranscriptRecords(transcript, sessionEpoch);
     this.state = {
       sessionId: options.sessionId,
-      sessionEpoch: this.state.sessionEpoch + 1,
+      sessionEpoch,
       workspaceLabel: this.state.workspaceLabel,
-      transcript: [...options.transcript],
+      transcript,
+      transcriptRecords,
+      transcriptChange: { kind: "reset", sessionEpoch, records: transcriptRecords },
       status: options.status ?? "ready",
       modelLabel: options.modelLabel,
       queuedFollowUpCount: 0,
@@ -256,7 +291,11 @@ export class TuiViewStore {
   }
 
   private patch(patch: Partial<TuiViewState>): void {
-    this.state = { ...this.state, ...patch };
+    this.state = {
+      ...this.state,
+      ...patch,
+      transcriptChange: { kind: "none", sessionEpoch: this.state.sessionEpoch },
+    };
     this.emit();
   }
 
@@ -269,6 +308,35 @@ export class TuiViewStore {
   }
 
   private readonly profile: TuiViewProfile | undefined;
+
+  private createTranscriptRecord(entry: TranscriptEntry, sessionEpoch: number): TuiTranscriptRecord {
+    return { sessionEpoch, id: this.nextTranscriptRecordId++, entry };
+  }
+
+  private createTranscriptRecords(
+    entries: readonly TranscriptEntry[],
+    sessionEpoch: number
+  ): readonly TuiTranscriptRecord[] {
+    return entries.map((entry) => this.createTranscriptRecord(entry, sessionEpoch));
+  }
+
+  private removeLastTranscriptRecord(patch: Partial<TuiViewState> = {}): void {
+    const removed = this.state.transcriptRecords.at(-1);
+    if (!removed) {
+      return;
+    }
+    this.state = {
+      ...this.state,
+      ...patch,
+      transcript: this.state.transcript.slice(0, -1),
+      transcriptRecords: this.state.transcriptRecords.slice(0, -1),
+      transcriptChange: {
+        kind: "remove",
+        sessionEpoch: this.state.sessionEpoch,
+        recordIds: [removed.id],
+      },
+    };
+  }
 
   private clearTemporaryLineTimer(): void {
     if (this.temporaryLineTimer) {

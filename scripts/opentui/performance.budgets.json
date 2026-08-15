@@ -10,7 +10,9 @@
       "counters": {
         "transcriptEntriesSeeded": 1000,
         "viewPublications": 1,
-        "transcriptRecordsInspected": 2000,
+        "transcriptRecordsInspected": 0,
+        "transcriptRecordsSerialized": 0,
+        "transcriptRecordsScheduled": 0,
         "inputInjections": 1,
         "dropped": 0,
         "duplicated": 0,
@@ -21,7 +23,7 @@
       "counters": {
         "transientUpdates": 240,
         "viewPublications": 240,
-        "transcriptRecordsInspected": 240000,
+        "transcriptRecordsInspected": 0,
         "inputInjections": 1,
         "cancellations": 1,
         "dropped": 0,
@@ -49,7 +51,7 @@
         "fencedCodeBlocks": 2,
         "diffEntries": 1,
         "transcriptRecordsInspected": 3,
-        "transcriptRecordsSerialized": 3,
+        "transcriptRecordsSerialized": 0,
         "scrollbackCommits": 3,
         "dropped": 0,
         "duplicated": 0,
@@ -73,7 +75,7 @@
       "counters": {
         "transientUpdates": 60,
         "viewPublications": 61,
-        "transcriptRecordsInspected": 61000,
+        "transcriptRecordsInspected": 0,
         "resizes": 3,
         "terminalSizes": 3,
         "dialogActivations": 1,
