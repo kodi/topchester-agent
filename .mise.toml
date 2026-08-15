@@ -103,3 +103,7 @@ run = "vp run release:build"
 [tasks.standalone-check]
 dir = "{{config_root}}"
 run = "vp run standalone-check"
+
+[tasks.installer-check]
+dir = "{{config_root}}"
+run = "sh install/check.sh"
