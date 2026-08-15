@@ -53,7 +53,7 @@ web_fetch: https://example.com/large-doc (200, truncated)
 
 ## Busy input
 
-While a chat turn is running, the prompt stays editable. Pressing `Enter` on normal text queues it as the next follow-up turn. Queued prompts are local to the running TUI process and are not saved as user messages until they actually start.
+While a chat turn is running, the prompt stays editable. Pressing `Enter` on normal text queues it as the next follow-up turn. The footer keeps the next waiting prompt visible on one truncated `[QUEUED] ...` line, while the status bar shows the total queued count. Queued prompts are local to the running TUI process and are not saved as user messages until they actually start.
 
 Use `/queue <prompt>` to explicitly queue a follow-up. When the agent is idle, `/queue <prompt>` starts immediately like a normal prompt. While the agent is busy, the prompt waits behind the active turn and the TUI shows a compact queued follow-up count.
 

@@ -97,12 +97,18 @@ describe("framework-neutral TUI controller", () => {
     const firstTurn = new Promise<void>((resolve) => {
       releaseFirst = resolve;
     });
+    let releaseSecond: () => void = () => {};
+    const secondTurn = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
     const submitted: string[] = [];
     const runtime = createControllerRuntime({
       async *submitMessageStream(_conversation, message) {
         submitted.push(message);
         if (submitted.length === 1) {
           await firstTurn;
+        } else if (submitted.length === 2) {
+          await secondTurn;
         }
         yield agentEvent.assistantMessage(`answer: ${message}`, "model");
       },
@@ -114,11 +120,17 @@ describe("framework-neutral TUI controller", () => {
     expect(controller.submit("second")).toBe("queued");
     expect(controller.submitCommand("/steer third")).toBe("queued");
     expect(controller.getSnapshot().queuedFollowUpCount).toBe(1);
+    expect(controller.getSnapshot().queuedFollowUpPreview).toBe("second");
     releaseFirst();
+    await vi.waitFor(() => expect(submitted).toEqual(["first", "second"]));
+    expect(controller.getSnapshot().queuedFollowUpCount).toBe(1);
+    expect(controller.getSnapshot().queuedFollowUpPreview).toBe("third");
+    releaseSecond();
     await controller.waitForIdle();
 
     expect(submitted).toEqual(["first", "second", "third"]);
     expect(controller.getSnapshot().queuedFollowUpCount).toBe(0);
+    expect(controller.getSnapshot().queuedFollowUpPreview).toBeUndefined();
     await controller.dispose();
   });
 
@@ -154,6 +166,7 @@ describe("framework-neutral TUI controller", () => {
     const snapshot = controller.getSnapshot();
     expect(snapshot.sessionId).not.toBe(oldSessionId);
     expect(snapshot.queuedFollowUpCount).toBe(0);
+    expect(snapshot.queuedFollowUpPreview).toBeUndefined();
     expect(snapshot.transcript).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "startup" }),

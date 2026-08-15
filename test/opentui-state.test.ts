@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ComposerState } from "../src/tui/opentui/composer-state.js";
+import { formatQueuedFollowUpPreview } from "../src/tui/opentui/live-footer.js";
 import { getListWindowStart } from "../src/tui/opentui/list-window.js";
 import { isLightTerminalPalette, resolveTopchesterTheme } from "../src/tui/opentui/theme.js";
 
@@ -59,5 +60,12 @@ describe("OpenTUI local UI state", () => {
     expect(isLightTerminalPalette(palette("#ffffff"))).toBe(true);
     expect(isLightTerminalPalette(palette("#101218"))).toBe(false);
     expect(isLightTerminalPalette(palette("unknown"))).toBe(false);
+  });
+
+  it("formats queued follow-ups as one width-bounded line", () => {
+    expect(formatQueuedFollowUpPreview("Keep this visible", 40)).toBe("[QUEUED] Keep this visible");
+    expect(formatQueuedFollowUpPreview("first line\nsecond   line", 80)).toBe("[QUEUED] first line second line");
+    expect(formatQueuedFollowUpPreview("This message must be shortened", 24)).toBe("[QUEUED] This message…");
+    expect(formatQueuedFollowUpPreview("anything", 8)).toBe("[QUEUED]");
   });
 });

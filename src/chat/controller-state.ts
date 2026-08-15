@@ -30,6 +30,7 @@ export interface TuiViewState {
   temporaryLine?: string;
   noticeLine?: string;
   queuedFollowUpCount: number;
+  queuedFollowUpPreview?: string;
   promptHint?: string;
   canCancel: boolean;
   managedDialog: boolean;
@@ -200,8 +201,12 @@ export class TuiViewStore {
     this.patch({ noticeLine });
   }
 
-  setQueuedFollowUpCount(queuedFollowUpCount: number): void {
-    this.patch({ queuedFollowUpCount: Math.max(0, queuedFollowUpCount) });
+  setQueuedFollowUps(queuedFollowUpCount: number, queuedFollowUpPreview?: string): void {
+    const count = Math.max(0, queuedFollowUpCount);
+    this.patch({
+      queuedFollowUpCount: count,
+      queuedFollowUpPreview: count > 0 ? queuedFollowUpPreview : undefined,
+    });
   }
 
   setPromptHint(promptHint: string | undefined): void {

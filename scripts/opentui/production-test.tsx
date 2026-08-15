@@ -54,6 +54,7 @@ function createRuntime(submitted?: string[]): AgentRuntime {
 }
 
 await testAppSurface();
+await testQueuedFollowUpPreview();
 await testTranscriptWriter();
 await testThreadEntryVariants();
 await testAssistantMessage();
@@ -216,6 +217,69 @@ async function testAppSurface(): Promise<void> {
       assert.match(setup.captureCharFrame(), /not set/u);
     }
   } finally {
+    await controller.dispose();
+    setup.renderer.destroy();
+    syntaxStyle.destroy();
+  }
+}
+
+async function testQueuedFollowUpPreview(): Promise<void> {
+  const workspace = await mkdtemp(join(tmpdir(), "topchester-opentui-queue-"));
+  let releaseActiveTurn: () => void = () => {};
+  let markActiveTurnStarted: () => void = () => {};
+  const activeTurnStarted = new Promise<void>((resolve) => {
+    markActiveTurnStarted = resolve;
+  });
+  const activeTurnBlocked = new Promise<void>((resolve) => {
+    releaseActiveTurn = resolve;
+  });
+  const runtime = createRuntime();
+  runtime.submitMessageStream = async function* (_conversation, message) {
+    if (message === "active turn") {
+      markActiveTurnStarted();
+      await activeTurnBlocked;
+    }
+    yield agentEvent.assistantMessage("fixture answer", "model");
+  };
+  const controller = await TopchesterTuiController.create(createTestContext(workspace), runtime);
+  const syntaxStyle = SyntaxStyle.create();
+  const theme = resolveTopchesterTheme();
+  const setup = await testRender(
+    () => (
+      <TopchesterApp
+        controller={controller}
+        initialSnapshot={controller.getSnapshot()}
+        theme={theme}
+        syntaxStyle={syntaxStyle}
+        onInterrupt={() => {}}
+      />
+    ),
+    { width: 80, height: 24, screenMode: "split-footer", footerHeight: 16, useMouse: false, exitOnCtrlC: false }
+  );
+
+  try {
+    controller.submit("active turn");
+    await activeTurnStarted;
+    controller.submit(
+      "Review the changes in every affected file and explain any compatibility concerns before finishing the task"
+    );
+    await setup.renderOnce();
+    await setup.flush();
+
+    const queuedFrame = setup.captureCharFrame();
+    const queuedRow = queuedFrame.split("\n").find((row) => row.includes("[QUEUED]"));
+    assert.ok(queuedRow, queuedFrame);
+    assert.match(queuedRow, /^\s*\[QUEUED\] Review the changes/u);
+    assert.match(queuedRow, /…/u);
+    assert.doesNotMatch(queuedRow, /finishing the task/u);
+    assert.match(queuedFrame, /queued: 1/u);
+
+    releaseActiveTurn();
+    await controller.waitForIdle();
+    await setup.flush();
+    assert.doesNotMatch(setup.captureCharFrame(), /\[QUEUED\]/u);
+  } finally {
+    releaseActiveTurn();
     await controller.dispose();
     setup.renderer.destroy();
     syntaxStyle.destroy();

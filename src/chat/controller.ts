@@ -525,7 +525,7 @@ export class TopchesterTuiController implements TuiController {
   }
 
   private refreshQueuedChatStatus(): void {
-    this.view.setQueuedFollowUpCount(this.queuedChatMessages.length);
+    this.view.setQueuedFollowUps(this.queuedChatMessages.length, this.queuedChatMessages[0]);
   }
 
   private clearQueuedChatMessages(): string | undefined {

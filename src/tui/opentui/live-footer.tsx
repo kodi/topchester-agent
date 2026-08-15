@@ -357,6 +357,13 @@ export function LiveFooter(props: { mentionProvider?: FileMentionProvider; onInt
         <SuggestionList items={visibleSuggestions().map((item) => item.label)} selectedIndex={selection()} />
       </Show>
       <box border={["top"]} borderColor={theme.focus} flexDirection="column" minHeight={5}>
+        <Show when={snapshot().queuedFollowUpPreview}>
+          {(message) => (
+            <text width="100%" wrapMode="none" fg={theme.muted}>
+              {formatQueuedFollowUpPreview(message(), Math.max(1, renderDimensions().width - 2))}
+            </text>
+          )}
+        </Show>
         <textarea
           id="topchester-composer"
           ref={(value) => {
@@ -473,7 +480,34 @@ function estimateFooterHeight(
     : snapshot.sessionPicker
       ? Math.min(7, snapshot.sessionPicker.items.length) + 3
       : Math.min(6, suggestionCount);
-  return base + taskRows + stableTransientRows + overlayRows;
+  const queuedRows = snapshot.queuedFollowUpPreview ? 1 : 0;
+  return base + taskRows + stableTransientRows + overlayRows + queuedRows;
+}
+
+export function formatQueuedFollowUpPreview(message: string, width: number): string {
+  const label = "[QUEUED] ";
+  const normalized = message.replace(/\s+/gu, " ").trim();
+  const availableWidth = Math.max(0, Math.floor(width));
+
+  if (availableWidth <= label.length) {
+    return label.trimEnd().slice(0, availableWidth);
+  }
+
+  const messageWidth = availableWidth - label.length;
+  if (normalized.length <= messageWidth) {
+    return `${label}${normalized}`;
+  }
+  if (messageWidth === 1) {
+    return `${label}…`;
+  }
+  const contentLimit = messageWidth - 1;
+  const rawSlice = normalized.slice(0, contentLimit);
+  const sliced = rawSlice.trimEnd();
+  const nextCharacter = normalized.at(contentLimit);
+  const lastSpace = sliced.lastIndexOf(" ");
+  const splitsWord = nextCharacter && !/\s/u.test(nextCharacter) && !/\s/u.test(rawSlice.at(-1) ?? "");
+  const truncated = splitsWord && lastSpace > 0 ? sliced.slice(0, lastSpace) : sliced;
+  return `${label}${truncated}…`;
 }
 
 function estimateWrappedRows(text: string | undefined, width: number): number {
