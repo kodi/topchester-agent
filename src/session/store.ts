@@ -37,6 +37,15 @@ export interface SessionHandle {
   append(payload: SessionEventPayload): Promise<SessionEvent>;
 }
 
+/** Optional, test-only measurement seam. Normal session writes do not collect it. */
+export interface SessionWriteProfile {
+  sessionEvents: number;
+  jsonlWriteBatches: number;
+  metadataWrites: number;
+  maximumPendingPersistenceDepth: number;
+  flushes: number;
+}
+
 export interface LoadedSession {
   sessionId: string;
   sessionDir: string;
@@ -91,7 +100,10 @@ export async function ensureSessionStorage(workspaceRoot: string): Promise<void>
   await mkdir(getTopchesterSessionsPath(workspaceRoot), { recursive: true });
 }
 
-export async function createSession(workspaceRoot: string): Promise<SessionHandle> {
+export async function createSession(
+  workspaceRoot: string,
+  options: { profile?: SessionWriteProfile } = {}
+): Promise<SessionHandle> {
   const sessionId = generateSessionId();
   const sessionDir = join(getTopchesterSessionsPath(workspaceRoot), sessionId);
   const metadataPath = join(sessionDir, "metadata.json");
@@ -112,7 +124,7 @@ export async function createSession(workspaceRoot: string): Promise<SessionHandl
   await writeMetadata(metadataPath, metadata);
   await writeFile(eventsPath, "", { flag: "wx" });
 
-  return buildHandle(sessionDir, metadata);
+  return buildHandle(sessionDir, metadata, options.profile);
 }
 
 export async function createChildSession(
@@ -506,8 +518,9 @@ function getStartupTranscriptEntry(meta: unknown): TranscriptEntry | undefined {
   return candidate.source === "startup" ? parseStartupTranscriptEntry(candidate.entry) : undefined;
 }
 
-function buildHandle(sessionDir: string, metadata: SessionMetadata): SessionHandle {
+function buildHandle(sessionDir: string, metadata: SessionMetadata, profile?: SessionWriteProfile): SessionHandle {
   let appendQueue: Promise<void> = Promise.resolve();
+  let pendingDepth = 0;
   const handle: SessionHandle = {
     sessionId: metadata.sessionId,
     sessionDir,
@@ -515,6 +528,9 @@ function buildHandle(sessionDir: string, metadata: SessionMetadata): SessionHand
     eventsPath: join(sessionDir, "events.jsonl"),
     metadata,
     append(payload) {
+      pendingDepth += 1;
+      if (profile)
+        profile.maximumPendingPersistenceDepth = Math.max(profile.maximumPendingPersistenceDepth, pendingDepth);
       const appendOperation = appendQueue.then(async () => {
         const previousEventFileSize = (await stat(handle.eventsPath)).size;
         const nextEvent = sessionEventSchema.parse({
@@ -537,20 +553,30 @@ function buildHandle(sessionDir: string, metadata: SessionMetadata): SessionHand
           ...(nextTitle === undefined ? {} : { title: nextTitle }),
         };
         await writeFile(handle.eventsPath, `${JSON.stringify(nextEvent)}\n`, { flag: "a" });
+        if (profile) profile.jsonlWriteBatches += 1;
         try {
           await writeMetadata(handle.metadataPath, nextMetadata);
+          if (profile) profile.metadataWrites += 1;
         } catch (error) {
           await truncate(handle.eventsPath, previousEventFileSize);
           throw error;
         }
         handle.metadata = nextMetadata;
+        if (profile) {
+          profile.sessionEvents += 1;
+          profile.flushes += 1;
+        }
 
         return nextEvent;
       });
 
       appendQueue = appendOperation.then(
-        () => undefined,
-        () => undefined
+        () => {
+          pendingDepth -= 1;
+        },
+        () => {
+          pendingDepth -= 1;
+        }
       );
 
       return appendOperation;

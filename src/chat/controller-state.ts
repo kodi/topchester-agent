@@ -39,6 +39,12 @@ export interface TuiViewState {
 
 export type TuiViewListener = (snapshot: TuiViewState) => void;
 
+/** Optional, test-only measurement seam. Normal TUI sessions do not allocate it. */
+export interface TuiViewProfile {
+  viewPublications: number;
+  transcriptRecordsInspected: number;
+}
+
 export class TuiViewStore {
   private readonly listeners = new Set<TuiViewListener>();
   private temporaryLineTimer: ReturnType<typeof setTimeout> | undefined;
@@ -51,7 +57,9 @@ export class TuiViewStore {
     modelLabel: string;
     taskPlan?: TaskPlanState;
     startupHint?: string;
+    profile?: TuiViewProfile;
   }) {
+    this.profile = options.profile;
     this.state = {
       sessionId: options.sessionId,
       sessionEpoch: 0,
@@ -68,6 +76,7 @@ export class TuiViewStore {
   }
 
   getSnapshot(): TuiViewState {
+    if (this.profile) this.profile.transcriptRecordsInspected += this.state.transcript.length;
     return {
       ...this.state,
       transcript: [...this.state.transcript],
@@ -252,11 +261,14 @@ export class TuiViewStore {
   }
 
   private emit(): void {
+    if (this.profile) this.profile.viewPublications += 1;
     const snapshot = this.getSnapshot();
     for (const listener of this.listeners) {
       listener(snapshot);
     }
   }
+
+  private readonly profile: TuiViewProfile | undefined;
 
   private clearTemporaryLineTimer(): void {
     if (this.temporaryLineTimer) {

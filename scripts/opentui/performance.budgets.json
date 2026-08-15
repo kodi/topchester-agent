@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "policy": {
+    "timing": "Deterministic counts are always gated. Darwin arm64 PTY input-to-paint uses a 20000 ms p95 ceiling, about 35% above the initial 14768 ms p95 baseline; other host classes report timing until their own baseline is accepted.",
+    "update": "Normal runs never rewrite this file. Refresh accepted metadata only with `mise run opentui-perf -- --update-baseline` after reviewing a repeated baseline."
+  },
+  "scenarios": {
+    "long-transcript-input": {
+      "pty": { "platform": "darwin", "arch": "arm64", "maxP95Ms": 20000 },
+      "counters": {
+        "transcriptEntriesSeeded": 1000,
+        "viewPublications": 1,
+        "transcriptRecordsInspected": 2000,
+        "inputInjections": 1,
+        "dropped": 0,
+        "duplicated": 0,
+        "reordered": 0
+      }
+    },
+    "reasoning-flood": {
+      "counters": {
+        "transientUpdates": 240,
+        "viewPublications": 240,
+        "transcriptRecordsInspected": 240000,
+        "inputInjections": 1,
+        "cancellations": 1,
+        "dropped": 0,
+        "duplicated": 0,
+        "reordered": 0
+      }
+    },
+    "runtime-event-burst": {
+      "counters": {
+        "runtimeEvents": 1000,
+        "maximumQueueDepth": 1000,
+        "runtimeBatches": 1000,
+        "maximumBatchSize": 1,
+        "hostYields": 0,
+        "inputInjections": 1,
+        "dropped": 0,
+        "duplicated": 0,
+        "reordered": 0,
+        "crossSession": 0
+      }
+    },
+    "scrollback-heavy-entry": {
+      "counters": {
+        "markdownEntries": 3,
+        "fencedCodeBlocks": 2,
+        "diffEntries": 1,
+        "transcriptRecordsInspected": 3,
+        "transcriptRecordsSerialized": 3,
+        "scrollbackCommits": 3,
+        "dropped": 0,
+        "duplicated": 0,
+        "reordered": 0
+      }
+    },
+    "persistence-burst": {
+      "counters": {
+        "sessionEvents": 1000,
+        "jsonlWriteBatches": 1000,
+        "metadataWrites": 1000,
+        "maximumPendingPersistenceDepth": 1,
+        "flushes": 1000,
+        "dropped": 0,
+        "duplicated": 0,
+        "reordered": 0,
+        "crossSession": 0
+      }
+    },
+    "resize-and-dialog": {
+      "counters": {
+        "transientUpdates": 60,
+        "viewPublications": 61,
+        "transcriptRecordsInspected": 61000,
+        "resizes": 3,
+        "terminalSizes": 3,
+        "dialogActivations": 1,
+        "dropped": 0,
+        "duplicated": 0,
+        "reordered": 0
+      }
+    }
+  }
+}

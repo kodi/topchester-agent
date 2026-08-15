@@ -1,0 +1,30 @@
+#!/usr/bin/expect -f
+
+set timeout 15
+if {$argc != 4} { puts stderr "usage: performance-pty.exp <bun> <cli> <config> <workspace>"; exit 2 }
+lassign $argv bun cli config workspace
+set env(TERM) "xterm-256color"
+set env(NO_COLOR) "1"
+set env(TOPCHESTER_LOG_LEVEL) "silent"
+spawn -noecho $bun $cli --config $config --workspace $workspace
+log_user 0
+expect { -re {Ask Topchester} {} timeout { exit 10 } eof { exit 11 } }
+for {set sample 1} {$sample <= 5} {incr sample} {
+  set started [clock milliseconds]
+  send -- "PERF_INPUT_MARKER_$sample\r"
+  expect { -re {Done\.} {} timeout { exit 12 } eof { exit 13 } }
+  set finished [clock milliseconds]
+  puts "input_to_paint_ms=[expr {$finished - $started}]"
+  after 250
+}
+exec /bin/kill -TERM [exp_pid]
+set timeout 2
+expect {
+  eof {}
+  timeout {
+    exec /bin/kill -KILL [exp_pid]
+    expect eof
+  }
+}
+wait
+exit 0

@@ -6,7 +6,12 @@ export interface RuntimeEventQueue {
   [Symbol.asyncIterator](): AsyncIterator<AgentRuntimeEvent>;
 }
 
-export function createRuntimeEventQueue(): RuntimeEventQueue {
+export interface RuntimeEventQueueProfile {
+  runtimeEvents: number;
+  maximumQueueDepth: number;
+}
+
+export function createRuntimeEventQueue(profile?: RuntimeEventQueueProfile): RuntimeEventQueue {
   const events: AgentRuntimeEvent[] = [];
   let closed = false;
   let notify: (() => void) | undefined;
@@ -14,6 +19,10 @@ export function createRuntimeEventQueue(): RuntimeEventQueue {
   return {
     push(event) {
       events.push(event);
+      if (profile) {
+        profile.runtimeEvents += 1;
+        profile.maximumQueueDepth = Math.max(profile.maximumQueueDepth, events.length);
+      }
       notify?.();
       notify = undefined;
     },

@@ -13,6 +13,13 @@ const SolidRendererProvider = RendererContext.Provider as unknown as (props: {
 
 const SCROLLBACK_SETTLE_TIMEOUT_MS = 15_000;
 
+/** Optional, test-only measurement seam. Normal sessions do not collect counters. */
+export interface TranscriptWriterProfile {
+  transcriptRecordsInspected: number;
+  transcriptRecordsSerialized: number;
+  scrollbackCommits: number;
+}
+
 export class TranscriptWriter {
   private readonly scheduled = new Set<string>();
   private pending = Promise.resolve();
@@ -20,7 +27,10 @@ export class TranscriptWriter {
   private lastSessionEpoch = -1;
   private disposed = false;
 
-  constructor(private readonly onError?: (error: unknown) => void) {}
+  constructor(
+    private readonly onError?: (error: unknown) => void,
+    private readonly profile?: TranscriptWriterProfile
+  ) {}
 
   sync(renderer: CliRenderer, snapshot: TuiViewState, theme: TopchesterTheme, syntaxStyle: SyntaxStyle): void {
     if (this.disposed || this.failure) {
@@ -45,7 +55,9 @@ export class TranscriptWriter {
     }
 
     snapshot.transcript.forEach((entry, index) => {
+      if (this.profile) this.profile.transcriptRecordsInspected += 1;
       if (entry.kind !== "choice") {
+        if (this.profile) this.profile.transcriptRecordsSerialized += 1;
         this.scheduleCommit(
           renderer,
           `${snapshot.sessionEpoch}:${index}:${stableEntryKey(entry)}`,
@@ -128,6 +140,7 @@ export class TranscriptWriter {
       await surface.settle(SCROLLBACK_SETTLE_TIMEOUT_MS);
       if (!this.disposed) {
         surface.commitRows(0, surface.height, { trailingNewline: true });
+        if (this.profile) this.profile.scrollbackCommits += 1;
       }
     } finally {
       if (!surface.isDestroyed) {

@@ -34,6 +34,14 @@ run = "vp test run --dir test"
 dir = "{{config_root}}"
 run = "bun scripts/opentui/production-test.tsx"
 
+[tasks.opentui-perf]
+dir = "{{config_root}}"
+run = "bun scripts/opentui/performance.ts"
+
+[tasks.opentui-perf-format]
+dir = "{{config_root}}"
+run = "vp fmt scripts/opentui/performance.ts scripts/opentui/performance-renderer.tsx test/opentui-performance.test.ts src/session/store.ts"
+
 [tasks.opentui-pty-smoke]
 dir = "{{config_root}}"
 run = "node --import tsx scripts/opentui/pty-smoke.ts"
