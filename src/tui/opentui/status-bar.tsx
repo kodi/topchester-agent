@@ -2,7 +2,7 @@
 
 import { useTerminalDimensions } from "@opentui/solid";
 import { createMemo, Show } from "solid-js";
-import { type KnowledgeStatus } from "../../knowledge/status.js";
+import { type TuiViewState } from "../../chat/controller-state.js";
 import { useController, useTheme } from "./context.js";
 import { type TopchesterTheme } from "./theme.js";
 
@@ -67,7 +67,7 @@ function splitModelLabel(label: string): { model: string; provider?: string; eff
 }
 
 function formatKnowledgeStatus(
-  status: KnowledgeStatus | undefined,
+  status: TuiViewState["knowledgeStatus"],
   theme: TopchesterTheme
 ): { icon: string; label: string; tone: string; syncLabel?: string; syncTone?: string } | undefined {
   if (!status) {
