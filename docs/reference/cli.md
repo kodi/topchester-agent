@@ -13,6 +13,8 @@ Common commands:
 ```sh
 topchester
 topchester info
+topchester session debug latest
+topchester session debug 019e9029 --json
 topchester --resume latest
 topchester fork --last
 topchester fork 019e9029-0000-7000-8000-000000000001
@@ -45,23 +47,24 @@ topchester kb reset
 
 ## Command overview
 
-| Command                 | Purpose                                                  |
-| ----------------------- | -------------------------------------------------------- |
-| `topchester`            | Start the interactive coding agent.                      |
-| `topchester auth`       | Manage global provider authentication.                   |
-| `topchester fork`       | Fork a saved project-local session and open the fork.    |
-| `topchester info`       | Show config validity and local runtime hints.            |
-| `topchester mcp add`    | Add or replace a stdio MCP server in config.             |
-| `topchester run`        | Run one prompt or slash command without opening the TUI. |
-| `topchester search`     | Search compiled L1 file knowledge.                       |
-| `topchester kb init`    | Create the project knowledge folders.                    |
-| `topchester kb context` | Create an L1 context pack for a query.                   |
-| `topchester kb dry-run` | Preview which files would be synced.                     |
-| `topchester kb search`  | Search compiled L1 file knowledge.                       |
-| `topchester kb sync`    | Build or update L1 entries for non-clean files.          |
-| `topchester kb reset`   | Delete the local knowledge base and cache.               |
-| `topchester kb status`  | Show files that are not current in the knowledge base.   |
-| `topchester update`     | Update Topchester with npm, pnpm, or bun.                |
+| Command                    | Purpose                                                  |
+| -------------------------- | -------------------------------------------------------- |
+| `topchester`               | Start the interactive coding agent.                      |
+| `topchester auth`          | Manage global provider authentication.                   |
+| `topchester fork`          | Fork a saved project-local session and open the fork.    |
+| `topchester info`          | Show config validity and local runtime hints.            |
+| `topchester mcp add`       | Add or replace a stdio MCP server in config.             |
+| `topchester run`           | Run one prompt or slash command without opening the TUI. |
+| `topchester session debug` | Show events and timing for one saved session.            |
+| `topchester search`        | Search compiled L1 file knowledge.                       |
+| `topchester kb init`       | Create the project knowledge folders.                    |
+| `topchester kb context`    | Create an L1 context pack for a query.                   |
+| `topchester kb dry-run`    | Preview which files would be synced.                     |
+| `topchester kb search`     | Search compiled L1 file knowledge.                       |
+| `topchester kb sync`       | Build or update L1 entries for non-clean files.          |
+| `topchester kb reset`      | Delete the local knowledge base and cache.               |
+| `topchester kb status`     | Show files that are not current in the knowledge base.   |
+| `topchester update`        | Update Topchester with npm, pnpm, or bun.                |
 
 ## `topchester info`
 
@@ -72,6 +75,29 @@ Reports config layers, the active selected profile and any environment profile s
 If config is invalid, it prints the config error and exits nonzero.
 
 All `topchester kb` commands target the current workspace's mutable project knowledge. Topchester product help comes from the packaged `topchester` skill and is not exposed as a second KB source.
+
+## `topchester session debug`
+
+Shows the most detailed available diagnostic report for one project-local session:
+
+```sh
+topchester session debug latest
+topchester session debug 019e9029
+topchester session debug 019e9029-0000-7000-8000-000000000001 --json
+```
+
+The selector can be `latest`, an exact lowercase UUIDv7, or a unique lowercase ID prefix. The command loads the full child-session tree and reports:
+
+- session span, active state, event counts, and artifact paths
+- tool counts, failures, measured tool work, and longest tool call
+- child-session status, span, event count, and tool count
+- the longest gaps between persisted root-session events
+- model, tool, subagent wait, hook, approval, setup, and other time as durations and percentages
+- timing coverage and warnings for missing, old, incomplete, or unscoped logs
+
+Exact percentages require session-scoped timing records. Topchester writes these compact records when `TOPCHESTER_LOG_LEVEL=debug` or `trace` is set before the session work starts. `trace` adds full prompt, response, and tool-result content, but the debug command does not print that raw content. Old logs without session identifiers are not attributed because concurrent root and child work can be mixed.
+
+`--json` prints the complete versioned report for scripts. The text and JSON reports distinguish active turn time from the full observed session span. Time between user messages is not treated as agent work. Child sessions get separate timing sections because parallel child work can exceed root wall time when summed.
 
 ## `topchester auth login codex --device`
 

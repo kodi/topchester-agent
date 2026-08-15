@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { type AppContext } from "../../app/context.js";
 import { type BenchmarkProfile } from "../benchmark-profile.js";
 import { dryRunKnowledgeCompile, filterNonCleanKnowledgeCompileResult } from "../../knowledge/compiler/index.js";
@@ -152,6 +153,13 @@ export interface TopchesterAgentRuntimeOptions {
   session?: SessionHandle;
 }
 
+interface SessionTurnTiming {
+  turnId: string;
+  startedAt: number;
+  logger: AppContext["logger"];
+  record(category: "setup" | "approval", phase: string, phaseStartedAt: number): void;
+}
+
 interface HookModelPayload {
   model_purpose: ModelPurpose;
   model_provider: string;
@@ -165,10 +173,41 @@ interface HookModelPayload {
   };
 }
 
+function createSessionTurnTiming(logger: AppContext["logger"], session: SessionHandle): SessionTurnTiming {
+  const turnId = randomUUID();
+  const startedAt = Date.now();
+  const scopedLogger =
+    typeof logger.child === "function"
+      ? logger.child({
+          sessionId: session.sessionId,
+          rootSessionId: session.metadata.rootSessionId,
+          turnId,
+        })
+      : logger;
+
+  return {
+    turnId,
+    startedAt,
+    logger: scopedLogger,
+    record(category, phase, phaseStartedAt) {
+      scopedLogger.debug(
+        {
+          event: "session_phase",
+          category,
+          phase,
+          durationMs: Date.now() - phaseStartedAt,
+        },
+        "session phase"
+      );
+    },
+  };
+}
+
 export class TopchesterAgentRuntime implements AgentRuntime {
   private readonly taskPlan = createTaskPlanController();
   private readonly approvedBashCommands = new Set<string>();
   private readonly startedHookSessionKeys = new Set<string>();
+  private activeTurnId: string | undefined;
 
   /**
    * Holds the shared application context for one runtime instance.
@@ -294,6 +333,32 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     options: AgentRuntimeSubmitMessageOptions = {}
   ): AsyncIterable<AgentRuntimeEvent> {
     const session = options.session ?? this.options.session;
+    const timing = session ? createSessionTurnTiming(this.context.logger, session) : undefined;
+    this.activeTurnId = timing?.turnId;
+    timing?.logger.debug({ event: "session_turn_started" }, "session turn started");
+
+    try {
+      for await (const event of this.runMessageStream(conversation, message, abortSignal, options, timing)) {
+        yield event;
+      }
+    } finally {
+      timing?.logger.debug(
+        { event: "session_turn_finished", durationMs: Date.now() - timing.startedAt },
+        "session turn finished"
+      );
+      this.activeTurnId = undefined;
+    }
+  }
+
+  private async *runMessageStream(
+    conversation: ConversationTurn[],
+    message: string,
+    abortSignal: AbortSignal | undefined,
+    options: AgentRuntimeSubmitMessageOptions,
+    timing: SessionTurnTiming | undefined
+  ): AsyncIterable<AgentRuntimeEvent> {
+    const session = options.session ?? this.options.session;
+    const turnLogger = timing?.logger ?? this.context.logger;
     for (const event of await this.runSessionStartHooks(session, { abortSignal })) {
       yield event;
     }
@@ -326,6 +391,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       return;
     }
 
+    const promptSetupStartedAt = Date.now();
     const skillMentionActivations = await resolveSkillMentionActivations(
       message,
       createSkillsService({ workspaceRoot: this.context.workspaceRoot })
@@ -337,6 +403,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       "UserPromptSubmit",
       userPromptHook.contexts
     );
+    timing?.record("setup", "prompt_setup", promptSetupStartedAt);
     let nextPrompt = prompt;
     let totalDurationMs = 0;
     const tokenUsageTotals: TurnTokenUsageTotals = {};
@@ -344,7 +411,9 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     const permissions = createToolPermissionView(profile, {
       deniedTools: this.options.parentPermissions?.deniedTools,
     });
+    const mcpSetupStartedAt = Date.now();
     const mcpManager = await this.createMcpManager(profile, abortSignal);
+    timing?.record("setup", "mcp_setup", mcpSetupStartedAt);
     const mcpDefinitions = this.createMcpDefinitions(mcpManager);
     const toolCatalog = createProfileToolCatalog(permissions, mcpDefinitions);
     const tools = toolCatalog.definitions();
@@ -382,7 +451,9 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     try {
       for (let toolCalls = 0; toolCalls <= maxToolCallsPerTurn; toolCalls += 1) {
         const startedAt = Date.now();
+        const projectInstructionsStartedAt = Date.now();
         const projectInstructions = await this.resolveBaseProjectInstructions();
+        timing?.record("setup", "project_instructions", projectInstructionsStartedAt);
         for (const event of createInstructionContextEventsFromProjectInstructions(
           projectInstructions,
           persistedProjectInstructionKeys
@@ -391,7 +462,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         }
         const system = this.buildSystemPromptWithProjectInstructions({ profile, permissions }, projectInstructions);
         const modelRequestMetadata = this.resolveModelMetadata("agent.primary");
-        this.context.logger.debug(
+        turnLogger.debug(
           {
             event: "model_prompt",
             purpose: "agent.primary",
@@ -409,6 +480,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           },
           afterTool ? "model prompt after tool" : "model prompt"
         );
+        const modelStartedAt = Date.now();
         const result = await generateAgentStep(this.context, {
           purpose: "agent.primary",
           system,
@@ -420,6 +492,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           tools,
           toolCatalog,
         });
+        const modelDurationMs = Date.now() - modelStartedAt;
         const durationMs = Date.now() - startedAt;
         const modelToolCalls = getExecutableModelToolCalls(result, toolCatalog);
         const toolCall = modelToolCalls[0];
@@ -427,7 +500,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         lastModelId = result.modelId;
         addTokenUsageTotals(tokenUsageTotals, result.usage);
 
-        this.context.logger.debug(
+        turnLogger.debug(
           {
             event: "model_response",
             purpose: "agent.primary",
@@ -435,6 +508,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             providerId: result.providerId,
             reasoningEffort: result.reasoningEffort,
             durationMs,
+            modelDurationMs,
             totalDurationMs,
             textLength: result.text.length,
             usage: result.usage,
@@ -455,7 +529,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           },
           afterTool ? "model response after tool" : "model response"
         );
-        this.context.logger.trace(
+        turnLogger.trace(
           {
             event: "model_response_text",
             purpose: "agent.primary",
@@ -484,7 +558,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
           if (rejectedToolCall && invalidToolCallRepairs < 2) {
             invalidToolCallRepairs += 1;
-            this.context.logger.debug(
+            turnLogger.debug(
               {
                 event: "invalid_text_tool_call",
                 purpose: "agent.primary",
@@ -630,7 +704,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             const batchResultPromise = Promise.all(
               executableBatch.map((entry) =>
                 executeToolCall(this.context.workspaceRoot, entry.call, {
-                  logger: this.context.logger,
+                  logger: timing?.logger ?? this.context.logger,
                   config: this.context.config,
                   taskPlan: this.taskPlan,
                   profile,
@@ -642,6 +716,9 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                   readFileCache,
                   abortSignal,
                   toolCallId: entry.toolCallId,
+                  sessionId: session?.sessionId,
+                  rootSessionId: session?.metadata.rootSessionId,
+                  turnId: timing?.turnId,
                   toolCatalog,
                   eventSink: (event) => taskEventQueue.push(event),
                 })
@@ -763,7 +840,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           const executedResults = await Promise.all(
             executableCalls.map((entry) =>
               executeToolCall(this.context.workspaceRoot, entry.call, {
-                logger: this.context.logger,
+                logger: timing?.logger ?? this.context.logger,
                 config: this.context.config,
                 taskPlan: this.taskPlan,
                 profile,
@@ -775,6 +852,9 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 readFileCache,
                 abortSignal,
                 toolCallId: entry.toolCallId,
+                sessionId: session?.sessionId,
+                rootSessionId: session?.metadata.rootSessionId,
+                turnId: timing?.turnId,
                 toolCatalog,
               })
             )
@@ -901,6 +981,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           if (preHook.blocked) {
             toolResult = createToolErrorResult(executableToolCall.tool, preHook.blocked.message);
           } else {
+            const approvalStartedAt = Date.now();
             const approval = await this.resolveBashApproval(
               executableToolCall,
               toolCall.id,
@@ -908,6 +989,9 @@ export class TopchesterAgentRuntime implements AgentRuntime {
               session,
               abortSignal
             );
+            if (executableToolCall.tool === "bash") {
+              timing?.record("approval", "tool_approval", approvalStartedAt);
+            }
             for (const event of approval.events) {
               yield event;
             }
@@ -926,7 +1010,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             } else {
               const toolEventQueue = createRuntimeEventQueue();
               const toolResultPromise = executeToolCall(this.context.workspaceRoot, executableToolCall, {
-                logger: this.context.logger,
+                logger: timing?.logger ?? this.context.logger,
                 config: this.context.config,
                 bashApprovals: { allowExactCommands: approval.approvedCommands },
                 taskPlan: this.taskPlan,
@@ -939,6 +1023,9 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 readFileCache,
                 abortSignal,
                 toolCallId: toolCall.id,
+                sessionId: session?.sessionId,
+                rootSessionId: session?.metadata.rootSessionId,
+                turnId: timing?.turnId,
                 toolCatalog,
                 eventSink: (event) => toolEventQueue.push(event),
               }).finally(() => {
@@ -1177,7 +1264,17 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     payload: HookRunPayload,
     options: RunTopchesterHooksOptions = {}
   ): Promise<HookRunResult> {
-    return runTopchesterHooks(this.context, event, payload, options);
+    const logFields = {
+      sessionId: payload.sessionId,
+      rootSessionId: payload.rootSessionId,
+      turnId: payload.turnId,
+    };
+    const hookContext =
+      payload.sessionId && typeof this.context.logger.child === "function"
+        ? { ...this.context, logger: this.context.logger.child(logFields) }
+        : this.context;
+
+    return runTopchesterHooks(hookContext, event, payload, options);
   }
 
   private startHookEvent(
@@ -1214,6 +1311,14 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         ? {
             session_id: session.sessionId,
             sessionId: session.sessionId,
+            root_session_id: session.metadata.rootSessionId,
+            rootSessionId: session.metadata.rootSessionId,
+            ...(this.activeTurnId
+              ? {
+                  turn_id: this.activeTurnId,
+                  turnId: this.activeTurnId,
+                }
+              : {}),
             session: {
               sessionId: session.sessionId,
               rootSessionId: session.metadata.rootSessionId,

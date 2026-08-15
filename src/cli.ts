@@ -26,6 +26,7 @@ import {
   stripEmptyContainers,
 } from "./knowledge/search.js";
 import { forkSession, loadSession, loadSessionForAppend, rehydrateSession } from "./session/store.js";
+import { createSessionDebugReport, formatSessionDebugReport } from "./session/debug.js";
 import { runOpenTui } from "./tui/opentui/index.js";
 import { getTopchesterVersion } from "./version.js";
 import { executeRunCommand } from "./cli/run.js";
@@ -111,6 +112,25 @@ function createTopchesterProgram(): Command {
 
       console.log(result.lines.join("\n"));
       if (!result.ok) {
+        process.exitCode = 1;
+      }
+    });
+
+  const sessionCommand = program.command("session").description("inspect project sessions");
+
+  sessionCommand
+    .command("debug")
+    .description("show event and timing diagnostics for a session")
+    .argument("<session>", "latest, an exact session id, or a unique session id prefix")
+    .option("--json", "write the full diagnostic report as JSON")
+    .action(async (sessionSelector: string, options: { json?: boolean }) => {
+      const workspaceRoot = resolve(cwd(), program.opts<{ workspace: string }>().workspace);
+
+      try {
+        const report = await createSessionDebugReport(workspaceRoot, sessionSelector);
+        console.log(options.json ? JSON.stringify(report, null, 2) : formatSessionDebugReport(report).join("\n"));
+      } catch (error) {
+        console.error(formatStartupError(error));
         process.exitCode = 1;
       }
     });

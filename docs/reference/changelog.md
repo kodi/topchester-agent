@@ -10,6 +10,13 @@ public: true
 
 Topchester changes grouped by day. This file is the source of truth for the public changelog.
 
+## 2026-08-15
+
+### Features
+
+- Added `topchester session debug` with event, tool, child-session, timing, coverage, and JSON diagnostics.
+- Added session-scoped turn, model, tool, hook, approval, and setup timing records for reliable concurrent-session analysis.
+
 ## 2026-07-17
 
 ### Simplification

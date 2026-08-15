@@ -215,6 +215,39 @@ describe("CLI integration", () => {
     expect(stdout).toContain("show config and local runtime hints");
   });
 
+  it("lists session diagnostics as a top-level command", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout } = await runCli(["session", "--help"], fixture.root);
+
+    expect(stdout).toContain("debug");
+    expect(stdout).toContain("show event and timing diagnostics for a session");
+  });
+
+  it("prints event-only session diagnostics and JSON output", async () => {
+    const fixture = await makeFixture();
+    const session = await createSession(fixture.workspace);
+    await session.append({ kind: "message", role: "user", text: "inspect this session" });
+
+    const textResult = await runCli(
+      ["--workspace", fixture.workspace, "session", "debug", session.sessionId.slice(0, 8)],
+      fixture.root
+    );
+    expect(textResult.stdout).toContain("Topchester session debug");
+    expect(textResult.stdout).toContain(session.sessionId);
+    expect(textResult.stdout).toContain("Exact timing is unavailable");
+
+    const jsonResult = await runCli(
+      ["--workspace", fixture.workspace, "session", "debug", session.sessionId, "--json"],
+      fixture.root
+    );
+    expect(JSON.parse(jsonResult.stdout)).toMatchObject({
+      version: 1,
+      session: { sessionId: session.sessionId },
+      timing: { available: false },
+    });
+  });
+
   it("prints the package version", async () => {
     const fixture = await makeFixture();
     const packageJson = JSON.parse(await readFile(join(process.cwd(), "package.json"), "utf8")) as {

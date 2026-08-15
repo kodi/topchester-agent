@@ -25,6 +25,9 @@ export interface ExecuteToolCallOptions {
   eventSink?: (event: AgentRuntimeEvent) => void | Promise<void>;
   abortSignal?: AbortSignal;
   toolCallId?: string;
+  sessionId?: string;
+  rootSessionId?: string;
+  turnId?: string;
   toolCatalog?: ToolCatalog;
 }
 
@@ -77,7 +80,15 @@ export async function executeToolCall(
     const parsedCall = { ...call, args: definition.argsSchema.parse(call.args) } as ToolCall;
 
     options.logger?.debug(
-      { event: "tool_call", tool: parsedCall.tool, args: summarizeToolArgs(parsedCall) },
+      {
+        event: "tool_call",
+        tool: parsedCall.tool,
+        toolCallId: options.toolCallId,
+        sessionId: options.sessionId,
+        rootSessionId: options.rootSessionId,
+        turnId: options.turnId,
+        args: summarizeToolArgs(parsedCall),
+      },
       "tool call"
     );
 
@@ -88,6 +99,10 @@ export async function executeToolCall(
       {
         event: "tool_result",
         tool: result.tool,
+        toolCallId: options.toolCallId,
+        sessionId: options.sessionId,
+        rootSessionId: options.rootSessionId,
+        turnId: options.turnId,
         path: result.path,
         command: "command" in result ? result.command : undefined,
         warning: result.warning,
@@ -114,6 +129,10 @@ export async function executeToolCall(
     const logPayload = {
       event: "tool_result",
       tool: call.tool,
+      toolCallId: options.toolCallId,
+      sessionId: options.sessionId,
+      rootSessionId: options.rootSessionId,
+      turnId: options.turnId,
       durationMs: Date.now() - startedAt,
       error: message,
       err: error,

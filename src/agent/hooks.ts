@@ -26,6 +26,10 @@ export interface HookRunPayload {
   source: "topchester";
   session_id?: string;
   sessionId?: string;
+  root_session_id?: string;
+  rootSessionId?: string;
+  turn_id?: string;
+  turnId?: string;
   model_purpose?: string;
   model_provider?: string;
   model_id?: string;

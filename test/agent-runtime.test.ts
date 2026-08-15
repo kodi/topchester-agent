@@ -4,10 +4,54 @@ import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 import { type AppContext } from "../src/app/context.js";
 import { TopchesterAgentRuntime } from "../src/agent/runtime/index.js";
+import { createSession } from "../src/session/store.js";
 
 const mcpFixtureServerPath = join(process.cwd(), "test/fixtures/mcp/stdio-server.js");
 
 describe("agent runtime project instructions", () => {
+  it("logs session-scoped turn, model, and setup timing records", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
+    const session = await createSession(workspace);
+    const logLines: Array<Record<string, unknown>> = [];
+    const context = createTestContext(workspace);
+    context.logger = createCaptureLogger(logLines);
+    context.modelGateway = {
+      async generateText() {
+        return {
+          text: "Done.",
+          providerId: "fake",
+          modelId: "fake-agent",
+          purpose: "agent.primary" as const,
+        };
+      },
+    } as unknown as AppContext["modelGateway"];
+    const runtime = new TopchesterAgentRuntime(context);
+
+    await runtime.submitMessage([], "hello", undefined, undefined, { session });
+
+    const timingLines = logLines.filter((line) =>
+      ["session_turn_started", "session_phase", "model_response", "session_turn_finished"].includes(String(line.event))
+    );
+    expect(timingLines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ event: "session_turn_started", sessionId: session.sessionId }),
+        expect.objectContaining({ event: "session_phase", category: "setup", sessionId: session.sessionId }),
+        expect.objectContaining({
+          event: "model_response",
+          modelId: "fake-agent",
+          sessionId: session.sessionId,
+          modelDurationMs: expect.any(Number),
+        }),
+        expect.objectContaining({
+          event: "session_turn_finished",
+          sessionId: session.sessionId,
+          durationMs: expect.any(Number),
+        }),
+      ])
+    );
+    expect(new Set(timingLines.map((line) => line.turnId)).size).toBe(1);
+  });
+
   it("injects root project instructions into the system prompt", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
     await writeFile(join(workspace, "AGENTS.md"), "Answer in short sentences.\n");
@@ -738,6 +782,27 @@ function createTestContext(workspaceRoot: string): AppContext {
       error() {},
     } as unknown as AppContext["logger"],
   };
+}
+
+function createCaptureLogger(
+  lines: Array<Record<string, unknown>>,
+  base: Record<string, unknown> = {}
+): AppContext["logger"] {
+  const write = (payload: unknown) => {
+    if (typeof payload === "object" && payload !== null) {
+      lines.push({ ...base, ...(payload as Record<string, unknown>) });
+    }
+  };
+  const logger = {
+    debug: write,
+    trace: write,
+    warn: write,
+    error: write,
+    child(fields: Record<string, unknown>) {
+      return createCaptureLogger(lines, { ...base, ...fields });
+    },
+  };
+  return logger as unknown as AppContext["logger"];
 }
 
 function shellQuote(value: string): string {

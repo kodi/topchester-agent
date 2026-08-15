@@ -39,3 +39,7 @@ If a saved provider no longer exists in the currently selected profile, Topchest
 Fork metadata records the source session ID and source root session ID. The source log is not changed by a successful fork. Forks do not copy child `task` session folders in V0; copied parent transcript rows can still include historical child-session lifecycle events.
 
 Child `task` sessions are stored as normal session folders under the same project-local session root. Parent metadata records the relationship, while child events stay in the child log.
+
+Use `topchester session debug <session>` to inspect a saved session and its child-session tree. The selector accepts `latest`, an exact session ID, or a unique prefix. The default report includes event and tool counts, child outcomes, longest event gaps, artifact coverage, and any available model, tool, hook, setup, approval, subagent-wait, and other timing percentages. Add `--json` for the complete machine-readable report.
+
+Session events always provide order and mixed event gaps. Exact timing breakdowns require `TOPCHESTER_LOG_LEVEL=debug` or `trace` before the measured work starts. New timing records include session and turn identifiers, so the report can separate concurrent root and child work. Old unscoped log entries are not assigned to a session.
