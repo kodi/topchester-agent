@@ -11,6 +11,12 @@
   "bin": {
     "topchester": "dist/bin.mjs"
   },
+  "workspaces": {
+    "catalog": {
+      "vite": "npm:@voidzero-dev/vite-plus-core@0.2.4",
+      "vite-plus": "0.2.4"
+    }
+  },
   "files": [
     "dist",
     "skills",
@@ -71,6 +77,9 @@
     "vite": "catalog:",
     "vite-plugin-solid": "2.11.10",
     "vite-plus": "catalog:"
+  },
+  "overrides": {
+    "vite": "catalog:"
   },
   "engines": {
     "bun": ">=1.3"
