@@ -312,51 +312,53 @@ export function LiveFooter(props: { mentionProvider?: FileMentionProvider; onInt
   onMount(() => composer?.focus());
 
   return (
-    <box
-      width="100%"
-      height="100%"
-      flexDirection="column"
-      paddingLeft={1}
-      paddingRight={1}
-      backgroundColor={theme.background}
-    >
-      <Show when={snapshot().taskPlan}>{(plan) => <TaskPlan plan={plan()} />}</Show>
-      <Show when={snapshot().startupHint}>
-        {(line) => (
-          <text width="100%" wrapMode="word" fg={theme.muted}>
-            {line()}
-          </text>
-        )}
-      </Show>
-      <Show when={snapshot().ephemeral}>
-        {(line) => (
-          <text width="100%" wrapMode="word" fg={line().tone === "muted" ? theme.muted : theme.text}>
-            {line().text}
-          </text>
-        )}
-      </Show>
-      <Show when={snapshot().temporaryLine}>
-        {(line) => (
-          <text width="100%" wrapMode="word" fg={theme.muted}>
-            {line()}
-          </text>
-        )}
-      </Show>
-      <Show when={snapshot().taskPlanNotice}>
-        {(line) => (
-          <text width="100%" wrapMode="word" fg={theme.muted}>
-            {line()}
-          </text>
-        )}
-      </Show>
-      <Show when={snapshot().sessionPicker}>
-        {(picker) => <SessionPicker picker={picker()} selectedIndex={selection()} />}
-      </Show>
-      <Show when={activeChoice()}>{(choice) => <ChoiceDialog choice={choice()} selectedIndex={selection()} />}</Show>
-      <Show when={!hasOverlay() && visibleSuggestions().length > 0}>
-        <SuggestionList items={visibleSuggestions().map((item) => item.label)} selectedIndex={selection()} />
-      </Show>
-      <box border={["top"]} borderColor={theme.focus} flexDirection="column" minHeight={5}>
+    <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.background}>
+      <box width="100%" flexDirection="column" paddingLeft={1} paddingRight={1}>
+        <Show when={snapshot().taskPlan}>{(plan) => <TaskPlan plan={plan()} />}</Show>
+        <Show when={snapshot().startupHint}>
+          {(line) => (
+            <text width="100%" wrapMode="word" fg={theme.muted}>
+              {line()}
+            </text>
+          )}
+        </Show>
+        <Show when={snapshot().ephemeral}>
+          {(line) => (
+            <text width="100%" wrapMode="word" fg={line().tone === "muted" ? theme.muted : theme.text}>
+              {line().text}
+            </text>
+          )}
+        </Show>
+        <Show when={snapshot().temporaryLine}>
+          {(line) => (
+            <text width="100%" wrapMode="word" fg={theme.muted}>
+              {line()}
+            </text>
+          )}
+        </Show>
+        <Show when={snapshot().taskPlanNotice}>
+          {(line) => (
+            <text width="100%" wrapMode="word" fg={theme.muted}>
+              {line()}
+            </text>
+          )}
+        </Show>
+        <Show when={snapshot().sessionPicker}>
+          {(picker) => <SessionPicker picker={picker()} selectedIndex={selection()} />}
+        </Show>
+        <Show when={activeChoice()}>{(choice) => <ChoiceDialog choice={choice()} selectedIndex={selection()} />}</Show>
+        <Show when={!hasOverlay() && visibleSuggestions().length > 0}>
+          <SuggestionList items={visibleSuggestions().map((item) => item.label)} selectedIndex={selection()} />
+        </Show>
+      </box>
+      <box
+        border={["top"]}
+        borderColor={theme.focus}
+        flexDirection="column"
+        minHeight={5}
+        paddingLeft={1}
+        paddingRight={1}
+      >
         <Show when={snapshot().queuedFollowUpPreview}>
           {(message) => (
             <text width="100%" wrapMode="none" fg={theme.muted}>

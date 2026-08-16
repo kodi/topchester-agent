@@ -111,6 +111,7 @@ async function testAppSurface(): Promise<void> {
     const initialRows = initialFrame.split("\n");
     const promptRow = initialRows.findIndex((row) => row.includes("Ask Topchester"));
     assert.ok(promptRow > 0);
+    assertPromptBorderSpansWidth(initialFrame, 80);
     assert.equal(initialRows[promptRow - 1]?.trim(), "");
     assert.equal(initialRows[promptRow + 1]?.trim(), "");
     const statusRow = initialRows.find((row) => row.includes("● ready"));
@@ -215,13 +216,22 @@ async function testAppSurface(): Promise<void> {
     ] as const) {
       setup.resize(width, height);
       await setup.flush();
-      assert.match(setup.captureCharFrame(), /not set/u);
+      const resizedFrame = setup.captureCharFrame();
+      assert.match(resizedFrame, /not set/u);
+      assertPromptBorderSpansWidth(resizedFrame, width);
     }
   } finally {
     await controller.dispose();
     setup.renderer.destroy();
     syntaxStyle.destroy();
   }
+}
+
+function assertPromptBorderSpansWidth(frame: string, width: number): void {
+  const rows = frame.split("\n");
+  const promptRow = rows.findIndex((row) => row.includes("Ask Topchester"));
+  assert.ok(promptRow >= 2, frame);
+  assert.equal(rows[promptRow - 2], "─".repeat(width));
 }
 
 async function testQueuedFollowUpPreview(): Promise<void> {
