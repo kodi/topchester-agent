@@ -578,8 +578,7 @@ async function testThreadEntryVariants(): Promise<void> {
       "hook>pre-tool-use: checking",
       "auto-approved bash permission: pwd",
       "reading files",
-      "KB status: /repo/topchester-kb [missing]",
-      "Run /kb init",
+      "KB: missing",
     ]) {
       assert.ok(frame.includes(marker), `missing transcript marker: ${marker}`);
     }

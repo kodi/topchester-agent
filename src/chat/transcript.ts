@@ -226,39 +226,21 @@ export function parseStartupTranscriptEntry(value: unknown): StartupTranscriptEn
 }
 
 export function formatStartupTranscriptText(entry: StartupTranscriptEntry): string {
-  const lines = entry.banner ? ["", "", entry.banner, "", ""] : [""];
-
-  lines.push(`workspace: ${entry.workspaceRoot}`, `default model: ${entry.defaultModelPurpose}`);
-
-  if (entry.modelAssignments.length === 0) {
-    lines.push("model assignments: none configured");
-  } else {
-    lines.push("model assignments:");
-    for (const assignment of entry.modelAssignments) {
-      const provider = assignment.provider ? ` [${assignment.provider}]` : "";
-      lines.push(`  ${assignment.purpose}: ${assignment.name}${provider}`);
-    }
-  }
-
-  if (entry.providers.length === 0) {
-    lines.push("providers: none configured");
-  } else {
-    lines.push("providers:");
-    if (entry.defaultProviderId) {
-      lines.push(`  default: ${entry.defaultProviderId}`);
-    }
-    for (const provider of entry.providers) {
-      const effort = provider.reasoningEffort ? ` effort=${provider.reasoningEffort}` : "";
-      lines.push(`  ${provider.id}: ${provider.type} ${provider.baseURL} auth=${provider.auth}${effort}`);
-    }
-  }
-
-  if (entry.setupHint) {
-    lines.push("", entry.setupHint);
-  }
-
-  lines.push("", entry.prompt);
+  const lines = entry.banner ? [entry.banner, ""] : [];
+  const assignment = entry.modelAssignments.find(({ purpose }) => purpose === entry.defaultModelPurpose);
+  const provider = assignment?.provider ? ` [${assignment.provider}]` : "";
+  lines.push(`Model: ${assignment ? `${assignment.name}${provider}` : "not set"}`);
   return lines.join("\n");
+}
+
+export function formatStartupKnowledgeStatus(status: KnowledgeStatus): string {
+  if (!status.kbExists) return "KB: missing";
+  if (!status.kbIsDirectory) return "KB: path conflict";
+  if (status.kbContentState !== "ready") return "KB: empty";
+  if ((status.nonCleanFileCount ?? 0) > 0) {
+    return `KB: ready · ${status.nonCleanFileCount} dirty`;
+  }
+  return "KB: ready";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -348,11 +348,10 @@ describe("CLI integration", () => {
 
     const { stdout } = await runCli(["--config", fixture.config], fixture.root);
 
-    expect(stdout).toContain("Topchester");
-    expect(stdout).toContain(`workspace: ${fixture.root}`);
-    expect(stdout).toContain("agent.primary: qwen/qwen3-coder:free");
-    expect(stdout).toContain("default: openrouter");
-    expect(stdout).toContain("openrouter: openai-compatible https://openrouter.ai/api/v1 auth=env:OPENROUTER_API_KEY");
+    expect(stdout).toContain("Model: qwen/qwen3-coder:free [openrouter]");
+    expect(stdout).not.toContain(`workspace: ${fixture.root}`);
+    expect(stdout).not.toContain("model assignments:");
+    expect(stdout).not.toContain("providers:");
     expect(stdout).toContain("│ >");
     expect(stdout).toContain(`● ready ·  ${fixture.root.split("/").at(-1)} · qwen/qwen3-coder:free [openrouter]`);
   });
@@ -360,15 +359,14 @@ describe("CLI integration", () => {
   it("prepares local session folders on startup without creating KB folders", async () => {
     const fixture = await makeFixture();
 
-    const { stdout } = await runCli(["--config", fixture.config, "--workspace", fixture.workspace], fixture.root);
+    await runCli(["--config", fixture.config, "--workspace", fixture.workspace], fixture.root);
 
-    expect(stdout).toContain("Topchester");
     await expect(stat(join(fixture.workspace, ".agents", "topchester"))).resolves.toMatchObject({});
     await expect(stat(join(fixture.workspace, ".agents", "topchester", "sessions"))).resolves.toMatchObject({});
     const sessionIds = await readdir(join(fixture.workspace, ".agents", "topchester", "sessions"));
     expect(sessionIds).toHaveLength(1);
     const events = await readSessionEvents(fixture.workspace, sessionIds[0]!);
-    expect(events).toContain("Ask Topchester what you want to change.");
+    expect(events).toContain("Model: qwen/qwen3-coder:free [openrouter]");
     await expect(stat(join(fixture.workspace, "topchester-kb"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(stat(join(fixture.workspace, ".agents", "topchester-kb-cache"))).rejects.toMatchObject({
       code: "ENOENT",
@@ -664,9 +662,9 @@ describe("CLI integration", () => {
 
     const { stdout } = await runCli(["--config", relativeConfig, "--workspace", fixture.workspace], fixture.root);
 
-    expect(stdout).toContain(`workspace: ${fixture.workspace}`);
-    expect(stdout).toContain("agent.primary: qwen/qwen3-coder:free");
-    expect(stdout).not.toContain("model assignments: none configured");
+    expect(stdout).toContain("Model: qwen/qwen3-coder:free [openrouter]");
+    expect(stdout).not.toContain(`workspace: ${fixture.workspace}`);
+    expect(stdout).not.toContain("model assignments:");
   });
 
   it("accepts repeatable dev flags", async () => {

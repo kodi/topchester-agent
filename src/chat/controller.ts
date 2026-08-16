@@ -481,7 +481,6 @@ export class TopchesterTuiController implements TuiController {
     await this.appendStartupRuntimeEvents(
       (await this.runtime.runSessionStartHooks?.(this.session, { isResumed })) ?? []
     );
-    await this.appendStartupRuntimeEvents((await this.runtime.checkProjectInstructions?.()) ?? []);
     await this.flushSessionWithWarning(this.session);
   }
 
@@ -1337,7 +1336,6 @@ export class TopchesterTuiController implements TuiController {
         (await this.runtime.runSessionStartHooks?.(session, { isResumed: false })) ?? [],
         transcript
       );
-      await this.appendStartupRuntimeEvents((await this.runtime.checkProjectInstructions?.()) ?? [], transcript);
       await this.flushSessionWithWarning(session, transcript);
       this.view.reset({
         sessionId: session.sessionId,

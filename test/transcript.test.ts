@@ -6,6 +6,8 @@ import { agentEvent } from "../src/agent/events.js";
 import {
   assistantTranscriptEntry,
   createStartupTranscriptEntry,
+  formatStartupKnowledgeStatus,
+  formatStartupTranscriptText,
   reasoningTranscriptEntry,
   runtimeEventToTranscriptEntries,
   systemTranscriptEntry,
@@ -91,6 +93,39 @@ function createTranscriptVariants(): TranscriptEntry[] {
 }
 
 describe("renderer-neutral transcript", () => {
+  it("formats startup as logo plus the active model only", () => {
+    const entry = createStartupTranscriptEntry(
+      {
+        ...createTestContext("/repo"),
+        config: {
+          models: {
+            defaultPurpose: "agent.primary",
+            assignments: {
+              "agent.primary": { name: "gpt-5.6-sol(medium)", provider: "openai" },
+              "fallback": { name: "fallback-model", provider: "openai" },
+            },
+          },
+        },
+      },
+      { banner: "TOPCHESTER" }
+    );
+
+    expect(formatStartupTranscriptText(entry)).toBe("TOPCHESTER\n\nModel: gpt-5.6-sol(medium) [openai]");
+  });
+
+  it("formats compact KB startup states", () => {
+    expect(formatStartupKnowledgeStatus(knowledgeStatus)).toBe("KB: missing");
+    expect(
+      formatStartupKnowledgeStatus({
+        ...knowledgeStatus,
+        kbExists: true,
+        kbIsDirectory: true,
+        kbContentState: "ready",
+        nonCleanFileCount: 2,
+      })
+    ).toBe("KB: ready · 2 dirty");
+  });
+
   it("maps persisted variants to session payloads and excludes display-only variants", () => {
     const variants = createTranscriptVariants();
     const displayOnly = variants.filter((entry) => entry.persistence === "display");

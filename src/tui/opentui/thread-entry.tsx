@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 
 import { BoxRenderable, CodeRenderable, type MarkdownOptions, type SyntaxStyle } from "@opentui/core";
-import { formatStartupTranscriptText, type TranscriptEntry } from "../../chat/index.js";
+import { formatStartupKnowledgeStatus, formatStartupTranscriptText, type TranscriptEntry } from "../../chat/index.js";
 import { type TopchesterTheme } from "./theme.js";
 
 export interface ThreadEntryProps {
@@ -127,8 +127,7 @@ export function ThreadEntry(props: ThreadEntryProps) {
     case "knowledge_status":
       return (
         <text width="100%" wrapMode="word" fg={props.theme.muted}>
-          KB status: {entry.status.kbPath} {entry.status.kbExists ? "[ok]" : "[missing]"}
-          {entry.guidance ? `\n${entry.guidance}` : ""}
+          {formatStartupKnowledgeStatus(entry.status)}
         </text>
       );
     case "choice":

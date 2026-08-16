@@ -1,5 +1,5 @@
 import { type TaskPlanState } from "../agent/task-plan.js";
-import { formatStartupTranscriptText, type TranscriptEntry } from "./transcript.js";
+import { formatStartupKnowledgeStatus, formatStartupTranscriptText, type TranscriptEntry } from "./transcript.js";
 
 export function renderStaticView(options: {
   transcript: readonly TranscriptEntry[];
@@ -55,7 +55,7 @@ export function renderStaticTranscriptEntry(entry: TranscriptEntry): string[] {
           .map((line) => `     ${line}`) ?? []),
       ];
     case "knowledge_status":
-      return [`KB status: ${entry.status.kbPath} ${entry.status.kbExists ? "[ok]" : "[missing]"}`];
+      return [formatStartupKnowledgeStatus(entry.status)];
     case "choice":
       return [
         entry.title,

@@ -2,6 +2,7 @@ export { runtimeEventToTranscriptEntries, runtimeEventsToTranscriptEntries } fro
 export { createStartupTranscriptEntry, getModelSetupHint, type StartupTranscriptOptions } from "./startup.js";
 export {
   assistantTranscriptEntry,
+  formatStartupKnowledgeStatus,
   formatStartupTranscriptText,
   isPersistedTranscriptEntry,
   parseStartupTranscriptEntry,
