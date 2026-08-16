@@ -790,6 +790,87 @@ describe("CLI integration", () => {
     });
   });
 
+  it("lists configured MCP servers without exposing environment values", async () => {
+    const fixture = await makeFixture();
+    await writeFile(
+      fixture.config,
+      JSON.stringify({
+        mcp: {
+          browser: {
+            type: "stdio",
+            command: "npx",
+            args: ["-y", "chrome-devtools-mcp@latest", "--label", "shared browser"],
+            env: { BROWSER_TOKEN: "secret" },
+            enabledTools: ["click", "take_screenshot"],
+            timeoutMs: 45000,
+          },
+          disabled: {
+            type: "stdio",
+            command: "node",
+            enabled: false,
+          },
+        },
+      })
+    );
+
+    const { stdout, stderr } = await runCli(["--config", fixture.config, "mcp", "list"], fixture.root);
+
+    expect(stderr).toBe("");
+    expect(stdout).toContain("MCP servers");
+    expect(stdout).toContain("browser:");
+    expect(stdout).toContain('command: npx -y chrome-devtools-mcp@latest --label "shared browser"');
+    expect(stdout).toContain("environment: BROWSER_TOKEN");
+    expect(stdout).toContain("tools: click, take_screenshot");
+    expect(stdout).toContain("timeout: 45000ms");
+    expect(stdout).toContain("disabled:");
+    expect(stdout).toContain("status: disabled");
+    expect(stdout).not.toContain("secret");
+  });
+
+  it("lists configured MCP servers as redacted JSON", async () => {
+    const fixture = await makeFixture();
+    await writeFile(
+      fixture.config,
+      JSON.stringify({
+        mcp: {
+          fixture: {
+            type: "stdio",
+            command: "node",
+            args: ["server.js"],
+            env: { TOKEN: "secret" },
+          },
+        },
+      })
+    );
+
+    const { stdout, stderr } = await runCli(["--config", fixture.config, "mcp", "list", "--json"], fixture.root);
+    const result = JSON.parse(stdout);
+
+    expect(stderr).toBe("");
+    expect(result).toEqual([
+      {
+        name: "fixture",
+        type: "stdio",
+        enabled: true,
+        command: "node",
+        args: ["server.js"],
+        env: ["TOKEN"],
+        enabledTools: null,
+        timeoutMs: null,
+      },
+    ]);
+    expect(stdout).not.toContain("secret");
+  });
+
+  it("reports when no MCP servers are configured", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout, stderr } = await runCli(["--config", fixture.config, "mcp", "list"], fixture.root);
+
+    expect(stderr).toBe("");
+    expect(stdout).toContain("No MCP servers configured.");
+  });
+
   it("replaces an existing stdio MCP server entry", async () => {
     const fixture = await makeFixture();
 

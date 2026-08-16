@@ -24,6 +24,8 @@ topchester run "/skill code-review review this diff"
 topchester search "status bar"
 topchester auth login codex --device
 topchester auth status
+topchester mcp list
+topchester mcp list --json
 topchester mcp add filesystem -- npx -y @modelcontextprotocol/server-filesystem .
 topchester mcp add github --env GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx -- npx -y @modelcontextprotocol/server-github
 
@@ -54,6 +56,7 @@ topchester kb reset
 | `topchester fork`          | Fork a saved project-local session and open the fork.    |
 | `topchester info`          | Show config validity and local runtime hints.            |
 | `topchester mcp add`       | Add or replace a stdio MCP server in config.             |
+| `topchester mcp list`      | List configured MCP servers without starting them.       |
 | `topchester run`           | Run one prompt or slash command without opening the TUI. |
 | `topchester session debug` | Show events and timing for one saved session.            |
 | `topchester search`        | Search compiled L1 file knowledge.                       |
@@ -123,6 +126,17 @@ topchester mcp add <server-name> --env KEY=VALUE -- <stdio server-command> [args
 ```
 
 `--env KEY=VALUE` can be repeated. Server names use letters, numbers, `-`, and `_`. The command writes to `--config` when provided, otherwise to `~/.config/topchester/config.jsonc`.
+
+## `topchester mcp list`
+
+Lists MCP servers from the effective merged config without starting or connecting to them:
+
+```sh
+topchester mcp list
+topchester mcp list --json
+```
+
+The text output shows each server's enabled state, transport, command and args, environment variable names, enabled tool filter, and configured timeout. Environment values are never printed. `--json` returns the same redacted information for scripts.
 
 ## `topchester fork`
 

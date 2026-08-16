@@ -37,6 +37,7 @@ import {
   runSelfUpdate,
 } from "./cli/self-update.js";
 import { collectTopchesterInfo } from "./cli/info.js";
+import { collectMcpList, formatMcpList } from "./cli/mcp.js";
 import {
   addMcpStdioServerConfig,
   configureCodexGlobalProvider,
@@ -186,6 +187,20 @@ function createTopchesterProgram(): Command {
     });
 
   const mcpCommand = program.command("mcp").description("manage MCP servers");
+
+  mcpCommand
+    .command("list")
+    .description("list configured MCP servers")
+    .option("--json", "write configured MCP servers as JSON")
+    .action((options: { json?: boolean }) => {
+      try {
+        const servers = collectMcpList(getContextOptionsFromProgram(program));
+        console.log(options.json ? JSON.stringify(servers, null, 2) : formatMcpList(servers).join("\n"));
+      } catch (error) {
+        console.error(formatStartupError(error));
+        process.exitCode = 1;
+      }
+    });
 
   mcpCommand
     .command("add")
