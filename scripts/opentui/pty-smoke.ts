@@ -2,9 +2,9 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { getCurrentStandaloneTarget } from "../standalone/targets.js";
 import { startFakeApi } from "../smoke/fake-api.js";
@@ -30,7 +30,7 @@ try {
     npmExecutable,
     ["install", "--no-audit", "--no-fund", "--loglevel", "error", "--prefix", prefix, metaPackage],
     {
-      cwd: root,
+      cwd: destination,
       env: npmEnvironment(),
       maxBuffer,
       timeout: 120_000,
@@ -108,11 +108,13 @@ try {
 }
 
 async function packPackage(directory: string): Promise<string> {
+  const stagingDirectory = join(destination, `pack-${basename(directory)}`);
+  await cp(directory, stagingDirectory, { recursive: true });
   const { stdout } = await run(
     npmExecutable,
     ["pack", "--ignore-scripts", "--json", "--pack-destination", destination],
     {
-      cwd: directory,
+      cwd: stagingDirectory,
       env: npmEnvironment(),
       maxBuffer,
     }
