@@ -10,6 +10,94 @@ export interface ThreadEntryProps {
   syntaxStyle: SyntaxStyle;
 }
 
+const KB_STATUS_ROW_PATTERN =
+  /^(?<status>current|changed|missing_entry|missing_file|invalid)(?<padding>\s{2,})(?<size>\d+ bytes)(?<separator>\s{2,})(?<path>.+)$/u;
+
+function knowledgeStatusTone(status: string, theme: TopchesterTheme): string {
+  if (status === "current") return theme.success;
+  if (status === "invalid" || status === "missing_file") return theme.error;
+  return theme.warning;
+}
+
+function knowledgeStatusIcon(status: string): string {
+  if (status === "current") return "✓";
+  if (status === "invalid" || status === "missing_file") return "✕";
+  if (status === "missing_entry") return "○";
+  return "●";
+}
+
+function knowledgeMetadataIcon(label: string): string {
+  if (label === "workspace") return "⌂";
+  if (label === "knowledge folder") return "▣";
+  if (label === "gitignore files read") return "≡";
+  if (label === "config ignore rules") return "⚙";
+  if (label.includes("files")) return "●";
+  if (label === "state") return "✓";
+  return "·";
+}
+
+function KnowledgeStatusResult(props: { text: string; theme: TopchesterTheme }) {
+  return (
+    <box width="100%" flexDirection="column">
+      {props.text.split("\n").map((line) => {
+        if (line === "KB status") {
+          return <text fg={props.theme.accent}>◆ KB status</text>;
+        }
+
+        if (/^status\s+size\s+path$/u.test(line)) {
+          return (
+            <text width="100%" wrapMode="word" fg={props.theme.emphasis}>
+              {"  "}
+              {line}
+            </text>
+          );
+        }
+
+        const row = KB_STATUS_ROW_PATTERN.exec(line);
+        if (row?.groups) {
+          const { status, padding, size, separator, path } = row.groups;
+          const tone = knowledgeStatusTone(status!, props.theme);
+          return (
+            <text width="100%" wrapMode="word" fg={props.theme.text}>
+              <span style={{ fg: tone }}>
+                {knowledgeStatusIcon(status!)} {status}
+              </span>
+              <span>{padding}</span>
+              <span style={{ fg: props.theme.muted }}>{size}</span>
+              <span>{separator}</span>
+              <span style={{ fg: props.theme.info }}>▸</span>
+              <span> {path}</span>
+            </text>
+          );
+        }
+
+        if (line === "----") {
+          return <text fg={props.theme.muted}>┄┄┄┄</text>;
+        }
+
+        const separator = line.indexOf(":");
+        if (separator > 0) {
+          const label = line.slice(0, separator);
+          return (
+            <text width="100%" wrapMode="word" fg={props.theme.muted}>
+              <span style={{ fg: props.theme.info }}>
+                {knowledgeMetadataIcon(label)} {label}
+              </span>
+              <span>: {line.slice(separator + 1).trimStart()}</span>
+            </text>
+          );
+        }
+
+        return (
+          <text width="100%" wrapMode="word" fg={props.theme.text}>
+            {line}
+          </text>
+        );
+      })}
+    </box>
+  );
+}
+
 function createFencedCodeRenderer(theme: TopchesterTheme): MarkdownOptions["renderNode"] {
   return (token, context) => {
     if (token.type !== "code") {
@@ -43,6 +131,9 @@ export function ThreadEntry(props: ThreadEntryProps) {
         </text>
       );
     case "system":
+      if (entry.text === "KB status" || entry.text.startsWith("KB status\n")) {
+        return <KnowledgeStatusResult text={entry.text} theme={props.theme} />;
+      }
       return (
         <box width="100%" flexDirection="column">
           <text fg={props.theme.success}>✦ System:</text>

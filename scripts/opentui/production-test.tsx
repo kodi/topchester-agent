@@ -352,19 +352,34 @@ async function testTranscriptWriter(): Promise<void> {
     const kbStatusSnapshot = appendTranscriptSnapshot(controller.getSnapshot(), [
       { kind: "system", persistence: "session", text: kbStatusText } satisfies TranscriptEntry,
     ]);
-    writer.sync(setup.renderer, kbStatusSnapshot, theme, syntaxStyle);
-    writer.sync(setup.renderer, kbStatusSnapshot, theme, syntaxStyle);
-    await writer.idle();
-    await setup.flush();
+    let changedColor: number[] | undefined;
+    let fileIconColor: number[] | undefined;
+    const captureKbStatusColors = (event: CliRendererExternalOutputEvent) => {
+      const spans = event.snapshot.getSpanLines().flatMap((line) => line.spans);
+      changedColor = spans.find((span) => span.text === "● changed")?.fg.toInts();
+      fileIconColor = spans.find((span) => span.text === "▸")?.fg.toInts();
+    };
+    setup.renderer.on(CliRenderEvents.EXTERNAL_OUTPUT, captureKbStatusColors);
+    try {
+      writer.sync(setup.renderer, kbStatusSnapshot, theme, syntaxStyle);
+      writer.sync(setup.renderer, kbStatusSnapshot, theme, syntaxStyle);
+      await writer.idle();
+      await setup.flush();
+    } finally {
+      setup.renderer.off(CliRenderEvents.EXTERNAL_OUTPUT, captureKbStatusColors);
+    }
     const kbStatusOutput = setup.externalOutput.take();
     assert.equal(kbStatusOutput.length, 1);
     const renderedKbStatus = kbStatusOutput[0]?.text ?? "";
-    assert.match(renderedKbStatus, /changed {2,}3816 bytes {2}\.github\/workflows\/publish-npm\.yml/u);
+    assert.match(renderedKbStatus, /● changed {2,}3816 bytes {2}▸ \.github\/workflows\/publish-npm\.yml/u);
     assert.match(
       renderedKbStatus,
-      /missing_entry {2,}509 bytes {2}skills\/topchester\/references\/skills-hooks-sessions\.md/u
+      /○ missing_entry {2,}509 bytes {2}▸ skills\/topchester\/references\/skills-hooks-\nsessions\.md/u
     );
     assert.doesNotMatch(renderedKbStatus, /changedithub|missing_entrykills/u);
+
+    assert.deepEqual(changedColor, RGBA.fromHex(theme.warning).toInts());
+    assert.deepEqual(fileIconColor, RGBA.fromHex(theme.info).toInts());
 
     let keywordColor: number[] | undefined;
     let keywordBackground: number[] | undefined;
