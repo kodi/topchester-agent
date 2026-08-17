@@ -2,7 +2,7 @@
   "$schema": "https://topchester.com/schemas/config.v1.json",
   "models": {
     "default": {
-      "name": "gpt-5.6-luna(xhigh)",
+      "name": "gpt-5.6-luna(medium)",
       "provider": "openai",
     },
   },
