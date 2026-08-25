@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export const TOPCHESTER_PACKAGE_NAME = "topchester-ai";
+export const TOPCHESTER_INSTALL_COMMAND = "curl -fsSL https://topchester.com/install.sh | sh";
 
 export type SelfUpdateManager = "npm" | "pnpm" | "bun";
 
@@ -168,6 +169,7 @@ export function formatSelfUpdateUnsupportedMessage(): string {
   return [
     "Could not detect whether Topchester was installed with npm, pnpm, or bun.",
     `Update it with the package manager that installed it, for example: npm install -g ${TOPCHESTER_PACKAGE_NAME}@latest`,
+    `Or reinstall and overwrite it with curl: ${TOPCHESTER_INSTALL_COMMAND}`,
   ].join("\n");
 }
 

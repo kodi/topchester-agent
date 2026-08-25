@@ -4,6 +4,7 @@ import {
   createSelfUpdateCommand,
   detectSelfUpdateManager,
   formatSelfUpdateCheckResult,
+  formatSelfUpdateUnsupportedMessage,
   formatSelfUpdateSuccess,
   runSelfUpdate,
 } from "../src/cli/self-update.js";
@@ -165,6 +166,14 @@ describe("self update", () => {
   });
 
   it("fails when no package manager can be detected", async () => {
+    const unsupportedMessage = [
+      "Could not detect whether Topchester was installed with npm, pnpm, or bun.",
+      "Update it with the package manager that installed it, for example: npm install -g topchester-ai@latest",
+      "Or reinstall and overwrite it with curl: curl -fsSL https://topchester.com/install.sh | sh",
+    ].join("\n");
+
+    expect(formatSelfUpdateUnsupportedMessage()).toBe(unsupportedMessage);
+
     await expect(
       runSelfUpdate({
         modulePath: "/repo/topchester-agent/src/cli/self-update.ts",
@@ -172,6 +181,6 @@ describe("self update", () => {
         env: {},
         runner: async () => 0,
       })
-    ).rejects.toThrow("Could not detect whether Topchester was installed with npm, pnpm, or bun.");
+    ).rejects.toThrow(unsupportedMessage);
   });
 });
