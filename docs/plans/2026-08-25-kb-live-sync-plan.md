@@ -426,7 +426,7 @@ test/transcript.test.ts test/tui-controller.test.ts` and `mise run local-ci`.
 
 ## Slice 6: Public Docs And Checklist
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Document the commands, config key, and live behavior in the public docs that match implementation.
 
@@ -452,25 +452,26 @@ Verification:
 
 Dependencies: Slices 2–5.
 
-## Open Questions
+Completed 2026-08-25: updated the public KB, slash, TUI, CLI, and config pages,
+plus the internal implementation checklist. Final verification passed with
+`mise run test` (41 files, 706 tests, and the production OpenTUI Bun renderer),
+`mise run local-ci`, and `git diff --check`.
 
-- Exact debounce interval. Start at 400ms; only change if tests or interactive use show churn.
-- Whether a later slice should run deferred `postProcessL1Entries` on idle or `/kb live off`. Not required for L1 fill.
-- Whether `topchester kb live` should refuse to turn on when `kb.summarize` is unresolved. Prefer warn-on-status, skip jobs, keep the flag.
+## Resolved Findings
+
+- The shipped debounce interval is 400ms.
+- Live mode does not run deferred `postProcessL1Entries`; a later idle/batch feature may add it.
+- Live mode stays enabled when `kb.summarize` is unresolved; jobs are skipped with scheduler error state and agent work continues.
 
 ## Next Slice
 
-Start Slice 6.
+All planned slices are complete.
 
-Finish the public documentation and implementation checklist, then run the
-complete product and repository gates.
-
-First verification:
+Final verification:
 
 ```sh
 mise run test
 mise run local-ci
 ```
 
-Record the final commands and outcomes in this plan before the documentation
-commit.
+No implementation follow-up is required for this plan.

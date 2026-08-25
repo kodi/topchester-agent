@@ -23,6 +23,9 @@ Status legend:
 - [x] Mirrored L1 entry layout under `topchester-kb/l1-files/<source/path>.json`
 - [x] Basic manifest updates with L1 counts
 - [x] CLI `topchester kb sync`
+- [x] CLI and slash single-file L1 sync without full project inventory
+- [x] Global `knowledge.live` preference with CLI and slash controls
+- [x] Debounced serial live L1 sync after successful file reads and writes
 - [x] CLI `topchester kb search`
 - [x] CLI `topchester kb context`
 - [x] Top-level CLI `topchester search` alias for L1 KB search
@@ -42,6 +45,7 @@ Status legend:
 - `eac6997`, `21a8825`, and `bbab1d2` added L1 search benchmarks, optimized index loading/prefix lookup, and stripped empty containers from JSON search/context-pack output.
 - `e5ae0b7` added the `TOPCHESTER_DISABLE_L1_CONTEXT=1` escape hatch and token-usage context notes.
 - `22b608c` added streamed provider reasoning in the TUI and hardened the plan/tool-call display path. This is TUI/runtime work, not canonical KB content.
+- `292f8b5`, `4c22e3d`, and `e91f021` added named-file L1 sync, the global live preference, and the workspace-scoped live scheduler with tool hooks, overlay clearing, and footer state.
 - L1 structural fields are currently model-extracted and normalized/post-processed. Deterministic static extraction before model summarization is still only partial.
 
 ## Global KB Setup and Configuration
@@ -56,6 +60,7 @@ Status legend:
 - [x] Add explicit compiler version to manifest
 - [ ] Add reproducibility metadata to manifest
 - [ ] Add safe upgrade/migration story for future KB layout changes
+- [x] Add optional global `knowledge.live` config and durable on/off/status commands
 
 ## L1: File Knowledge
 
@@ -81,6 +86,8 @@ Status legend:
 - [x] Add L1 in-memory lexical index
 - [x] Add compact L1 context pack assembly with omitted empty containers and optional full L1 entries
 - [x] Add CLI formatting and JSON output for L1 search/context packs
+- [x] Add SHA-gated single-file L1 sync without queue, orphan cleanup, post-processing, or inventory
+- [x] Add serial live L1 scheduling with per-path debounce and latest-hash requeue
 
 ## L2: Module Knowledge
 
@@ -170,6 +177,7 @@ Status legend:
 - [ ] Keep cache fully rebuildable from canonical KB
 - [ ] Add session overlay storage for dirty-but-known active work
 - [x] Add in-memory session overlay state for agent-authored `edit_file` changes
+- [x] Clear matching session-overlay entries after current L1 sync without clearing newer edits
 - [x] Reuse `.agents/topchester-kb-cache/` for durable L1 queue and sync queue artifacts
 - [ ] Add cache tests
 
@@ -225,6 +233,7 @@ Status legend:
 - [x] Update or mark KB stale after `edit_file` edits
 - [x] Update or mark KB stale after `write_file` writes
 - [x] Mark session as `needs_sync` after `edit_file` edits and `write_file` writes
+- [x] Enqueue live L1 work after successful `read_file`, `edit_file`, `write_file`, and apply-patch writes
 - [ ] Include KB updates with in-scope code changes
 - [ ] Prevent normal coding path from bypassing KB once strict mode exists
 - [ ] Add agent behavior tests
@@ -232,6 +241,7 @@ Status legend:
 ## TUI Integration
 
 - [x] Show KB ready/empty/missing/path-conflict state in TUI footer
+- [x] Show event-driven live L1 queue/sync state without full-project status scans
 - [ ] Show compile progress
 - [ ] Show L1 file processing progress
 - [ ] Add feature map view
@@ -255,3 +265,4 @@ Status legend:
 - [x] Add focused tests for L1 search and context pack generation
 - [x] Add CLI integration tests for `kb search`, `kb context`, and top-level `search`
 - [x] Add L1 post-processing tests for inferred test links
+- [x] Add focused single-file sync, scheduler, tool-touch, overlay-clear, prompt-gating, and live-footer tests
