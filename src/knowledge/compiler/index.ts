@@ -10,6 +10,14 @@ import { processL1Queue, type L1QueueProcessingSummary, type L1SummaryModel } fr
 import { knowledgeCompilerIdentity } from "./manifest.js";
 import { getL1FileEntryPath } from "./path-encoding.js";
 
+export {
+  formatSyncL1FileResults,
+  isPartialSyncL1FileResult,
+  syncL1File,
+  type SyncL1FileOptions,
+  type SyncL1FileResult,
+} from "./sync-file.js";
+
 export interface KnowledgeCompileResult {
   workspaceRoot: string;
   kbPath: string;

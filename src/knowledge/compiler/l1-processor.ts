@@ -10,7 +10,7 @@ import { inferL1FileRole, postProcessL1Entries } from "./l1-postprocess.js";
 import { knowledgeCompilerIdentity } from "./manifest.js";
 import { getL1FileEntryPath, normalizeL1FilePath } from "./path-encoding.js";
 
-const MAX_L1_PROMPT_FILE_BYTES = 256 * 1024;
+export const MAX_L1_PROMPT_FILE_BYTES = 256 * 1024;
 
 export interface L1SummaryModel {
   generateText(request: {
@@ -179,6 +179,16 @@ export async function processL1QueueItem(options: ProcessL1QueueItemOptions): Pr
       abortSignal: options.abortSignal,
     });
     options.abortSignal?.throwIfAborted();
+    const finalStat = await stat(absolutePath).catch((error: unknown) => {
+      if (isNodeErrorCode(error, "ENOENT")) return undefined;
+      throw error;
+    });
+    if (!finalStat) {
+      return { item: markTerminal(options.item, "missing_file") };
+    }
+    if (finalStat.size !== options.item.sizeBytes || (await hashFile(absolutePath)) !== options.item.hash) {
+      return { item: markTerminal(options.item, "changed") };
+    }
     const modelEntry = parseL1ModelJson(modelResult.text);
     const entry = normalizeL1FileEntry(modelEntry, {
       path: normalizedPath,
@@ -603,7 +613,7 @@ async function persistQueue(queuePath: string, queuedFiles: L1QueueItem[], gener
   await writeFile(queuePath, `${JSON.stringify(queue, null, 2)}\n`);
 }
 
-async function hasCurrentEntry(kbPath: string, item: L1QueueItem): Promise<boolean> {
+export async function hasCurrentEntry(kbPath: string, item: L1QueueItem): Promise<boolean> {
   try {
     const entryPath = getL1FileEntryPath(kbPath, item.path);
     const entry = parseL1FileEntry(JSON.parse(await readFile(entryPath, "utf8")));

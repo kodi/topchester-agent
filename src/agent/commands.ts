@@ -3,6 +3,8 @@ import {
   filterNonCleanKnowledgeCompileResult,
   formatKnowledgeCompileStatusResult,
   formatKnowledgeSyncResult,
+  formatSyncL1FileResults,
+  syncL1File,
   syncKnowledgeBase,
 } from "../knowledge/compiler/index.js";
 import { type L1SummaryModel } from "../knowledge/compiler/l1-processor.js";
@@ -446,11 +448,29 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
 
   if (subcommand === "sync") {
     const full = args.includes("--full");
-    const unknownArgs = args.slice(1).filter((arg) => arg !== "--full");
-    if (unknownArgs.length > 0) {
-      return { messages: ["Usage: /kb sync [--full]"] };
+    const paths = args.slice(1).filter((arg) => arg !== "--full");
+    if (paths.some((path) => path.startsWith("-")) || (full && paths.length > 0)) {
+      return { messages: ["Usage: /kb sync [--full] [paths...]"] };
     }
     try {
+      if (paths.length > 0) {
+        const results = [];
+        for (const path of paths) {
+          results.push(
+            await syncL1File(context.workspaceRoot, {
+              path,
+              model: context.modelGateway,
+              config: context.config,
+              abortSignal: context.abortSignal,
+            })
+          );
+        }
+        return {
+          messages: formatSyncL1FileResults(results, {
+            model: formatConfiguredModelRef(context.config, "kb.summarize"),
+          }),
+        };
+      }
       return {
         messages: formatKnowledgeSyncResult(
           await syncKnowledgeBase(context.workspaceRoot, {

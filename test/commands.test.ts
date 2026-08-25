@@ -599,6 +599,55 @@ describe("slash commands", () => {
     expect(result.messages).toContain("state: L1 entries are ready and current");
   });
 
+  it("syncs named files without inventorying the rest of the workspace", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-file-sync-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await executeSlashCommand("/kb init", { workspaceRoot: workspace });
+    await writeFile(join(workspace, "src", "first.ts"), "export const first = 1;\n");
+    await writeFile(join(workspace, "src", "other.ts"), "export const other = 2;\n");
+    let calls = 0;
+    const modelGateway = {
+      async generateText() {
+        calls += 1;
+        return {
+          text: JSON.stringify({
+            language: "typescript",
+            summary: "Exports a fixture value.",
+            responsibilities: ["Export a fixture value."],
+            symbols: [],
+            imports: [],
+            exports: ["first"],
+            module_ids: [],
+            feature_ids: [],
+            test_ids: [],
+            evidence: [{ kind: "path", value: "src/first.ts" }],
+            confidence: "medium",
+          }),
+          providerId: "fake",
+          modelId: "fake-l1",
+          purpose: "kb.summarize" as const,
+        };
+      },
+    };
+
+    const first = await executeSlashCommand("/kb sync src/first.ts", { workspaceRoot: workspace, modelGateway });
+    const current = await executeSlashCommand("/kb sync src/first.ts", { workspaceRoot: workspace, modelGateway });
+
+    expect(first.messages).toContain("src/first.ts");
+    expect(first.messages).toContain("status: completed");
+    expect(current.messages).toContain("status: skipped_current");
+    expect(calls).toBe(1);
+    await expect(stat(join(workspace, "topchester-kb", "l1-files", "src", "other.ts.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("rejects paths combined with /kb sync --full", async () => {
+    await expect(executeSlashCommand("/kb sync --full src/index.ts", { workspaceRoot: "/repo" })).resolves.toEqual({
+      messages: ["Usage: /kb sync [--full] [paths...]"],
+    });
+  });
+
   it("propagates cancellation through /kb sync instead of reporting a file failure", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-cancel-"));
     const abortController = new AbortController();

@@ -13,7 +13,10 @@ import {
   formatKnowledgeCompileDryRunResult,
   formatKnowledgeCompileStatusResult,
   formatKnowledgeSyncResult,
+  formatSyncL1FileResults,
   isPartialKnowledgeCompileResult,
+  isPartialSyncL1FileResult,
+  syncL1File,
   syncKnowledgeBase,
 } from "./knowledge/compiler/index.js";
 import { formatKnowledgeInitResult, initializeKnowledgeBase } from "./knowledge/init.js";
@@ -367,32 +370,55 @@ function createTopchesterProgram(): Command {
   kbCommand
     .command("sync")
     .description("sync project files into the knowledge base")
+    .argument("[paths...]", "workspace-relative files to sync without listing the project")
     .option("--full", "sync all in-scope files and remove orphaned L1 entries")
     .option("-m, --model <model>", "use a provider/model for this KB sync")
-    .action(async (options: { full?: boolean; model?: string }) => {
+    .action(async (paths: string[], options: { full?: boolean; model?: string }) => {
       const context = createContextFromOptions(program);
       const globalOptions = program.opts<{ model?: string; kbModel?: string }>();
       const kbModel = options.model ?? globalOptions.model ?? globalOptions.kbModel;
       if (kbModel) {
         setRuntimeModelReference(context, kbModel, "kb.summarize");
       }
+      if (options.full && paths.length > 0) {
+        throw new Error("Usage: topchester kb sync [--full] [paths...]");
+      }
       const abortController = new AbortController();
       const interrupt = () => abortController.abort();
       process.on("SIGINT", interrupt);
-      let result: Awaited<ReturnType<typeof syncKnowledgeBase>>;
+      let result: Awaited<ReturnType<typeof syncKnowledgeBase>> | undefined;
+      let fileResults: Awaited<ReturnType<typeof syncL1File>>[] | undefined;
       try {
-        result = await ui.progress(
-          options.full ? "Syncing all L1 file entries..." : "Syncing non-clean L1 file entries...",
-          (report) =>
-            syncKnowledgeBase(context.workspaceRoot, {
-              model: context.modelGateway,
-              requireModel: true,
-              config: context.config,
-              full: options.full,
-              abortSignal: abortController.signal,
-              onProgress: (event) => report(event.message),
-            })
-        );
+        if (paths.length > 0) {
+          fileResults = await ui.progress("Syncing named L1 file entries...", async (report) => {
+            const outcomes = [];
+            for (const [index, path] of paths.entries()) {
+              report(`Syncing L1 file ${index + 1}/${paths.length}: ${path}`);
+              outcomes.push(
+                await syncL1File(context.workspaceRoot, {
+                  path,
+                  model: context.modelGateway,
+                  config: context.config,
+                  abortSignal: abortController.signal,
+                })
+              );
+            }
+            return outcomes;
+          });
+        } else {
+          result = await ui.progress(
+            options.full ? "Syncing all L1 file entries..." : "Syncing non-clean L1 file entries...",
+            (report) =>
+              syncKnowledgeBase(context.workspaceRoot, {
+                model: context.modelGateway,
+                requireModel: true,
+                config: context.config,
+                full: options.full,
+                abortSignal: abortController.signal,
+                onProgress: (event) => report(event.message),
+              })
+          );
+        }
       } catch (error) {
         if (abortController.signal.aborted) {
           process.exitCode = 130;
@@ -403,13 +429,19 @@ function createTopchesterProgram(): Command {
         process.off("SIGINT", interrupt);
       }
 
-      console.log(
-        formatKnowledgeSyncResult(result, {
-          title: options.full ? "KB sync --full" : "KB sync",
-          model: formatResolvedModelRef(context, "kb.summarize"),
-        }).join("\n")
-      );
-      if (isPartialKnowledgeCompileResult(result)) {
+      if (fileResults) {
+        console.log(
+          formatSyncL1FileResults(fileResults, { model: formatResolvedModelRef(context, "kb.summarize") }).join("\n")
+        );
+      } else if (result) {
+        console.log(
+          formatKnowledgeSyncResult(result, {
+            title: options.full ? "KB sync --full" : "KB sync",
+            model: formatResolvedModelRef(context, "kb.summarize"),
+          }).join("\n")
+        );
+      }
+      if ((result && isPartialKnowledgeCompileResult(result)) || fileResults?.some(isPartialSyncL1FileResult)) {
         process.exitCode = 2;
       }
     });

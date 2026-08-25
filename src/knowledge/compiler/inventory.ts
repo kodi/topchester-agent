@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { open, readdir, readFile, stat } from "node:fs/promises";
-import { dirname, extname, isAbsolute, join, relative, sep, win32 } from "node:path";
+import { open, readdir, readFile, realpath, stat } from "node:fs/promises";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep, win32 } from "node:path";
 import picomatch from "picomatch";
 
 export interface InventoryFile {
@@ -18,6 +18,27 @@ export interface InventoryResult {
 export interface InventoryOptions {
   excludedPaths?: string[];
   ignorePaths?: string[];
+}
+
+export type ProjectFileInspection =
+  | { status: "included"; file: InventoryFile; gitignoreFiles: string[] }
+  | {
+      status: "skipped";
+      path: string;
+      reason:
+        | "binary"
+        | "config_ignore"
+        | "default_exclude"
+        | "gitignore"
+        | "not_file"
+        | "outside_workspace"
+        | "too_large";
+      gitignoreFiles: string[];
+    }
+  | { status: "missing"; path: string; gitignoreFiles: string[] };
+
+export interface InspectProjectFileOptions extends InventoryOptions {
+  maxBytes?: number;
 }
 
 interface IgnoreRule {
@@ -115,6 +136,89 @@ export async function listProjectFilesForL1(
   };
 }
 
+export async function inspectProjectFileForL1(
+  workspaceRoot: string,
+  relativePath: string,
+  options: InspectProjectFileOptions = {}
+): Promise<ProjectFileInspection> {
+  const resolvedWorkspace = resolve(workspaceRoot);
+  const normalizedPath = toPosixPath(relativePath);
+  const absolutePath = resolve(resolvedWorkspace, normalizedPath);
+  const containedPath = toPosixPath(relative(resolvedWorkspace, absolutePath));
+  const excludedDirs = buildExcludedDirs(resolvedWorkspace, options.excludedPaths ?? []);
+  const emptyGitignoreFiles: string[] = [];
+
+  if (containedPath.startsWith("../") || containedPath === ".." || isAbsolute(containedPath)) {
+    return {
+      status: "skipped",
+      path: normalizedPath,
+      reason: "outside_workspace",
+      gitignoreFiles: emptyGitignoreFiles,
+    };
+  }
+
+  if (shouldSkipFileByDefault(containedPath) || shouldSkipDirectoryByDefault(dirname(containedPath), excludedDirs)) {
+    return { status: "skipped", path: containedPath, reason: "default_exclude", gitignoreFiles: emptyGitignoreFiles };
+  }
+
+  const rules = await loadGitignoreRulesForPath(resolvedWorkspace, containedPath);
+  const gitignoreFiles = rules.map((rule) => join(rule.baseDir, ".gitignore")).filter(unique);
+
+  if (isPathIgnored(resolvedWorkspace, absolutePath, rules, excludedDirs)) {
+    return { status: "skipped", path: containedPath, reason: "gitignore", gitignoreFiles };
+  }
+
+  const projectIgnoreMatcher = createProjectIgnoreMatcher(options.ignorePaths ?? []);
+  if (projectIgnoreMatcher.isIgnored(containedPath, false)) {
+    return { status: "skipped", path: containedPath, reason: "config_ignore", gitignoreFiles };
+  }
+
+  const fileStat = await stat(absolutePath).catch((error: unknown) => {
+    if (isNodeErrorCode(error, "ENOENT")) return undefined;
+    throw error;
+  });
+  if (!fileStat) {
+    return { status: "missing", path: containedPath, gitignoreFiles };
+  }
+  if (!fileStat.isFile()) {
+    return { status: "skipped", path: containedPath, reason: "not_file", gitignoreFiles };
+  }
+
+  const realWorkspace = await realpath(resolvedWorkspace);
+  const realFile = await realpath(absolutePath);
+  const realRelativePath = toPosixPath(relative(realWorkspace, realFile));
+  if (realRelativePath.startsWith("../") || realRelativePath === ".." || isAbsolute(realRelativePath)) {
+    return { status: "skipped", path: containedPath, reason: "outside_workspace", gitignoreFiles };
+  }
+
+  if (options.maxBytes !== undefined && fileStat.size > options.maxBytes) {
+    return { status: "skipped", path: containedPath, reason: "too_large", gitignoreFiles };
+  }
+  if (await isBinaryFile(realFile, containedPath)) {
+    return { status: "skipped", path: containedPath, reason: "binary", gitignoreFiles };
+  }
+
+  return {
+    status: "included",
+    file: { path: containedPath, sizeBytes: fileStat.size, hash: await hashFile(realFile) },
+    gitignoreFiles,
+  };
+}
+
+function isPathIgnored(
+  workspaceRoot: string,
+  absolutePath: string,
+  rules: IgnoreRule[],
+  excludedDirs: Set<string>
+): boolean {
+  let current = dirname(absolutePath);
+  while (current !== workspaceRoot && current.startsWith(`${workspaceRoot}${sep}`)) {
+    if (isIgnored(workspaceRoot, current, true, rules, excludedDirs)) return true;
+    current = dirname(current);
+  }
+  return isIgnored(workspaceRoot, absolutePath, false, rules, excludedDirs);
+}
+
 async function loadGitignoreRules(workspaceRoot: string, excludedDirs: Set<string>): Promise<IgnoreRule[]> {
   const gitignorePaths: string[] = [];
   await collectGitignorePaths(workspaceRoot, workspaceRoot, gitignorePaths, excludedDirs);
@@ -131,6 +235,31 @@ async function loadGitignoreRules(workspaceRoot: string, excludedDirs: Set<strin
     }
   }
 
+  return rules;
+}
+
+async function loadGitignoreRulesForPath(workspaceRoot: string, relativePath: string): Promise<IgnoreRule[]> {
+  const directoryParts = dirname(relativePath) === "." ? [] : dirname(relativePath).split("/");
+  const directories = [workspaceRoot];
+  let current = workspaceRoot;
+  for (const part of directoryParts) {
+    current = join(current, part);
+    directories.push(current);
+  }
+
+  const rules: IgnoreRule[] = [];
+  for (const directory of directories) {
+    const gitignorePath = join(directory, ".gitignore");
+    const content = await readFile(gitignorePath, "utf8").catch((error: unknown) => {
+      if (isNodeErrorCode(error, "ENOENT")) return undefined;
+      throw error;
+    });
+    if (content === undefined) continue;
+    for (const rawLine of content.split(/\r?\n/)) {
+      const rule = parseGitignoreLine(directory, rawLine);
+      if (rule) rules.push(rule);
+    }
+  }
   return rules;
 }
 
@@ -470,4 +599,8 @@ function normalizeProjectPath(path: string): string {
     .split(/[\\/]+/)
     .filter(Boolean)
     .join("/");
+}
+
+function isNodeErrorCode(error: unknown, code: string): boolean {
+  return error instanceof Error && "code" in error && error.code === code;
 }

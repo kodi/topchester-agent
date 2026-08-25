@@ -35,6 +35,7 @@ Common commands:
 - `/skill <name> [instruction]` activates a skill.
 - `/kb status` shows files that are not current in the knowledge base.
 - `/kb sync` processes non-clean files into L1 knowledge entries.
+- `/kb sync <path> [path...]` processes only the named workspace-relative files without listing the whole project.
 - `/kb sync --full` processes all in-scope project files.
 - `/kb init` creates Topchester project knowledge folders.
 - `/kb reset` deletes the local knowledge base and cache.

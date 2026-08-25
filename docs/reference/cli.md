@@ -33,6 +33,7 @@ topchester mcp add github --env GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx -- npx -y @
 
 topchester kb init
 topchester kb sync
+topchester kb sync src/agent/runtime/index.ts src/cli.ts
 topchester kb sync --model openrouter/google/gemini-3.1-flash-lite
 topchester kb status
 topchester kb search "post author update error"
@@ -69,7 +70,7 @@ topchester kb reset
 | `topchester kb context`    | Create an L1 context pack for a query.                   |
 | `topchester kb dry-run`    | Preview which files would be synced.                     |
 | `topchester kb search`     | Search compiled L1 file knowledge.                       |
-| `topchester kb sync`       | Build or update L1 entries for non-clean files.          |
+| `topchester kb sync`       | Build or update L1 entries for non-clean or named files. |
 | `topchester kb reset`      | Delete the local knowledge base and cache.               |
 | `topchester kb status`     | Show files that are not current in the knowledge base.   |
 | `topchester update`        | Update Topchester with npm, pnpm, or bun.                |
@@ -187,3 +188,9 @@ The agent can use `web_fetch` during `topchester` and `topchester run` sessions 
 Add `-m, --model <provider/model>` to use that model for one standalone KB sync.
 The output names the effective KB model. This command-local selection does not
 create session state or write JSONC.
+
+Pass one or more workspace-relative paths to sync only those files without
+listing the whole project. Each path reports `completed`, `skipped_current`,
+`ignored`, `changed`, `missing`, or `failed`. Named paths cannot be combined
+with `--full`; bare `kb sync` and `kb sync --full` keep their existing batch
+behavior.

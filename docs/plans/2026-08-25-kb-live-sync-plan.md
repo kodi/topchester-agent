@@ -233,7 +233,7 @@ mise run format-check
 
 ## Slice 1: Single-File L1 Sync Primitive
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Sync one workspace-relative file into L1 without listing the repo.
 
@@ -265,9 +265,14 @@ mise run test -- test/knowledge-sync-file.test.ts
 
 Dependencies: none.
 
+Completed 2026-08-25: added the inventory-free single-file primitive, including
+current-SHA skip, ignore/binary/size checks, changed-during-model detection, and
+best-effort manifest readiness. Verification passed with
+`mise run test-node -- test/knowledge-sync-file.test.ts` and `mise run local-ci`.
+
 ## Slice 2: CLI And Slash Path Sync
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Let a user sync one or more named files without a full dirty scan.
 
@@ -294,6 +299,11 @@ mise run test -- test/commands.test.ts test/cli.integration.test.ts
 ```
 
 Dependencies: Slice 1.
+
+Completed 2026-08-25: CLI and slash sync accept one or more named paths, report
+per-file outcomes, reject `--full` plus paths, and preserve both batch modes.
+Verification passed with `mise run test-node -- test/knowledge-sync-file.test.ts
+test/commands.test.ts test/cli.integration.test.ts` and `mise run local-ci`.
 
 ## Slice 3: Global Live Flag And Commands
 
@@ -432,14 +442,16 @@ Dependencies: Slices 2–5.
 
 ## Next Slice
 
-Start Slice 1.
+Start Slice 3.
 
-Inspect `src/knowledge/compiler/l1-processor.ts` (`processL1QueueItem`, `hasCurrentEntry`) and `src/knowledge/compiler/inventory.ts` (ignore rules). Add `syncL1File` that hashes one path and either skips or writes one L1 entry.
+Add the shared `knowledge.live` config field and global writer, then expose the
+CLI and slash on/off/status commands without scheduling background work yet.
 
 First verification:
 
 ```sh
-mise run test -- test/knowledge-sync-file.test.ts
+mise run test-node -- test/config.test.ts test/commands.test.ts test/cli.integration.test.ts
 ```
 
-Do not start the scheduler or config flag until that primitive skips on matching SHA without a model call.
+Do not start the scheduler until the persisted flag and running-config reload
+path are covered.

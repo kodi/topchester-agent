@@ -1813,6 +1813,19 @@ describe("CLI integration", () => {
     );
   });
 
+  it("rejects combining full KB sync with named paths", async () => {
+    const fixture = await makeFixture();
+
+    await expect(
+      runCli(
+        ["--config", fixture.config, "--workspace", fixture.workspace, "kb", "sync", "--full", "src/index.ts"],
+        fixture.root
+      )
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("Usage: topchester kb sync [--full] [paths...]"),
+    });
+  });
+
   it("colors the dry-run sync status token when color is enabled", async () => {
     const fixture = await makeFixture();
     await mkdir(join(fixture.workspace, "src"), { recursive: true });
