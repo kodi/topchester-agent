@@ -1,8 +1,7 @@
 import { basename } from "node:path";
 import { z } from "zod";
-import { type BenchmarkProfile } from "../benchmark-profile.js";
 import { validateBashPolicy } from "./bash-policy.js";
-import { runProcess, TERMINAL_BENCH_MAX_OUTPUT_BYTES, TERMINAL_BENCH_MAX_OUTPUT_LINES } from "./process-runner.js";
+import { runProcess } from "./process-runner.js";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
 
 export const bashArgsSchema = z.object({
@@ -28,7 +27,7 @@ export interface BashToolResult extends ToolResult<"bash"> {
   policy: {
     allowed: true;
     reason: string;
-    kind: "allow_exact" | "allow_prefix" | "approved_exact" | "benchmark_terminal";
+    kind: "allow_exact" | "allow_prefix" | "approved_exact";
     commands: string[];
     matchedRule: string;
   };
@@ -48,7 +47,6 @@ export const bashTool = defineTool({
       abortSignal: context.abortSignal,
       permissions: context.config?.tools?.bash,
       approvedCommands: context.bashApprovals?.allowExactCommands,
-      benchmarkProfile: context.benchmarkProfile,
     }),
 });
 
@@ -60,14 +58,12 @@ export async function runBashCommand(
     abortSignal?: AbortSignal;
     permissions?: Parameters<typeof validateBashPolicy>[1]["permissions"];
     approvedCommands?: readonly string[];
-    benchmarkProfile?: BenchmarkProfile;
   } = {}
 ): Promise<BashToolResult> {
   const decision = await validateBashPolicy(args, {
     workspaceRoot,
     permissions: options.permissions,
     approvedCommands: options.approvedCommands,
-    benchmarkProfile: options.benchmarkProfile,
   });
 
   if (!decision.allowed) {
@@ -81,8 +77,6 @@ export async function runBashCommand(
     pathEnv: options.pathEnv,
     timeoutMs: args.timeout_ms,
     abortSignal: options.abortSignal,
-    outputLimitBytes: options.benchmarkProfile === "terminal-bench" ? TERMINAL_BENCH_MAX_OUTPUT_BYTES : undefined,
-    outputLimitLines: options.benchmarkProfile === "terminal-bench" ? TERMINAL_BENCH_MAX_OUTPUT_LINES : undefined,
     env: {
       NO_COLOR: "1",
     },

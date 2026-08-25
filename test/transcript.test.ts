@@ -71,7 +71,7 @@ function createTranscriptVariants(): TranscriptEntry[] {
       toolName: "bash",
       command: "pwd",
       workdir: "/repo",
-      reason: "benchmark mode",
+      reason: "policy override",
       label: "auto-approved bash permission: pwd",
     },
     { kind: "subagent", persistence: "session", status: "running", ...subagentReference, title: "Inspect" },

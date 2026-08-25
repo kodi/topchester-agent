@@ -23,7 +23,7 @@ export const taskTool = defineTool({
   description:
     "Delegate read-only file/search/git research to a child agent. Do not use for shell commands, bash, Python/Node scripts, validators, edits, writes, tiny local inspections, or other execution work.",
   prompt:
-    'task: delegate read-only file/search/git research to a child agent. Do not use task for shell commands, bash, Python/Node scripts, validators, edits, writes, finish_task, tiny local inspections, or other execution work; use parent tools directly. If the relevant workspace context is just a README plus a few obvious source files, inspect them directly with list_files/read_file instead of spawning a subagent. To use it, reply with only JSON: {"tool":"task","args":{"description":"Inspect runtime event flow","prompt":"Read the runtime and summarize how events are emitted.","subagent_type":"explore"}}',
+    'task: delegate read-only file/search/git research to a child agent. Do not use task for shell commands, bash, Python/Node scripts, validators, edits, writes, tiny local inspections, or other execution work; use parent tools directly. If the relevant workspace context is just a README plus a few obvious source files, inspect them directly with list_files/read_file instead of spawning a subagent. To use it, reply with only JSON: {"tool":"task","args":{"description":"Inspect runtime event flow","prompt":"Read the runtime and summarize how events are emitted.","subagent_type":"explore"}}',
   argsSchema: taskArgsSchema,
   async execute(context, args): Promise<TaskToolResult> {
     if (!context.subagents) {
@@ -40,7 +40,6 @@ export const taskTool = defineTool({
       parentToolCallId: context.toolCallId ?? args.task_id ?? "task",
       eventSink: context.eventSink,
       abortSignal: context.abortSignal,
-      benchmarkProfile: context.benchmarkProfile,
     });
 
     return {

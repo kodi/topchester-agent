@@ -42,7 +42,6 @@ class TopchesterAgent(BaseInstalledAgent):
         openrouter_tool_routing: str | None = None,
         kb_ignore_mode: str = "code",
         kb_max_files: int = 150,
-        benchmark_prompt: bool = True,
         plan_todo_mode: str = "compact",
         max_plan_todo_updates: int | None = 3,
         prewarm_kb: bool = True,
@@ -61,7 +60,6 @@ class TopchesterAgent(BaseInstalledAgent):
         self._openrouter_tool_routing = openrouter_tool_routing
         self._kb_ignore_mode = kb_ignore_mode
         self._kb_max_files = kb_max_files
-        self._benchmark_prompt = benchmark_prompt
         self._plan_todo_mode = plan_todo_mode
         self._max_plan_todo_updates = max_plan_todo_updates
         self._prewarm_kb = prewarm_kb
@@ -152,8 +150,6 @@ class TopchesterAgent(BaseInstalledAgent):
 
     @with_prompt_template
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
-        topchester_instruction = _benchmark_instruction(instruction) if self._benchmark_prompt else instruction
-
         await self.exec_as_agent(
             environment,
             command=f"mkdir -p {shlex.quote(EnvironmentPaths.agent_dir.as_posix())}",
@@ -165,7 +161,7 @@ class TopchesterAgent(BaseInstalledAgent):
         )
         await self.exec_as_agent(
             environment,
-            command=_write_file_command(self._REMOTE_INSTRUCTION_PATH, topchester_instruction),
+            command=_write_file_command(self._REMOTE_INSTRUCTION_PATH, instruction),
             env=self._topchester_env(),
         )
 
@@ -225,7 +221,6 @@ class TopchesterAgent(BaseInstalledAgent):
                     "sync_duration_ms": kb_sync_duration_ms,
                     "max_files": self._kb_max_files,
                 },
-                "prompt": {"benchmark_wrapper": self._benchmark_prompt},
                 "plan_todo": {
                     "mode": self._plan_todo_mode,
                     "max_updates_per_turn": self._max_plan_todo_updates,
@@ -315,7 +310,6 @@ class TopchesterAgent(BaseInstalledAgent):
                 "TOPCHESTER_LOG_LEVEL": "debug",
                 "TOPCHESTER_HOME": self._REMOTE_TOPCHESTER_HOME.as_posix(),
                 "TOPCHESTER_PLAN_TODO_MODE": self._plan_todo_mode,
-                "TOPCHESTER_REQUIRE_FINISH_TASK": "1",
             }
         )
         if self._max_plan_todo_updates is not None:
@@ -460,30 +454,6 @@ fi
 
 def _write_file_command(path: PurePosixPath, content: str) -> str:
     return f"cat > {shlex.quote(path.as_posix())} <<'TOPCHESTER_EOF'\n{content}\nTOPCHESTER_EOF\n"
-
-
-def _benchmark_instruction(instruction: str) -> str:
-    return f"""You are running inside an automated software engineering benchmark.
-
-Complete the task end-to-end in the repository at /app. Do not stop after analysis, do not ask for confirmation, and do not offer to continue later. Make the necessary code and test changes directly.
-
-This is an implementation benchmark. A final response without a successful source-file edit is incomplete unless the task truly requires no code change. Do not describe intended changes as if they were made. Use edit_file, write_file, apply_patch, or another mutating tool to make real changes before finalizing.
-
-Use the project knowledge base that has already been prepared. Inspect the repository as needed, modify files, and run focused validation when practical. If validation is too expensive or blocked, report exactly what you ran or why it could not be run.
-
-Use todo/plan updates sparingly in this benchmark. A short initial plan is fine for complex tasks, but do not spend tool calls maintaining checklist wording; prioritize source edits and validation.
-
-You cannot finish this benchmark with a normal assistant message. A normal assistant message is only a progress note, and the runtime will continue the task after it.
-
-The only valid way to end this benchmark is to call finish_task. Call finish_task only when:
-- requested source changes are implemented
-- relevant validation was run, or you explain why it was blocked
-- files_changed lists the source files actually changed
-- remaining_issues is empty
-
-Task:
-
-{instruction}"""
 
 
 CODE_ONLY_KB_IGNORE_PATHS = [

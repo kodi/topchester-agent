@@ -19,6 +19,10 @@ The TUI has a thread area, a visible plan block when the agent is working throug
 
 The packaged CLI runs on Bun `>=1.3` and renders with OpenTUI Solid. It uses split-footer mode: completed transcript entries are appended to ordinary terminal scrollback exactly once, while the composer, suggestions, plan, live status, and dialogs repaint in a bounded footer.
 
+Assistant fenced code blocks use the fence language, such as `ts`, `tsx`, or
+`css`, for syntax highlighting. Code stays selectable in terminal scrollback;
+unknown languages remain readable as plain code.
+
 The status line shows readiness, folder name, active model, provider, and knowledge-base state:
 
 ```text

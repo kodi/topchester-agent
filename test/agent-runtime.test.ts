@@ -299,7 +299,7 @@ describe("agent runtime project instructions", () => {
     expect(await readFile(join(workspace, "src", "value.txt"), "utf8")).toBe("enabled=true\n");
   });
 
-  it("rejects implementation completion when no source file was edited", async () => {
+  it("ignores the legacy completion environment flag and returns the model's final response unchanged", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
     const prompts: string[] = [];
     const runtime = new TopchesterAgentRuntime({
@@ -317,296 +317,23 @@ describe("agent runtime project instructions", () => {
       } as unknown as AppContext["modelGateway"],
     });
 
-    const events = await runtime.submitMessage([], "implement the requested change");
-    const finalMessage = events.findLast((event) => event.type === "message" && event.role === "assistant");
+    const previousRequireFinishTask = process.env.TOPCHESTER_REQUIRE_FINISH_TASK;
+    process.env.TOPCHESTER_REQUIRE_FINISH_TASK = "1";
+    try {
+      const events = await runtime.submitMessage([], "implement the requested change");
+      const finalMessage = events.findLast((event) => event.type === "message" && event.role === "assistant");
 
-    expect(prompts).toHaveLength(3);
-    expect(prompts[1]).toContain("no successful source-file edit yet");
-    expect(prompts[2]).toContain("Previous draft answer that was rejected as unsupported");
-    expect(finalMessage).toMatchObject({
-      type: "message",
-      role: "assistant",
-      text: expect.stringContaining("no successful source-file edit occurred"),
-    });
-  });
-
-  it("does not expose finish_task in a normal run", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
-    const toolNames: string[][] = [];
-    const runtime = new TopchesterAgentRuntime({
-      ...createTestContext(workspace),
-      modelGateway: {
-        async generateText(request: { tools?: Array<{ name: string }> }) {
-          toolNames.push(request.tools?.map((tool) => tool.name) ?? []);
-          return {
-            text: "The project supports project Gantt charts and scheduling timelines.",
-            providerId: "fake",
-            modelId: "fake-agent",
-            purpose: "agent.primary" as const,
-          };
-        },
-      } as unknown as AppContext["modelGateway"],
-    });
-
-    const events = await runtime.submitMessage([], "what kinds of Gantt charts are supported?");
-
-    expect(toolNames[0]).not.toContain("finish_task");
-    expect(events).toContainEqual(
-      expect.objectContaining({
+      expect(prompts).toHaveLength(1);
+      expect(finalMessage).toMatchObject({
         type: "message",
         role: "assistant",
-        text: "The project supports project Gantt charts and scheduling timelines.",
-      })
-    );
-  });
-
-  it("continues after plain text when finish_task is required", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
-    await mkdir(join(workspace, "src"), { recursive: true });
-    await writeFile(join(workspace, "src", "value.ts"), "export const value = 1;\n");
-    const previous = process.env.TOPCHESTER_REQUIRE_FINISH_TASK;
-    process.env.TOPCHESTER_REQUIRE_FINISH_TASK = "1";
-
-    let step = 0;
-    const prompts: string[] = [];
-    const runtime = new TopchesterAgentRuntime({
-      ...createTestContext(workspace),
-      modelGateway: {
-        async generateText(request: { prompt: string }) {
-          prompts.push(request.prompt);
-          step += 1;
-
-          if (step === 1) {
-            return {
-              text: JSON.stringify({
-                tool: "edit_file",
-                args: {
-                  path: "src/value.ts",
-                  edits: [{ old_text: "export const value = 1;\n", new_text: "export const value = 2;\n" }],
-                },
-              }),
-              providerId: "fake",
-              modelId: "fake-agent",
-              purpose: "agent.primary" as const,
-            };
-          }
-
-          if (step === 2) {
-            return {
-              text: "Now I need to run validation.",
-              providerId: "fake",
-              modelId: "fake-agent",
-              purpose: "agent.primary" as const,
-            };
-          }
-
-          return {
-            text: JSON.stringify({
-              tool: "finish_task",
-              args: {
-                final_response: "Changed src/value.ts.",
-                files_changed: ["src/value.ts"],
-                validation: [],
-                remaining_issues: [],
-              },
-            }),
-            providerId: "fake",
-            modelId: "fake-agent",
-            purpose: "agent.primary" as const,
-          };
-        },
-      } as unknown as AppContext["modelGateway"],
-    });
-
-    try {
-      const events = await runtime.submitMessage([], "implement the requested change");
-
-      expect(await readFile(join(workspace, "src", "value.ts"), "utf8")).toBe("export const value = 2;\n");
-      expect(prompts).toHaveLength(3);
-      expect(prompts[2]).toContain("requires finish_task as the only terminal action");
-      expect(events).not.toContainEqual(
-        expect.objectContaining({ type: "message", role: "assistant", text: "Now I need to run validation." })
-      );
-      expect(events).toContainEqual(
-        expect.objectContaining({ type: "message", role: "assistant", text: "Changed src/value.ts." })
-      );
-    } finally {
-      if (previous === undefined) {
-        delete process.env.TOPCHESTER_REQUIRE_FINISH_TASK;
-      } else {
-        process.env.TOPCHESTER_REQUIRE_FINISH_TASK = previous;
-      }
-    }
-  });
-
-  it("allows terminal-bench finish after a workspace-changing bash command", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
-    const previous = process.env.TOPCHESTER_REQUIRE_FINISH_TASK;
-    process.env.TOPCHESTER_REQUIRE_FINISH_TASK = "1";
-
-    let step = 0;
-    const runtime = new TopchesterAgentRuntime({
-      ...createTestContext(workspace),
-      modelGateway: {
-        async generateText() {
-          step += 1;
-
-          if (step === 1) {
-            return {
-              text: JSON.stringify({
-                tool: "bash",
-                args: {
-                  command: "mkdir -p output && printf ok > output/result.txt",
-                  timeout_ms: 10000,
-                  description: "create benchmark output",
-                },
-              }),
-              providerId: "fake",
-              modelId: "fake-agent",
-              purpose: "agent.primary" as const,
-            };
-          }
-
-          return {
-            text: JSON.stringify({
-              tool: "finish_task",
-              args: {
-                final_response: "Created output/result.txt.",
-                files_changed: ["output/result.txt"],
-                validation: [],
-                remaining_issues: [],
-              },
-            }),
-            providerId: "fake",
-            modelId: "fake-agent",
-            purpose: "agent.primary" as const,
-          };
-        },
-      } as unknown as AppContext["modelGateway"],
-    });
-
-    try {
-      const events = await runtime.submitMessage([], "create the requested benchmark output", undefined, undefined, {
-        benchmarkProfile: "terminal-bench",
+        text: "Implemented the requested change in src/value.ts.",
       });
-
-      expect(await readFile(join(workspace, "output", "result.txt"), "utf8")).toBe("ok");
-      expect(events).toContainEqual(expect.objectContaining({ type: "tool_call", label: "finish_task" }));
-      expect(events).toContainEqual(
-        expect.objectContaining({ type: "message", role: "assistant", text: "Created output/result.txt." })
-      );
     } finally {
-      if (previous === undefined) {
+      if (previousRequireFinishTask === undefined) {
         delete process.env.TOPCHESTER_REQUIRE_FINISH_TASK;
       } else {
-        process.env.TOPCHESTER_REQUIRE_FINISH_TASK = previous;
-      }
-    }
-  });
-
-  it("rejects finish_task with remaining issues when finish_task is required", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
-    await mkdir(join(workspace, "src"), { recursive: true });
-    await writeFile(join(workspace, "src", "value.ts"), "export const value = 1;\nexport const done = false;\n");
-    const previous = process.env.TOPCHESTER_REQUIRE_FINISH_TASK;
-    process.env.TOPCHESTER_REQUIRE_FINISH_TASK = "1";
-
-    let step = 0;
-    const prompts: string[] = [];
-    const runtime = new TopchesterAgentRuntime({
-      ...createTestContext(workspace),
-      modelGateway: {
-        async generateText(request: { prompt: string }) {
-          prompts.push(request.prompt);
-          step += 1;
-
-          if (step === 1) {
-            return {
-              text: JSON.stringify({
-                tool: "edit_file",
-                args: {
-                  path: "src/value.ts",
-                  edits: [{ old_text: "export const value = 1;\n", new_text: "export const value = 2;\n" }],
-                },
-              }),
-              providerId: "fake",
-              modelId: "fake-agent",
-              purpose: "agent.primary" as const,
-            };
-          }
-
-          if (step === 2) {
-            return {
-              text: JSON.stringify({
-                tool: "finish_task",
-                args: {
-                  final_response: "Changed src/value.ts, but validation still fails.",
-                  files_changed: ["src/value.ts"],
-                  validation: ["fake test failed"],
-                  remaining_issues: ["validation still fails"],
-                },
-              }),
-              providerId: "fake",
-              modelId: "fake-agent",
-              purpose: "agent.primary" as const,
-            };
-          }
-
-          if (step === 3) {
-            return {
-              text: JSON.stringify({
-                tool: "edit_file",
-                args: {
-                  path: "src/value.ts",
-                  edits: [{ old_text: "export const done = false;\n", new_text: "export const done = true;\n" }],
-                },
-              }),
-              providerId: "fake",
-              modelId: "fake-agent",
-              purpose: "agent.primary" as const,
-            };
-          }
-
-          return {
-            text: JSON.stringify({
-              tool: "finish_task",
-              args: {
-                final_response: "Changed src/value.ts.",
-                files_changed: ["src/value.ts"],
-                validation: ["fake test passed"],
-                remaining_issues: [],
-              },
-            }),
-            providerId: "fake",
-            modelId: "fake-agent",
-            purpose: "agent.primary" as const,
-          };
-        },
-      } as unknown as AppContext["modelGateway"],
-    });
-
-    try {
-      const events = await runtime.submitMessage([], "implement the requested change");
-
-      expect(await readFile(join(workspace, "src", "value.ts"), "utf8")).toBe(
-        "export const value = 2;\nexport const done = true;\n"
-      );
-      expect(prompts).toHaveLength(4);
-      expect(prompts[2]).toContain("benchmark mode cannot finish with known remaining issues");
-      expect(events).toContainEqual(
-        expect.objectContaining({
-          type: "tool_call",
-          label: expect.stringContaining("benchmark mode cannot finish with known remaining issues"),
-        })
-      );
-      expect(events).toContainEqual(
-        expect.objectContaining({ type: "message", role: "assistant", text: "Changed src/value.ts." })
-      );
-    } finally {
-      if (previous === undefined) {
-        delete process.env.TOPCHESTER_REQUIRE_FINISH_TASK;
-      } else {
-        process.env.TOPCHESTER_REQUIRE_FINISH_TASK = previous;
+        process.env.TOPCHESTER_REQUIRE_FINISH_TASK = previousRequireFinishTask;
       }
     }
   });

@@ -1,7 +1,6 @@
 import { bashTool } from "./bash.js";
 import { applyPatchTool } from "./apply-patch.js";
 import { editFileTool } from "./edit-file.js";
-import { finishTaskTool } from "./finish-task.js";
 import { findFileTool } from "./find-file.js";
 import { gitAddTool, gitCommitTool, gitDiffTool, gitLogTool, gitStatusTool } from "./git.js";
 import { grepTool } from "./grep.js";
@@ -33,7 +32,6 @@ export const toolRegistry = {
   [inspectCommandTool.name]: inspectCommandTool,
   [bashTool.name]: bashTool,
   [webFetchTool.name]: webFetchTool,
-  [finishTaskTool.name]: finishTaskTool,
   [skillsListTool.name]: skillsListTool,
   [skillViewTool.name]: skillViewTool,
   [skillReadTool.name]: skillReadTool,

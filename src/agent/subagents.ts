@@ -3,7 +3,6 @@ import { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
 import { createChildSession, type SessionHandle } from "../session/store.js";
 import { type ConversationTurn } from "./conversation.js";
 import { agentEvent, type AgentRuntimeEvent } from "./events.js";
-import { type BenchmarkProfile } from "./benchmark-profile.js";
 import { resolveAgentProfile, type AgentProfile, type ToolPermissionView } from "./profiles.js";
 
 export interface SubagentRuntime {
@@ -11,7 +10,7 @@ export interface SubagentRuntime {
     conversation: ConversationTurn[],
     message: string,
     abortSignal?: AbortSignal,
-    options?: { session?: SessionHandle; benchmarkProfile?: BenchmarkProfile }
+    options?: { session?: SessionHandle }
   ): AsyncIterable<AgentRuntimeEvent>;
 }
 
@@ -35,7 +34,6 @@ export interface RunSubagentTaskOptions {
   parentToolCallId: string;
   eventSink?: (event: AgentRuntimeEvent) => void | Promise<void>;
   abortSignal?: AbortSignal;
-  benchmarkProfile?: BenchmarkProfile;
 }
 
 export interface SubagentTaskRunResult {
@@ -91,7 +89,6 @@ export class SubagentManager {
     try {
       for await (const childEvent of childRuntime.submitMessageStream([], options.prompt, options.abortSignal, {
         session: child,
-        benchmarkProfile: options.benchmarkProfile,
       })) {
         const payload = runtimeEventToSessionPayload(childEvent);
         if (payload) {

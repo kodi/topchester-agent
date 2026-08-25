@@ -23,6 +23,9 @@ const assetPaths = [
 const builtinSkillFiles = assetPaths
   .filter((path) => path.startsWith("skills/"))
   .map((path) => path.slice("skills/".length));
+const treeSitterWorkerSpecifier = toImportSpecifier(
+  relative(dirname(generatedEntry), join(root, "node_modules", "@opentui", "core", "parser.worker.js"))
+);
 
 const imports = assetPaths.map((path, index) => {
   const specifier = toImportSpecifier(relative(dirname(generatedEntry), join(root, path)));
@@ -30,6 +33,7 @@ const imports = assetPaths.map((path, index) => {
 });
 const embeddedAssets = assetPaths.map((_path, index) => `embeddedAsset${index}`);
 const source = [
+  `import embeddedTreeSitterWorker from ${JSON.stringify(treeSitterWorkerSpecifier)} with { type: "file" };`,
   ...imports,
   'import { runTopchesterCli } from "../../src/cli.js";',
   "",
@@ -37,6 +41,7 @@ const source = [
   'if (embeddedAssets.some((path) => typeof path !== "string")) {',
   '  throw new Error("Standalone assets were not embedded correctly.");',
   "}",
+  "process.env.OTUI_TREE_SITTER_WORKER_PATH ||= embeddedTreeSitterWorker;",
   "",
   "await runTopchesterCli();",
   "",

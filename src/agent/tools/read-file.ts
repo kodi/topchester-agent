@@ -4,12 +4,10 @@ import { open, readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { TextDecoder } from "node:util";
 import { z } from "zod";
-import { type BenchmarkProfile } from "../benchmark-profile.js";
 import { defineTool, type FileTouchEvent, type ReadFileCache, type ToolCall, type ToolResult } from "./types.js";
 import { appendProjectInstructionsToToolContent, resolveToolProjectInstructions } from "./project-instructions.js";
 
 const DEFAULT_MAX_UTF8_READ_BYTES = 512 * 1024;
-const TERMINAL_BENCH_MAX_UTF8_READ_BYTES = 64 * 1024;
 const SAMPLE_BYTES = 256;
 
 export const readFileArgsSchema = z.object({
@@ -43,7 +41,6 @@ export const readFileTool = defineTool({
     const result = await readWorkspaceFile(context.workspaceRoot, args.path, {
       offset: args.offset,
       limit: args.limit,
-      benchmarkProfile: context.benchmarkProfile,
       cache: context.readFileCache,
       onFileTouch: context.onFileTouch,
     });
@@ -63,7 +60,6 @@ export const readFileTool = defineTool({
 export interface ReadWorkspaceFileOptions {
   offset?: number;
   limit?: number;
-  benchmarkProfile?: BenchmarkProfile;
   cache?: ReadFileCache;
   onFileTouch?: (event: FileTouchEvent) => void;
 }
@@ -76,7 +72,7 @@ export async function readWorkspaceFile(
   const resolvedWorkspace = resolve(workspaceRoot);
   const resolvedPath = isAbsolute(path) ? resolve(path) : resolve(resolvedWorkspace, path);
   const relativePath = relative(resolvedWorkspace, resolvedPath);
-  const maxReadBytes = getReadFileMaxBytes(options.benchmarkProfile);
+  const maxReadBytes = DEFAULT_MAX_UTF8_READ_BYTES;
 
   if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
     throw new Error(`read_file can only read files inside the workspace: ${path}`);
@@ -319,10 +315,6 @@ async function hashFile(path: string): Promise<string> {
     stream.on("end", resolvePromise);
   });
   return `sha256:${hash.digest("hex")}`;
-}
-
-function getReadFileMaxBytes(benchmarkProfile: BenchmarkProfile | undefined): number {
-  return benchmarkProfile === "terminal-bench" ? TERMINAL_BENCH_MAX_UTF8_READ_BYTES : DEFAULT_MAX_UTF8_READ_BYTES;
 }
 
 function makeReadFileCacheKey(path: string, hash: string, bytes: number, offset: number, length: number): string {

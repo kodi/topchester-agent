@@ -1,6 +1,18 @@
 /** @jsxImportSource @opentui/solid */
 
-import { BoxRenderable, CodeRenderable, type MarkdownOptions, type SyntaxStyle } from "@opentui/core";
+import {
+  BoxRenderable,
+  CodeRenderable,
+  RGBA,
+  StyledText,
+  TextAttributes,
+  TextRenderable,
+  type MarkdownOptions,
+  type SyntaxStyle,
+  type TextChunk,
+} from "@opentui/core";
+import hljs from "highlight.js";
+import { Parser } from "htmlparser2";
 import { formatStartupKnowledgeStatus, formatStartupTranscriptText, type TranscriptEntry } from "../../chat/index.js";
 import { type TopchesterTheme } from "./theme.js";
 
@@ -109,15 +121,93 @@ function createFencedCodeRenderer(theme: TopchesterTheme): MarkdownOptions["rend
       return code;
     }
 
-    code.bg = theme.surface;
-    const container = new BoxRenderable(code.ctx, {
+    const renderContext = code.ctx;
+    const language = token.lang?.trim().split(/\s+/u)[0]?.toLowerCase();
+    const highlighted = language && hljs.getLanguage(language) ? highlightCode(token.text, language, theme) : undefined;
+    const renderedCode = highlighted
+      ? new TextRenderable(renderContext, {
+          width: "100%",
+          content: highlighted,
+          fg: theme.text,
+          bg: theme.surface,
+          selectable: true,
+          wrapMode: "none",
+        })
+      : code;
+    if (renderedCode !== code) {
+      code.destroyRecursively();
+    } else {
+      code.bg = theme.surface;
+    }
+    const container = new BoxRenderable(renderContext, {
       width: "100%",
       flexShrink: 0,
       backgroundColor: theme.surface,
     });
-    container.add(code);
+    container.add(renderedCode);
     return container;
   };
+}
+
+function highlightCode(code: string, language: string, theme: TopchesterTheme): StyledText | undefined {
+  const chunks: TextChunk[] = [];
+  const scopes: string[][] = [];
+  const parser = new Parser(
+    {
+      onopentag(name, attributes) {
+        scopes.push(name === "span" ? (attributes.class ?? "").split(/\s+/u).filter(Boolean) : []);
+      },
+      ontext(text) {
+        const style = resolveHighlightStyle(scopes.flat(), theme);
+        chunks.push({ __isChunk: true, text, ...style });
+      },
+      onclosetag() {
+        scopes.pop();
+      },
+    },
+    { decodeEntities: true }
+  );
+  try {
+    parser.end(hljs.highlight(code, { language, ignoreIllegals: true }).value);
+    return new StyledText(chunks);
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveHighlightStyle(
+  scopes: readonly string[],
+  theme: TopchesterTheme
+): Pick<TextChunk, "fg" | "attributes"> {
+  const scope =
+    [...scopes]
+      .reverse()
+      .find((value) => value.startsWith("hljs-"))
+      ?.slice(5) ?? "";
+  const color = (value: string) => RGBA.fromHex(value);
+
+  if (["comment", "quote"].includes(scope)) {
+    return { fg: color(theme.muted), attributes: TextAttributes.ITALIC };
+  }
+  if (["keyword", "selector-tag", "doctag", "meta-keyword"].includes(scope)) {
+    return { fg: color(theme.accent), attributes: TextAttributes.BOLD };
+  }
+  if (["string", "regexp", "addition", "meta-string"].includes(scope)) {
+    return { fg: color(theme.success) };
+  }
+  if (["number", "literal", "symbol", "bullet"].includes(scope)) {
+    return { fg: color(theme.warning) };
+  }
+  if (["title", "section", "function", "name", "selector-id", "selector-class"].includes(scope)) {
+    return { fg: color(theme.info) };
+  }
+  if (["type", "class", "built_in", "attr", "attribute", "property"].includes(scope)) {
+    return { fg: color(theme.warning) };
+  }
+  if (["deletion", "error"].includes(scope)) {
+    return { fg: color(theme.error) };
+  }
+  return { fg: color(theme.text) };
 }
 
 export function ThreadEntry(props: ThreadEntryProps) {
@@ -158,8 +248,6 @@ export function ThreadEntry(props: ThreadEntryProps) {
             minHeight={1}
             content={entry.text}
             syntaxStyle={props.syntaxStyle}
-            // OpenTUI 0.4.4 only draws unhighlighted Markdown immediately in streaming mode.
-            // Stable scrollback snapshots cannot wait for the asynchronous parser before commit.
             streaming
             fg={props.theme.text}
             tableOptions={{ widthMode: "content" }}

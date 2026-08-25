@@ -1,6 +1,5 @@
 import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
-import { type BenchmarkProfile } from "../benchmark-profile.js";
 import {
   type InspectCommandEntry,
   type InspectCommandPlan,
@@ -8,14 +7,7 @@ import {
   type InspectSimpleCommand,
 } from "./inspect-command-parser.js";
 import { type InspectCommandArgs, inspectCommandArgsSchema, validateInspectCommand } from "./inspect-command-policy.js";
-import {
-  appendBoundedOutput,
-  formatWorkspaceRelativePath,
-  resolveWorkspaceCwd,
-  runProcess,
-  TERMINAL_BENCH_MAX_OUTPUT_BYTES,
-  TERMINAL_BENCH_MAX_OUTPUT_LINES,
-} from "./process-runner.js";
+import { appendBoundedOutput, formatWorkspaceRelativePath, resolveWorkspaceCwd, runProcess } from "./process-runner.js";
 import { defineTool, type ToolCall, type ToolResult } from "./types.js";
 
 export { inspectCommandArgsSchema, type InspectCommandArgs };
@@ -39,7 +31,6 @@ export interface InspectCommandToolResult extends ToolResult<"inspect_command"> 
 
 export interface InspectCommandOptions {
   pathEnv?: string;
-  benchmarkProfile?: BenchmarkProfile;
 }
 
 export const inspectCommandTool = defineTool({
@@ -51,7 +42,6 @@ export const inspectCommandTool = defineTool({
   execute: (context, args) =>
     inspectWorkspaceCommand(context.workspaceRoot, args, {
       pathEnv: context.pathEnv,
-      benchmarkProfile: context.benchmarkProfile,
     }),
 });
 
@@ -86,7 +76,6 @@ export async function inspectWorkspaceCommand(
     cwd,
     pathEnv: options.pathEnv ?? process.env.PATH ?? "",
     deadlineAt,
-    benchmarkProfile: options.benchmarkProfile,
   });
   const durationMs = Date.now() - startedAt;
 
@@ -118,7 +107,7 @@ export async function inspectWorkspaceCommand(
 
 async function executePlan(
   plan: InspectCommandPlan,
-  context: { cwd: string; pathEnv: string; deadlineAt: number; benchmarkProfile?: BenchmarkProfile }
+  context: { cwd: string; pathEnv: string; deadlineAt: number }
 ): Promise<CommandExecutionResult> {
   let lastExitCode = 0;
   let stdout = "";
@@ -143,11 +132,10 @@ async function executePlan(
       };
     }
 
-    const outputLimits = getOutputLimits(context.benchmarkProfile);
     const result = await executePipeline(entry.pipeline, { ...context, timeoutMs: remainingMs });
-    const nextStdout = appendBoundedOutput(stdout, result.stdout, outputLimits);
+    const nextStdout = appendBoundedOutput(stdout, result.stdout, {});
     stdout = nextStdout.output;
-    const nextStderr = appendBoundedOutput(stderr, result.stderr, outputLimits);
+    const nextStderr = appendBoundedOutput(stderr, result.stderr, {});
     stderr = nextStderr.output;
     truncated = truncated || result.truncated || nextStdout.truncated || nextStderr.truncated;
     timedOut = timedOut || result.timedOut;
@@ -176,7 +164,7 @@ async function executePlan(
 
 async function executePipeline(
   pipeline: InspectCommandPipeline,
-  context: { cwd: string; pathEnv: string; deadlineAt: number; timeoutMs: number; benchmarkProfile?: BenchmarkProfile }
+  context: { cwd: string; pathEnv: string; deadlineAt: number; timeoutMs: number }
 ): Promise<CommandExecutionResult> {
   let input = "";
   let stderr = "";
@@ -193,8 +181,7 @@ async function executePipeline(
 
     const result = await executeSimpleCommand(command, input, { ...context, timeoutMs: remainingMs });
     input = result.stdout;
-    const outputLimits = getOutputLimits(context.benchmarkProfile);
-    const nextStderr = appendBoundedOutput(stderr, result.stderr, outputLimits);
+    const nextStderr = appendBoundedOutput(stderr, result.stderr, {});
     stderr = nextStderr.output;
     exitCode = result.exitCode;
     timedOut = timedOut || result.timedOut;
@@ -218,7 +205,7 @@ async function executePipeline(
 async function executeSimpleCommand(
   command: InspectSimpleCommand,
   input: string,
-  context: { cwd: string; pathEnv: string; timeoutMs: number; benchmarkProfile?: BenchmarkProfile }
+  context: { cwd: string; pathEnv: string; timeoutMs: number }
 ): Promise<CommandExecutionResult> {
   if (command.executable === "pwd") {
     return {
@@ -237,8 +224,6 @@ async function executeSimpleCommand(
     cwd: context.cwd,
     pathEnv: context.pathEnv,
     timeoutMs: context.timeoutMs,
-    outputLimitBytes: context.benchmarkProfile === "terminal-bench" ? TERMINAL_BENCH_MAX_OUTPUT_BYTES : undefined,
-    outputLimitLines: context.benchmarkProfile === "terminal-bench" ? TERMINAL_BENCH_MAX_OUTPUT_LINES : undefined,
     missingExecutableLabel: "inspect_command",
   });
 
@@ -266,17 +251,6 @@ function shouldExecuteEntry(entry: InspectCommandEntry, previousExitCode: number
 
 function getRemainingTimeoutMs(deadlineAt: number): number {
   return deadlineAt - Date.now();
-}
-
-function getOutputLimits(benchmarkProfile: BenchmarkProfile | undefined): { maxBytes?: number; maxLines?: number } {
-  if (benchmarkProfile !== "terminal-bench") {
-    return {};
-  }
-
-  return {
-    maxBytes: TERMINAL_BENCH_MAX_OUTPUT_BYTES,
-    maxLines: TERMINAL_BENCH_MAX_OUTPUT_LINES,
-  };
 }
 
 function formatInspectCommandContent(result: PipelineExecutionResult): string {

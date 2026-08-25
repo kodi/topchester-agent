@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { reloadAppBaseConfig, type AppContext } from "../../app/context.js";
-import { type BenchmarkProfile } from "../benchmark-profile.js";
 import { dryRunKnowledgeCompile, filterNonCleanKnowledgeCompileResult } from "../../knowledge/compiler/index.js";
 import { type KnowledgeProgressReporter } from "../../knowledge/progress.js";
 import { createL1ContextPack, formatL1ContextPackForPrompt } from "../../knowledge/search.js";
@@ -49,11 +48,7 @@ import {
   addTokenUsageTotals,
   formatAgentMessageMeta,
   formatContinuationInstruction,
-  formatFinishTaskRequiredFailure,
-  formatFinishTaskRequiredRepairInstruction,
   formatInvalidToolCallRepairInstruction,
-  formatNoEditCompletionFailure,
-  formatNoEditCompletionRepairInstruction,
   formatOpenPlanClosureInstruction,
   formatToolCallMessage,
   formatToolResultForPrompt,
@@ -91,9 +86,7 @@ const DEFAULT_MAX_TOOL_CALLS_PER_TURN = 75;
 const MAX_TOOL_CALLS_PER_TURN_ENV = "TOPCHESTER_MAX_TOOL_CALLS_PER_TURN";
 const PLAN_TODO_MODE_ENV = "TOPCHESTER_PLAN_TODO_MODE";
 const MAX_PLAN_TODO_UPDATES_PER_TURN_ENV = "TOPCHESTER_MAX_PLAN_TODO_UPDATES_PER_TURN";
-const REQUIRE_FINISH_TASK_ENV = "TOPCHESTER_REQUIRE_FINISH_TASK";
 const DEFAULT_COMPACT_MAX_PLAN_TODO_UPDATES_PER_TURN = 3;
-const MAX_FINISH_TASK_REQUIRED_REPAIRS = 3;
 const DEFAULT_TASK_CONCURRENCY = 3;
 
 type PlanTodoMode = "normal" | "compact";
@@ -141,7 +134,6 @@ export interface AgentRuntimeSubmitMessageOptions {
   session?: SessionHandle;
   requestBashApproval?: (request: BashApprovalRequest) => Promise<BashApprovalDecision>;
   userApprovalMode?: UserApprovalMode;
-  benchmarkProfile?: BenchmarkProfile;
   steering?: RuntimeSteeringBuffer;
 }
 
@@ -437,11 +429,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     let totalDurationMs = 0;
     const tokenUsageTotals: TurnTokenUsageTotals = {};
     const profile = this.options.profile ?? PRIMARY_AGENT_PROFILE;
-    const finishTaskRequired = isFinishTaskRequiredByEnv();
     const inheritedDeniedTools = this.options.parentPermissions?.deniedTools ?? [];
-    const permissions = createToolPermissionView(profile, {
-      deniedTools: finishTaskRequired ? inheritedDeniedTools : [...inheritedDeniedTools, "finish_task"],
-    });
+    const permissions = createToolPermissionView(profile, { deniedTools: inheritedDeniedTools });
     const mcpSetupStartedAt = Date.now();
     const mcpManager = await this.createMcpManager(profile, abortSignal);
     timing?.record("setup", "mcp_setup", mcpSetupStartedAt);
@@ -467,15 +456,10 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     let toolProtocolOverride = readToolProtocolEnvOverride();
     let requestedPlanClosure = false;
     let invalidToolCallRepairs = 0;
-    let noEditCompletionRepairs = 0;
-    let finishTaskRequiredRepairs = 0;
-    let hasSourceMutation = false;
     const maxToolCallsPerTurn = readMaxToolCallsPerTurn();
     const planTodoMode = readPlanTodoMode();
     const maxPlanTodoUpdatesPerTurn = readMaxPlanTodoUpdatesPerTurn(planTodoMode);
     let planTodoUpdates = 0;
-    const implementationTask = isImplementationTaskRequest(message);
-    const requireFinishTask = finishTaskRequired && isToolAllowed(permissions, "finish_task");
     const projectInstructionToolState = { shownSourceKeys: new Set<string>() };
     const persistedProjectInstructionKeys = new Set<string>();
     const readFileCache = createReadFileCache();
@@ -608,51 +592,6 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           const plan = this.taskPlan.get();
           const finalText = stripSuppressiblePlanTodoPrefix(result.text, plan) ?? result.text;
 
-          if (
-            implementationTask &&
-            !hasSourceMutation &&
-            canStillUseSourceEditTool(permissions) &&
-            noEditCompletionRepairs < 2
-          ) {
-            noEditCompletionRepairs += 1;
-            nextPrompt = `${nextPrompt}\n\n${formatNoEditCompletionRepairInstruction(result.toolProtocol, finalText)}`;
-            continue;
-          }
-
-          if (implementationTask && !hasSourceMutation && canStillUseSourceEditTool(permissions)) {
-            const finalMessage = formatNoEditCompletionFailure(finalText);
-
-            yield agentEvent.assistantMessage(
-              finalMessage,
-              formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
-            );
-            for await (const event of this.streamStopHookEvents(session, finalMessage, "failed", abortSignal)) {
-              yield event;
-            }
-            yield agentEvent.status("ready");
-            return;
-          }
-
-          if (requireFinishTask) {
-            if (finishTaskRequiredRepairs < MAX_FINISH_TASK_REQUIRED_REPAIRS) {
-              finishTaskRequiredRepairs += 1;
-              nextPrompt = `${nextPrompt}\n\n${formatFinishTaskRequiredRepairInstruction(result.toolProtocol, finalText)}`;
-              continue;
-            }
-
-            const finalMessage = formatFinishTaskRequiredFailure(finalText);
-
-            yield agentEvent.assistantMessage(
-              finalMessage,
-              formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
-            );
-            for await (const event of this.streamStopHookEvents(session, finalMessage, "failed", abortSignal)) {
-              yield event;
-            }
-            yield agentEvent.status("ready");
-            return;
-          }
-
           if (planTodoMode === "normal" && hasOpenTaskPlan(plan)) {
             if (!requestedPlanClosure) {
               requestedPlanClosure = true;
@@ -744,7 +683,6 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                   subagents,
                   projectInstructions: projectInstructionToolState,
                   currentUserMessage: message,
-                  benchmarkProfile: options.benchmarkProfile,
                   readFileCache,
                   abortSignal,
                   toolCallId: entry.toolCallId,
@@ -781,9 +719,6 @@ export class TopchesterAgentRuntime implements AgentRuntime {
               persistedProjectInstructionKeys
             )) {
               yield event;
-            }
-            if (isSourceMutationResult(toolResult) || isBenchmarkMutationResult(toolResult, options.benchmarkProfile)) {
-              hasSourceMutation = true;
             }
             yield agentEvent.toolCall(
               call,
@@ -881,7 +816,6 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 subagents,
                 projectInstructions: projectInstructionToolState,
                 currentUserMessage: message,
-                benchmarkProfile: options.benchmarkProfile,
                 readFileCache,
                 abortSignal,
                 toolCallId: entry.toolCallId,
@@ -908,9 +842,6 @@ export class TopchesterAgentRuntime implements AgentRuntime {
               persistedProjectInstructionKeys
             )) {
               yield event;
-            }
-            if (isSourceMutationResult(toolResult) || isBenchmarkMutationResult(toolResult, options.benchmarkProfile)) {
-              hasSourceMutation = true;
             }
             yield agentEvent.toolCall(
               call,
@@ -1053,7 +984,6 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 subagents,
                 projectInstructions: projectInstructionToolState,
                 currentUserMessage: message,
-                benchmarkProfile: options.benchmarkProfile,
                 readFileCache,
                 abortSignal,
                 toolCallId: toolCall.id,
@@ -1078,24 +1008,6 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
         for (const event of createInstructionContextEventsFromToolResult(toolResult, persistedProjectInstructionKeys)) {
           yield event;
-        }
-
-        if (executableToolCall.tool === "finish_task") {
-          const finishError = validateFinishTaskResult(toolResult, {
-            implementationTask,
-            hasSourceMutation,
-            hasOpenPlan: planTodoMode === "normal" && hasOpenTaskPlan(this.taskPlan.get()),
-            canUseSourceEditTool: canStillUseSourceEditTool(permissions),
-            requireFinishTask,
-          });
-
-          if (finishError) {
-            toolResult = createToolErrorResult(executableToolCall.tool, finishError);
-          }
-        }
-
-        if (isSourceMutationResult(toolResult) || isBenchmarkMutationResult(toolResult, options.benchmarkProfile)) {
-          hasSourceMutation = true;
         }
 
         yield agentEvent.toolCall(
@@ -1128,20 +1040,6 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             yield agentEvent.systemMessage(postHook.stopped.message);
           }
 
-          yield agentEvent.status("ready");
-          return;
-        }
-
-        if (!isToolErrorResult(toolResult) && toolResult.tool === "finish_task") {
-          const finalMessage = toolResult.finalResponse.trim() || "Task complete.";
-
-          yield agentEvent.assistantMessage(
-            finalMessage,
-            formatAgentMessageMeta(result.modelId, totalDurationMs, tokenUsageTotals)
-          );
-          for await (const event of this.streamStopHookEvents(session, finalMessage, "completed", abortSignal)) {
-            yield event;
-          }
           yield agentEvent.status("ready");
           return;
         }
@@ -1484,7 +1382,6 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       workspaceRoot: this.context.workspaceRoot,
       permissions: this.context.config.tools?.bash,
       approvedCommands,
-      benchmarkProfile: options.benchmarkProfile,
     });
 
     if (decision.allowed) {
@@ -1772,11 +1669,6 @@ function readPlanTodoMode(): PlanTodoMode {
   return raw === "compact" ? "compact" : "normal";
 }
 
-function isFinishTaskRequiredByEnv(): boolean {
-  const raw = process.env[REQUIRE_FINISH_TASK_ENV]?.trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
-}
-
 function readMaxPlanTodoUpdatesPerTurn(mode: PlanTodoMode): number | undefined {
   const raw = process.env[MAX_PLAN_TODO_UPDATES_PER_TURN_ENV]?.trim();
   if (!raw) {
@@ -1849,88 +1741,6 @@ function isSamePlanTodoItems(args: unknown, currentPlan: TaskPlanState): boolean
     const candidate = item as { text?: unknown; status?: unknown };
     return candidate.text === current.text && candidate.status === current.status;
   });
-}
-
-function isImplementationTaskRequest(message: string): boolean {
-  return /\b(implement|complete|fix|add|update|change|modify|refactor|write|create|wire|hook|support|benchmark|task end-to-end)\b/iu.test(
-    message
-  );
-}
-
-function canStillUseSourceEditTool(permissions: ToolPermissionView): boolean {
-  return (
-    isToolAllowed(permissions, "edit_file") ||
-    isToolAllowed(permissions, "write_file") ||
-    isToolAllowed(permissions, "apply_patch")
-  );
-}
-
-function isSourceMutationResult(result: ToolExecutionResult<ToolResult>): boolean {
-  if (isToolErrorResult(result)) {
-    return false;
-  }
-
-  if (result.tool === "edit_file") {
-    return isSourcePath(result.path);
-  }
-
-  if (result.tool === "write_file") {
-    return isSourcePath(result.path);
-  }
-
-  if (result.tool === "apply_patch") {
-    return result.changedFiles.some(isSourcePath);
-  }
-
-  return false;
-}
-
-function isBenchmarkMutationResult(
-  result: ToolExecutionResult<ToolResult>,
-  benchmarkProfile: BenchmarkProfile | undefined
-): boolean {
-  if (benchmarkProfile !== "terminal-bench" || isToolErrorResult(result)) {
-    return false;
-  }
-
-  return result.tool === "bash" && "workspaceMayHaveChanged" in result && result.workspaceMayHaveChanged === true;
-}
-
-function isSourcePath(path: string | undefined): boolean {
-  if (!path) {
-    return false;
-  }
-
-  return !path.startsWith(".agents/") && !path.startsWith(".git/") && !path.startsWith("topchester-kb/");
-}
-
-function validateFinishTaskResult(
-  result: ToolExecutionResult<ToolResult>,
-  state: {
-    implementationTask: boolean;
-    hasSourceMutation: boolean;
-    hasOpenPlan: boolean;
-    canUseSourceEditTool: boolean;
-    requireFinishTask: boolean;
-  }
-): string | undefined {
-  if (isToolErrorResult(result) || result.tool !== "finish_task") {
-    return undefined;
-  }
-
-  if (state.hasOpenPlan) {
-    return "finish_task rejected because the visible plan is still open. Close or update plan_todo first.";
-  }
-
-  if (state.implementationTask && state.canUseSourceEditTool && !state.hasSourceMutation) {
-    return "finish_task rejected because this appears to be an implementation task but no successful source-file edit has occurred. Use edit_file, write_file, or apply_patch first, unless you can prove no code change is required.";
-  }
-
-  if (state.requireFinishTask && result.remainingIssues.length > 0) {
-    return "finish_task rejected because benchmark mode cannot finish with known remaining issues. Continue implementing or validating until remaining_issues is empty.";
-  }
-
-  return undefined;
 }
 
 function isL1ContextDisabledByEnv(): boolean {

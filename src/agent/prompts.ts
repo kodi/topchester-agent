@@ -41,7 +41,6 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
     "- When using a tool, output exactly one tool JSON object and no prose, markdown, or additional JSON. After the tool result, either output the next single tool JSON object or a final plain-text answer.",
     "- You already have permission to use the available tools to handle the user's request. Do not ask the user to provide tool results or permission to use an available tool.",
     "- Do not claim to have read, created, edited, staged, committed, or run anything unless a tool result in this turn confirms it.",
-    "- If the task requires implementation, do not finish with a prose summary before a successful source-editing tool result. A summary of intended changes is not a substitute for editing files.",
     ...(canUseTool("plan_todo")
       ? [
           "- Use plan_todo for genuinely multi-step work when a visible checklist helps; for small or straightforward tasks, do the work directly.",
@@ -156,11 +155,6 @@ export function getChatSystemPrompt(options: ChatSystemPromptOptions = {}): stri
     ...(canUseTool("edit_file") || canUseTool("write_file")
       ? [
           "- Use edit/write/patch tools when they are available and the user asks you to implement, fix, add, update, or refactor code.",
-        ]
-      : []),
-    ...(canUseTool("finish_task")
-      ? [
-          "- Use finish_task to complete implementation tasks after the requested work is actually done. Do not call finish_task to claim edits or validation that tool results did not confirm.",
         ]
       : []),
     "- After each tool result, decide the next useful action from the new evidence. Continue until the request is handled or blocked.",

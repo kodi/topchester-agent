@@ -1455,25 +1455,6 @@ describe("CLI integration", () => {
     });
   });
 
-  it("records the benchmark profile in run JSON metadata", async () => {
-    const fixture = await makeFixture();
-    await mkdir(join(fixture.workspace, "src"), { recursive: true });
-    await writeFile(join(fixture.workspace, "src", "index.ts"), "export const value = 1;\n");
-
-    const { stdout } = await runCli(
-      ["--workspace", fixture.workspace, "run", "--json", "--benchmark-profile", "terminal-bench", "/kb", "status"],
-      fixture.root
-    );
-    const events = stdout
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as { type: string; benchmarkProfile?: string });
-
-    expect(events.find((event) => event.type === "run.started")).toMatchObject({
-      benchmarkProfile: "terminal-bench",
-    });
-  });
-
   it("initializes project knowledge folders", async () => {
     const fixture = await makeFixture();
 

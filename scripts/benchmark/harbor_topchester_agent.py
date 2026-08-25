@@ -40,16 +40,14 @@ class TopchesterAgent(BaseInstalledAgent):
         kb_model: str | None = None,
         tool_protocol: str | None = None,
         openrouter_tool_routing: str | None = None,
-        kb_ignore_mode: str = "terminal-bench",
+        kb_ignore_mode: str = "code",
         kb_max_files: int = 500,
-        benchmark_prompt: bool = True,
         plan_todo_mode: str = "compact",
         max_plan_todo_updates: int | None = 3,
         max_tool_calls_per_turn: int | str | None = 5000000,
         prewarm_kb: bool = True,
         prewarm_full: bool = True,
         dangerously_auto_approve_flag: str = "--dangerously-auto-approve",
-        benchmark_profile: str = "terminal-bench",
         **kwargs: Any,
     ):
         self._npm_package = npm_package
@@ -63,14 +61,12 @@ class TopchesterAgent(BaseInstalledAgent):
         self._openrouter_tool_routing = openrouter_tool_routing
         self._kb_ignore_mode = kb_ignore_mode
         self._kb_max_files = kb_max_files
-        self._benchmark_prompt = benchmark_prompt
         self._plan_todo_mode = plan_todo_mode
         self._max_plan_todo_updates = max_plan_todo_updates
         self._max_tool_calls_per_turn = max_tool_calls_per_turn
         self._prewarm_kb = prewarm_kb
         self._prewarm_full = prewarm_full
         self._dangerously_auto_approve_flag = dangerously_auto_approve_flag
-        self._benchmark_profile = benchmark_profile
         self._run_metadata: dict[str, Any] = {}
         super().__init__(logs_dir, *args, **kwargs)
 
@@ -136,8 +132,6 @@ class TopchesterAgent(BaseInstalledAgent):
 
     @with_prompt_template
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
-        topchester_instruction = _terminal_bench_instruction(instruction) if self._benchmark_prompt else instruction
-
         await self.exec_as_agent(environment, command=f"mkdir -p {shlex.quote(EnvironmentPaths.agent_dir.as_posix())}")
         await self.exec_as_agent(
             environment,
@@ -146,7 +140,7 @@ class TopchesterAgent(BaseInstalledAgent):
         )
         await self.exec_as_agent(
             environment,
-            command=_write_file_command(self._REMOTE_INSTRUCTION_PATH, topchester_instruction),
+            command=_write_file_command(self._REMOTE_INSTRUCTION_PATH, instruction),
             env=self._topchester_env(),
         )
 
@@ -201,7 +195,6 @@ class TopchesterAgent(BaseInstalledAgent):
                     "max_files": self._kb_max_files,
                     "ignore_mode": self._kb_ignore_mode,
                 },
-                "prompt": {"benchmark_wrapper": self._benchmark_prompt, "kind": "terminal-bench"},
                 "plan_todo": {
                     "mode": self._plan_todo_mode,
                     "max_updates_per_turn": self._max_plan_todo_updates,
@@ -214,7 +207,6 @@ class TopchesterAgent(BaseInstalledAgent):
                     "kb_summarize": self._kb_model or self.model_name,
                 },
                 "agent_run": {"duration_ms": run_duration_ms},
-                "benchmark_profile": self._benchmark_profile,
             }
         finally:
             await self._collect_topchester_artifacts(environment)
@@ -296,7 +288,6 @@ class TopchesterAgent(BaseInstalledAgent):
                 "TOPCHESTER_LOG_LEVEL": "debug",
                 "TOPCHESTER_HOME": self._REMOTE_TOPCHESTER_HOME.as_posix(),
                 "TOPCHESTER_PLAN_TODO_MODE": self._plan_todo_mode,
-                "TOPCHESTER_REQUIRE_FINISH_TASK": "1",
             }
         )
         if self._max_plan_todo_updates is not None:
@@ -365,7 +356,6 @@ fi
             "set -o pipefail; "
             f"{self._base_topchester_command()} run "
             f"{shlex.quote(self._dangerously_auto_approve_flag)} "
-            f"--benchmark-profile {shlex.quote(self._benchmark_profile)} "
             f"--json --output-json {shlex.quote(events_path)} "
             f"\"$(cat {shlex.quote(self._REMOTE_INSTRUCTION_PATH.as_posix())})\" "
             f"2>&1 | tee {shlex.quote(stdout_path)}; "
@@ -393,35 +383,6 @@ fi
 
 def _write_file_command(path: PurePosixPath, content: str) -> str:
     return f"cat > {shlex.quote(path.as_posix())} <<'TOPCHESTER_EOF'\n{content}\nTOPCHESTER_EOF\n"
-
-
-def _terminal_bench_instruction(instruction: str) -> str:
-    return f"""You are running inside Terminal-Bench through Harbor.
-
-Complete the task end-to-end in the repository or terminal environment at /app. Do not stop after analysis, do not ask for confirmation, and do not offer to continue later. Make the required file, code, data, service, system, or shell changes directly.
-
-Use the project knowledge base that has already been prepared. Inspect the repository and environment as needed. Terminal-Bench tasks may require shell commands, generated files, certificates, archives, local services, package setup, or validation scripts; use the right terminal tools for the task.
-
-Inspect `/tests` when it exists and satisfy the verifier's exact file paths, names, and formats. If the task involves image or frame output and the expected path is unclear, create `/tmp/frame.bmp` in addition to any natural project output path.
-
-If validation is practical, run focused checks. If validation is too expensive or blocked, report exactly what you ran or why it could not be run.
-
-Favor an early working artifact over extended up-front analysis: once you have enough context for a plausible first attempt, create or modify the required files and iterate from runtime or verifier feedback. The artifact must be an honest implementation attempt for the requested behavior, not a placeholder, stub, hard-coded verifier artifact, or synthetic substitute. Use task only for narrow read-only questions about a specific file, symbol, or behavior; do not use it to explore whole repositories, directories, test suites, binaries, or large source trees.
-
-Use todo/plan updates sparingly in this benchmark. A short initial plan is fine for complex tasks, but prioritize completing the environment and preserving evidence.
-
-You cannot finish this benchmark with a normal assistant message. A normal assistant message is only a progress note, and the runtime will continue the task after it.
-
-The only valid way to end this benchmark is to call finish_task. Call finish_task only when:
-- requested changes are implemented
-- relevant validation was run, or you explain why it was blocked
-- files_changed lists files actually created or changed when applicable
-- remaining_issues is empty
-- the solution is not a placeholder, stub, hard-coded verifier artifact, or synthetic substitute for the requested behavior
-
-Task:
-
-{instruction}"""
 
 
 CODE_ONLY_KB_IGNORE_PATHS = [
@@ -468,46 +429,12 @@ CODE_ONLY_KB_IGNORE_PATHS = [
     "target/**",
 ]
 
-TERMINAL_BENCH_KB_IGNORE_PATHS = [
-    ".git/**",
-    ".agents/**",
-    "topchester-kb/**",
-    "node_modules/**",
-    "**/node_modules/**",
-    ".venv/**",
-    "venv/**",
-    "__pycache__/**",
-    "**/__pycache__/**",
-    ".cache/**",
-    "dist/**",
-    "**/dist/**",
-    "build/**",
-    "**/build/**",
-    "target/**",
-    "coverage/**",
-    "**/*.png",
-    "**/*.jpg",
-    "**/*.jpeg",
-    "**/*.gif",
-    "**/*.pdf",
-    "**/*.zip",
-    "**/*.7z",
-    "**/*.tar",
-    "**/*.gz",
-    "**/*.bin",
-    "**/*.pt",
-    "**/*.pth",
-]
-
-
 def _resolve_ignore_paths(mode: str) -> list[str]:
     if mode == "none":
         return []
     if mode == "code":
         return CODE_ONLY_KB_IGNORE_PATHS
-    if mode == "terminal-bench":
-        return TERMINAL_BENCH_KB_IGNORE_PATHS
-    raise ValueError("kb_ignore_mode must be one of: terminal-bench, code, none")
+    raise ValueError("kb_ignore_mode must be one of: code, none")
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:

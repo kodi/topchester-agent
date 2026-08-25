@@ -44,13 +44,6 @@ export {
   type WriteFileToolArgs,
 } from "./tools/write-file.js";
 export {
-  finishTaskArgsSchema,
-  finishTaskTool,
-  type FinishTaskToolArgs,
-  type FinishTaskToolCall,
-  type FinishTaskToolResult,
-} from "./tools/finish-task.js";
-export {
   findFileTool,
   findWorkspaceFilesByName,
   type FindFileToolArgs,

@@ -73,4 +73,4 @@ Result:
 | shared |   0.18 |   0.263 |  0.157 |  0.658 |   26.318 |          -37.9% | Met the 25% target for shared mode. `contextJsonBytes` stayed 24303. |
 | fresh  | 12.565 |  12.206 | 11.901 | 15.772 | 1220.578 |          -35.0% | Still meets the 25% target for fresh mode with all changes combined. |
 
-Assessment: accepted. Both benchmark modes meet the p75 target in the final measured state.
+Assessment: accepted. Both measured configurations meet the p75 target in the final measured state.

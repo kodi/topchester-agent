@@ -67,10 +67,6 @@ export function formatToolResultForPrompt(result: ToolExecutionResult<ToolResult
     return [`Tool result from ${result.tool}:`, result.content].join("\n");
   }
 
-  if (result.tool === "finish_task") {
-    return [`Tool result from ${result.tool}:`, result.content].join("\n");
-  }
-
   if (result.tool === "web_fetch") {
     return [
       `Tool result from ${result.tool}:`,
@@ -330,69 +326,6 @@ export function formatInvalidToolCallRepairInstruction(rejection: ToolCallParseR
     .join("\n");
 }
 
-export function formatNoEditCompletionRepairInstruction(protocol: ToolProtocol, draftAnswer: string): string {
-  const toolInstruction =
-    protocol === "text-xml"
-      ? "Reply now with only one XML tool call that edits source files, or with a tool call that gathers the missing evidence."
-      : protocol === "text-json"
-        ? "Reply now with only one tool JSON object that edits source files, or with a tool call that gathers the missing evidence."
-        : "Use the available tool calling path now to edit source files, or gather the missing evidence.";
-  const trimmedDraft = draftAnswer.trim();
-
-  return [
-    "The current task appears to require repository implementation work, but this turn has no successful source-file edit yet.",
-    "Do not finish by describing intended changes as if they were made. A prose summary is not an implementation.",
-    "Use edit_file, write_file, apply_patch, or another mutating tool to make the actual source change. If no code change is truly required, use tools to gather evidence and then explain that specifically.",
-    toolInstruction,
-    trimmedDraft ? `Previous draft answer that was rejected as unsupported:\n${trimmedDraft}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-export function formatNoEditCompletionFailure(draftAnswer: string): string {
-  const trimmedDraft = draftAnswer.trim();
-
-  return [
-    "I could not complete the implementation because no successful source-file edit occurred in this turn.",
-    trimmedDraft ? `The model tried to finish with this unsupported summary:\n${trimmedDraft}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-export function formatFinishTaskRequiredRepairInstruction(protocol: ToolProtocol, draftAnswer: string): string {
-  const toolInstruction =
-    protocol === "text-xml"
-      ? "Reply now with only one XML tool call for the next implementation or validation step, or call finish_task if the work is complete."
-      : protocol === "text-json"
-        ? "Reply now with only one tool JSON object for the next implementation or validation step, or call finish_task if the work is complete."
-        : "Use the available tool calling path now for the next implementation or validation step, or call finish_task if the work is complete.";
-  const trimmedDraft = draftAnswer.trim();
-
-  return [
-    "This run requires finish_task as the only terminal action.",
-    "A normal assistant message is treated as a progress note, not completion.",
-    "Do not summarize next steps in prose. Use tools to perform the next step.",
-    "Call finish_task only when the requested work is complete and its files_changed, validation, and remaining_issues fields are accurate.",
-    toolInstruction,
-    trimmedDraft ? `Previous progress note that did not finish the task:\n${trimmedDraft}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-export function formatFinishTaskRequiredFailure(draftAnswer: string): string {
-  const trimmedDraft = draftAnswer.trim();
-
-  return [
-    "I stopped because this run requires finish_task, but the model kept replying with normal assistant messages instead of using tools.",
-    trimmedDraft ? `Last progress note:\n${trimmedDraft}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
 export function getTextToolCallSources(protocol: ToolProtocol): readonly ToolCallSource[] {
   return protocol === "text-xml" ? ["text-xml"] : protocol === "text-json" ? ["text-json"] : ["text-json", "text-xml"];
 }
@@ -431,8 +364,6 @@ export function formatToolCallMessage(call: ToolCall, result?: ToolExecutionResu
       return `apply_patch${formatApplyPatchChangeSummary(result)}`;
     case "write_file":
       return `write_file: ${call.args.path}${formatWriteFileChangeSummary(result)}`;
-    case "finish_task":
-      return "finish_task";
     case "web_fetch":
       return `web_fetch: ${call.args.url}${formatWebFetchResultSummary(result)}`;
     case "git_status":

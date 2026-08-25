@@ -3,7 +3,6 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { cwd } from "node:process";
 import { parseSlashCommand } from "../agent/commands.js";
-import { type BenchmarkProfile } from "../agent/benchmark-profile.js";
 import { type ConversationTurn } from "../agent/conversation.js";
 import { type AgentRuntimeEvent } from "../agent/events.js";
 import { TopchesterAgentRuntime } from "../agent/runtime/index.js";
@@ -30,7 +29,6 @@ export interface RunCommandOptions {
   outputJson?: string;
   resume?: string;
   dangerouslyAutoApprove?: boolean;
-  benchmarkProfile?: BenchmarkProfile;
 }
 
 interface RunJsonEvent {
@@ -79,7 +77,6 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
       outputJson: options.outputJson,
       timeoutMs,
       dangerouslyAutoApprove: Boolean(options.dangerouslyAutoApprove),
-      benchmarkProfile: options.benchmarkProfile,
     },
     "run started"
   );
@@ -87,7 +84,6 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
     workspaceRoot: runContext.workspaceRoot,
     timeoutMs,
     dangerouslyAutoApprove: Boolean(options.dangerouslyAutoApprove),
-    benchmarkProfile: options.benchmarkProfile,
   });
 
   try {
@@ -146,7 +142,6 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
       for await (const event of runtime.submitMessageStream(conversation, options.prompt, abortController.signal, {
         session,
         userApprovalMode: options.dangerouslyAutoApprove ? "auto_allow" : "interactive",
-        benchmarkProfile: options.benchmarkProfile,
       })) {
         await applyRuntimeEvent({
           event,

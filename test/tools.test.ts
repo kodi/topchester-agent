@@ -101,27 +101,11 @@ describe("agent tools", () => {
     expect(result.hash).toMatch(/^sha256:/);
   });
 
-  it("uses a tighter read_file limit in terminal-bench profile", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
-    await writeFile(join(workspace, "large.txt"), "a".repeat(64 * 1024 + 1));
-
-    const result = await readWorkspaceFile(workspace, "large.txt", { benchmarkProfile: "terminal-bench" });
-
-    expect(result.skipped).toBe("too_large");
-    expect(result.bytes).toBe(64 * 1024 + 1);
-    expect(result.content).toContain("above the 65536 byte limit");
-    expect(result.content).toContain("Use read_file with offset and limit");
-  });
-
   it("reads focused byte ranges from large files", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-"));
     await writeFile(join(workspace, "large.txt"), "0123456789".repeat(10_000));
 
-    const result = await readWorkspaceFile(workspace, "large.txt", {
-      benchmarkProfile: "terminal-bench",
-      offset: 10,
-      limit: 8,
-    });
+    const result = await readWorkspaceFile(workspace, "large.txt", { offset: 10, limit: 8 });
 
     expect(result.skipped).toBeUndefined();
     expect(result.offset).toBe(10);
@@ -225,22 +209,6 @@ describe("agent tools", () => {
         path: "test/example.test.ts",
         content: 'it("works", () => {});\n',
         create_parent_dirs: true,
-      },
-    });
-  });
-
-  it("parses finish_task tool calls from JSON", () => {
-    expect(
-      parseToolCall(
-        '{"tool":"finish_task","args":{"final_response":"Changed src/example.ts.","files_changed":["src/example.ts"],"validation":["pnpm test"],"remaining_issues":[]}}'
-      )
-    ).toEqual({
-      tool: "finish_task",
-      args: {
-        final_response: "Changed src/example.ts.",
-        files_changed: ["src/example.ts"],
-        validation: ["pnpm test"],
-        remaining_issues: [],
       },
     });
   });
@@ -898,7 +866,7 @@ describe("agent tools", () => {
 
   it("gets model prompt lines from the tool registry", () => {
     expect(getToolPromptLines()).toEqual([
-      'task: delegate read-only file/search/git research to a child agent. Do not use task for shell commands, bash, Python/Node scripts, validators, edits, writes, finish_task, tiny local inspections, or other execution work; use parent tools directly. If the relevant workspace context is just a README plus a few obvious source files, inspect them directly with list_files/read_file instead of spawning a subagent. To use it, reply with only JSON: {"tool":"task","args":{"description":"Inspect runtime event flow","prompt":"Read the runtime and summarize how events are emitted.","subagent_type":"explore"}}',
+      'task: delegate read-only file/search/git research to a child agent. Do not use task for shell commands, bash, Python/Node scripts, validators, edits, writes, tiny local inspections, or other execution work; use parent tools directly. If the relevant workspace context is just a README plus a few obvious source files, inspect them directly with list_files/read_file instead of spawning a subagent. To use it, reply with only JSON: {"tool":"task","args":{"description":"Inspect runtime event flow","prompt":"Read the runtime and summarize how events are emitted.","subagent_type":"explore"}}',
       'plan_todo: replace the visible session task plan for genuinely multi-step work. Usually create it once after initial orientation, keep 2-6 short milestone items, exactly one in_progress item while work remains, and batch updates when milestones change. Do not call plan_todo twice in a row, after routine reads/searches, after failed edit attempts, for wording-only changes, or just to report completed work before a final answer. To use it, reply with only JSON: {"tool":"plan_todo","args":{"items":[{"text":"Inspect relevant files","status":"in_progress"},{"text":"Implement focused change","status":"pending"}]}}',
       'read_file: read a UTF-8 file inside the workspace. For large files, use offset and limit to read a focused byte range. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
       'list_files: list files and directories inside the workspace; top-level by default, recursive only when requested, with "/" after directory names. To use it, reply with only JSON: {"tool":"list_files","args":{"path":"src","recursive":false,"limit":500}}',
@@ -915,7 +883,6 @@ describe("agent tools", () => {
       'inspect_command: run a safe read-only discovery command inside the workspace for quick repo orientation; prefer read_file, list_files, grep, and find_file for exact file tasks, and do not use it for builds, tests, installs, network, shell scripts, edits, or user-requested specific commands such as node --version, which node, or pnpm --version. To use it, reply with only JSON: {"tool":"inspect_command","args":{"command":"pwd && rg --files docs/plans | head -20","workdir":".","timeout_ms":10000}}',
       'bash: run an approval-gated shell command inside the workspace for tests, lint, typecheck, builds, smoke checks, package-manager commands, scripts, pipelines, redirects, chaining, and other terminal work. Failed command exits are useful evidence: inspect stdout and stderr, fix in-scope failures, and rerun the narrowest useful check. To use it, reply with only JSON: {"tool":"bash","args":{"command":"pnpm test","workdir":".","timeout_ms":120000,"description":"run the test suite"}}',
       'web_fetch: fetch a public HTTP(S) URL for current docs, changelogs, API references, issue pages, or package behavior; private network and localhost URLs are blocked. Prefer this over bash curl/wget. To use it, reply with only JSON: {"tool":"web_fetch","args":{"url":"https://example.com/docs","format":"markdown","timeout_seconds":30}}',
-      'finish_task: complete the task with a brief final response only after tool results prove the work is done. In benchmark or require-finish mode, this is the only valid terminal action; normal assistant messages are progress notes and do not finish the task, and remaining_issues must be empty. For implementation tasks, do not call finish_task until source files were changed by edit_file, write_file, apply_patch, or another mutating tool, unless no code change is truly required. Example: {"tool":"finish_task","args":{"final_response":"Changed src/foo.ts and ran pnpm test foo.test.ts.","files_changed":["src/foo.ts"],"validation":["pnpm test foo.test.ts"],"remaining_issues":[]}}',
       'skills_list: List available on-demand skills without loading full skill bodies. Args: {}. Example: {"tool":"skills_list","args":{}}',
       'skill_view: Load full SKILL.md content for one skill by name. Args: {"name":"skill-name"}. Example: {"tool":"skill_view","args":{"name":"code-review"}}',
       'skill_read: Read a linked reference, template, script, or asset named by skill_view. Args: {"name":"skill-name","group":"references|templates|scripts|assets","path":"relative/path"}. Example: {"tool":"skill_read","args":{"name":"topchester","group":"references","path":"configuration.md"}}',

@@ -383,6 +383,7 @@ async function testTranscriptWriter(): Promise<void> {
 
     let keywordColor: number[] | undefined;
     let keywordBackground: number[] | undefined;
+    let cssPropertyColor: number[] | undefined;
     const captureHighlight = (event: CliRendererExternalOutputEvent) => {
       const keyword = event.snapshot
         .getSpanLines()
@@ -390,6 +391,11 @@ async function testTranscriptWriter(): Promise<void> {
         .find((span) => span.text === "const");
       keywordColor = keyword?.fg.toInts();
       keywordBackground = keyword?.bg.toInts();
+      cssPropertyColor = event.snapshot
+        .getSpanLines()
+        .flatMap((line) => line.spans)
+        .find((span) => span.text === "color")
+        ?.fg.toInts();
     };
     setup.renderer.on(CliRenderEvents.EXTERNAL_OUTPUT, captureHighlight);
     try {
@@ -405,10 +411,18 @@ async function testTranscriptWriter(): Promise<void> {
             "  port: 8080",
             "```",
             "",
-            "### TypeScript",
+            "### TSX",
             "",
-            "```typescript",
+            "```tsx",
+            'import { Gantt } from "@antiflux/gantt";',
             "const answer: number = 42;",
+            "<Gantt theme={customTheme} />",
+            "```",
+            "",
+            "### CSS",
+            "",
+            "```css",
+            ".custom-gantt { color: #ffffff; }",
             "```",
             "",
             "### Go",
@@ -434,17 +448,22 @@ async function testTranscriptWriter(): Promise<void> {
       "YAML",
       "server:",
       "port: 8080",
-      "TypeScript",
+      "TSX",
+      'import { Gantt } from "@antiflux/gantt";',
       "const answer: number = 42;",
+      "<Gantt theme={customTheme} />",
+      "CSS",
+      ".custom-gantt { color: #ffffff; }",
       "Go",
       "package main",
     ]) {
-      assert.match(markdownText, new RegExp(marker, "u"));
+      assert.ok(markdownText.includes(marker), `missing highlighted Markdown marker: ${marker}`);
     }
     assert.doesNotMatch(markdownText, /```|###/u);
     assert.match(markdownText, /^const answer: number = 42;[ \t]*$/mu);
     assert.deepEqual(keywordColor, RGBA.fromHex(theme.accent).toInts());
     assert.deepEqual(keywordBackground, RGBA.fromHex(theme.surface).toInts());
+    assert.deepEqual(cssPropertyColor, RGBA.fromHex(theme.warning).toInts());
 
     const restoredSnapshot = resetTranscriptSnapshot(controller.getSnapshot(), {
       sessionId: "restored-session",
