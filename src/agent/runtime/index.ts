@@ -437,8 +437,10 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     let totalDurationMs = 0;
     const tokenUsageTotals: TurnTokenUsageTotals = {};
     const profile = this.options.profile ?? PRIMARY_AGENT_PROFILE;
+    const finishTaskRequired = isFinishTaskRequiredByEnv();
+    const inheritedDeniedTools = this.options.parentPermissions?.deniedTools ?? [];
     const permissions = createToolPermissionView(profile, {
-      deniedTools: this.options.parentPermissions?.deniedTools,
+      deniedTools: finishTaskRequired ? inheritedDeniedTools : [...inheritedDeniedTools, "finish_task"],
     });
     const mcpSetupStartedAt = Date.now();
     const mcpManager = await this.createMcpManager(profile, abortSignal);
@@ -473,7 +475,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     const maxPlanTodoUpdatesPerTurn = readMaxPlanTodoUpdatesPerTurn(planTodoMode);
     let planTodoUpdates = 0;
     const implementationTask = isImplementationTaskRequest(message);
-    const requireFinishTask = isFinishTaskRequiredByEnv() && isToolAllowed(permissions, "finish_task");
+    const requireFinishTask = finishTaskRequired && isToolAllowed(permissions, "finish_task");
     const projectInstructionToolState = { shownSourceKeys: new Set<string>() };
     const persistedProjectInstructionKeys = new Set<string>();
     const readFileCache = createReadFileCache();

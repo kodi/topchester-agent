@@ -330,41 +330,16 @@ describe("agent runtime project instructions", () => {
     });
   });
 
-  it("accepts finish_task after a source edit", async () => {
+  it("does not expose finish_task in a normal run", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));
-    await mkdir(join(workspace, "src"), { recursive: true });
-    await writeFile(join(workspace, "src", "value.ts"), "export const value = 1;\n");
-    let step = 0;
+    const toolNames: string[][] = [];
     const runtime = new TopchesterAgentRuntime({
       ...createTestContext(workspace),
       modelGateway: {
-        async generateText() {
-          step += 1;
-          if (step === 1) {
-            return {
-              text: JSON.stringify({
-                tool: "edit_file",
-                args: {
-                  path: "src/value.ts",
-                  edits: [{ old_text: "export const value = 1;\n", new_text: "export const value = 2;\n" }],
-                },
-              }),
-              providerId: "fake",
-              modelId: "fake-agent",
-              purpose: "agent.primary" as const,
-            };
-          }
-
+        async generateText(request: { tools?: Array<{ name: string }> }) {
+          toolNames.push(request.tools?.map((tool) => tool.name) ?? []);
           return {
-            text: JSON.stringify({
-              tool: "finish_task",
-              args: {
-                final_response: "Changed src/value.ts.",
-                files_changed: ["src/value.ts"],
-                validation: [],
-                remaining_issues: [],
-              },
-            }),
+            text: "The project supports project Gantt charts and scheduling timelines.",
             providerId: "fake",
             modelId: "fake-agent",
             purpose: "agent.primary" as const,
@@ -373,12 +348,15 @@ describe("agent runtime project instructions", () => {
       } as unknown as AppContext["modelGateway"],
     });
 
-    const events = await runtime.submitMessage([], "update the value");
+    const events = await runtime.submitMessage([], "what kinds of Gantt charts are supported?");
 
-    expect(await readFile(join(workspace, "src", "value.ts"), "utf8")).toBe("export const value = 2;\n");
-    expect(events).toContainEqual(expect.objectContaining({ type: "tool_call", label: "finish_task" }));
+    expect(toolNames[0]).not.toContain("finish_task");
     expect(events).toContainEqual(
-      expect.objectContaining({ type: "message", role: "assistant", text: "Changed src/value.ts." })
+      expect.objectContaining({
+        type: "message",
+        role: "assistant",
+        text: "The project supports project Gantt charts and scheduling timelines.",
+      })
     );
   });
 
