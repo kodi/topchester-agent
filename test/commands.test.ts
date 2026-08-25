@@ -583,6 +583,36 @@ describe("slash commands", () => {
     expect(result.messages).toContain("state: L1 entries are ready and current");
   });
 
+  it("propagates cancellation through /kb sync instead of reporting a file failure", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-cancel-"));
+    const abortController = new AbortController();
+    let receivedSignal: AbortSignal | undefined;
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await executeSlashCommand("/kb init", { workspaceRoot: workspace });
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+
+    const sync = executeSlashCommand("/kb sync", {
+      workspaceRoot: workspace,
+      abortSignal: abortController.signal,
+      modelGateway: {
+        async generateText(request) {
+          receivedSignal = request.abortSignal;
+          await new Promise<void>((_resolve, reject) =>
+            request.abortSignal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+              once: true,
+            })
+          );
+          throw new Error("unreachable");
+        },
+      },
+    });
+
+    await expect.poll(() => receivedSignal).toBe(abortController.signal);
+    abortController.abort();
+
+    await expect(sync).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("surfaces /kb sync setup and model failures as chat messages", async () => {
     await expect(executeSlashCommand("/kb sync", { workspaceRoot: "/repo" })).resolves.toEqual({
       messages: ["KB sync failed: Run `topchester kb init` before syncing the project knowledge base."],

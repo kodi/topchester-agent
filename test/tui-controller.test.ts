@@ -490,6 +490,33 @@ describe("framework-neutral TUI controller", () => {
     await controller.dispose();
   });
 
+  it("cancels an active slash command through the renderer-neutral action", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-command-cancel-"));
+    let receivedSignal: AbortSignal | undefined;
+    const runtime = createControllerRuntime({
+      async submitSlashCommand(_command, _onProgress, signal) {
+        receivedSignal = signal;
+        signal?.throwIfAborted();
+        await new Promise<void>((_resolve, reject) =>
+          signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true })
+        );
+        return [];
+      },
+    });
+    const controller = await TopchesterTuiController.create(createTestContext(workspace), runtime);
+
+    controller.submitCommand("/kb sync");
+    await vi.waitFor(() => expect(controller.getSnapshot().canCancel).toBe(true));
+    expect(controller.cancel()).toBe(true);
+    await controller.waitForIdle();
+
+    expect(receivedSignal?.aborted).toBe(true);
+    expect(controller.getSnapshot()).toMatchObject({ canCancel: false, status: "ready" });
+    expect(controller.getSnapshot().transcript.at(-1)).toMatchObject({ kind: "system", text: "Command stopped." });
+    expect(controller.cancel()).toBe(false);
+    await controller.dispose();
+  });
+
   it("handles an immediate follow-up during a yielded runtime flood", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-runtime-flood-input-"));
     const submitted: string[] = [];

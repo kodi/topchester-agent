@@ -346,17 +346,32 @@ function createTopchesterProgram(): Command {
     .option("--full", "sync all in-scope files and remove orphaned L1 entries")
     .action(async (options: { full?: boolean }) => {
       const context = createContextFromOptions(program);
-      const result = await ui.progress(
-        options.full ? "Syncing all L1 file entries..." : "Syncing non-clean L1 file entries...",
-        (report) =>
-          syncKnowledgeBase(context.workspaceRoot, {
-            model: context.modelGateway,
-            requireModel: true,
-            config: context.config,
-            full: options.full,
-            onProgress: (event) => report(event.message),
-          })
-      );
+      const abortController = new AbortController();
+      const interrupt = () => abortController.abort();
+      process.on("SIGINT", interrupt);
+      let result: Awaited<ReturnType<typeof syncKnowledgeBase>>;
+      try {
+        result = await ui.progress(
+          options.full ? "Syncing all L1 file entries..." : "Syncing non-clean L1 file entries...",
+          (report) =>
+            syncKnowledgeBase(context.workspaceRoot, {
+              model: context.modelGateway,
+              requireModel: true,
+              config: context.config,
+              full: options.full,
+              abortSignal: abortController.signal,
+              onProgress: (event) => report(event.message),
+            })
+        );
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          process.exitCode = 130;
+          return;
+        }
+        throw error;
+      } finally {
+        process.off("SIGINT", interrupt);
+      }
 
       console.log(formatKnowledgeSyncResult(result, { title: options.full ? "KB sync --full" : "KB sync" }).join("\n"));
       if (isPartialKnowledgeCompileResult(result)) {

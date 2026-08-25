@@ -13,7 +13,12 @@ import { getL1FileEntryPath, normalizeL1FilePath } from "./path-encoding.js";
 const MAX_L1_PROMPT_FILE_BYTES = 256 * 1024;
 
 export interface L1SummaryModel {
-  generateText(request: { purpose: "kb.summarize"; system: string; prompt: string }): Promise<ModelTextResult>;
+  generateText(request: {
+    purpose: "kb.summarize";
+    system: string;
+    prompt: string;
+    abortSignal?: AbortSignal;
+  }): Promise<ModelTextResult>;
 }
 
 export interface ProcessL1QueueItemOptions {
@@ -21,6 +26,7 @@ export interface ProcessL1QueueItemOptions {
   kbPath: string;
   item: L1QueueItem;
   model: L1SummaryModel;
+  abortSignal?: AbortSignal;
   now?: () => Date;
 }
 
@@ -38,6 +44,7 @@ export interface ProcessL1QueueOptions {
   gitignoreFiles: string[];
   configIgnorePathCount: number;
   model: L1SummaryModel;
+  abortSignal?: AbortSignal;
   removeOrphanedEntries?: boolean;
   onProgress?: KnowledgeProgressReporter;
   now?: () => Date;
@@ -58,6 +65,7 @@ export interface ProcessL1QueueResult {
 }
 
 export async function processL1Queue(options: ProcessL1QueueOptions): Promise<ProcessL1QueueResult> {
+  options.abortSignal?.throwIfAborted();
   const now = options.now ?? (() => new Date());
   const queue = l1QueueFileSchema.parse(JSON.parse(await readFile(options.queuePath, "utf8")));
   let queuedFiles = queue.queuedFiles.map(validateQueueItemPath);
@@ -67,6 +75,7 @@ export async function processL1Queue(options: ProcessL1QueueOptions): Promise<Pr
   }
 
   for (const [index, item] of queuedFiles.entries()) {
+    options.abortSignal?.throwIfAborted();
     options.onProgress?.({
       message: formatL1ProgressMessage("Processing L1 files", index, queuedFiles.length, item.path),
     });
@@ -94,6 +103,7 @@ export async function processL1Queue(options: ProcessL1QueueOptions): Promise<Pr
     });
   }
 
+  options.abortSignal?.throwIfAborted();
   options.onProgress?.({ message: "Linking L1 file relationships..." });
   await postProcessL1Entries(options.kbPath);
 
@@ -107,6 +117,7 @@ function formatL1ProgressMessage(label: string, completed: number, total: number
 }
 
 export async function processL1QueueItem(options: ProcessL1QueueItemOptions): Promise<ProcessL1QueueItemResult> {
+  options.abortSignal?.throwIfAborted();
   const now = options.now ?? (() => new Date());
   const failedAt = () => now().toISOString();
 
@@ -165,7 +176,9 @@ export async function processL1QueueItem(options: ProcessL1QueueItemOptions): Pr
       purpose: "kb.summarize",
       system: buildL1FileEntrySystemPrompt(),
       prompt: buildL1FileEntryPrompt({ path: normalizedPath, content }),
+      abortSignal: options.abortSignal,
     });
+    options.abortSignal?.throwIfAborted();
     const modelEntry = parseL1ModelJson(modelResult.text);
     const entry = normalizeL1FileEntry(modelEntry, {
       path: normalizedPath,
@@ -180,6 +193,9 @@ export async function processL1QueueItem(options: ProcessL1QueueItemOptions): Pr
 
     return { item: markTerminal(options.item, "completed"), entry, entryPath };
   } catch (error) {
+    if (options.abortSignal?.aborted) {
+      throw error;
+    }
     return { item: failItem(options.item, classifyFailure(error), sanitizeErrorMessage(error), failedAt()) };
   }
 }

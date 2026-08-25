@@ -59,6 +59,13 @@ export async function runOpenTui(
   });
   const signalHandlers = new Map<NodeJS.Signals, () => void>();
   const interrupt = () => {
+    if (controller.cancel()) {
+      interruptCount = 0;
+      if (interruptTimer) clearTimeout(interruptTimer);
+      interruptTimer = undefined;
+      controller.setNoticeLine(undefined);
+      return;
+    }
     interruptCount += 1;
     if (interruptCount === 1) {
       controller.setNoticeLine("press Ctrl-C again to exit.");

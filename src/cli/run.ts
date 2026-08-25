@@ -120,7 +120,7 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
         inputType: "slash_command",
       });
       await applyRuntimeEvents({
-        events: await runtime.submitSlashCommand(options.prompt),
+        events: await runtime.submitSlashCommand(options.prompt, undefined, abortController.signal),
         session,
         jsonEvents,
         runId,

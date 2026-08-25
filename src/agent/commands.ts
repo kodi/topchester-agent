@@ -25,6 +25,7 @@ export interface SlashCommandContext {
   config?: TopchesterConfig;
   modelGateway?: L1SummaryModel;
   onProgress?: KnowledgeProgressReporter;
+  abortSignal?: AbortSignal;
   formatSyncStatus?: (status: L1FileScanStatus) => string;
   skillsService?: SkillsService;
 }
@@ -444,12 +445,14 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
             requireModel: true,
             config: context.config,
             full,
+            abortSignal: context.abortSignal,
             onProgress: context.onProgress,
           }),
           { title: full ? "KB sync --full" : "KB sync" }
         ),
       };
     } catch (error) {
+      context.abortSignal?.throwIfAborted();
       return {
         messages: [`KB ${subcommand} failed: ${error instanceof Error ? error.message : "Unknown error."}`],
       };

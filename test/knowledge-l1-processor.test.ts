@@ -542,6 +542,49 @@ describe("single-file L1 processing", () => {
 });
 
 describe("durable L1 queue processing", () => {
+  it("aborts the active model request without marking the queue item failed", async () => {
+    const content = "export const waiting = true;\n";
+    const workspaceRoot = await makeWorkspace({ "src/waiting.ts": content });
+    const kbPath = join(workspaceRoot, "topchester-kb");
+    const cachePath = join(workspaceRoot, ".agents/topchester-kb-cache");
+    const queuePath = join(cachePath, "l1-queue.json");
+    const manifestPath = join(kbPath, "manifest.json");
+    const abortController = new AbortController();
+    let receivedSignal: AbortSignal | undefined;
+    await mkdir(cachePath, { recursive: true });
+    await writeQueue(queuePath, [makeQueueItem("src/waiting.ts", content)]);
+
+    const processing = processL1Queue({
+      workspaceRoot,
+      kbPath,
+      queuePath,
+      manifestPath,
+      gitignoreFiles: [],
+      configIgnorePathCount: 0,
+      abortSignal: abortController.signal,
+      model: {
+        async generateText(request) {
+          receivedSignal = request.abortSignal;
+          await new Promise<void>((_resolve, reject) =>
+            request.abortSignal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+              once: true,
+            })
+          );
+          throw new Error("unreachable");
+        },
+      },
+      now: fixedNow,
+    });
+
+    await expect.poll(() => receivedSignal).toBe(abortController.signal);
+    abortController.abort();
+    await expect(processing).rejects.toMatchObject({ name: "AbortError" });
+
+    const persistedQueue = l1QueueFileSchema.parse(JSON.parse(await readFile(queuePath, "utf8")));
+    expect(persistedQueue.queuedFiles[0]?.status).toBe("in_progress");
+    expect(persistedQueue.queuedFiles[0]?.failure).toBeUndefined();
+  });
+
   it("persists completed work, continues after failures, and writes matching manifest counts", async () => {
     const workspaceRoot = await makeWorkspace({
       "src/a.ts": "export const a = 1;\n",

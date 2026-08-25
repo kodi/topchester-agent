@@ -79,6 +79,8 @@ If config is invalid, it prints the config error and exits nonzero.
 
 All `topchester kb` commands target the current workspace's mutable project knowledge. Topchester product help comes from the packaged `topchester` skill and is not exposed as a second KB source.
 
+Press `Ctrl-C` to stop an in-progress `topchester kb sync` or `topchester kb sync --full`. An interrupted sync exits with status 130 and keeps any written queue so the next sync can resume the unfinished work.
+
 ## `topchester session debug`
 
 Shows the most detailed available diagnostic report for one project-local session:

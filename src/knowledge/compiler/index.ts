@@ -47,8 +47,10 @@ export async function syncKnowledgeBase(
     requireModel?: boolean;
     config?: TopchesterConfig;
     full?: boolean;
+    abortSignal?: AbortSignal;
   } = {}
 ): Promise<KnowledgeCompileResult> {
+  options.abortSignal?.throwIfAborted();
   options.onProgress?.({ message: "Checking project knowledge folders..." });
   const status = getKnowledgeStatus(workspaceRoot);
 
@@ -67,6 +69,7 @@ export async function syncKnowledgeBase(
     excludedPaths: [status.kbPath, status.cachePath],
     ignorePaths,
   });
+  options.abortSignal?.throwIfAborted();
 
   const dirtyFiles = options.full
     ? inventory.files
@@ -78,6 +81,7 @@ export async function syncKnowledgeBase(
           }))
         )
       ).filter((file) => file.syncStatus !== "current");
+  options.abortSignal?.throwIfAborted();
 
   if (options.requireModel && dirtyFiles.length > 0) {
     assertKbSummarizeModelConfigured(options.model);
@@ -129,6 +133,7 @@ export async function syncKnowledgeBase(
       2
     )}\n`
   );
+  options.abortSignal?.throwIfAborted();
 
   options.onProgress?.({
     message: options.full
@@ -146,6 +151,7 @@ export async function syncKnowledgeBase(
           configIgnorePathCount: ignorePaths.length,
           removeOrphanedEntries: options.full === true,
           model: options.model,
+          abortSignal: options.abortSignal,
           onProgress: options.onProgress,
         })
       : undefined;

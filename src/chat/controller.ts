@@ -138,7 +138,7 @@ export interface TuiController {
   subscribe(listener: TuiViewListener): () => void;
   submit(input: string): "submitted" | "queued";
   submitCommand(command: string): "submitted" | "queued";
-  cancel(): void;
+  cancel(): boolean;
   choose(action: ChoiceTranscriptAction): void;
   selectSession(sessionId: string): void;
   cancelSessionPicker(): void;
@@ -269,8 +269,10 @@ export class TopchesterTuiController implements TuiController {
     return "submitted";
   }
 
-  cancel(): void {
-    this.cancelPending?.();
+  cancel(): boolean {
+    if (!this.cancelPending) return false;
+    this.cancelPending();
+    return true;
   }
 
   choose(action: ChoiceTranscriptAction): void {
@@ -830,27 +832,50 @@ export class TopchesterTuiController implements TuiController {
     }
     const busy = new ControllerBusyIndicator(this.view, {
       status: "running command",
-      promptHint: "working...",
+      promptHint: "press Esc or Ctrl-C to stop",
       activities: getSlashCommandActivities(command),
       activityEveryMs: 5000,
     });
-    busy.start();
+    const abortController = new AbortController();
+    let cancelled = false;
+    const cancelRequest = () => {
+      cancelled = true;
+      abortController.abort();
+    };
+    this.view.batch(() => {
+      this.setCancelPending(cancelRequest);
+      busy.start();
+    });
     try {
       await this.clearTaskPlanForNewTurn();
       const commandBackpressure = this.persistPayloadWithWarning(slashCommandToSessionPayload(command));
       if (commandBackpressure) await commandBackpressure;
       if (this.session !== activeSession) return;
       await this.applyRuntimeEvents(
-        await this.runtime.submitSlashCommand(command, (event) => busy.setActivity(event.message)),
+        await this.runtime.submitSlashCommand(
+          command,
+          (event) => busy.setActivity(event.message),
+          abortController.signal
+        ),
         activeSession
       );
     } catch (error) {
-      this.view.addEntry(systemTranscriptEntry(`Command failed: ${formatPlainError(error)}`));
-      this.view.setStatus("command failed");
-      const failureBackpressure = this.persistPayloadWithWarning({ kind: "status", status: "command failed" });
-      if (failureBackpressure) await failureBackpressure;
+      if (cancelled) {
+        this.view.batch(() => {
+          this.view.addEntry(systemTranscriptEntry("Command stopped."));
+          this.view.setStatus("ready");
+        });
+      } else {
+        this.view.addEntry(systemTranscriptEntry(`Command failed: ${formatPlainError(error)}`));
+        this.view.setStatus("command failed");
+        const failureBackpressure = this.persistPayloadWithWarning({ kind: "status", status: "command failed" });
+        if (failureBackpressure) await failureBackpressure;
+      }
     } finally {
-      busy.stop();
+      this.view.batch(() => {
+        this.clearCancelPending(cancelRequest);
+        busy.stop();
+      });
     }
   }
 

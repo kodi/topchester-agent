@@ -121,7 +121,11 @@ export interface AgentRuntime {
     onEvent?: AgentRuntimeEventSink,
     options?: AgentRuntimeSubmitMessageOptions
   ): Promise<AgentRuntimeEvent[]>;
-  submitSlashCommand(command: string, onProgress?: KnowledgeProgressReporter): Promise<AgentRuntimeEvent[]>;
+  submitSlashCommand(
+    command: string,
+    onProgress?: KnowledgeProgressReporter,
+    abortSignal?: AbortSignal
+  ): Promise<AgentRuntimeEvent[]>;
 }
 
 export type AgentRuntimeEventSink = (event: AgentRuntimeEvent) => void | Promise<void>;
@@ -1560,12 +1564,17 @@ export class TopchesterAgentRuntime implements AgentRuntime {
    * readiness also refresh the displayed knowledge status so the TUI footer
    * and chat status stay aligned with the command result.
    */
-  async submitSlashCommand(command: string, onProgress?: KnowledgeProgressReporter): Promise<AgentRuntimeEvent[]> {
+  async submitSlashCommand(
+    command: string,
+    onProgress?: KnowledgeProgressReporter,
+    abortSignal?: AbortSignal
+  ): Promise<AgentRuntimeEvent[]> {
     const result = await executeSlashCommand(command, {
       workspaceRoot: this.context.workspaceRoot,
       config: this.context.config,
       modelGateway: this.context.modelGateway,
       onProgress,
+      abortSignal,
       formatSyncStatus: formatTuiSyncStatus,
     });
     const events: AgentRuntimeEvent[] = [agentEvent.systemMessage(result.messages.join("\n"))];

@@ -57,7 +57,8 @@ KB status labels:
 - Type `/skills` to open the Skills overlay.
 - Use `Up` and `Down` in the normal prompt to browse submitted prompt history.
 - Use your terminal scrollback to review chat history with the mouse wheel, touchpad, scrollbar, or terminal shortcuts such as `Shift+PageUp`.
-- Press `Ctrl-C` once to show `press Ctrl-C again to exit.`.
+- While a command or response is running, press `Ctrl-C` to stop it.
+- When no work is running, press `Ctrl-C` once to show `press Ctrl-C again to exit.`.
 - Press `Ctrl-C` again right away to exit.
 
 While the startup agent check is running, the prompt shows `press Esc to stop`.

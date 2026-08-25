@@ -34,7 +34,7 @@ ready · my-project · qwen/qwen3-coder [openrouter] · kb: ready
 - `Up` and `Down` browse prompt history, suggestions, or dialog actions, depending on focus.
 - `Tab` completes the selected slash suggestion.
 - `Escape` dismisses the active suggestion/dialog or cancels active work when cancellation is available.
-- `Ctrl-C` once asks for confirmation; `Ctrl-C` again exits.
+- During active work, `Ctrl-C` stops the command or response. Otherwise, `Ctrl-C` once asks for confirmation and `Ctrl-C` again exits.
 
 Topchester does not use the terminal alternate screen and leaves mouse reporting disabled, so terminal-native selection and scrollback remain available. New, forked, and restored sessions append a visible session boundary; they do not clear unrelated terminal history.
 
