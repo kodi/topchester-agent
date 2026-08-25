@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
-import { type AppContext } from "../src/app/context.js";
+import { createAppContext, type AppContext } from "../src/app/context.js";
 import { type AgentRuntimeEvent } from "../src/agent/events.js";
 import {
   executeSlashCommand,
@@ -69,6 +69,18 @@ describe("slash commands", () => {
       {
         value: "/kb sync --full",
         description: "process all project files into L1 entries",
+      },
+      {
+        value: "/kb live status",
+        description: "show whether live L1 sync is on",
+      },
+      {
+        value: "/kb live on",
+        description: "turn on live L1 sync globally",
+      },
+      {
+        value: "/kb live off",
+        description: "turn off live L1 sync globally",
       },
       {
         value: "/kb init",
@@ -175,6 +187,18 @@ describe("slash commands", () => {
       {
         value: "/kb sync --full",
         description: "process all project files into L1 entries",
+      },
+      {
+        value: "/kb live status",
+        description: "show whether live L1 sync is on",
+      },
+      {
+        value: "/kb live on",
+        description: "turn on live L1 sync globally",
+      },
+      {
+        value: "/kb live off",
+        description: "turn off live L1 sync globally",
       },
       {
         value: "/kb init",
@@ -484,8 +508,59 @@ describe("slash commands", () => {
 
   it("reports /kb usage for unknown KB subcommands", async () => {
     await expect(executeSlashCommand("/kb nope", { workspaceRoot: "/repo" })).resolves.toEqual({
-      messages: ["Usage: /kb init, /kb sync [--full], /kb reset, or /kb status"],
+      messages: ["Usage: /kb init, /kb sync [--full] [paths...], /kb live on|off|status, /kb reset, or /kb status"],
     });
+  });
+
+  it("persists /kb live globally and reports KB availability", async () => {
+    const previousHome = process.env.HOME;
+    const root = await mkdtemp(join(tmpdir(), "topchester-commands-live-"));
+    const workspace = join(root, "workspace");
+    process.env.HOME = join(root, "home");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(join(workspace, "topchester.jsonc"), '{ "knowledge": { "live": false } }\n');
+
+    try {
+      const result = await executeSlashCommand("/kb live on", { workspaceRoot: workspace });
+      expect(result.messages).toEqual([
+        "KB live",
+        "state: on",
+        "config: ~/.config/topchester/config.jsonc",
+        "knowledge folder: not initialized",
+      ]);
+      expect(await readFile(join(process.env.HOME, ".config", "topchester", "config.jsonc"), "utf8")).toContain(
+        '"live": true'
+      );
+      expect(await readFile(join(workspace, "topchester.jsonc"), "utf8")).toBe('{ "knowledge": { "live": false } }\n');
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+    }
+  });
+
+  it("reloads the running runtime config after /kb live changes", async () => {
+    const previousHome = process.env.HOME;
+    const previousLogLevel = process.env.TOPCHESTER_LOG_LEVEL;
+    const root = await mkdtemp(join(tmpdir(), "topchester-runtime-live-"));
+    const workspace = join(root, "workspace");
+    process.env.HOME = join(root, "home");
+    process.env.TOPCHESTER_LOG_LEVEL = "silent";
+    await mkdir(workspace, { recursive: true });
+
+    try {
+      const context = createAppContext({ workspaceRoot: workspace });
+      const runtime = new TopchesterAgentRuntime(context);
+      expect(context.config.knowledge?.live).toBeUndefined();
+      await runtime.submitSlashCommand("/kb live on");
+      expect(context.config.knowledge?.live).toBe(true);
+      await runtime.submitSlashCommand("/kb live off");
+      expect(context.config.knowledge?.live).toBe(false);
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousLogLevel === undefined) delete process.env.TOPCHESTER_LOG_LEVEL;
+      else process.env.TOPCHESTER_LOG_LEVEL = previousLogLevel;
+    }
   });
 
   it("executes /kb init and creates project folders", async () => {

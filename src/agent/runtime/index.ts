@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { type AppContext } from "../../app/context.js";
+import { reloadAppBaseConfig, type AppContext } from "../../app/context.js";
 import { type BenchmarkProfile } from "../benchmark-profile.js";
 import { dryRunKnowledgeCompile, filterNonCleanKnowledgeCompileResult } from "../../knowledge/compiler/index.js";
 import { type KnowledgeProgressReporter } from "../../knowledge/progress.js";
 import { createL1ContextPack, formatL1ContextPackForPrompt } from "../../knowledge/search.js";
 import { getKnowledgeStatus, type KnowledgeStatus } from "../../knowledge/status.js";
-import { executeSlashCommand } from "../commands.js";
+import { executeSlashCommand, parseSlashCommand } from "../commands.js";
 import { type ConversationTurn, buildConversationPrompt } from "../conversation.js";
 import {
   ABORT_CHOICE_VALUE,
@@ -1577,6 +1577,10 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       abortSignal,
       formatSyncStatus: formatTuiSyncStatus,
     });
+    const parsed = parseSlashCommand(command);
+    if (parsed?.name === "kb" && parsed.args[0] === "live" && ["on", "off"].includes(parsed.args[1] ?? "")) {
+      reloadAppBaseConfig(this.context);
+    }
     const events: AgentRuntimeEvent[] = [agentEvent.systemMessage(result.messages.join("\n"))];
 
     if (shouldRefreshKnowledgeStatus(command)) {

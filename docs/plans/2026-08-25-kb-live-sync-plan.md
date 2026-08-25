@@ -307,7 +307,7 @@ test/commands.test.ts test/cli.integration.test.ts` and `mise run local-ci`.
 
 ## Slice 3: Global Live Flag And Commands
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Persist live mode on user global config and expose on/off/status without starting background work yet.
 
@@ -338,6 +338,12 @@ mise run test -- test/config.test.ts test/commands.test.ts
 ```
 
 Dependencies: none (can overlap Slice 1/2). Runtime scheduling waits for Slice 4.
+
+Completed 2026-08-25: added the optional shared config field, global-only
+persistence, CLI and slash on/off/status commands, suggestions, and immediate
+runtime config reload. Verification passed with `mise run test-node --
+test/config.test.ts test/commands.test.ts test/cli.integration.test.ts` and
+`mise run local-ci`.
 
 ## Slice 4: Live Scheduler And File-Touch Hooks
 
@@ -442,16 +448,15 @@ Dependencies: Slices 2–5.
 
 ## Next Slice
 
-Start Slice 3.
+Start Slice 4.
 
-Add the shared `knowledge.live` config field and global writer, then expose the
-CLI and slash on/off/status commands without scheduling background work yet.
+Add the workspace-scoped serial scheduler and successful file-touch callbacks,
+then share the scheduler with subagent tool execution.
 
 First verification:
 
 ```sh
-mise run test-node -- test/config.test.ts test/commands.test.ts test/cli.integration.test.ts
+mise run test-node -- test/knowledge-live-scheduler.test.ts test/tools.test.ts
 ```
 
-Do not start the scheduler until the persisted flag and running-config reload
-path are covered.
+Keep live work asynchronous and do not enqueue from search, list, or bash tools.

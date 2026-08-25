@@ -284,6 +284,12 @@ export const topchesterConfigSchema = z.object({
       paths: z.array(ignorePathSchema).optional(),
     })
     .optional(),
+  knowledge: z
+    .object({
+      live: z.boolean().optional(),
+    })
+    .strict()
+    .optional(),
   tools: z
     .object({
       bash: bashPermissionPolicySchema.optional(),
@@ -302,6 +308,12 @@ const rawTopchesterConfigSchema = z.object({
     .object({
       paths: z.array(ignorePathSchema).optional(),
     })
+    .optional(),
+  knowledge: z
+    .object({
+      live: z.boolean().optional(),
+    })
+    .strict()
     .optional(),
   tools: z
     .object({
@@ -364,6 +376,11 @@ export interface McpStdioServerUpdateResult {
   args: string[];
   env: Record<string, string>;
   replaced: boolean;
+}
+
+export interface KnowledgeLiveConfigUpdateResult {
+  path: string;
+  enabled: boolean;
 }
 
 export function getGlobalTopchesterConfigDir(): string {
@@ -611,6 +628,15 @@ export async function addGlobalModelChoices(
     choices: updatedChoices,
     defaultModel: typeof models.default === "string" ? models.default : undefined,
   };
+}
+
+export async function setGlobalKnowledgeLive(enabled: boolean): Promise<KnowledgeLiveConfigUpdateResult> {
+  const configPath = getGlobalTopchesterConfigPath();
+  const config = readConfigObject(configPath);
+  const knowledge = ensurePlainObjectProperty(config, "knowledge");
+  knowledge.live = enabled;
+  await writeGlobalConfig(configPath, config);
+  return { path: configPath, enabled };
 }
 
 export function getActiveModelProviderId(config: TopchesterConfig): string | undefined {

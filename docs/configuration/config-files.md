@@ -19,14 +19,14 @@ Topchester loads config in this order. Later files override earlier files.
 
 `--config` and `TOPCHESTER_CONFIG` select the same optional profile slot. If both are present, `--config` is active and the environment-selected file is reported as shadowed by `topchester info`; it is not parsed or merged. Relative environment paths are workspace-relative. Relative CLI paths are resolved from the directory where Topchester was invoked.
 
-Use `topchester.jsonc` for shared project policy. Use `~/.config/topchester/config.jsonc` for personal provider setup, model choices, and default model preferences.
+Use `topchester.jsonc` for shared project policy. Use `~/.config/topchester/config.jsonc` for personal provider setup, model choices, default model preferences, and the `knowledge.live` preference.
 
 `.topchester/` is for state, sessions, and caches. It is not a config layer.
 
-Config files are immutable inputs while the TUI is running. Model and reasoning
-changes made with `-m`, `/model`, or reasoning commands are session runtime
-overrides, not config writes. Edit the intended JSONC file when you want a
-durable default.
+Most config is immutable while the TUI is running. Model and reasoning changes
+made with `-m`, `/model`, or reasoning commands are session runtime overrides,
+not config writes. `/kb live on` and `/kb live off` are the exception: they
+write `knowledge.live` to the global user config and reload it immediately.
 
 ## Minimal user config
 
@@ -34,6 +34,16 @@ durable default.
 {
   "models": {
     "default": "openrouter/google/gemini-3.1-flash-lite",
+  },
+}
+```
+
+Live L1 sync is off by default. Its durable personal setting is:
+
+```jsonc
+{
+  "knowledge": {
+    "live": true,
   },
 }
 ```

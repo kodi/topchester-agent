@@ -21,7 +21,7 @@ export function formatTuiSyncStatus(status: L1FileScanStatus): string {
 export function shouldRefreshKnowledgeStatus(command: string): boolean {
   const parsed = parseSlashCommand(command);
 
-  return parsed?.name === "kb" && ["init", "reset", "sync", "status"].includes(parsed.args[0] ?? "");
+  return parsed?.name === "kb" && ["init", "live", "reset", "sync", "status"].includes(parsed.args[0] ?? "");
 }
 
 /**

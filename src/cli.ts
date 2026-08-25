@@ -4,7 +4,12 @@ import { Command } from "commander";
 import { parseBenchmarkProfile, type BenchmarkProfile } from "./agent/benchmark-profile.js";
 import { exchangeCodexAuthorizationCode, pollCodexDeviceAuthorization, requestCodexDeviceCode } from "./auth/codex.js";
 import { getAuthStoreStatus, setAuthProvider } from "./auth/store.js";
-import { createAppContext, restoreRuntimeConfigOverrides, setRuntimeModelReference } from "./app/context.js";
+import {
+  createAppContext,
+  reloadAppBaseConfig,
+  restoreRuntimeConfigOverrides,
+  setRuntimeModelReference,
+} from "./app/context.js";
 import { ui } from "./cli/ui.js";
 import { type L1FileScanStatus } from "./knowledge/compiler/l1-entry.js";
 import {
@@ -21,6 +26,7 @@ import {
 } from "./knowledge/compiler/index.js";
 import { formatKnowledgeInitResult, initializeKnowledgeBase } from "./knowledge/init.js";
 import { formatKnowledgeResetResult, resetKnowledgeBase } from "./knowledge/reset.js";
+import { getKnowledgeStatus } from "./knowledge/status.js";
 import {
   createL1ContextPack,
   formatL1ContextPackResult,
@@ -45,6 +51,7 @@ import {
   addMcpStdioServerConfig,
   configureCodexGlobalProvider,
   getGlobalTopchesterConfigPath,
+  setGlobalKnowledgeLive,
 } from "./config/index.js";
 
 const sessionDebugCliStyle: SessionDebugTextStyle = {
@@ -444,6 +451,30 @@ function createTopchesterProgram(): Command {
       if ((result && isPartialKnowledgeCompileResult(result)) || fileResults?.some(isPartialSyncL1FileResult)) {
         process.exitCode = 2;
       }
+    });
+
+  kbCommand
+    .command("live")
+    .description("show or change global live L1 sync")
+    .argument("[action]", "on, off, or status", "status")
+    .action(async (action: string) => {
+      if (!["on", "off", "status"].includes(action)) {
+        throw new Error("Usage: topchester kb live on|off|status");
+      }
+      const context = createContextFromOptions(program);
+      if (action !== "status") {
+        await setGlobalKnowledgeLive(action === "on");
+        reloadAppBaseConfig(context);
+      }
+      const status = getKnowledgeStatus(context.workspaceRoot);
+      console.log(
+        [
+          "KB live",
+          `state: ${context.config.knowledge?.live ? "on" : "off"}`,
+          "config: ~/.config/topchester/config.jsonc",
+          `knowledge folder: ${status.kbExists && status.kbIsDirectory ? "ready" : "not initialized"}`,
+        ].join("\n")
+      );
     });
 
   kbCommand

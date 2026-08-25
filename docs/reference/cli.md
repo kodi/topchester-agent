@@ -39,6 +39,8 @@ topchester kb status
 topchester kb search "post author update error"
 topchester kb context "status bar" --json
 topchester kb sync --full
+topchester kb live on
+topchester kb live status
 topchester kb reset
 ```
 
@@ -71,6 +73,7 @@ topchester kb reset
 | `topchester kb dry-run`    | Preview which files would be synced.                     |
 | `topchester kb search`     | Search compiled L1 file knowledge.                       |
 | `topchester kb sync`       | Build or update L1 entries for non-clean or named files. |
+| `topchester kb live`       | Show or change the global live L1 sync preference.       |
 | `topchester kb reset`      | Delete the local knowledge base and cache.               |
 | `topchester kb status`     | Show files that are not current in the knowledge base.   |
 | `topchester update`        | Update Topchester with npm, pnpm, or bun.                |
@@ -194,3 +197,11 @@ listing the whole project. Each path reports `completed`, `skipped_current`,
 `ignored`, `changed`, `missing`, or `failed`. Named paths cannot be combined
 with `--full`; bare `kb sync` and `kb sync --full` keep their existing batch
 behavior.
+
+## `topchester kb live`
+
+Use `topchester kb live on`, `off`, or `status` to manage the durable personal
+live-sync preference. On/off writes `knowledge.live` in
+`~/.config/topchester/config.jsonc`; status also reports whether the current
+workspace has a knowledge folder. Live processing is added by the runtime
+integration described in the knowledge-base guide.

@@ -8,11 +8,11 @@ import {
   syncKnowledgeBase,
 } from "../knowledge/compiler/index.js";
 import { type L1SummaryModel } from "../knowledge/compiler/l1-processor.js";
-import { reasoningEfforts, type TopchesterConfig } from "../config/index.js";
+import { reasoningEfforts, setGlobalKnowledgeLive, type TopchesterConfig } from "../config/index.js";
 import { formatKnowledgeInitResult, initializeKnowledgeBase } from "../knowledge/init.js";
 import { type KnowledgeProgressReporter } from "../knowledge/progress.js";
 import { formatKnowledgeResetResult, resetKnowledgeBase } from "../knowledge/reset.js";
-import { type KnowledgeStatus } from "../knowledge/status.js";
+import { getKnowledgeStatus, type KnowledgeStatus } from "../knowledge/status.js";
 import { type L1FileScanStatus } from "../knowledge/compiler/l1-entry.js";
 import { ui } from "../cli/ui.js";
 import {
@@ -93,6 +93,18 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
   {
     value: "/kb sync --full",
     description: "process all project files into L1 entries",
+  },
+  {
+    value: "/kb live status",
+    description: "show whether live L1 sync is on",
+  },
+  {
+    value: "/kb live on",
+    description: "turn on live L1 sync globally",
+  },
+  {
+    value: "/kb live off",
+    description: "turn off live L1 sync globally",
   },
   {
     value: "/kb init",
@@ -495,11 +507,34 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
     }
   }
 
+  if (subcommand === "live") {
+    const action = args[1] ?? "status";
+    if (!["on", "off", "status"].includes(action) || args.length > 2) {
+      return { messages: ["Usage: /kb live on|off|status"] };
+    }
+
+    const enabled = action === "status" ? (context.config?.knowledge?.live ?? false) : action === "on";
+    if (action !== "status") {
+      await setGlobalKnowledgeLive(enabled);
+    }
+    const status = getKnowledgeStatus(context.workspaceRoot);
+    return {
+      messages: [
+        "KB live",
+        `state: ${enabled ? "on" : "off"}`,
+        "config: ~/.config/topchester/config.jsonc",
+        `knowledge folder: ${status.kbExists && status.kbIsDirectory ? "ready" : "not initialized"}`,
+      ],
+    };
+  }
+
   if (subcommand === "reset") {
     return { messages: formatKnowledgeResetResult(await resetKnowledgeBase(context.workspaceRoot)) };
   }
 
-  return { messages: ["Usage: /kb init, /kb sync [--full], /kb reset, or /kb status"] };
+  return {
+    messages: ["Usage: /kb init, /kb sync [--full] [paths...], /kb live on|off|status, /kb reset, or /kb status"],
+  };
 }
 
 function formatConfiguredModelRef(config: TopchesterConfig | undefined, purpose: "kb.summarize"): string | undefined {

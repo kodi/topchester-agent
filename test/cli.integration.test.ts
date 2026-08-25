@@ -1826,6 +1826,23 @@ describe("CLI integration", () => {
     });
   });
 
+  it("persists and reports the global KB live flag", async () => {
+    const fixture = await makeFixture();
+    await mkdir(fixture.workspace, { recursive: true });
+
+    const enabled = await runCli(["--workspace", fixture.workspace, "kb", "live", "on"], fixture.root);
+    const status = await runCli(["--workspace", fixture.workspace, "kb", "live", "status"], fixture.root);
+
+    expect(enabled.stdout).toContain("KB live\nstate: on");
+    expect(enabled.stdout).toContain("config: ~/.config/topchester/config.jsonc");
+    expect(enabled.stdout).toContain("knowledge folder: not initialized");
+    expect(status.stdout).toContain("state: on");
+    await expect(stat(join(fixture.workspace, "topchester.jsonc"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(join(fixture.root, ".config", "topchester", "config.jsonc"), "utf8")).toContain(
+      '"live": true'
+    );
+  });
+
   it("colors the dry-run sync status token when color is enabled", async () => {
     const fixture = await makeFixture();
     await mkdir(join(fixture.workspace, "src"), { recursive: true });

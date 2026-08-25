@@ -11,6 +11,7 @@ import {
   getTopchesterConfigSources,
   loadTopchesterConfig,
   resolveModelChoice,
+  setGlobalKnowledgeLive,
 } from "../src/config/index.js";
 
 const envKeys = ["HOME", "TOPCHESTER_CONFIG", "TOPCHESTER_LOG_LEVEL"] as const;
@@ -320,6 +321,24 @@ describe("Topchester config loading", () => {
       { provider: "openrouter", name: "anthropic/claude-sonnet-4.5" },
     ]);
     expect(written).toContain('"OPENROUTER_API_KEY"');
+  });
+
+  it("writes the live knowledge flag only to global user config", async () => {
+    const root = await mkdtemp(join(tmpdir(), "topchester-config-live-"));
+    const home = join(root, "home");
+    const workspace = join(root, "workspace");
+    process.env.HOME = home;
+    await mkdir(workspace, { recursive: true });
+    await writeFile(join(workspace, "topchester.jsonc"), '{ "knowledge": { "live": false } }\n');
+
+    await expect(setGlobalKnowledgeLive(true)).resolves.toEqual({
+      path: join(home, ".config", "topchester", "config.jsonc"),
+      enabled: true,
+    });
+
+    expect(loadTopchesterConfig({ workspaceRoot: workspace }).knowledge?.live).toBe(true);
+    expect(await readFile(join(workspace, "topchester.jsonc"), "utf8")).toBe('{ "knowledge": { "live": false } }\n');
+    expect(await readFile(join(home, ".config", "topchester", "config.jsonc"), "utf8")).toContain('"live": true');
   });
 
   it("writes Codex provider setup and starter model choices to global user config", async () => {
