@@ -14,6 +14,7 @@ export interface KnowledgeStatus {
   nonCleanFileCount?: number;
   liveSync?: LiveL1SchedulerSnapshot;
   kbContentState?: "empty" | "ready";
+  currentEntryCount?: number;
   kbPathSource: "default" | "env";
   cachePathSource: "default" | "env";
 }
@@ -28,6 +29,7 @@ export function getKnowledgeStatus(workspaceRoot: string): KnowledgeStatus {
   );
   const kbStat = safeStat(kbPath);
   const cacheStat = safeStat(cachePath);
+  const kbContent = getKbContent(kbPath, kbStat?.isDirectory() ?? false);
 
   return {
     workspaceRoot,
@@ -37,15 +39,19 @@ export function getKnowledgeStatus(workspaceRoot: string): KnowledgeStatus {
     kbIsDirectory: kbStat?.isDirectory() ?? false,
     cacheExists: Boolean(cacheStat),
     cacheIsDirectory: cacheStat?.isDirectory() ?? false,
-    kbContentState: getKbContentState(kbPath, kbStat?.isDirectory() ?? false),
+    kbContentState: kbContent.state,
+    currentEntryCount: kbContent.currentEntries,
     kbPathSource,
     cachePathSource,
   };
 }
 
-function getKbContentState(kbPath: string, kbIsDirectory: boolean): KnowledgeStatus["kbContentState"] {
+function getKbContent(
+  kbPath: string,
+  kbIsDirectory: boolean
+): { state: KnowledgeStatus["kbContentState"]; currentEntries: number } {
   if (!kbIsDirectory) {
-    return undefined;
+    return { state: undefined, currentEntries: 0 };
   }
 
   const manifest = readManifest(join(kbPath, "manifest.json"));
@@ -53,7 +59,10 @@ function getKbContentState(kbPath: string, kbIsDirectory: boolean): KnowledgeSta
   const currentEntries = getNumber(l1, "currentEntries");
   const completed = getNumber(l1, "completed");
 
-  return currentEntries > 0 || completed > 0 ? "ready" : "empty";
+  return {
+    state: currentEntries > 0 || completed > 0 ? "ready" : "empty",
+    currentEntries,
+  };
 }
 
 function readManifest(path: string): unknown {

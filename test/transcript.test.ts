@@ -130,9 +130,20 @@ describe("renderer-neutral transcript", () => {
         kbExists: true,
         kbIsDirectory: true,
         kbContentState: "ready",
+        currentEntryCount: 1,
         liveSync: { enabled: true, queued: 1, syncing: true, syncingPath: "src/index.ts" },
       })
     ).toBe("KB: live · 2 syncing");
+    expect(
+      formatStartupKnowledgeStatus({
+        ...knowledgeStatus,
+        kbExists: true,
+        kbIsDirectory: true,
+        kbContentState: "ready",
+        currentEntryCount: 1,
+        liveSync: { enabled: true, queued: 0, syncing: false },
+      })
+    ).toBe("KB: live · 1 synced");
   });
 
   it("maps persisted variants to session payloads and excludes display-only variants", () => {

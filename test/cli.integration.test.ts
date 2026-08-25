@@ -1843,6 +1843,10 @@ describe("CLI integration", () => {
     expect(await readFile(join(fixture.root, ".config", "topchester", "config.jsonc"), "utf8")).toContain(
       '"live": true'
     );
+
+    const kbStatus = await runCli(["--workspace", fixture.workspace, "kb", "status"], fixture.root);
+    expect(kbStatus.stdout).toContain("live mode: on");
+    expect(kbStatus.stdout).toContain("current files: 0");
   });
 
   it("colors the dry-run sync status token when color is enabled", async () => {

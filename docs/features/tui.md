@@ -35,6 +35,10 @@ with `/kb live on` and `/kb live off`.
 exist. It does not run a full project sync. Files enter L1 as the agent reads or
 changes them.
 
+When the live worker is idle, the footer shows the cheap manifest-backed count,
+for example `kb: live | 1 synced`. It does not show a percentage because live
+status does not walk the project to count every possible input file.
+
 ## Everyday controls
 
 - `Enter` sends a message.

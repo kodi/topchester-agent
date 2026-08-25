@@ -450,7 +450,10 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
     );
 
     return {
-      messages: formatKnowledgeCompileStatusResult(result, { formatSyncStatus: context.formatSyncStatus }),
+      messages: formatKnowledgeCompileStatusResult(result, {
+        formatSyncStatus: context.formatSyncStatus,
+        live: context.config?.knowledge?.live ?? false,
+      }),
     };
   }
 

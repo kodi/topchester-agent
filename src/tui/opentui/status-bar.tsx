@@ -85,7 +85,8 @@ function formatKnowledgeStatus(
       icon: "●",
       label: "live",
       tone: theme.success,
-      ...(active > 0 ? { syncLabel: `${active} syncing`, syncTone: theme.warning } : {}),
+      syncLabel: active > 0 ? `${active} syncing` : `${status.currentEntryCount ?? 0} synced`,
+      syncTone: active > 0 ? theme.warning : theme.success,
     };
   }
   if (status.kbContentState !== "ready") {

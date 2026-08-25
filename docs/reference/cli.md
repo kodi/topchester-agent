@@ -75,7 +75,7 @@ topchester kb reset
 | `topchester kb sync`       | Build or update L1 entries for non-clean or named files. |
 | `topchester kb live`       | Show or change the global live L1 sync preference.       |
 | `topchester kb reset`      | Delete the local knowledge base and cache.               |
-| `topchester kb status`     | Show files that are not current in the knowledge base.   |
+| `topchester kb status`     | Show current and non-clean knowledge file counts.        |
 | `topchester update`        | Update Topchester with npm, pnpm, or bun.                |
 
 ## `topchester info`
@@ -207,3 +207,6 @@ workspace has a knowledge folder. `on` initializes missing project knowledge
 folders without running a full sync. The runtime then queues successful file
 reads and writes for SHA-gated L1 processing as described in the knowledge-base
 guide.
+
+`topchester kb status` reports the live setting, current in-scope file count,
+and non-clean file count before listing files that need attention.

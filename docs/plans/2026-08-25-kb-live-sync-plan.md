@@ -462,6 +462,7 @@ plus the internal implementation checklist. Final verification passed with
 - The shipped debounce interval is 400ms.
 - Live mode does not run deferred `postProcessL1Entries`; a later idle/batch feature may add it.
 - Live mode stays enabled when `kb.summarize` is unresolved; jobs are skipped with scheduler error state and agent work continues.
+- GanTempo session `01a03aef` confirmed live sync completed one current entry while an ignored docs read was skipped. The prior status output hid the current entry and only showed the non-clean count falling from 288 to 287.
 
 ## Slice 6.1: Initialize On Enable
 
@@ -492,6 +493,38 @@ Completed 2026-08-26: both CLI and slash `kb live on` now initialize a
 missing folder structure before persisting the global setting. Verification
 passed with `mise run test-node -- test/commands.test.ts
 test/cli.integration.test.ts` and `mise run local-ci`.
+
+## Slice 6.2: Make Live Progress Visible In Status
+
+Status: `[x]` Done
+
+Goal: Make successful live L1 work clear in `/kb status` and `topchester kb status`.
+
+Why here: A real session synced one of 288 files, but the status output only showed the non-clean list shrinking to 287. The successful current entry was hidden.
+
+This slice should implement:
+
+- report whether live mode is on or off
+- report the count of current in-scope files before the non-clean count
+- keep the compact non-clean file list unchanged
+- cover CLI and slash status output
+
+Verification:
+
+```sh
+mise run test-node -- test/commands.test.ts test/cli.integration.test.ts
+mise run local-ci
+```
+
+Dependencies: Slice 6.1.
+
+Completed 2026-08-26: live status now reports the global setting, current
+in-scope file count, and non-clean count. The TUI footer shows a cheap
+manifest-backed synced count while idle and keeps the active syncing count
+while work runs. Verification passed with `mise run test-node --
+test/knowledge-compiler.test.ts test/commands.test.ts
+test/cli.integration.test.ts test/transcript.test.ts
+test/agent-runtime.test.ts` (5 files, 175 tests) and `mise run local-ci`.
 
 ## Next Slice
 

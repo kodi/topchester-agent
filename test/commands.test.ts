@@ -841,6 +841,8 @@ describe("slash commands", () => {
     expect(result.messages).toContain("KB status");
     expect(result.messages).toContain(`workspace: ${workspace}`);
     expect(result.messages).toContain(`knowledge folder: ${join(workspace, "topchester-kb")} [missing]`);
+    expect(result.messages).toContain("live mode: off");
+    expect(result.messages).toContain("current files: 0");
     expect(result.messages).toContain("non-clean files: 1");
     expect(result.messages).toContain("");
     expect(result.messages).toContain("status             size  path");

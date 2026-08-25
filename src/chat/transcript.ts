@@ -238,7 +238,7 @@ export function formatStartupKnowledgeStatus(status: KnowledgeStatus): string {
   if (!status.kbIsDirectory) return "KB: path conflict";
   if (status.liveSync?.enabled) {
     const active = status.liveSync.queued + (status.liveSync.syncing ? 1 : 0);
-    return active > 0 ? `KB: live · ${active} syncing` : "KB: live";
+    return active > 0 ? `KB: live · ${active} syncing` : `KB: live · ${status.currentEntryCount ?? 0} synced`;
   }
   if (status.kbContentState !== "ready") return "KB: empty";
   if ((status.nonCleanFileCount ?? 0) > 0) {

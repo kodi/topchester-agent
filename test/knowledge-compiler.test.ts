@@ -230,6 +230,9 @@ describe("knowledge compiler inventory", () => {
       "state: all in-scope files are current"
     );
     expect(formatKnowledgeCompileStatusResult(filterNonCleanKnowledgeCompileResult(currentResult))).toContain(
+      "current files: 1"
+    );
+    expect(formatKnowledgeCompileStatusResult(filterNonCleanKnowledgeCompileResult(currentResult))).toContain(
       "total non-clean files: 0"
     );
 

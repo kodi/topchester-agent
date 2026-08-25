@@ -533,7 +533,12 @@ function createTopchesterProgram(): Command {
         )
       );
 
-      console.log(formatKnowledgeCompileStatusResult(result, { formatSyncStatus: formatDryRunSyncStatus }).join("\n"));
+      console.log(
+        formatKnowledgeCompileStatusResult(result, {
+          formatSyncStatus: formatDryRunSyncStatus,
+          live: context.config.knowledge?.live ?? false,
+        }).join("\n")
+      );
     });
 
   program

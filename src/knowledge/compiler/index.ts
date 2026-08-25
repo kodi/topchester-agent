@@ -46,6 +46,7 @@ export interface KnowledgeCompileDryRunResult {
   gitignoreFiles: string[];
   configIgnorePathCount: number;
   files: KnowledgeCompileDryRunFile[];
+  currentFileCount?: number;
 }
 
 export interface SyncKnowledgeBaseOptions {
@@ -269,19 +270,24 @@ export function filterNonCleanKnowledgeCompileResult(
 ): KnowledgeCompileDryRunResult {
   return {
     ...result,
+    currentFileCount: result.files.filter((file) => file.syncStatus === "current").length,
     files: result.files.filter((file) => file.syncStatus !== "current"),
   };
 }
 
 export function formatKnowledgeCompileStatusResult(
   result: KnowledgeCompileDryRunResult,
-  options: { formatSyncStatus?: (status: L1FileScanStatus) => string } = {}
+  options: { formatSyncStatus?: (status: L1FileScanStatus) => string; live?: boolean } = {}
 ): string[] {
   return formatKnowledgeCompileInventoryResult(result, {
     title: "KB status",
     countLabel: "non-clean files",
     emptyState: "state: all in-scope files are current",
     formatSyncStatus: options.formatSyncStatus,
+    summaryLines: [
+      ...(options.live === undefined ? [] : [`live mode: ${options.live ? "on" : "off"}`]),
+      `current files: ${result.currentFileCount ?? result.files.filter((file) => file.syncStatus === "current").length}`,
+    ],
   });
 }
 
@@ -292,6 +298,7 @@ function formatKnowledgeCompileInventoryResult(
     countLabel: string;
     emptyState?: string;
     formatSyncStatus?: (status: L1FileScanStatus) => string;
+    summaryLines?: string[];
   }
 ): string[] {
   const fileRows = formatKnowledgeCompileFileRows(result.files, options.formatSyncStatus);
@@ -302,6 +309,7 @@ function formatKnowledgeCompileInventoryResult(
     `knowledge folder: ${result.kbPath} ${result.kbReady ? "[ok]" : "[missing]"}`,
     `gitignore files read: ${result.gitignoreFiles.length}`,
     `config ignore rules: ${result.configIgnorePathCount}`,
+    ...(options.summaryLines ?? []),
     `${options.countLabel}: ${result.files.length}`,
     ...(result.files.length === 0 && options.emptyState ? [options.emptyState] : []),
     ...(fileRows.length > 0 ? ["", ...fileRows] : []),
