@@ -125,8 +125,8 @@ New config shape, written only by `/kb live` / `topchester kb live` into global 
 ```jsonc
 {
   "knowledge": {
-    "live": true
-  }
+    "live": true,
+  },
 }
 ```
 
