@@ -31,6 +31,10 @@ being summarized. These updates come from the in-memory live worker; Topchester
 does not repeatedly walk the project to refresh that count. Turn it on or off
 with `/kb live on` and `/kb live off`.
 
+`/kb live on` initializes the empty project knowledge folders when they do not
+exist. It does not run a full project sync. Files enter L1 as the agent reads or
+changes them.
+
 ## Everyday controls
 
 - `Enter` sends a message.

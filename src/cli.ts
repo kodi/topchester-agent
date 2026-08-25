@@ -462,7 +462,17 @@ function createTopchesterProgram(): Command {
         throw new Error("Usage: topchester kb live on|off|status");
       }
       const context = createContextFromOptions(program);
+      let initialized = false;
       if (action !== "status") {
+        if (action === "on") {
+          const status = getKnowledgeStatus(context.workspaceRoot);
+          if (!status.kbExists || !status.kbIsDirectory) {
+            await ui.progress("Preparing project knowledge folders...", (report) =>
+              initializeKnowledgeBase(context.workspaceRoot, { onProgress: (event) => report(event.message) })
+            );
+            initialized = true;
+          }
+        }
         await setGlobalKnowledgeLive(action === "on");
         reloadAppBaseConfig(context);
       }
@@ -472,7 +482,7 @@ function createTopchesterProgram(): Command {
           "KB live",
           `state: ${context.config.knowledge?.live ? "on" : "off"}`,
           "config: ~/.config/topchester/config.jsonc",
-          `knowledge folder: ${status.kbExists && status.kbIsDirectory ? "ready" : "not initialized"}`,
+          `knowledge folder: ${initialized ? "initialized" : status.kbExists && status.kbIsDirectory ? "ready" : "not initialized"}`,
         ].join("\n")
       );
     });

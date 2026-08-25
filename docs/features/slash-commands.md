@@ -37,7 +37,7 @@ Common commands:
 - `/kb sync` processes non-clean files into L1 knowledge entries.
 - `/kb sync <path> [path...]` processes only the named workspace-relative files without listing the whole project.
 - `/kb sync --full` processes all in-scope project files.
-- `/kb live on`, `/kb live off`, and `/kb live status` manage the durable global live-sync preference.
+- `/kb live on`, `/kb live off`, and `/kb live status` manage the durable global live-sync preference. Turning it on initializes missing project knowledge folders without running a full sync.
 - `/kb init` creates Topchester project knowledge folders.
 - `/kb reset` deletes the local knowledge base and cache.
 

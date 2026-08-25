@@ -1826,7 +1826,7 @@ describe("CLI integration", () => {
     });
   });
 
-  it("persists and reports the global KB live flag", async () => {
+  it("initializes a missing KB, then persists and reports the global KB live flag", async () => {
     const fixture = await makeFixture();
     await mkdir(fixture.workspace, { recursive: true });
 
@@ -1835,8 +1835,10 @@ describe("CLI integration", () => {
 
     expect(enabled.stdout).toContain("KB live\nstate: on");
     expect(enabled.stdout).toContain("config: ~/.config/topchester/config.jsonc");
-    expect(enabled.stdout).toContain("knowledge folder: not initialized");
+    expect(enabled.stdout).toContain("knowledge folder: initialized");
     expect(status.stdout).toContain("state: on");
+    expect(status.stdout).toContain("knowledge folder: ready");
+    expect((await stat(join(fixture.workspace, "topchester-kb"))).isDirectory()).toBe(true);
     await expect(stat(join(fixture.workspace, "topchester.jsonc"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(await readFile(join(fixture.root, ".config", "topchester", "config.jsonc"), "utf8")).toContain(
       '"live": true'

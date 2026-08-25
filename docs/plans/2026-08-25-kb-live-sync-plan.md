@@ -16,7 +16,7 @@ This plan exists because full `/kb sync` is costly on large repos, V0 already ha
 - **Trigger on both successful `read_file` and mutations** (`edit_file`, `write_file`, and `apply_patch` through those helpers). Mutation-only would leave most explored files unsynced. Reads are how the agent "works on" a file.
 - Do **not** trigger from `grep`, `find_file`, `list_files`, or `bash`. Those can name thousands of paths without meaning the agent is working on each file.
 - SHA skip is mandatory: if the L1 entry exists, `scan_status` is `current`, and `content_hash` matches the file hash, skip the model call.
-- If there is **no project KB**, or the KB is not a directory, live mode is a no-op. Do **not** auto-run `/kb init`. Do **not** inject KB context, KB status, or "run /kb sync" text into the model prompt. The agent keeps working with empty project knowledge.
+- Turning live mode on initializes the project KB folders when they are missing. This prepares an empty L1 target without running a full sync. Missing or empty knowledge still does not inject KB setup guidance into the model prompt.
 - Context injection stays on the existing gate: only when the KB exists, is a directory, and is `ready`, and only when a context pack has matching files. Empty packs still return the original prompt.
 - No special large-repo policy: no size warnings, no coverage percent, no sharding, no auto `--full`. The user chooses live fill, dirty `/kb sync`, `--full`, or nothing.
 - Single-file sync must **not** call `listProjectFilesForL1`. That walk is a large part of current sync cost. Hash and ignore-check the requested path only.
@@ -59,7 +59,7 @@ Included:
 Out of scope:
 
 - L2/L3, graph, drift API, MCP
-- auto `/kb init`
+- a full sync when live mode initializes an empty KB
 - repo-size warnings or coverage UI
 - live sync from grep/find/list/bash
 - deleting L1 entries when `apply_patch` deletes a file (leave stale until `/kb sync --full` orphan removal)
@@ -159,7 +159,7 @@ read_file(a.ts) / edit_file(a.ts)
 
 ## Edge Cases
 
-- **No KB folder:** enqueue is a no-op. No init. No prompt text about KB.
+- **No KB folder:** `kb live on` initializes the empty folder structure. Enqueue remains a no-op until initialization succeeds. No setup text is added to the model prompt.
 - **KB exists but empty:** live may write the first L1 file. After that, status becomes `ready` and later turns may inject context packs. The turn that created the first entry still used empty context, which is correct.
 - **Live on, `kb.summarize` missing:** skip live jobs and record a scheduler error; do not fail the user turn. `/kb sync <path>` keeps today's require-model behavior.
 - **File ignored:** skip. Single-file CLI should print a clear skip reason.
@@ -462,6 +462,36 @@ plus the internal implementation checklist. Final verification passed with
 - The shipped debounce interval is 400ms.
 - Live mode does not run deferred `postProcessL1Entries`; a later idle/batch feature may add it.
 - Live mode stays enabled when `kb.summarize` is unresolved; jobs are skipped with scheduler error state and agent work continues.
+
+## Slice 6.1: Initialize On Enable
+
+Status: `[x]` Done
+
+Goal: Make `kb live on` immediately usable in a workspace with no KB folder.
+
+Why here: The first live session showed that an enabled but inert mode is surprising. Initialization only creates the folder structure, so it does not add the cost of a full repository sync.
+
+This slice should implement:
+
+- initialize missing KB folders before persisting live mode as on
+- keep `status` and `off` read-only with respect to KB folders
+- report the knowledge folder as ready after successful initialization
+- cover both the CLI and TUI slash command paths
+- keep missing and empty KB prompt injection behavior unchanged
+
+Verification:
+
+```sh
+mise run test-node -- test/commands.test.ts test/cli.integration.test.ts
+mise run local-ci
+```
+
+Dependencies: Slice 6.
+
+Completed 2026-08-26: both CLI and slash `kb live on` now initialize a
+missing folder structure before persisting the global setting. Verification
+passed with `mise run test-node -- test/commands.test.ts
+test/cli.integration.test.ts` and `mise run local-ci`.
 
 ## Next Slice
 

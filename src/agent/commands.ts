@@ -514,7 +514,15 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
     }
 
     const enabled = action === "status" ? (context.config?.knowledge?.live ?? false) : action === "on";
+    let initialized = false;
     if (action !== "status") {
+      if (enabled) {
+        const status = getKnowledgeStatus(context.workspaceRoot);
+        if (!status.kbExists || !status.kbIsDirectory) {
+          await initializeKnowledgeBase(context.workspaceRoot, { onProgress: context.onProgress });
+          initialized = true;
+        }
+      }
       await setGlobalKnowledgeLive(enabled);
     }
     const status = getKnowledgeStatus(context.workspaceRoot);
@@ -523,7 +531,7 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
         "KB live",
         `state: ${enabled ? "on" : "off"}`,
         "config: ~/.config/topchester/config.jsonc",
-        `knowledge folder: ${status.kbExists && status.kbIsDirectory ? "ready" : "not initialized"}`,
+        `knowledge folder: ${initialized ? "initialized" : status.kbExists && status.kbIsDirectory ? "ready" : "not initialized"}`,
       ],
     };
   }

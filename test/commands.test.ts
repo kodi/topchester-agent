@@ -512,7 +512,7 @@ describe("slash commands", () => {
     });
   });
 
-  it("persists /kb live globally and reports KB availability", async () => {
+  it("initializes a missing KB before enabling /kb live globally", async () => {
     const previousHome = process.env.HOME;
     const root = await mkdtemp(join(tmpdir(), "topchester-commands-live-"));
     const workspace = join(root, "workspace");
@@ -526,12 +526,30 @@ describe("slash commands", () => {
         "KB live",
         "state: on",
         "config: ~/.config/topchester/config.jsonc",
-        "knowledge folder: not initialized",
+        "knowledge folder: initialized",
       ]);
+      expect((await stat(join(workspace, "topchester-kb"))).isDirectory()).toBe(true);
       expect(await readFile(join(process.env.HOME, ".config", "topchester", "config.jsonc"), "utf8")).toContain(
         '"live": true'
       );
       expect(await readFile(join(workspace, "topchester.jsonc"), "utf8")).toBe('{ "knowledge": { "live": false } }\n');
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+    }
+  });
+
+  it("does not initialize a KB when live mode is disabled or inspected", async () => {
+    const previousHome = process.env.HOME;
+    const root = await mkdtemp(join(tmpdir(), "topchester-commands-live-off-"));
+    const workspace = join(root, "workspace");
+    process.env.HOME = join(root, "home");
+    await mkdir(workspace, { recursive: true });
+
+    try {
+      await executeSlashCommand("/kb live status", { workspaceRoot: workspace });
+      await executeSlashCommand("/kb live off", { workspaceRoot: workspace });
+      await expect(stat(join(workspace, "topchester-kb"))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;

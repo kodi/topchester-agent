@@ -203,5 +203,7 @@ behavior.
 Use `topchester kb live on`, `off`, or `status` to manage the durable personal
 live-sync preference. On/off writes `knowledge.live` in
 `~/.config/topchester/config.jsonc`; status also reports whether the current
-workspace has a knowledge folder. The runtime then queues successful file reads
-and writes for SHA-gated L1 processing as described in the knowledge-base guide.
+workspace has a knowledge folder. `on` initializes missing project knowledge
+folders without running a full sync. The runtime then queues successful file
+reads and writes for SHA-gated L1 processing as described in the knowledge-base
+guide.
