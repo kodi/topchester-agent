@@ -39,6 +39,14 @@ describe("slash commands", () => {
         description: "browse OpenRouter models",
       },
       {
+        value: "/kb-model",
+        description: "choose a model for KB summaries",
+      },
+      {
+        value: "/kb-model clear",
+        description: "use the configured KB model",
+      },
+      {
         value: "/connect",
         description: "connect a model provider",
       },
@@ -148,6 +156,14 @@ describe("slash commands", () => {
       },
     ]);
     expect(getSlashCommandSuggestions("/k")).toEqual([
+      {
+        value: "/kb-model",
+        description: "choose a model for KB summaries",
+      },
+      {
+        value: "/kb-model clear",
+        description: "use the configured KB model",
+      },
       {
         value: "/kb status",
         description: "show non-clean knowledge files",
@@ -2635,7 +2651,7 @@ function createTestContext(workspaceRoot: string): AppContext {
     workspaceRoot,
     configLoadSpec: { workspaceRoot },
     baseConfig: {},
-    runtimeConfigOverrides: { reasoningEffortByProvider: {} },
+    runtimeConfigOverrides: { modelOverrides: {}, reasoningEffortByProvider: {} },
     config: {},
     modelGateway: {
       async generateText() {

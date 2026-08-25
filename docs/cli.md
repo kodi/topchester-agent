@@ -33,6 +33,8 @@ topchester kb reset
 These options can be used with the top-level command and subcommands:
 
 - `-c, --config <path>` — select an explicit profile after workspace and user config. It shadows `TOPCHESTER_CONFIG` instead of stacking with it.
+- `-m, --model <provider/model>` — select the chat model for this TUI session.
+- `--kb-model <provider/model>` — select the KB summary model for this TUI session without changing the chat model.
 - `--workspace <path>` — use this workspace root. Defaults to the current working directory.
 - `--resume <session>` — resume a project-local session from `.agents/topchester/sessions/`. Use `latest` or an exact lowercase session ID.
 - `--dev <flag>` — enable a development-only UI or runtime flag. Can be repeated.
@@ -70,6 +72,7 @@ Common examples:
 ```sh
 topchester
 topchester --workspace ../my-app
+topchester -m openrouter/anthropic/claude-sonnet-4.5 --kb-model openrouter/google/gemini-3.1-flash-lite
 topchester --resume latest
 topchester --resume 0123456789abcdef
 ```
@@ -181,8 +184,8 @@ Runs one prompt without opening the TUI.
 Common examples:
 
 ```sh
-topchester -m openrouter/google/gemini-3.1-flash-lite
 topchester run "Read data.txt and summarize it."
+topchester run --kb-model openrouter/google/gemini-3.1-flash-lite "/kb sync"
 topchester run --json "Edit greeting.txt and change Hello to Goodbye."
 topchester run --output-json /tmp/topchester-events.jsonl "Run /kb status"
 topchester run --dangerously-auto-approve --json "Run the benchmark task."
@@ -195,6 +198,7 @@ topchester run "/skill code-review review this diff"
 Options:
 
 - `-m, --model <provider/model>` — select the model for this run using the same reference rules as the TUI.
+- `--kb-model <provider/model>` — select the KB summary model for this run without changing the chat model.
 - `--timeout <ms>` — stop the run after this many milliseconds.
 - `--json` — write JSONL run events to stdout.
 - `--output-json <path>` — write JSONL run events to a file.
@@ -216,7 +220,7 @@ Current behavior:
 - Routes slash-command prompts such as `/kb status` through the same command dispatcher used by the TUI.
 - Routes skill slash commands such as `/skills list`, `/skills inspect <name>`, `/skills reload`, `/skill <name>`, and `/<skill-name>` through the shared command dispatcher.
 - Supports inline skill mentions such as `@code-review review this diff` in normal prompts.
-- Interactive commands such as `/model`, `/connect`, `/restore`, `/queue`, and `/steer` are TUI-only. In `topchester run`, they print a short message that says to use the interactive TUI.
+- Interactive commands such as `/model`, `/kb-model`, `/connect`, `/restore`, `/queue`, and `/steer` are TUI-only. In `topchester run`, they print a short message that says to use the interactive TUI. Use `--kb-model` for a non-interactive run.
 - Does not open the interactive TUI.
 - Exits non-zero on runtime failure or timeout.
 
@@ -273,10 +277,11 @@ Current behavior:
 - Queues only files whose sync status is not `current`.
 - Writes the sync queue to `.agents/topchester-kb-cache/l1-sync-queue.json`.
 - Processes queued files with the configured `kb.summarize` model. If `kb.summarize` is not configured, it uses the `default` model when available.
+- Accepts `-m, --model <provider/model>` for a one-sync model override. The selection is not saved to a session or config file.
 - Writes one current L1 JSON entry per successfully processed file under `topchester-kb/l1-files/`.
 - Does not remove existing current L1 entries that are absent from the dirty-file queue.
 - Writes `topchester-kb/manifest.json` with sync metadata and L1 outcome counts.
-- Prints workspace, queue, manifest, count, and final state details.
+- Prints the effective KB model plus workspace, queue, manifest, count, and final state details.
 - Exits successfully when every queued non-clean file has a current L1 entry.
 - Prints partial state and exits with a non-success automation code when any queued file fails, changes during processing, or is missing.
 - Fails early for fatal setup or model configuration errors.

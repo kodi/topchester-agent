@@ -83,11 +83,19 @@ can add a choice. `/effort` and `/reasoning` set a provider-level effort overrid
 for the current session. These controls never write the effective merged config
 back to disk.
 
-The root `-m, --model` option and `topchester run -m, --model` use the same
-reference rules. Session model and effort selections survive `--resume`,
-`/restore`, and `/fork`; an explicit CLI model wins over the restored model.
-`/new` starts from the loaded JSONC defaults. For durable defaults, edit
-`models.default` or the provider's `reasoningEffort` in the intended JSONC file.
+Use `--kb-model provider/model-id` at startup or with `topchester run` to select
+only the knowledge-base summary model. Inside the TUI, `/kb-model
+provider/model-id` makes the same change, bare `/kb-model` opens the saved-choice
+picker for that slot, `/kb-model all [search]` browses OpenRouter, and
+`/kb-model clear` returns to configured fallback behavior. For one standalone
+sync, use `topchester kb sync --model provider/model-id`.
+
+The root `-m, --model`, root/run `--kb-model`, and `topchester run -m, --model`
+options use the same reference rules. Session chat, KB model, and effort
+selections survive `--resume`, `/restore`, and `/fork`; an explicit CLI choice
+wins over the restored choice for that slot. `/new` starts from the loaded JSONC
+defaults. For durable defaults, edit `models.default`, `models["kb.summarize"]`,
+or the provider's `reasoningEffort` in the intended JSONC file.
 
 For a local OpenAI-compatible proxy, including VibeProxy, a selected profile can contain:
 

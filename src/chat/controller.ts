@@ -14,6 +14,7 @@ import {
   resetRuntimeConfigOverrides,
   restoreRuntimeConfigOverrides,
   setRuntimeActiveModel,
+  setRuntimeModelOverride,
   setRuntimeReasoningEffort,
   type AppContext,
 } from "../app/context.js";
@@ -28,6 +29,7 @@ import {
   resolveModelChoice,
   type ReasoningEffort,
 } from "../config/index.js";
+import { type ModelPurpose } from "../model/index.js";
 import { fallbackOpenRouterStarterChoices, selectOpenRouterStarterChoices } from "../model/openrouter.js";
 import { createHerdrAgentReporter, type HerdrAgentReporter, type HerdrAgentState } from "../integrations/herdr.js";
 import { type SessionEventPayload } from "../session/events.js";
@@ -60,6 +62,7 @@ import {
   getSlashCommandArgs,
   isConnectCommand,
   isForkSessionCommand,
+  isKbModelCommand,
   isModelCommand,
   isNewSessionCommand,
   isReasoningEffort,
@@ -480,7 +483,7 @@ export class TopchesterTuiController implements TuiController {
         if (backpressure) await backpressure;
       }
       if (
-        this.context.runtimeConfigOverrides.activeModel !== undefined ||
+        Object.keys(this.context.runtimeConfigOverrides.modelOverrides).length > 0 ||
         Object.keys(this.context.runtimeConfigOverrides.reasoningEffortByProvider).length > 0
       ) {
         await this.persistRuntimeConfigWithWarning();
@@ -832,6 +835,10 @@ export class TopchesterTuiController implements TuiController {
       await this.submitModelCommand(command);
       return;
     }
+    if (isKbModelCommand(command)) {
+      await this.submitKbModelCommand(command);
+      return;
+    }
     if (isReasoningEffortCommand(command)) {
       await this.submitReasoningEffortCommand(command);
       return;
@@ -984,6 +991,7 @@ export class TopchesterTuiController implements TuiController {
       isNewSessionCommand(command) ||
       isConnectCommand(command) ||
       isModelCommand(command) ||
+      isKbModelCommand(command) ||
       isReasoningEffortCommand(command)
     ) {
       return undefined;
@@ -1107,6 +1115,64 @@ export class TopchesterTuiController implements TuiController {
     this.showModelPicker(query);
   }
 
+  private async submitKbModelCommand(command: string): Promise<void> {
+    await this.clearTaskPlanForNewTurn();
+    const backpressure = this.persistPayloadWithWarning(slashCommandToSessionPayload(command));
+    if (backpressure) await backpressure;
+    const args = getSlashCommandArgs(command);
+    const first = args[0]?.toLowerCase();
+    if (first === "clear" || first === "default") {
+      if (args.length > 1) {
+        this.view.addEntry(systemTranscriptEntry(formatKbModelUsageMessage()));
+        return;
+      }
+      await this.clearKbModelOverride();
+      return;
+    }
+    if (first === "all") {
+      await this.showOpenRouterCatalogPicker(args.slice(1).join(" "), "kb.summarize");
+      return;
+    }
+    const query = args.join(" ");
+    const choices = getConfiguredModelChoices(this.context.config);
+    const exact = choices.find((choice) => formatModelRef(choice) === query);
+    if (exact) {
+      await this.selectModelChoice(formatModelRef(exact), { purpose: "kb.summarize" });
+      return;
+    }
+    if (query.includes("/")) {
+      await this.selectModelChoice(query, { purpose: "kb.summarize" });
+      return;
+    }
+    if (choices.length === 0) {
+      this.view.addEntry(
+        systemTranscriptEntry(
+          args.length === 0
+            ? "No saved model choices. Enter /kb-model provider/model or use /kb-model all."
+            : formatKbModelUsageMessage()
+        )
+      );
+      return;
+    }
+    this.showModelPicker(query, "kb.summarize");
+  }
+
+  private async clearKbModelOverride(): Promise<void> {
+    try {
+      setRuntimeModelOverride(this.context, "kb.summarize", undefined);
+      await this.persistRuntimeConfigWithWarning();
+      this.view.addEntry(
+        systemTranscriptEntry(
+          `KB model override cleared. Using ${formatPurposeModelRef(this.context, "kb.summarize")}.`
+        )
+      );
+      this.view.setStatus("ready");
+    } catch (error) {
+      this.view.addEntry(systemTranscriptEntry(`KB model change failed: ${formatPlainError(error)}`));
+      this.view.setStatus("KB model change failed");
+    }
+  }
+
   private async submitReasoningEffortCommand(command: string): Promise<void> {
     await this.clearTaskPlanForNewTurn();
     const backpressure = this.persistPayloadWithWarning(slashCommandToSessionPayload(command));
@@ -1177,7 +1243,7 @@ export class TopchesterTuiController implements TuiController {
     );
   }
 
-  private showModelPicker(query = ""): void {
+  private showModelPicker(query = "", purpose: ModelPurpose = "agent.primary"): void {
     const normalizedQuery = query.trim().toLowerCase();
     const choices = getConfiguredModelChoices(this.context.config).filter((choice) => {
       const ref = formatModelRef(choice).toLowerCase();
@@ -1194,8 +1260,11 @@ export class TopchesterTuiController implements TuiController {
         kind: "choice",
         persistence: "session",
         tone: "info",
-        title: "Choose model",
-        body: `Current: ${getModelLabel(this.context)}`,
+        title: purpose === "kb.summarize" ? "Choose KB model" : "Choose model",
+        body:
+          purpose === "kb.summarize"
+            ? `Current KB model: ${formatPurposeModelRef(this.context, purpose)}`
+            : `Current: ${getModelLabel(this.context)}`,
         actions: [
           ...choices.map((choice) => {
             const ref = formatModelRef(choice);
@@ -1206,13 +1275,13 @@ export class TopchesterTuiController implements TuiController {
       },
       (action) => {
         if (action.value?.startsWith("model:")) {
-          this.startBackgroundTask("Model", () => this.selectModelChoice(action.value!.slice(6)));
+          this.startBackgroundTask("Model", () => this.selectModelChoice(action.value!.slice(6), { purpose }));
         }
       }
     );
   }
 
-  private async showOpenRouterCatalogPicker(query = ""): Promise<void> {
+  private async showOpenRouterCatalogPicker(query = "", purpose: ModelPurpose = "agent.primary"): Promise<void> {
     const busy = new ControllerBusyIndicator(this.view, {
       status: "loading models",
       promptHint: "working...",
@@ -1230,7 +1299,7 @@ export class TopchesterTuiController implements TuiController {
           kind: "choice",
           persistence: "session",
           tone: "info",
-          title: "OpenRouter models",
+          title: purpose === "kb.summarize" ? "OpenRouter KB models" : "OpenRouter models",
           body: "Picking one adds it to the global choices catalog and selects it for this session.",
           actions: [
             ...matches.map((choice) => ({
@@ -1243,7 +1312,7 @@ export class TopchesterTuiController implements TuiController {
         (action) => {
           if (action.value?.startsWith("model:")) {
             this.startBackgroundTask("Model", () =>
-              this.selectModelChoice(action.value!.slice(6), { persistChoice: true })
+              this.selectModelChoice(action.value!.slice(6), { persistChoice: true, purpose })
             );
           }
         }
@@ -1299,22 +1368,37 @@ export class TopchesterTuiController implements TuiController {
     }
   }
 
-  private async selectModelChoice(modelRef: string, options: { persistChoice?: boolean } = {}): Promise<void> {
+  private async selectModelChoice(
+    modelRef: string,
+    options: { persistChoice?: boolean; purpose?: ModelPurpose } = {}
+  ): Promise<void> {
     try {
+      const purpose = options.purpose ?? "agent.primary";
       if (options.persistChoice) {
         await configureOpenRouterGlobalProvider();
         await addGlobalModelChoices([modelRef], { prioritize: true });
         reloadAppBaseConfig(this.context);
       }
-      setRuntimeActiveModel(this.context, resolveModelChoice(this.context.config, modelRef));
-      this.view.setModelLabel(getModelLabel(this.context));
+      setRuntimeModelOverride(this.context, purpose, resolveModelChoice(this.context.config, modelRef));
+      if (purpose === "agent.primary") {
+        this.view.setModelLabel(getModelLabel(this.context));
+      }
       await this.persistRuntimeConfigWithWarning();
       await this.refreshKnowledgeFooter();
-      this.view.addEntry(systemTranscriptEntry(`Model set to ${modelRef} for this session.`));
+      this.view.addEntry(
+        systemTranscriptEntry(
+          purpose === "kb.summarize"
+            ? `KB model set to ${modelRef} for this session.`
+            : `Model set to ${modelRef} for this session.`
+        )
+      );
       this.view.setStatus("ready");
     } catch (error) {
-      this.view.addEntry(systemTranscriptEntry(`Model change failed: ${formatPlainError(error)}`));
-      this.view.setStatus("model change failed");
+      const kbModel = options.purpose === "kb.summarize";
+      this.view.addEntry(
+        systemTranscriptEntry(`${kbModel ? "KB model" : "Model"} change failed: ${formatPlainError(error)}`)
+      );
+      this.view.setStatus(kbModel ? "KB model change failed" : "model change failed");
     }
   }
 
@@ -1609,9 +1693,7 @@ export class TopchesterTuiController implements TuiController {
   private async persistRuntimeConfigWithWarning(): Promise<void> {
     const backpressure = this.persistPayloadWithWarning({
       kind: "runtime_config",
-      ...(this.context.runtimeConfigOverrides.activeModel === undefined
-        ? {}
-        : { activeModel: this.context.runtimeConfigOverrides.activeModel }),
+      modelOverrides: { ...this.context.runtimeConfigOverrides.modelOverrides },
       reasoningEffortByProvider: { ...this.context.runtimeConfigOverrides.reasoningEffortByProvider },
     });
     if (backpressure) await backpressure;
@@ -1678,4 +1760,22 @@ function formatCurrentReasoningEffortMessage(effort: ReasoningEffort | undefined
 
 function formatReasoningEffortUsageMessage(): string {
   return `Usage: /effort <${reasoningEfforts.join("|")}> or /effort clear.`;
+}
+
+function formatKbModelUsageMessage(): string {
+  return "Usage: /kb-model <provider/model>, /kb-model all [search], or /kb-model clear.";
+}
+
+function formatPurposeModelRef(context: AppContext, purpose: ModelPurpose): string {
+  const assignment = context.config.models?.assignments?.[purpose] ?? context.config.models?.assignments?.fallback;
+  if (assignment) {
+    const provider = assignment.provider ?? context.config.providers?.default;
+    return typeof provider === "string" ? `${provider}/${assignment.name}` : assignment.name;
+  }
+  try {
+    const resolved = context.modelGateway.resolveModel(purpose);
+    return `${resolved.providerId}/${resolved.modelId}`;
+  } catch {
+    return "not set";
+  }
 }

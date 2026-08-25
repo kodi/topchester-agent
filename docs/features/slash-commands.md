@@ -15,6 +15,10 @@ Common commands:
 - `/model` chooses a model for the current session from saved choices.
 - `/model <provider/model>` selects an exact model directly, even if it is not in saved choices.
 - `/model all [search]` browses OpenRouter models, adds one to the global choices catalog, and selects it for the current session.
+- `/kb-model` chooses the knowledge-base summary model from saved choices.
+- `/kb-model <provider/model>` selects an exact KB model without changing the chat model.
+- `/kb-model all [search]` browses OpenRouter models for the KB slot.
+- `/kb-model clear` or `/kb-model default` returns to configured KB/default fallback behavior.
 - `/connect` connects a model provider.
 - `/effort` shows the current reasoning effort and accepted values.
 - `/effort <none|minimal|low|medium|high|xhigh|max>` sets a session override for the active model provider.
@@ -41,8 +45,8 @@ provider `openrouter` and model `google/gemini-3.1-flash-lite`. Built-in
 OpenRouter and Codex references do not need saved provider config. Custom
 providers still do.
 
-`none` is an explicit reasoning effort value. Use `clear` or `default` when you want to remove the session override instead. Model and effort overrides survive resume, restore, and fork; `/new` returns to JSONC defaults.
+`none` is an explicit reasoning effort value. Use `clear` or `default` when you want to remove the session override instead. Chat model, KB model, and effort overrides survive resume, restore, and fork; `/new` returns to JSONC defaults.
 
 Type `/effort ` or `/reasoning ` with a trailing space to list all accepted effort values in the suggestion panel. Continue typing to narrow the list, then press `Tab` to complete the selected value.
 
-`/model`, `/connect`, `/effort`, `/reasoning`, `/new`, `/fork`, `/restore`, `/queue`, `/q`, and `/steer` are TUI-only. In `topchester run`, Topchester prints a short message that says to use the interactive TUI.
+`/model`, `/kb-model`, `/connect`, `/effort`, `/reasoning`, `/new`, `/fork`, `/restore`, `/queue`, `/q`, and `/steer` are TUI-only. In `topchester run`, Topchester prints a short message that says to use the interactive TUI. Use the `--kb-model` run option instead.

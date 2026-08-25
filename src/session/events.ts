@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { modelChoiceAssignmentSchema, reasoningEffortSchema } from "../config/index.js";
+import { modelChoiceAssignmentSchema, modelPurposeSchema, reasoningEffortSchema } from "../config/index.js";
 
 export const SESSION_EVENT_VERSION = 1;
 export const SESSION_METADATA_VERSION = 1;
@@ -108,6 +108,8 @@ const statusPayloadSchema = z.object({
 
 const runtimeConfigPayloadSchema = z.object({
   kind: z.literal("runtime_config"),
+  modelOverrides: z.partialRecord(modelPurposeSchema, modelChoiceAssignmentSchema).optional(),
+  // Read compatibility for sessions written before purpose-keyed overrides.
   activeModel: modelChoiceAssignmentSchema.optional(),
   reasoningEffortByProvider: z.record(z.string().min(1), reasoningEffortSchema),
 });

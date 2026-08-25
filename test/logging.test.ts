@@ -230,7 +230,7 @@ describe("logging", () => {
         workspaceRoot: workspace,
         configLoadSpec: { workspaceRoot: workspace },
         baseConfig: {},
-        runtimeConfigOverrides: { reasoningEffortByProvider: {} },
+        runtimeConfigOverrides: { modelOverrides: {}, reasoningEffortByProvider: {} },
         config: {},
         devFlags: new Set(),
         logger: loggerInfo.logger,

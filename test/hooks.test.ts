@@ -834,7 +834,7 @@ function createHookTestContext(workspaceRoot: string, config: TopchesterConfig):
     workspaceRoot,
     configLoadSpec: { workspaceRoot },
     baseConfig: config,
-    runtimeConfigOverrides: { reasoningEffortByProvider: {} },
+    runtimeConfigOverrides: { modelOverrides: {}, reasoningEffortByProvider: {} },
     config,
     devFlags: new Set(),
     modelGateway: {} as AppContext["modelGateway"],

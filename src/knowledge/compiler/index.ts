@@ -196,7 +196,10 @@ export async function dryRunKnowledgeCompile(
   };
 }
 
-export function formatKnowledgeSyncResult(result: KnowledgeCompileResult, options: { title?: string } = {}): string[] {
+export function formatKnowledgeSyncResult(
+  result: KnowledgeCompileResult,
+  options: { title?: string; model?: string } = {}
+): string[] {
   const l1 = result.l1 ?? {
     queued: result.queuedFiles.length,
     completed: 0,
@@ -216,6 +219,7 @@ export function formatKnowledgeSyncResult(result: KnowledgeCompileResult, option
 
   return [
     options.title ?? "KB sync",
+    ...(options.model ? [`model: ${options.model}`] : []),
     `workspace: ${result.workspaceRoot}`,
     `gitignore files read: ${result.gitignoreFiles.length}`,
     `config ignore rules: ${result.configIgnorePathCount}`,

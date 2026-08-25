@@ -87,6 +87,10 @@ export function isModelCommand(command: string): boolean {
   return name === "model" || name === "models";
 }
 
+export function isKbModelCommand(command: string): boolean {
+  return getSlashCommandName(command) === "kb-model";
+}
+
 export function isReasoningEffortCommand(command: string): boolean {
   const name = getSlashCommandName(command);
   return name === "effort" || name === "reasoning";

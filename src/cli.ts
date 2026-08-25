@@ -79,11 +79,12 @@ function createTopchesterProgram(): Command {
     .option("--workspace <path>", "workspace root", cwd())
     .option("--resume <session>", "resume a project session: latest or an exact session id")
     .option("-m, --model <model>", "use a provider/model for this session")
+    .option("--kb-model <model>", "use a provider/model for KB summaries in this session")
     .option("--dev <flag>", "enable a development flag", collectDevFlag, []);
 
   program.action(async () => {
     const context = createContextFromOptions(program);
-    const options = program.opts<{ resume?: string; model?: string }>();
+    const options = program.opts<{ resume?: string; model?: string; kbModel?: string }>();
 
     try {
       if (options.resume) {
@@ -93,9 +94,14 @@ function createTopchesterProgram(): Command {
         const runtimeConfigWarnings = restoreRuntimeConfigOverrides(context, rehydrated.runtimeConfigOverrides);
         if (options.model) {
           setRuntimeModelReference(context, options.model);
+        }
+        if (options.kbModel) {
+          setRuntimeModelReference(context, options.kbModel, "kb.summarize");
+        }
+        if (options.model || options.kbModel) {
           await session.append({
             kind: "runtime_config",
-            activeModel: context.runtimeConfigOverrides.activeModel,
+            modelOverrides: { ...context.runtimeConfigOverrides.modelOverrides },
             reasoningEffortByProvider: { ...context.runtimeConfigOverrides.reasoningEffortByProvider },
           });
         }
@@ -111,6 +117,9 @@ function createTopchesterProgram(): Command {
 
       if (options.model) {
         setRuntimeModelReference(context, options.model);
+      }
+      if (options.kbModel) {
+        setRuntimeModelReference(context, options.kbModel, "kb.summarize");
       }
       await runOpenTui(context);
     } catch (error) {
@@ -253,6 +262,7 @@ function createTopchesterProgram(): Command {
     .description("run one prompt or slash command without opening the TUI")
     .argument("<prompt...>", "prompt text or slash command")
     .option("-m, --model <model>", "use a provider/model for this run")
+    .option("--kb-model <model>", "use a provider/model for KB summaries in this run")
     .option("--timeout <ms>", "timeout for the run in milliseconds", parsePositiveInteger)
     .option("--json", "write JSONL run events to stdout")
     .option("--output-json <path>", "write JSONL run events to a file")
@@ -263,6 +273,7 @@ function createTopchesterProgram(): Command {
         promptParts: string[],
         options: {
           model?: string;
+          kbModel?: string;
           timeout?: number;
           json?: boolean;
           outputJson?: string;
@@ -271,12 +282,13 @@ function createTopchesterProgram(): Command {
         }
       ) => {
         const context = createContextFromOptions(program);
-        const globalOptions = program.opts<{ resume?: string; model?: string }>();
+        const globalOptions = program.opts<{ resume?: string; model?: string; kbModel?: string }>();
 
         try {
           await executeRunCommand(context, {
             prompt: promptParts.join(" "),
             model: options.model ?? globalOptions.model,
+            kbModel: options.kbModel ?? globalOptions.kbModel,
             timeoutMs: options.timeout,
             json: options.json,
             outputJson: options.outputJson,
@@ -356,8 +368,14 @@ function createTopchesterProgram(): Command {
     .command("sync")
     .description("sync project files into the knowledge base")
     .option("--full", "sync all in-scope files and remove orphaned L1 entries")
-    .action(async (options: { full?: boolean }) => {
+    .option("-m, --model <model>", "use a provider/model for this KB sync")
+    .action(async (options: { full?: boolean; model?: string }) => {
       const context = createContextFromOptions(program);
+      const globalOptions = program.opts<{ model?: string; kbModel?: string }>();
+      const kbModel = options.model ?? globalOptions.model ?? globalOptions.kbModel;
+      if (kbModel) {
+        setRuntimeModelReference(context, kbModel, "kb.summarize");
+      }
       const abortController = new AbortController();
       const interrupt = () => abortController.abort();
       process.on("SIGINT", interrupt);
@@ -385,7 +403,12 @@ function createTopchesterProgram(): Command {
         process.off("SIGINT", interrupt);
       }
 
-      console.log(formatKnowledgeSyncResult(result, { title: options.full ? "KB sync --full" : "KB sync" }).join("\n"));
+      console.log(
+        formatKnowledgeSyncResult(result, {
+          title: options.full ? "KB sync --full" : "KB sync",
+          model: formatResolvedModelRef(context, "kb.summarize"),
+        }).join("\n")
+      );
       if (isPartialKnowledgeCompileResult(result)) {
         process.exitCode = 2;
       }
@@ -654,6 +677,11 @@ async function openForkedSession(context: ReturnType<typeof createContextFromOpt
 
 function createContextFromOptions(program: Command) {
   return createAppContext(getContextOptionsFromProgram(program));
+}
+
+function formatResolvedModelRef(context: ReturnType<typeof createContextFromOptions>, purpose: "kb.summarize"): string {
+  const resolved = context.modelGateway.resolveModel(purpose);
+  return `${resolved.providerId}/${resolved.modelId}`;
 }
 
 function getContextOptionsFromProgram(program: Command) {

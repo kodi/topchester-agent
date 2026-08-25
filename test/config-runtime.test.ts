@@ -54,7 +54,7 @@ describe("config runtime overrides", () => {
     });
 
     const effective = applyRuntimeConfigOverrides(baseConfig, {
-      activeModel: { name: "runtime", provider: "local" },
+      modelOverrides: { "agent.primary": { name: "runtime", provider: "local" } },
       reasoningEffortByProvider: { local: "max" },
     });
 
@@ -87,13 +87,33 @@ describe("config runtime overrides", () => {
     });
   });
 
+  it("overrides only the KB model for a zero-config built-in provider", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-runtime-kb-model-"));
+    const context = createAppContext({ workspaceRoot: workspace });
+    setRuntimeModelReference(context, "openrouter/anthropic/claude-sonnet-4.5");
+    setRuntimeModelReference(context, "openrouter/google/gemini-3.1-flash-lite", "kb.summarize");
+
+    expect(context.runtimeConfigOverrides.modelOverrides["kb.summarize"]).toEqual({
+      name: "google/gemini-3.1-flash-lite",
+      provider: "openrouter",
+    });
+    expect(context.modelGateway.resolveModel("agent.primary")).toMatchObject({
+      providerId: "openrouter",
+      modelId: "anthropic/claude-sonnet-4.5",
+    });
+    expect(context.modelGateway.resolveModel("kb.summarize")).toMatchObject({
+      providerId: "openrouter",
+      modelId: "google/gemini-3.1-flash-lite",
+    });
+  });
+
   it("resolves a fully qualified runtime model ref through the shared app boundary", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-runtime-model-ref-"));
     const context = createAppContext({ workspaceRoot: workspace });
 
     setRuntimeModelReference(context, "openrouter/google/gemini-3.1-flash-lite");
 
-    expect(context.runtimeConfigOverrides.activeModel).toEqual({
+    expect(context.runtimeConfigOverrides.modelOverrides["agent.primary"]).toEqual({
       name: "google/gemini-3.1-flash-lite",
       provider: "openrouter",
     });
@@ -107,7 +127,9 @@ describe("config runtime overrides", () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-runtime-known-restore-"));
     const context = createAppContext({ workspaceRoot: workspace });
     const warnings = restoreRuntimeConfigOverrides(context, {
-      activeModel: { name: "google/gemini-3.1-flash-lite", provider: "openrouter" },
+      modelOverrides: {
+        "agent.primary": { name: "google/gemini-3.1-flash-lite", provider: "openrouter" },
+      },
       reasoningEffortByProvider: { openrouter: "high" },
     });
 
@@ -167,7 +189,7 @@ describe("config runtime overrides", () => {
     await persistBashApproval(context, "pnpm test");
     expect(context.baseConfig.tools?.bash?.allowExact).toContain("pnpm test");
     expect(context.config.tools?.bash?.allowExact).toContain("pnpm test");
-    expect(context.runtimeConfigOverrides.activeModel?.name).toBe("gpt-5.5-pro");
+    expect(context.runtimeConfigOverrides.modelOverrides["agent.primary"]?.name).toBe("gpt-5.5-pro");
 
     setRuntimeReasoningEffort(context, "openai", undefined);
     expect(context.config.providers?.openai).toMatchObject({ reasoningEffort: "low" });
@@ -185,13 +207,13 @@ describe("config runtime overrides", () => {
 
     expect(() =>
       setRuntimeConfigOverrides(context, {
-        activeModel: { name: "broken", provider: "missing" },
+        modelOverrides: { "agent.primary": { name: "broken", provider: "missing" } },
         reasoningEffortByProvider: {},
       })
     ).toThrow('provider "missing" is not configured');
     expect(context.config).toBe(previousConfig);
     expect(context.modelGateway).toBe(previousGateway);
-    expect(context.runtimeConfigOverrides.activeModel?.name).toBe("working");
+    expect(context.runtimeConfigOverrides.modelOverrides["agent.primary"]?.name).toBe("working");
   });
 
   it("drops only invalid restored entries and reports one warning per entry", async () => {
@@ -199,19 +221,22 @@ describe("config runtime overrides", () => {
     await writeFile(join(workspace, "topchester.jsonc"), JSON.stringify({ models: { default: "openrouter/base" } }));
     const context = createAppContext({ workspaceRoot: workspace });
     const warnings = restoreRuntimeConfigOverrides(context, {
-      activeModel: { name: "gone", provider: "missing-model" },
+      modelOverrides: { "agent.primary": { name: "gone", provider: "missing-model" } },
       reasoningEffortByProvider: { "openrouter": "high", "missing-effort": "low" },
     });
 
     expect(warnings).toHaveLength(2);
-    expect(context.runtimeConfigOverrides).toEqual({ reasoningEffortByProvider: { openrouter: "high" } });
+    expect(context.runtimeConfigOverrides).toEqual({
+      modelOverrides: {},
+      reasoningEffortByProvider: { openrouter: "high" },
+    });
     expect(context.config.providers?.openrouter).toMatchObject({ reasoningEffort: "high" });
   });
 
   it("creates independent empty override objects", () => {
     const first = emptyRuntimeConfigOverrides();
     first.reasoningEffortByProvider.openrouter = "high";
-    expect(emptyRuntimeConfigOverrides()).toEqual({ reasoningEffortByProvider: {} });
+    expect(emptyRuntimeConfigOverrides()).toEqual({ modelOverrides: {}, reasoningEffortByProvider: {} });
   });
 });
 

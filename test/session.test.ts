@@ -273,7 +273,9 @@ describe("session store", () => {
     expect(rehydrateSession(loaded.events)).toMatchObject({
       transcript: [{ kind: "user", persistence: "session", text: "hello" }],
       runtimeConfigOverrides: {
-        activeModel: { name: "second", provider: "openrouter" },
+        modelOverrides: {
+          "agent.primary": { name: "second", provider: "openrouter" },
+        },
         reasoningEffortByProvider: { openrouter: "max" },
       },
     });
@@ -285,12 +287,32 @@ describe("session store", () => {
     );
   });
 
+  it("rehydrates purpose-keyed runtime model overrides", async () => {
+    const workspace = await tempWorkspace();
+    const session = await createSession(workspace);
+    await session.append({
+      kind: "runtime_config",
+      modelOverrides: {
+        "agent.primary": { name: "chat", provider: "openrouter" },
+        "kb.summarize": { name: "kb", provider: "openrouter" },
+      },
+      reasoningEffortByProvider: {},
+    });
+
+    const loaded = await loadSession(workspace, session.sessionId);
+    expect(rehydrateSession(loaded.events).runtimeConfigOverrides.modelOverrides).toEqual({
+      "agent.primary": { name: "chat", provider: "openrouter" },
+      "kb.summarize": { name: "kb", provider: "openrouter" },
+    });
+  });
+
   it("rehydrates old sessions with empty runtime config overrides", async () => {
     const workspace = await tempWorkspace();
     const session = await createSession(workspace);
     await session.append({ kind: "message", role: "user", text: "old" });
 
     expect(rehydrateSession((await loadSession(workspace, session.sessionId)).events).runtimeConfigOverrides).toEqual({
+      modelOverrides: {},
       reasoningEffortByProvider: {},
     });
   });

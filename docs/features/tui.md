@@ -73,3 +73,9 @@ Interactive startup checks the configured `agent.fast` model and knowledge-base
 path health. If model config is missing, start with `-m provider/model`, enter
 `/model provider/model`, run `/connect openrouter`, or edit JSONC. A CLI or direct
 slash-command selection is kept in the session and does not write config.
+
+Start with `--kb-model provider/model` or enter `/kb-model provider/model` to
+use a separate model for KB summaries. Bare `/kb-model` opens the saved-choice
+picker for that slot, and `/kb-model clear` returns to the configured KB model
+or default fallback. The KB model stays out of the permanent footer; selection
+messages and KB sync output show it when relevant.

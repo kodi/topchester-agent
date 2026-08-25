@@ -1,4 +1,4 @@
-import { ModelGateway, type ModelGatewayConfig } from "../model/index.js";
+import { ModelGateway, type ModelGatewayConfig, type ModelPurpose } from "../model/index.js";
 import {
   ensureGlobalTopchesterConfigFile,
   loadTopchesterConfigFromSpec,
@@ -77,15 +77,32 @@ export function restoreRuntimeConfigOverrides(context: AppContext, overrides: Ru
 }
 
 export function setRuntimeActiveModel(context: AppContext, activeModel: ModelChoiceConfig | undefined): void {
-  const { activeModel: _currentActiveModel, ...remainingOverrides } = context.runtimeConfigOverrides;
+  setRuntimeModelOverride(context, "agent.primary", activeModel);
+}
+
+export function setRuntimeModelOverride(
+  context: AppContext,
+  purpose: ModelPurpose,
+  model: ModelChoiceConfig | undefined
+): void {
+  const modelOverrides = { ...context.runtimeConfigOverrides.modelOverrides };
+  if (model === undefined) {
+    delete modelOverrides[purpose];
+  } else {
+    modelOverrides[purpose] = model;
+  }
   setRuntimeConfigOverrides(context, {
-    ...remainingOverrides,
-    ...(activeModel === undefined ? {} : { activeModel }),
+    ...context.runtimeConfigOverrides,
+    modelOverrides,
   });
 }
 
-export function setRuntimeModelReference(context: AppContext, modelRef: string): void {
-  setRuntimeActiveModel(context, resolveModelChoice(context.baseConfig, modelRef));
+export function setRuntimeModelReference(
+  context: AppContext,
+  modelRef: string,
+  purpose: ModelPurpose = "agent.primary"
+): void {
+  setRuntimeModelOverride(context, purpose, resolveModelChoice(context.baseConfig, modelRef));
 }
 
 export function setRuntimeReasoningEffort(

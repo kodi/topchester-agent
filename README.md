@@ -83,9 +83,17 @@ Useful TUI slash commands:
 
 ## Configuration
 
-Use `-m provider/model` for a one-session selection. Add JSONC when you want a
-durable default, shared project policy, custom providers, or a separate model
-for knowledge-base summaries.
+Use `-m provider/model` for a one-session chat selection. Add
+`--kb-model provider/model` when you want a different model for knowledge-base
+summaries without writing config:
+
+```sh
+topchester -m openrouter/anthropic/claude-sonnet-4.5 \
+  --kb-model openrouter/google/gemini-3.1-flash-lite
+```
+
+Add JSONC when you want durable defaults, shared project policy, or custom
+providers.
 
 The smallest config uses one OpenRouter model for all Topchester work:
 

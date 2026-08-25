@@ -21,6 +21,11 @@ session-only selection. Run `/connect openrouter` when you want saved choices,
 or edit `~/.config/topchester/config.jsonc` for a durable default. Custom
 providers must be defined in config.
 
+To use a separate KB model without config, start with
+`--kb-model openrouter/google/gemini-3.1-flash-lite` or enter
+`/kb-model openrouter/google/gemini-3.1-flash-lite`. Use `/kb-model clear` to
+return to the configured KB model or the default fallback.
+
 For Codex ChatGPT models, run:
 
 ```sh

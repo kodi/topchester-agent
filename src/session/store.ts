@@ -480,7 +480,10 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
         break;
       case "runtime_config":
         runtimeConfigOverrides = {
-          ...(event.activeModel === undefined ? {} : { activeModel: event.activeModel }),
+          modelOverrides: {
+            ...(event.activeModel === undefined ? {} : { "agent.primary": event.activeModel }),
+            ...event.modelOverrides,
+          },
           reasoningEffortByProvider: { ...event.reasoningEffortByProvider },
         };
         break;

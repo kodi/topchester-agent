@@ -5,7 +5,8 @@ import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
 import { z } from "zod";
 import { CODEX_BACKEND_BASE_URL } from "../auth/codex.js";
 
-const modelPurposeSchema = z.enum(["agent.primary", "agent.fast", "kb.summarize", "fallback"]);
+export const modelPurposes = ["agent.primary", "agent.fast", "kb.summarize", "fallback"] as const;
+export const modelPurposeSchema = z.enum(modelPurposes);
 
 const toolProtocolSchema = z.enum(["auto", "native", "text-json", "text-xml"]);
 export const reasoningEfforts = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;

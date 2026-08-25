@@ -807,7 +807,10 @@ describe("framework-neutral TUI controller", () => {
     controller.submitCommand("/effort max");
     await controller.waitForIdle();
 
-    expect(context.runtimeConfigOverrides.activeModel).toEqual({ name: "model-b", provider: "fake" });
+    expect(context.runtimeConfigOverrides.modelOverrides["agent.primary"]).toEqual({
+      name: "model-b",
+      provider: "fake",
+    });
     expect(context.runtimeConfigOverrides.reasoningEffortByProvider).toEqual({ fake: "max" });
     expect(controller.getSnapshot().modelLabel).toContain("model-b [fake]");
     expect(controller.getSnapshot().modelLabel).toContain("effort max");
@@ -822,7 +825,7 @@ describe("framework-neutral TUI controller", () => {
     controller.submitCommand("/model openrouter/google/gemini-3.1-flash-lite");
     await controller.waitForIdle();
 
-    expect(context.runtimeConfigOverrides.activeModel).toEqual({
+    expect(context.runtimeConfigOverrides.modelOverrides["agent.primary"]).toEqual({
       name: "google/gemini-3.1-flash-lite",
       provider: "openrouter",
     });
@@ -831,6 +834,115 @@ describe("framework-neutral TUI controller", () => {
       kind: "system",
       text: "Model set to openrouter/google/gemini-3.1-flash-lite for this session.",
     });
+    await controller.dispose();
+  });
+
+  it("sets and clears a direct KB model without changing the chat model", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-direct-kb-model-"));
+    const context = createTestContext(workspace);
+    const config: TopchesterConfig = {
+      models: {
+        defaultPurpose: "agent.primary",
+        assignments: {
+          "agent.primary": { name: "chat-model", provider: "fake" },
+          "fallback": { name: "chat-model", provider: "fake" },
+        },
+      },
+      providers: {
+        fake: { type: "openai-compatible", baseURL: "https://example.invalid/v1", apiKey: "fake" },
+      },
+    };
+    context.baseConfig = config;
+    context.config = config;
+    const controller = await TopchesterTuiController.create(context, createControllerRuntime());
+    const sessionId = controller.getSnapshot().sessionId;
+
+    controller.submitCommand("/kb-model openrouter/google/gemini-3.1-flash-lite");
+    await controller.waitForIdle();
+
+    expect(context.runtimeConfigOverrides.modelOverrides["kb.summarize"]).toEqual({
+      name: "google/gemini-3.1-flash-lite",
+      provider: "openrouter",
+    });
+    expect(context.modelGateway.resolveModel("agent.primary")).toMatchObject({
+      providerId: "fake",
+      modelId: "chat-model",
+    });
+    expect(context.modelGateway.resolveModel("kb.summarize")).toMatchObject({
+      providerId: "openrouter",
+      modelId: "google/gemini-3.1-flash-lite",
+    });
+    expect(controller.getSnapshot().transcript.at(-1)).toMatchObject({
+      kind: "system",
+      text: "KB model set to openrouter/google/gemini-3.1-flash-lite for this session.",
+    });
+
+    controller.submitCommand("/kb-model clear");
+    await controller.waitForIdle();
+
+    expect(context.runtimeConfigOverrides.modelOverrides["kb.summarize"]).toBeUndefined();
+    expect(context.modelGateway.resolveModel("kb.summarize")).toMatchObject({
+      providerId: "fake",
+      modelId: "chat-model",
+    });
+    expect(controller.getSnapshot().transcript.at(-1)).toMatchObject({
+      kind: "system",
+      text: "KB model override cleared. Using fake/chat-model.",
+    });
+    await controller.dispose();
+    const loaded = await loadSession(workspace, sessionId);
+    expect(loaded.events).toContainEqual(
+      expect.objectContaining({
+        kind: "runtime_config",
+        modelOverrides: expect.objectContaining({
+          "kb.summarize": {
+            name: "google/gemini-3.1-flash-lite",
+            provider: "openrouter",
+          },
+        }),
+      })
+    );
+  });
+
+  it("uses the saved model picker for the KB model slot", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-kb-model-picker-"));
+    const context = createTestContext(workspace);
+    const config: TopchesterConfig = {
+      models: {
+        defaultPurpose: "agent.primary",
+        assignments: {
+          "agent.primary": { name: "model-a", provider: "fake" },
+          "fallback": { name: "model-a", provider: "fake" },
+        },
+        choices: [
+          { name: "model-a", provider: "fake" },
+          { name: "model-b", provider: "fake" },
+        ],
+      },
+      providers: {
+        fake: { type: "openai-compatible", baseURL: "https://example.invalid/v1", apiKey: "fake" },
+      },
+    };
+    context.baseConfig = config;
+    context.config = config;
+    const controller = await TopchesterTuiController.create(context, createControllerRuntime());
+
+    controller.submitCommand("/kb-model");
+    await controller.waitForIdle();
+    expect(controller.getSnapshot().transcript.at(-1)).toMatchObject({
+      kind: "choice",
+      title: "Choose KB model",
+      body: "Current KB model: fake/model-a",
+    });
+    controller.choose({ label: "model-b [fake]", value: "model:fake/model-b" });
+    await controller.waitForIdle();
+
+    expect(context.runtimeConfigOverrides.modelOverrides["kb.summarize"]).toEqual({
+      name: "model-b",
+      provider: "fake",
+    });
+    expect(context.modelGateway.resolveModel("agent.primary").modelId).toBe("model-a");
+    expect(context.modelGateway.resolveModel("kb.summarize").modelId).toBe("model-b");
     await controller.dispose();
   });
 
@@ -847,9 +959,11 @@ describe("framework-neutral TUI controller", () => {
     expect(loaded.events).toContainEqual(
       expect.objectContaining({
         kind: "runtime_config",
-        activeModel: {
-          name: "google/gemini-3.1-flash-lite",
-          provider: "openrouter",
+        modelOverrides: {
+          "agent.primary": {
+            name: "google/gemini-3.1-flash-lite",
+            provider: "openrouter",
+          },
         },
       })
     );

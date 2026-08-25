@@ -68,6 +68,13 @@ topchester -m openrouter/google/gemini-3.1-flash-lite
 
 This opens the terminal chat UI without writing model config. Type a request and press `Enter`.
 
+To keep a stronger chat model while using a cheaper KB model for this session:
+
+```sh
+topchester -m openrouter/anthropic/claude-sonnet-4.5 \
+  --kb-model openrouter/google/gemini-3.1-flash-lite
+```
+
 ## 4. Build The Project Knowledge Base
 
 Inside the TUI:
@@ -77,7 +84,7 @@ Inside the TUI:
 /kb sync
 ```
 
-`/kb init` creates the local Topchester folders. `/kb sync` builds `topchester-kb/`, which is the project knowledge base the agent uses for normal work. The selected session model is also available as the fallback for this work.
+`/kb init` creates the local Topchester folders. `/kb sync` builds `topchester-kb/`, which is the project knowledge base the agent uses for normal work. Use `/kb-model provider/model` to change the KB model during this session. If no KB model is selected or configured, the chat default is the fallback.
 
 For a cheap preview before compiling, run `topchester kb dry-run` in another shell.
 

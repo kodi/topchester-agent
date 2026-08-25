@@ -830,7 +830,7 @@ function createTestContext(workspaceRoot: string): AppContext {
     workspaceRoot,
     configLoadSpec: { workspaceRoot },
     baseConfig: {},
-    runtimeConfigOverrides: { reasoningEffortByProvider: {} },
+    runtimeConfigOverrides: { modelOverrides: {}, reasoningEffortByProvider: {} },
     config: {},
     modelGateway: {
       async generateText() {

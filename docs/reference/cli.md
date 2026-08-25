@@ -13,6 +13,7 @@ Common commands:
 ```sh
 topchester
 topchester -m openrouter/google/gemini-3.1-flash-lite
+topchester -m openrouter/anthropic/claude-sonnet-4.5 --kb-model openrouter/google/gemini-3.1-flash-lite
 topchester info
 topchester session debug latest
 topchester session debug 019e9029 --json
@@ -32,6 +33,7 @@ topchester mcp add github --env GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx -- npx -y @
 
 topchester kb init
 topchester kb sync
+topchester kb sync --model openrouter/google/gemini-3.1-flash-lite
 topchester kb status
 topchester kb search "post author update error"
 topchester kb context "status bar" --json
@@ -43,6 +45,7 @@ topchester kb reset
 
 - `-c, --config <path>` selects an explicit profile after workspace and user config. It shadows `TOPCHESTER_CONFIG` rather than stacking with it.
 - `-m, --model <provider/model>` selects a model for this TUI session. Built-in OpenRouter and Codex references do not require saved provider config.
+- `--kb-model <provider/model>` selects the KB summary model for this TUI session without changing the chat model.
 - `--workspace <path>` uses this workspace root. Defaults to the current working directory.
 - `--resume <session>` resumes a project-local session from `.agents/topchester/sessions/`. Use `latest` or an exact lowercase session ID.
 - `--dev <flag>` enables a development-only UI or runtime flag. Can be repeated.
@@ -164,6 +167,7 @@ topchester run /kb status
 Options:
 
 - `-m, --model <provider/model>` selects the model for this run using the same reference rules as the TUI.
+- `--kb-model <provider/model>` selects the KB summary model for this run without changing the chat model.
 - `--timeout <ms>` stops the run after this many milliseconds.
 - `--json` writes JSONL run events to stdout.
 - `--output-json <path>` writes JSONL run events to a file.
@@ -177,3 +181,9 @@ Options:
 Run JSON includes a per-run `runId`, `dangerouslyAutoApprove` and `benchmarkProfile` in the `run.started` event, and `permission_auto_approved` runtime events when a permission prompt is bypassed.
 
 The agent can use `web_fetch` during `topchester` and `topchester run` sessions to read public HTTP(S) pages, including docs, changelogs, API references, issue pages, and package notes. `web_fetch` returns markdown by default, can return plain text or HTML, blocks localhost and private-network addresses, strips credentials from URLs, and stops at cross-host redirects so the next URL is visible as a separate tool call. Raw responses over 5 MB fail, and returned text is capped at 40,000 characters with a `[truncated]` marker. The tool is available to the primary agent and general subagents, but not the read-only explore subagent.
+
+## `topchester kb sync`
+
+Add `-m, --model <provider/model>` to use that model for one standalone KB sync.
+The output names the effective KB model. This command-local selection does not
+create session state or write JSONC.

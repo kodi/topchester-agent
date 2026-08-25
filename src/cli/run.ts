@@ -24,6 +24,7 @@ import { slashCommandToSessionPayload, transcriptEntryToSessionPayload } from ".
 export interface RunCommandOptions {
   prompt: string;
   model?: string;
+  kbModel?: string;
   timeoutMs?: number;
   json?: boolean;
   outputJson?: string;
@@ -48,6 +49,9 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
   }
   if (options.model) {
     setRuntimeModelReference(context, options.model);
+  }
+  if (options.kbModel) {
+    setRuntimeModelReference(context, options.kbModel, "kb.summarize");
   }
   const runContext = withRunContext(context, runId);
   const runtime = new TopchesterAgentRuntime(runContext);
@@ -91,7 +95,7 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
     if (!options.resume) {
       await persistStartupMessages(session, runContext);
     }
-    if (options.model) {
+    if (options.model || options.kbModel) {
       await persistRuntimeConfig(session, runContext);
     }
 
@@ -222,9 +226,7 @@ async function persistStartupMessages(session: SessionHandle, context: AppContex
 async function persistRuntimeConfig(session: SessionHandle, context: AppContext): Promise<void> {
   await session.append({
     kind: "runtime_config",
-    ...(context.runtimeConfigOverrides.activeModel === undefined
-      ? {}
-      : { activeModel: context.runtimeConfigOverrides.activeModel }),
+    modelOverrides: { ...context.runtimeConfigOverrides.modelOverrides },
     reasoningEffortByProvider: { ...context.runtimeConfigOverrides.reasoningEffortByProvider },
   });
 }

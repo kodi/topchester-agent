@@ -166,8 +166,10 @@ describe("CLI integration", () => {
     expect(docs).toContain("## `topchester run`");
     expect(docs).toContain("Routes slash-command prompts such as `/kb status`");
     expect(docs).toContain(
-      "Interactive commands such as `/model`, `/connect`, `/restore`, `/queue`, and `/steer` are TUI-only"
+      "Interactive commands such as `/model`, `/kb-model`, `/connect`, `/restore`, `/queue`, and `/steer` are TUI-only"
     );
+    expect(docs).toContain("`--kb-model <provider/model>` — select the KB summary model for this run");
+    expect(docs).toContain("Accepts `-m, --model <provider/model>` for a one-sync model override");
     expect(docs).toContain("Includes a per-run `runId` in structured logs");
   });
 
@@ -179,6 +181,8 @@ describe("CLI integration", () => {
     expect(stdout).toContain("--resume <session>");
     expect(stdout).toContain("-m, --model <model>");
     expect(stdout).toContain("use a provider/model for this session");
+    expect(stdout).toContain("--kb-model <model>");
+    expect(stdout).toContain("use a provider/model for KB summaries in this session");
   });
 
   it("lists run as a top-level command", async () => {
@@ -199,6 +203,17 @@ describe("CLI integration", () => {
     expect(stdout).toContain("auto-approve prompt-gated tool calls");
     expect(stdout).toContain("-m, --model <model>");
     expect(stdout).toContain("use a provider/model for this run");
+    expect(stdout).toContain("--kb-model <model>");
+    expect(stdout).toContain("use a provider/model for KB summaries in this run");
+  });
+
+  it("lists the command-local model option for KB sync", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout } = await runCli(["kb", "sync", "--help"], fixture.root);
+
+    expect(stdout).toContain("-m, --model <model>");
+    expect(stdout).toContain("use a provider/model for this KB sync");
   });
 
   it("lists update as a top-level command", async () => {
@@ -1135,14 +1150,70 @@ describe("CLI integration", () => {
     expect(events).toContainEqual(
       expect.objectContaining({
         kind: "runtime_config",
-        activeModel: {
-          name: "google/gemini-3.1-flash-lite",
-          provider: "openrouter",
+        modelOverrides: {
+          "agent.primary": {
+            name: "google/gemini-3.1-flash-lite",
+            provider: "openrouter",
+          },
         },
       })
     );
     const globalConfig = await readFile(join(root, ".config", "topchester", "config.jsonc"), "utf8");
     expect(globalConfig).not.toContain('"providers"');
+  });
+
+  it("runs with independent chat and KB model refs from an empty config", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "topchester-cli-kb-model-ref-")));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+
+    await runCli(
+      [
+        "--workspace",
+        workspace,
+        "run",
+        "--model",
+        "openrouter/anthropic/claude-sonnet-4.5",
+        "--kb-model",
+        "openrouter/google/gemini-3.1-flash-lite",
+        "/kb",
+        "status",
+      ],
+      root,
+      { OPENROUTER_API_KEY: "test-openrouter-key" }
+    );
+
+    const [sessionId] = await readdir(join(workspace, ".agents", "topchester", "sessions"));
+    const events = (await readSessionEvents(workspace, sessionId!))
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: "runtime_config",
+        modelOverrides: {
+          "agent.primary": { name: "anthropic/claude-sonnet-4.5", provider: "openrouter" },
+          "kb.summarize": { name: "google/gemini-3.1-flash-lite", provider: "openrouter" },
+        },
+      })
+    );
+  });
+
+  it("uses a command-local model for standalone KB sync", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "topchester-cli-kb-sync-model-")));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+    await runCli(["--workspace", workspace, "kb", "init"], root);
+
+    const { stdout } = await runCli(
+      ["--workspace", workspace, "kb", "sync", "--model", "openrouter/google/gemini-3.1-flash-lite"],
+      root,
+      { OPENROUTER_API_KEY: "test-openrouter-key" }
+    );
+
+    expect(stdout).toContain("KB sync");
+    expect(stdout).toContain("model: openrouter/google/gemini-3.1-flash-lite");
+    await expect(readdir(join(workspace, ".agents", "topchester", "sessions"))).resolves.toEqual([]);
   });
 
   it("starts the TUI with a fully qualified built-in model ref from an empty config", async () => {
@@ -1167,14 +1238,50 @@ describe("CLI integration", () => {
     expect(events).toContainEqual(
       expect.objectContaining({
         kind: "runtime_config",
-        activeModel: {
-          name: "google/gemini-3.1-flash-lite",
-          provider: "openrouter",
+        modelOverrides: {
+          "agent.primary": {
+            name: "google/gemini-3.1-flash-lite",
+            provider: "openrouter",
+          },
         },
       })
     );
     const globalConfig = await readFile(join(root, ".config", "topchester", "config.jsonc"), "utf8");
     expect(globalConfig).not.toContain('"providers"');
+  });
+
+  it("persists a root KB model override without changing the configured chat model", async () => {
+    const fixture = await makeFixture();
+
+    const { stdout } = await runCli(
+      [
+        "--config",
+        fixture.config,
+        "--workspace",
+        fixture.workspace,
+        "--kb-model",
+        "openrouter/google/gemini-3.1-flash-lite",
+      ],
+      fixture.root
+    );
+
+    expect(stdout).toContain("qwen3-coder:free [openrouter]");
+    const [sessionId] = await readdir(join(fixture.workspace, ".agents", "topchester", "sessions"));
+    const events = (await readSessionEvents(fixture.workspace, sessionId!))
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: "runtime_config",
+        modelOverrides: {
+          "kb.summarize": {
+            name: "google/gemini-3.1-flash-lite",
+            provider: "openrouter",
+          },
+        },
+      })
+    );
   });
 
   it("lets an explicit root model override a resumed session model", async () => {
@@ -1202,6 +1309,45 @@ describe("CLI integration", () => {
 
     expect(stdout).toContain("google/gemini-3.1-flash-lite [openrouter]");
     expect(stdout).not.toContain("older-model [openrouter]");
+  });
+
+  it("lets an explicit root KB model override a resumed KB model", async () => {
+    const fixture = await makeFixture();
+    const session = await seedSession(fixture.workspace, "runtime root KB row");
+    await session.append({
+      kind: "runtime_config",
+      modelOverrides: {
+        "kb.summarize": { name: "older-kb-model", provider: "openrouter" },
+      },
+      reasoningEffortByProvider: {},
+    });
+
+    await runCli(
+      [
+        "--config",
+        fixture.config,
+        "--workspace",
+        fixture.workspace,
+        "--resume",
+        session.sessionId,
+        "--kb-model",
+        "openrouter/google/gemini-3.1-flash-lite",
+      ],
+      fixture.root
+    );
+
+    const events = (await readSessionEvents(fixture.workspace, session.sessionId))
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(events.findLast((event) => event.kind === "runtime_config")).toMatchObject({
+      modelOverrides: {
+        "kb.summarize": {
+          name: "google/gemini-3.1-flash-lite",
+          provider: "openrouter",
+        },
+      },
+    });
   });
 
   it("lets an explicit run model override the resumed session model", async () => {
@@ -1236,9 +1382,55 @@ describe("CLI integration", () => {
       .map((line) => JSON.parse(line) as Record<string, unknown>);
     expect(events.findLast((event) => event.kind === "runtime_config")).toMatchObject({
       kind: "runtime_config",
-      activeModel: {
-        name: "google/gemini-3.1-flash-lite",
-        provider: "openrouter",
+      modelOverrides: {
+        "agent.primary": {
+          name: "google/gemini-3.1-flash-lite",
+          provider: "openrouter",
+        },
+      },
+      reasoningEffortByProvider: { openrouter: "high" },
+    });
+  });
+
+  it("lets an explicit run KB model override the resumed KB model", async () => {
+    const fixture = await makeFixture();
+    const session = await seedSession(fixture.workspace, "runtime KB row");
+    await session.append({
+      kind: "runtime_config",
+      modelOverrides: {
+        "kb.summarize": { name: "older-kb-model", provider: "openrouter" },
+      },
+      reasoningEffortByProvider: { openrouter: "high" },
+    });
+
+    await runCli(
+      [
+        "--config",
+        fixture.config,
+        "--workspace",
+        fixture.workspace,
+        "--resume",
+        session.sessionId,
+        "run",
+        "--kb-model",
+        "openrouter/google/gemini-3.1-flash-lite",
+        "/kb",
+        "status",
+      ],
+      fixture.root
+    );
+
+    const events = (await readSessionEvents(fixture.workspace, session.sessionId))
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(events.findLast((event) => event.kind === "runtime_config")).toMatchObject({
+      kind: "runtime_config",
+      modelOverrides: {
+        "kb.summarize": {
+          name: "google/gemini-3.1-flash-lite",
+          provider: "openrouter",
+        },
       },
       reasoningEffortByProvider: { openrouter: "high" },
     });

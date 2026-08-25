@@ -46,6 +46,17 @@ This works on a fresh install without model config. Topchester recognizes the
 built-in OpenRouter provider, and the selection stays with the session without
 editing JSONC. Use `/model openrouter/another-model` to switch directly.
 
+Use a stronger model for chat and a cheaper model for KB summaries:
+
+```sh
+topchester -m openrouter/anthropic/claude-sonnet-4.5 \
+  --kb-model openrouter/google/gemini-3.1-flash-lite
+```
+
+Inside the TUI, `/kb-model provider/model` changes only the KB model.
+`/kb-model clear` returns to the configured `kb.summarize` model, or to the
+default model when that slot is not configured.
+
 Run `/connect openrouter` when you want to save provider setup and starter model
 choices. Edit JSONC when you want a durable default or custom provider.
 

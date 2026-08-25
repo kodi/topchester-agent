@@ -3,6 +3,7 @@ import {
   hasConfiguredOrKnownModelProvider,
   materializeKnownModelProvider,
   modelChoiceAssignmentSchema,
+  modelPurposeSchema,
   reasoningEffortSchema,
   topchesterConfigSchema,
   type ModelChoiceConfig,
@@ -11,12 +12,12 @@ import {
 } from "./index.js";
 
 export const runtimeConfigOverridesSchema = z.object({
-  activeModel: modelChoiceAssignmentSchema.optional(),
+  modelOverrides: z.partialRecord(modelPurposeSchema, modelChoiceAssignmentSchema).default({}),
   reasoningEffortByProvider: z.record(z.string().min(1), reasoningEffortSchema).default({}),
 });
 
 export interface RuntimeConfigOverrides {
-  activeModel?: ModelChoiceConfig;
+  modelOverrides: Partial<Record<z.infer<typeof modelPurposeSchema>, ModelChoiceConfig>>;
   reasoningEffortByProvider: Record<string, ReasoningEffort>;
 }
 
@@ -26,7 +27,7 @@ export interface ValidatedRuntimeConfigOverrides {
 }
 
 export function emptyRuntimeConfigOverrides(): RuntimeConfigOverrides {
-  return { reasoningEffortByProvider: {} };
+  return { modelOverrides: {}, reasoningEffortByProvider: {} };
 }
 
 export function cloneRuntimeConfigOverrides(overrides: RuntimeConfigOverrides): RuntimeConfigOverrides {
@@ -40,16 +41,17 @@ export function applyRuntimeConfigOverrides(
   const overrides = runtimeConfigOverridesSchema.parse(input);
   const config = structuredClone(baseConfig);
 
-  if (overrides.activeModel) {
-    const configWithProvider = materializeKnownModelProvider(config, overrides.activeModel.provider);
-    requireProvider(configWithProvider, overrides.activeModel.provider, "model");
-    const assignment = { ...overrides.activeModel };
+  for (const [purpose, model] of Object.entries(overrides.modelOverrides)) {
+    if (!model) continue;
+    const configWithProvider = materializeKnownModelProvider(config, model.provider);
+    requireProvider(configWithProvider, model.provider, `${purpose} model`);
+    const assignment = { ...model };
     configWithProvider.models = {
       ...configWithProvider.models,
       assignments: {
         ...configWithProvider.models?.assignments,
-        "agent.primary": assignment,
-        "fallback": assignment,
+        [purpose]: assignment,
+        ...(purpose === "agent.primary" ? { fallback: assignment } : {}),
       },
     };
     Object.assign(config, configWithProvider);
@@ -76,11 +78,12 @@ export function validateRuntimeConfigOverrides(
   const warnings: string[] = [];
   const overrides = emptyRuntimeConfigOverrides();
 
-  if (requested.activeModel) {
-    if (hasConfiguredOrKnownModelProvider(baseConfig, requested.activeModel.provider)) {
-      overrides.activeModel = { ...requested.activeModel };
+  for (const [purpose, model] of Object.entries(requested.modelOverrides)) {
+    if (!model) continue;
+    if (hasConfiguredOrKnownModelProvider(baseConfig, model.provider)) {
+      overrides.modelOverrides[purpose as keyof typeof overrides.modelOverrides] = { ...model };
     } else {
-      warnings.push(`Runtime model provider "${requested.activeModel.provider}" is no longer configured.`);
+      warnings.push(`Runtime ${purpose} model provider "${model.provider}" is no longer configured.`);
     }
   }
 

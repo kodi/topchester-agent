@@ -61,6 +61,14 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
     description: "browse OpenRouter models",
   },
   {
+    value: "/kb-model",
+    description: "choose a model for KB summaries",
+  },
+  {
+    value: "/kb-model clear",
+    description: "use the configured KB model",
+  },
+  {
     value: "/connect",
     description: "connect a model provider",
   },
@@ -153,6 +161,11 @@ export const slashCommands: SlashCommand[] = [
     name: "models",
     description: "choose from configured model choices",
     execute: executeInteractiveOnlyCommand("/models"),
+  },
+  {
+    name: "kb-model",
+    description: "choose a model for KB summaries",
+    execute: executeInteractiveOnlyCommand("/kb-model"),
   },
   {
     name: "connect",
@@ -448,7 +461,10 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
             abortSignal: context.abortSignal,
             onProgress: context.onProgress,
           }),
-          { title: full ? "KB sync --full" : "KB sync" }
+          {
+            title: full ? "KB sync --full" : "KB sync",
+            model: formatConfiguredModelRef(context.config, "kb.summarize"),
+          }
         ),
       };
     } catch (error) {
@@ -464,6 +480,13 @@ async function executeKbCommand(args: string[], context: SlashCommandContext): P
   }
 
   return { messages: ["Usage: /kb init, /kb sync [--full], /kb reset, or /kb status"] };
+}
+
+function formatConfiguredModelRef(config: TopchesterConfig | undefined, purpose: "kb.summarize"): string | undefined {
+  const assignment = config?.models?.assignments?.[purpose] ?? config?.models?.assignments?.fallback;
+  if (!assignment) return undefined;
+  const provider = assignment.provider ?? config?.providers?.default;
+  return typeof provider === "string" ? `${provider}/${assignment.name}` : assignment.name;
 }
 
 function executeNewCommand(): SlashCommandResult {
