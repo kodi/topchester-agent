@@ -22,6 +22,7 @@ export interface ExecuteToolCallOptions {
   currentUserMessage?: string;
   benchmarkProfile?: BenchmarkProfile;
   readFileCache?: ToolContext["readFileCache"];
+  onFileTouch?: ToolContext["onFileTouch"];
   eventSink?: (event: AgentRuntimeEvent) => void | Promise<void>;
   abortSignal?: AbortSignal;
   toolCallId?: string;
@@ -61,6 +62,7 @@ export async function executeToolCall(
     currentUserMessage: options.currentUserMessage,
     benchmarkProfile: options.benchmarkProfile,
     readFileCache: options.readFileCache,
+    onFileTouch: options.onFileTouch,
     eventSink: options.eventSink,
     abortSignal: options.abortSignal,
     toolCallId: options.toolCallId,

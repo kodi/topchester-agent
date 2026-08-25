@@ -79,6 +79,15 @@ function formatKnowledgeStatus(
   if (!status.kbIsDirectory) {
     return { icon: "✕", label: "path conflict", tone: theme.error };
   }
+  if (status.liveSync?.enabled) {
+    const active = status.liveSync.queued + (status.liveSync.syncing ? 1 : 0);
+    return {
+      icon: "●",
+      label: "live",
+      tone: theme.success,
+      ...(active > 0 ? { syncLabel: `${active} syncing`, syncTone: theme.warning } : {}),
+    };
+  }
   if (status.kbContentState !== "ready") {
     return { icon: "○", label: "empty", tone: theme.muted };
   }

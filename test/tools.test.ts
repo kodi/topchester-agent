@@ -36,7 +36,11 @@ import { editFileArgsSchema } from "../src/agent/tools/edit-file.js";
 import { writeFileArgsSchema } from "../src/agent/tools/write-file.js";
 import { getChatSystemPrompt } from "../src/agent/prompts.js";
 import { createTopchesterLogger } from "../src/logging/index.js";
-import { clearSessionOverlay, getSessionOverlayState } from "../src/knowledge/session-overlay.js";
+import {
+  clearSessionOverlay,
+  clearSyncedSessionOverlayFile,
+  getSessionOverlayState,
+} from "../src/knowledge/session-overlay.js";
 
 describe("agent tools", () => {
   it("parses plan_todo tool calls from JSON", () => {
@@ -125,6 +129,18 @@ describe("agent tools", () => {
     expect(result.truncated).toBe(true);
     expect(result.content).toContain("read_file range: large.txt bytes 10-18 of 100000 (truncated)");
     expect(result.content).toContain("01234567");
+  });
+
+  it("notifies successful text reads but not skipped binary reads", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-touch-"));
+    const touches: Array<{ path: string; hash: string; reason: string }> = [];
+    await writeFile(join(workspace, "notes.txt"), "hello\n");
+    await writeFile(join(workspace, "program.bin"), Buffer.from([0, 1, 2]));
+
+    await readWorkspaceFile(workspace, "notes.txt", { onFileTouch: (event) => touches.push(event) });
+    await readWorkspaceFile(workspace, "program.bin", { onFileTouch: (event) => touches.push(event) });
+
+    expect(touches).toEqual([{ path: "notes.txt", hash: hashContent("hello\n"), reason: "read" }]);
   });
 
   it("dedupes repeated unchanged read_file ranges", async () => {
@@ -558,13 +574,20 @@ describe("agent tools", () => {
       throw new Error("Expected apply_patch tool call to parse.");
     }
 
-    const result = await executeToolCall(workspace, call);
+    const touches: Array<{ path: string; reason: string }> = [];
+    const result = await executeToolCall(workspace, call, {
+      onFileTouch: (event) => touches.push({ path: event.path, reason: event.reason }),
+    });
 
     expect(result.tool).toBe("apply_patch");
     expect(result.content).toContain("Edited src/example.ts");
     expect(result.content).toContain("Created src/new.ts");
     expect(await readFile(join(workspace, "src", "example.ts"), "utf8")).toBe("const enabled = true;\n");
     expect(await readFile(join(workspace, "src", "new.ts"), "utf8")).toBe("export const value = 1;\n");
+    expect(touches).toEqual([
+      { path: "src/example.ts", reason: "edit" },
+      { path: "src/new.ts", reason: "create" },
+    ]);
   });
 
   it("loads nested project instructions once for path-scoped read tools", async () => {
@@ -1585,6 +1608,29 @@ describe("agent tools", () => {
           writeSummary: "created +1",
         },
       ],
+    });
+  });
+
+  it("clears only a session overlay file whose latest hash was synced", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-tools-overlay-sync-"));
+    clearSessionOverlay(workspace);
+    const first = await writeWorkspaceFile(workspace, { path: "first.txt", content: "first\n" });
+    const second = await writeWorkspaceFile(workspace, { path: "second.txt", content: "second\n" });
+
+    expect(clearSyncedSessionOverlayFile(workspace, "first.txt", `sha256:${"0".repeat(64)}`).dirtyFiles).toHaveLength(
+      2
+    );
+    expect(clearSyncedSessionOverlayFile(workspace, "first.txt", first.hash)).toMatchObject({
+      drift: "dirty_known",
+      kbState: "needs_sync",
+      needsSync: true,
+      dirtyFiles: [{ path: "second.txt" }],
+    });
+    expect(clearSyncedSessionOverlayFile(workspace, "second.txt", second.hash)).toMatchObject({
+      drift: "clean",
+      kbState: "current",
+      needsSync: false,
+      dirtyFiles: [],
     });
   });
 

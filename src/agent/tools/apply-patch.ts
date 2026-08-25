@@ -43,7 +43,7 @@ export const applyPatchTool = defineTool<"apply_patch", ApplyPatchToolArgs, Appl
         const result = await writeWorkspaceFile(
           context.workspaceRoot,
           { path: operation.path, content: operation.content, create_parent_dirs: true },
-          { logger: context.logger }
+          { logger: context.logger, onFileTouch: context.onFileTouch }
         );
         changedFiles.push(result.path ?? operation.path);
         summaries.push(result.content);
@@ -54,7 +54,7 @@ export const applyPatchTool = defineTool<"apply_patch", ApplyPatchToolArgs, Appl
         const result = await editWorkspaceFile(
           context.workspaceRoot,
           { path: operation.path, edits: operation.edits },
-          { logger: context.logger }
+          { logger: context.logger, onFileTouch: context.onFileTouch }
         );
         changedFiles.push(result.path ?? operation.path);
         diffs.push(result.diff);

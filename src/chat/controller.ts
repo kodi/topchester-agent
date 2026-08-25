@@ -30,6 +30,7 @@ import {
   type ReasoningEffort,
 } from "../config/index.js";
 import { type ModelPurpose } from "../model/index.js";
+import { getKnowledgeStatus } from "../knowledge/status.js";
 import { fallbackOpenRouterStarterChoices, selectOpenRouterStarterChoices } from "../model/openrouter.js";
 import { createHerdrAgentReporter, type HerdrAgentReporter, type HerdrAgentState } from "../integrations/herdr.js";
 import { type SessionEventPayload } from "../session/events.js";
@@ -171,6 +172,7 @@ export class TopchesterTuiController implements TuiController {
   private disposed = false;
   private readonly herdrReporter: HerdrAgentReporter;
   private readonly stopHerdrStateSync: () => void;
+  private readonly stopKnowledgeLiveSync: () => void;
   private herdrBlocked = false;
 
   private constructor(
@@ -194,6 +196,12 @@ export class TopchesterTuiController implements TuiController {
     });
     this.herdrReporter = options.herdrReporter ?? createHerdrAgentReporter();
     this.stopHerdrStateSync = this.view.subscribe(() => this.syncHerdrState());
+    this.stopKnowledgeLiveSync =
+      runtime.subscribeKnowledgeLive?.((snapshot) => {
+        if (snapshot.enabled) {
+          this.view.setKnowledgeStatus({ ...getKnowledgeStatus(context.workspaceRoot), liveSync: snapshot });
+        }
+      }) ?? (() => undefined);
   }
 
   static async create(
@@ -353,6 +361,7 @@ export class TopchesterTuiController implements TuiController {
       this.reportSessionPersistenceFailure(session, error);
     }
     this.stopHerdrStateSync();
+    this.stopKnowledgeLiveSync();
     await this.herdrReporter.release();
     this.view.dispose();
   }
@@ -872,6 +881,8 @@ export class TopchesterTuiController implements TuiController {
         ),
         activeSession
       );
+      if (command.trim() === "/kb live on") this.stopKnowledgeStatusRefresh();
+      if (command.trim() === "/kb live off") this.startKnowledgeStatusRefresh();
     } catch (error) {
       if (cancelled) {
         this.view.batch(() => {

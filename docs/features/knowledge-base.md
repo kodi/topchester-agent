@@ -32,7 +32,9 @@ Use the TUI slash commands or the CLI:
 topchester kb init
 topchester kb status
 topchester kb sync
+topchester kb sync src/agent/runtime/index.ts
 topchester kb sync --full
+topchester kb live on
 topchester kb search "status bar"
 topchester kb context "status bar" --json
 topchester kb reset
@@ -44,6 +46,23 @@ All `topchester kb` commands operate on the current workspace's project knowledg
 sync. For a TUI session, start with `--kb-model provider/model` or use
 `/kb-model provider/model`; the choice applies to later `/kb sync` commands in
 that session without changing the chat model.
+
+Pass workspace-relative paths to `kb sync` to update only those L1 entries.
+This path checks ignore rules and the file SHA directly; it does not list the
+whole project or rebuild higher knowledge layers.
+
+`topchester kb live on` or `/kb live on` turns on the durable personal live
+mode. While it is on, successful `read_file`, `edit_file`, `write_file`, and
+apply-patch writes queue the touched file for L1 sync. Work is debounced per
+path, processed one file at a time with the `kb.summarize` model, and skipped
+when the current L1 entry already has the same SHA. Search, list, grep, and bash
+results do not enqueue files.
+
+Live mode never initializes a KB automatically. With no knowledge folder it is
+a no-op; an empty initialized folder can receive its first L1 entry. Missing or
+empty project knowledge does not add setup guidance or other KB text to the
+agent prompt. Live mode does not generate L2/L3 entries, rebuild the graph,
+remove orphan entries, or commit `topchester-kb/`.
 
 V0 treats every in-scope file content change as potentially semantic. Run `/kb status` or `topchester kb status` when you want to see files that are not current in the knowledge base.
 

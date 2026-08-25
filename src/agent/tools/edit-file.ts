@@ -13,7 +13,7 @@ import {
   isProtectedConfiguredProjectInstructionTarget,
   resolveToolProjectInstructions,
 } from "./project-instructions.js";
-import { defineTool, type ToolCall, type ToolResult } from "./types.js";
+import { defineTool, type FileTouchEvent, type ToolCall, type ToolResult } from "./types.js";
 
 export const editFileEditSchema = z.object({
   old_text: z.string().describe("Exact current file text to replace; include whitespace exactly."),
@@ -89,7 +89,10 @@ export const editFileTool = defineTool({
       };
     }
 
-    return editWorkspaceFile(context.workspaceRoot, args, { logger: context.logger });
+    return editWorkspaceFile(context.workspaceRoot, args, {
+      logger: context.logger,
+      onFileTouch: context.onFileTouch,
+    });
   },
 });
 
@@ -105,6 +108,7 @@ type LineEnding = "lf" | "crlf";
 
 export interface EditWorkspaceFileOptions {
   logger?: Logger;
+  onFileTouch?: (event: FileTouchEvent) => void;
 }
 
 export async function editWorkspaceFile(
@@ -160,7 +164,7 @@ export async function editWorkspaceFile(
       result.diff,
     ].join("\n");
 
-    return {
+    const toolResult: EditFileToolResult = {
       tool: "edit_file",
       path: scopedPath.relativePath,
       content,
@@ -172,7 +176,17 @@ export async function editWorkspaceFile(
       kbState: "needs_sync",
       editEvent,
     };
+    notifyFileTouch(options.onFileTouch, { path: scopedPath.relativePath, hash: afterHash, reason: "edit" });
+    return toolResult;
   });
+}
+
+function notifyFileTouch(callback: EditWorkspaceFileOptions["onFileTouch"], event: FileTouchEvent): void {
+  try {
+    callback?.(event);
+  } catch {
+    // Live knowledge work must never fail a successful file edit.
+  }
 }
 
 export function applyExactEdits(content: string, edits: EditFileEdit[], path = "file"): ApplyEditResult {

@@ -347,7 +347,7 @@ test/config.test.ts test/commands.test.ts test/cli.integration.test.ts` and
 
 ## Slice 4: Live Scheduler And File-Touch Hooks
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: When `knowledge.live` is true and a project KB directory exists, enqueue SHA-gated L1 sync after successful file reads and writes, without blocking the tool result.
 
@@ -379,9 +379,15 @@ mise run test -- test/knowledge-live-scheduler.test.ts test/tools.test.ts
 
 Dependencies: Slice 1, Slice 3.
 
+Completed 2026-08-25: added the shared workspace writer lock, 400ms
+latest-hash scheduler, background error snapshot, runtime and subagent sharing,
+and successful read/edit/write/apply-patch touch callbacks. Verification passed
+with `mise run test-node -- test/knowledge-live-scheduler.test.ts
+test/tools.test.ts` and `mise run local-ci`.
+
 ## Slice 5: Overlay Clear, No-Poison, Live Footer
 
-Status: `[ ]` Not started
+Status: `[x]` Done
 
 Goal: Keep human status honest and keep the model prompt clean.
 
@@ -411,6 +417,12 @@ mise run test -- test/tools.test.ts test/tui-controller.test.ts test/transcript.
 ```
 
 Dependencies: Slice 4.
+
+Completed 2026-08-25: matching live completions clear only the current overlay
+hash, missing and empty KB prompts remain unchanged, and the footer consumes
+event-driven scheduler snapshots without a live-mode inventory. Verification
+passed with `mise run test-node -- test/commands.test.ts test/tools.test.ts
+test/transcript.test.ts test/tui-controller.test.ts` and `mise run local-ci`.
 
 ## Slice 6: Public Docs And Checklist
 
@@ -448,15 +460,17 @@ Dependencies: Slices 2–5.
 
 ## Next Slice
 
-Start Slice 4.
+Start Slice 6.
 
-Add the workspace-scoped serial scheduler and successful file-touch callbacks,
-then share the scheduler with subagent tool execution.
+Finish the public documentation and implementation checklist, then run the
+complete product and repository gates.
 
 First verification:
 
 ```sh
-mise run test-node -- test/knowledge-live-scheduler.test.ts test/tools.test.ts
+mise run test
+mise run local-ci
 ```
 
-Keep live work asynchronous and do not enqueue from search, list, or bash tools.
+Record the final commands and outcomes in this plan before the documentation
+commit.

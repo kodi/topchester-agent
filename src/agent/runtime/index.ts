@@ -5,6 +5,8 @@ import { dryRunKnowledgeCompile, filterNonCleanKnowledgeCompileResult } from "..
 import { type KnowledgeProgressReporter } from "../../knowledge/progress.js";
 import { createL1ContextPack, formatL1ContextPackForPrompt } from "../../knowledge/search.js";
 import { getKnowledgeStatus, type KnowledgeStatus } from "../../knowledge/status.js";
+import { LiveL1Scheduler, type LiveL1SchedulerSnapshot } from "../../knowledge/live-scheduler.js";
+import { clearSyncedSessionOverlayFile } from "../../knowledge/session-overlay.js";
 import { executeSlashCommand, parseSlashCommand } from "../commands.js";
 import { type ConversationTurn, buildConversationPrompt } from "../conversation.js";
 import {
@@ -126,6 +128,8 @@ export interface AgentRuntime {
     onProgress?: KnowledgeProgressReporter,
     abortSignal?: AbortSignal
   ): Promise<AgentRuntimeEvent[]>;
+  getKnowledgeLiveSnapshot?(): LiveL1SchedulerSnapshot;
+  subscribeKnowledgeLive?(listener: (snapshot: LiveL1SchedulerSnapshot) => void): () => void;
 }
 
 export type AgentRuntimeEventSink = (event: AgentRuntimeEvent) => void | Promise<void>;
@@ -155,6 +159,7 @@ export interface TopchesterAgentRuntimeOptions {
   profile?: AgentProfile;
   parentPermissions?: ToolPermissionView;
   session?: SessionHandle;
+  liveL1Scheduler?: LiveL1Scheduler;
 }
 
 interface SessionTurnTiming {
@@ -212,6 +217,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
   private readonly approvedBashCommands = new Set<string>();
   private readonly startedHookSessionKeys = new Set<string>();
   private activeTurnId: string | undefined;
+  private readonly liveL1Scheduler: LiveL1Scheduler;
 
   /**
    * Holds the shared application context for one runtime instance.
@@ -222,7 +228,26 @@ export class TopchesterAgentRuntime implements AgentRuntime {
   constructor(
     private readonly context: AppContext,
     private readonly options: TopchesterAgentRuntimeOptions = {}
-  ) {}
+  ) {
+    this.liveL1Scheduler =
+      options.liveL1Scheduler ??
+      new LiveL1Scheduler({
+        workspaceRoot: context.workspaceRoot,
+        getConfig: () => context.config,
+        getModel: () => context.modelGateway,
+        logger: context.logger,
+        onSynced: (event) => clearSyncedSessionOverlayFile(context.workspaceRoot, event.path, event.hash),
+      });
+    if (context.config.knowledge?.live) this.liveL1Scheduler.start();
+  }
+
+  getKnowledgeLiveSnapshot(): LiveL1SchedulerSnapshot {
+    return this.liveL1Scheduler.snapshot();
+  }
+
+  subscribeKnowledgeLive(listener: (snapshot: LiveL1SchedulerSnapshot) => void): () => void {
+    return this.liveL1Scheduler.subscribe(listener);
+  }
 
   /**
    * Performs the lightweight startup model check used by the interactive
@@ -432,6 +457,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           profile: childProfile,
           parentPermissions,
           session: childSession,
+          liveL1Scheduler: this.liveL1Scheduler,
         }),
     });
     let lastModelId = "model";
@@ -724,6 +750,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                   rootSessionId: session?.metadata.rootSessionId,
                   turnId: timing?.turnId,
                   toolCatalog,
+                  onFileTouch: (event) => this.liveL1Scheduler.enqueue(event),
                   eventSink: (event) => taskEventQueue.push(event),
                 })
               )
@@ -860,6 +887,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 rootSessionId: session?.metadata.rootSessionId,
                 turnId: timing?.turnId,
                 toolCatalog,
+                onFileTouch: (event) => this.liveL1Scheduler.enqueue(event),
               })
             )
           );
@@ -1031,6 +1059,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
                 rootSessionId: session?.metadata.rootSessionId,
                 turnId: timing?.turnId,
                 toolCatalog,
+                onFileTouch: (event) => this.liveL1Scheduler.enqueue(event),
                 eventSink: (event) => toolEventQueue.push(event),
               }).finally(() => {
                 toolEventQueue.close();
@@ -1580,6 +1609,8 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     const parsed = parseSlashCommand(command);
     if (parsed?.name === "kb" && parsed.args[0] === "live" && ["on", "off"].includes(parsed.args[1] ?? "")) {
       reloadAppBaseConfig(this.context);
+      if (this.context.config.knowledge?.live) this.liveL1Scheduler.start();
+      else this.liveL1Scheduler.stop();
     }
     const events: AgentRuntimeEvent[] = [agentEvent.systemMessage(result.messages.join("\n"))];
 
@@ -1600,6 +1631,10 @@ export class TopchesterAgentRuntime implements AgentRuntime {
    */
   private async getKnowledgeStatusWithNonCleanFileCount(): Promise<KnowledgeStatus> {
     const status = getKnowledgeStatus(this.context.workspaceRoot);
+
+    if (this.context.config.knowledge?.live) {
+      return { ...status, liveSync: this.liveL1Scheduler.snapshot() };
+    }
 
     if (!status.kbExists || !status.kbIsDirectory || status.kbContentState !== "ready") {
       return status;

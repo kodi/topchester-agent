@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { resolveWorkspacePath } from "../app/paths.js";
+import { type LiveL1SchedulerSnapshot } from "./live-scheduler.js";
 
 export interface KnowledgeStatus {
   workspaceRoot: string;
@@ -11,6 +12,7 @@ export interface KnowledgeStatus {
   cacheExists: boolean;
   cacheIsDirectory: boolean;
   nonCleanFileCount?: number;
+  liveSync?: LiveL1SchedulerSnapshot;
   kbContentState?: "empty" | "ready";
   kbPathSource: "default" | "env";
   cachePathSource: "default" | "env";

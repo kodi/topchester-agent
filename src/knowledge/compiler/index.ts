@@ -9,6 +9,7 @@ import { createL1QueueFile, createL1QueueItem, type L1QueueItem } from "./l1.js"
 import { processL1Queue, type L1QueueProcessingSummary, type L1SummaryModel } from "./l1-processor.js";
 import { knowledgeCompilerIdentity } from "./manifest.js";
 import { getL1FileEntryPath } from "./path-encoding.js";
+import { withKnowledgeWriteLock } from "../write-lock.js";
 
 export {
   formatSyncL1FileResults,
@@ -47,16 +48,25 @@ export interface KnowledgeCompileDryRunResult {
   files: KnowledgeCompileDryRunFile[];
 }
 
+export interface SyncKnowledgeBaseOptions {
+  onProgress?: KnowledgeProgressReporter;
+  model?: L1SummaryModel;
+  requireModel?: boolean;
+  config?: TopchesterConfig;
+  full?: boolean;
+  abortSignal?: AbortSignal;
+}
+
 export async function syncKnowledgeBase(
   workspaceRoot: string,
-  options: {
-    onProgress?: KnowledgeProgressReporter;
-    model?: L1SummaryModel;
-    requireModel?: boolean;
-    config?: TopchesterConfig;
-    full?: boolean;
-    abortSignal?: AbortSignal;
-  } = {}
+  options: SyncKnowledgeBaseOptions = {}
+): Promise<KnowledgeCompileResult> {
+  return withKnowledgeWriteLock(workspaceRoot, () => syncKnowledgeBaseUnlocked(workspaceRoot, options));
+}
+
+async function syncKnowledgeBaseUnlocked(
+  workspaceRoot: string,
+  options: SyncKnowledgeBaseOptions
 ): Promise<KnowledgeCompileResult> {
   options.abortSignal?.throwIfAborted();
   options.onProgress?.({ message: "Checking project knowledge folders..." });

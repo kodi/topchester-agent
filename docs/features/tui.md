@@ -25,6 +25,12 @@ The status line shows readiness, folder name, active model, provider, and knowle
 ready · my-project · qwen/qwen3-coder [openrouter] · kb: ready
 ```
 
+When global KB live mode is on and the workspace has a knowledge folder, the
+right side shows `kb: live` and adds a syncing count while files are queued or
+being summarized. These updates come from the in-memory live worker; Topchester
+does not repeatedly walk the project to refresh that count. Turn it on or off
+with `/kb live on` and `/kb live off`.
+
 ## Everyday controls
 
 - `Enter` sends a message.

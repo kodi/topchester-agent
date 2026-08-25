@@ -870,6 +870,26 @@ describe("slash commands", () => {
     expect(event?.type === "knowledge_status" ? event.status.nonCleanFileCount : undefined).toBe(1);
   });
 
+  it("uses the scheduler snapshot instead of a dirty inventory while live is on", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-live-status-"));
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await mkdir(join(workspace, "topchester-kb"), { recursive: true });
+    await writeFile(join(workspace, "src", "index.ts"), "export const value = 1;\n");
+    await writeFile(join(workspace, "topchester-kb", "manifest.json"), '{"l1":{"currentEntries":1}}\n');
+    const context = createTestContext(workspace);
+    context.config = { ...context.config, knowledge: { live: true } };
+    context.baseConfig = context.config;
+    const runtime = new TopchesterAgentRuntime(context);
+
+    const event = (await runtime.checkKnowledgeBase()).find((candidate) => candidate.type === "knowledge_status");
+
+    const status = event?.type === "knowledge_status" ? event.status : undefined;
+    expect(status).toMatchObject({
+      liveSync: { enabled: true, queued: 0, syncing: false },
+    });
+    expect(status).not.toHaveProperty("nonCleanFileCount");
+  });
+
   it("adds startup guidance when KB files are not current", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
     await mkdir(join(workspace, "src"), { recursive: true });
@@ -1503,6 +1523,33 @@ describe("slash commands", () => {
 
     expect(prompts[0]).not.toContain("Topchester KB context pack:");
     expect(systems[0]).toContain("load the `topchester` skill with skill_view before answering");
+  });
+
+  it("keeps the model prompt unchanged when live mode has an empty KB", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-live-empty-prompt-"));
+    await mkdir(join(workspace, "topchester-kb"), { recursive: true });
+    const prompts: string[] = [];
+    const context = createTestContext(workspace);
+    context.config = { ...context.config, knowledge: { live: true } };
+    context.baseConfig = context.config;
+    context.modelGateway = {
+      async generateText(request: { prompt: string }) {
+        prompts.push(request.prompt);
+        return {
+          text: "Continue without project knowledge.",
+          providerId: "fake",
+          modelId: "fake-agent",
+          purpose: "agent.primary" as const,
+        };
+      },
+    } as unknown as AppContext["modelGateway"];
+    const runtime = new TopchesterAgentRuntime(context, { disableL1Context: false });
+
+    await runtime.submitMessage([{ role: "assistant", text: "Earlier answer." }], "keep working");
+
+    expect(prompts[0]).toBe("Assistant: Earlier answer.\n\nUser: keep working");
+    expect(prompts[0]).not.toContain("KB");
+    expect(prompts[0]).not.toContain("knowledge");
   });
 
   it("skips L1 context pack injection when disabled by env", async () => {

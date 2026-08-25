@@ -5,7 +5,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { TextDecoder } from "node:util";
 import { z } from "zod";
 import { type BenchmarkProfile } from "../benchmark-profile.js";
-import { defineTool, type ReadFileCache, type ToolCall, type ToolResult } from "./types.js";
+import { defineTool, type FileTouchEvent, type ReadFileCache, type ToolCall, type ToolResult } from "./types.js";
 import { appendProjectInstructionsToToolContent, resolveToolProjectInstructions } from "./project-instructions.js";
 
 const DEFAULT_MAX_UTF8_READ_BYTES = 512 * 1024;
@@ -45,6 +45,7 @@ export const readFileTool = defineTool({
       limit: args.limit,
       benchmarkProfile: context.benchmarkProfile,
       cache: context.readFileCache,
+      onFileTouch: context.onFileTouch,
     });
     const projectInstructions = await resolveToolProjectInstructions(context, {
       targetPath: args.path,
@@ -64,6 +65,7 @@ export interface ReadWorkspaceFileOptions {
   limit?: number;
   benchmarkProfile?: BenchmarkProfile;
   cache?: ReadFileCache;
+  onFileTouch?: (event: FileTouchEvent) => void;
 }
 
 export async function readWorkspaceFile(
@@ -191,7 +193,17 @@ export async function readWorkspaceFile(
     result.truncated = truncated;
   }
 
+  notifyFileTouch(options.onFileTouch, { path: relativePath || ".", hash, reason: "read" });
+
   return result;
+}
+
+function notifyFileTouch(callback: ReadWorkspaceFileOptions["onFileTouch"], event: FileTouchEvent): void {
+  try {
+    callback?.(event);
+  } catch {
+    // Live knowledge work must never fail a successful file read.
+  }
 }
 
 export function createReadFileCache(): ReadFileCache {

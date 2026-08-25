@@ -18,7 +18,7 @@ import {
   isProtectedConfiguredProjectInstructionTarget,
   resolveToolProjectInstructions,
 } from "./project-instructions.js";
-import { defineTool, type ToolCall, type ToolResult } from "./types.js";
+import { defineTool, type FileTouchEvent, type ToolCall, type ToolResult } from "./types.js";
 
 export const writeFileArgsSchema = z.object({
   path: z.string().describe("Workspace-relative path to write."),
@@ -53,6 +53,7 @@ export interface WriteFileToolResult extends ToolResult<"write_file"> {
 
 export interface WriteWorkspaceFileOptions {
   logger?: Logger;
+  onFileTouch?: (event: FileTouchEvent) => void;
 }
 
 export const writeFileTool = defineTool({
@@ -93,7 +94,10 @@ export const writeFileTool = defineTool({
       };
     }
 
-    return writeWorkspaceFile(context.workspaceRoot, args, { logger: context.logger });
+    return writeWorkspaceFile(context.workspaceRoot, args, {
+      logger: context.logger,
+      onFileTouch: context.onFileTouch,
+    });
   },
 });
 
@@ -163,7 +167,7 @@ export async function writeWorkspaceFile(
       .filter(Boolean)
       .join("\n");
 
-    return {
+    const toolResult: WriteFileToolResult = {
       tool: "write_file",
       path: scopedPath.relativePath,
       content,
@@ -174,6 +178,8 @@ export async function writeWorkspaceFile(
       kbState: "needs_sync",
       writeEvent,
     };
+    notifyFileTouch(options.onFileTouch, { path: scopedPath.relativePath, hash, reason: "create" });
+    return toolResult;
   });
 }
 
@@ -250,7 +256,7 @@ async function overwriteExistingFile(
     `kb_state: ${overlayState.kbState}`,
   ].join("\n");
 
-  return {
+  const toolResult: WriteFileToolResult = {
     tool: "write_file",
     path: scopedPath.relativePath,
     content,
@@ -264,6 +270,16 @@ async function overwriteExistingFile(
     kbState: "needs_sync",
     writeEvent,
   };
+  notifyFileTouch(options.onFileTouch, { path: scopedPath.relativePath, hash: afterHash, reason: "overwrite" });
+  return toolResult;
+}
+
+function notifyFileTouch(callback: WriteWorkspaceFileOptions["onFileTouch"], event: FileTouchEvent): void {
+  try {
+    callback?.(event);
+  } catch {
+    // Live knowledge work must never fail a successful file write.
+  }
 }
 
 function resolveWorkspaceScopedPath(workspaceRoot: string, path: string) {

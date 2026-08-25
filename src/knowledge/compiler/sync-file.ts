@@ -7,6 +7,7 @@ import { createL1QueueItem, type L1QueueItem } from "./l1.js";
 import { hasCurrentEntry, MAX_L1_PROMPT_FILE_BYTES, processL1QueueItem, type L1SummaryModel } from "./l1-processor.js";
 import { knowledgeCompilerIdentity } from "./manifest.js";
 import { normalizeL1FilePath } from "./path-encoding.js";
+import { withKnowledgeWriteLock } from "../write-lock.js";
 
 export type SyncL1FileStatus = "completed" | "failed" | "ignored" | "missing" | "changed" | "skipped_current";
 
@@ -27,9 +28,14 @@ export interface SyncL1FileOptions {
   config?: TopchesterConfig;
   abortSignal?: AbortSignal;
   now?: () => Date;
+  expectedHash?: string;
 }
 
 export async function syncL1File(workspaceRoot: string, options: SyncL1FileOptions): Promise<SyncL1FileResult> {
+  return withKnowledgeWriteLock(workspaceRoot, () => syncL1FileUnlocked(workspaceRoot, options));
+}
+
+async function syncL1FileUnlocked(workspaceRoot: string, options: SyncL1FileOptions): Promise<SyncL1FileResult> {
   options.abortSignal?.throwIfAborted();
   const path = normalizeL1FilePath(options.path);
   const status = getKnowledgeStatus(workspaceRoot);
@@ -46,6 +52,17 @@ export async function syncL1File(workspaceRoot: string, options: SyncL1FileOptio
 
   if (inspection.status !== "included") {
     return formatInspectionOutcome(workspaceRoot, status.kbPath, inspection);
+  }
+
+  if (options.expectedHash && inspection.file.hash !== options.expectedHash) {
+    return {
+      workspaceRoot,
+      kbPath: status.kbPath,
+      path,
+      hash: inspection.file.hash,
+      status: "changed",
+      reason: "file hash changed before sync",
+    };
   }
 
   const item = createL1QueueItem(inspection.file);
@@ -69,6 +86,15 @@ export async function syncL1File(workspaceRoot: string, options: SyncL1FileOptio
   options.abortSignal?.throwIfAborted();
 
   const resultStatus = mapQueueStatus(processed.item.status);
+  let resultHash = item.hash;
+  if (resultStatus === "changed") {
+    const latest = await inspectProjectFileForL1(workspaceRoot, path, {
+      excludedPaths: [status.kbPath, status.cachePath],
+      ignorePaths: options.config?.ignore?.paths ?? [],
+      maxBytes: MAX_L1_PROMPT_FILE_BYTES,
+    });
+    if (latest.status === "included") resultHash = latest.file.hash;
+  }
   if (resultStatus === "completed") {
     await updateManifestBestEffort(workspaceRoot, status.kbPath, options.now ?? (() => new Date()));
   }
@@ -77,7 +103,7 @@ export async function syncL1File(workspaceRoot: string, options: SyncL1FileOptio
     workspaceRoot,
     kbPath: status.kbPath,
     path,
-    hash: item.hash,
+    hash: resultHash,
     status: resultStatus,
     reason: processed.item.failure?.message,
     item: processed.item,

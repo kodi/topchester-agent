@@ -24,6 +24,13 @@ export interface ToolContext {
   eventSink?: (event: import("../events.js").AgentRuntimeEvent) => void | Promise<void>;
   abortSignal?: AbortSignal;
   toolCallId?: string;
+  onFileTouch?: (event: FileTouchEvent) => void;
+}
+
+export interface FileTouchEvent {
+  path: string;
+  hash: string;
+  reason: "read" | "create" | "edit" | "overwrite";
 }
 
 export interface ReadFileCache {

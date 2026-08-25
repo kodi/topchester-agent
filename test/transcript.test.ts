@@ -124,6 +124,15 @@ describe("renderer-neutral transcript", () => {
         nonCleanFileCount: 2,
       })
     ).toBe("KB: ready · 2 dirty");
+    expect(
+      formatStartupKnowledgeStatus({
+        ...knowledgeStatus,
+        kbExists: true,
+        kbIsDirectory: true,
+        kbContentState: "ready",
+        liveSync: { enabled: true, queued: 1, syncing: true, syncingPath: "src/index.ts" },
+      })
+    ).toBe("KB: live · 2 syncing");
   });
 
   it("maps persisted variants to session payloads and excludes display-only variants", () => {

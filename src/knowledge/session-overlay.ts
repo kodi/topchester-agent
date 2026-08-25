@@ -121,6 +121,24 @@ export function clearSessionOverlay(workspaceRoot: string): SessionOverlayState 
   return snapshotOverlay(getOrCreateOverlay(key));
 }
 
+export function clearSyncedSessionOverlayFile(
+  workspaceRoot: string,
+  path: string,
+  syncedHash: string
+): SessionOverlayState {
+  const overlay = getOrCreateOverlay(resolve(workspaceRoot));
+  const dirtyFile = overlay.dirtyFiles.get(path);
+  if (!dirtyFile || dirtyFile.afterHash !== syncedHash) return snapshotOverlay(overlay);
+
+  overlay.dirtyFiles.delete(path);
+  if (overlay.dirtyFiles.size === 0) {
+    overlay.drift = "clean";
+    overlay.kbState = "current";
+    overlay.needsSync = false;
+  }
+  return snapshotOverlay(overlay);
+}
+
 function getOrCreateOverlay(workspaceRoot: string): MutableSessionOverlayState {
   const existing = overlays.get(workspaceRoot);
 
