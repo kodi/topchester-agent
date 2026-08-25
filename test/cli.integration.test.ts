@@ -177,6 +177,8 @@ describe("CLI integration", () => {
     const { stdout } = await runCli(["--help"], fixture.root);
 
     expect(stdout).toContain("--resume <session>");
+    expect(stdout).toContain("-m, --model <model>");
+    expect(stdout).toContain("use a provider/model for this session");
   });
 
   it("lists run as a top-level command", async () => {
@@ -195,6 +197,8 @@ describe("CLI integration", () => {
 
     expect(stdout).toContain("--dangerously-auto-approve");
     expect(stdout).toContain("auto-approve prompt-gated tool calls");
+    expect(stdout).toContain("-m, --model <model>");
+    expect(stdout).toContain("use a provider/model for this run");
   });
 
   it("lists update as a top-level command", async () => {
@@ -1108,6 +1112,136 @@ describe("CLI integration", () => {
     const log = await readFile(join(fixture.workspace, ".agents", "topchester", "logs", "topchester.log"), "utf8");
     expect(log).toContain(`"runId":"${runId}"`);
     expect(log).toContain('"event":"slash_command_dispatch"');
+  });
+
+  it("runs with a fully qualified built-in model ref from an empty config", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "topchester-cli-model-ref-")));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+
+    await runCli(
+      ["--workspace", workspace, "run", "--model", "openrouter/google/gemini-3.1-flash-lite", "/kb", "status"],
+      root,
+      { OPENROUTER_API_KEY: "test-openrouter-key" }
+    );
+
+    const [sessionId] = await readdir(join(workspace, ".agents", "topchester", "sessions"));
+    expect(sessionId).toBeTruthy();
+    const events = (await readSessionEvents(workspace, sessionId!))
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: "runtime_config",
+        activeModel: {
+          name: "google/gemini-3.1-flash-lite",
+          provider: "openrouter",
+        },
+      })
+    );
+    const globalConfig = await readFile(join(root, ".config", "topchester", "config.jsonc"), "utf8");
+    expect(globalConfig).not.toContain('"providers"');
+  });
+
+  it("starts the TUI with a fully qualified built-in model ref from an empty config", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "topchester-cli-tui-model-ref-")));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+
+    const { stdout } = await runCli(
+      ["--workspace", workspace, "--model", "openrouter/google/gemini-3.1-flash-lite"],
+      root,
+      { OPENROUTER_API_KEY: "test-openrouter-key" }
+    );
+
+    expect(stdout).toContain("google/gemini-3.1-flash-lite [openrouter]");
+    const [sessionId] = await readdir(join(workspace, ".agents", "topchester", "sessions"));
+    expect(sessionId).toBeTruthy();
+    const events = (await readSessionEvents(workspace, sessionId!))
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: "runtime_config",
+        activeModel: {
+          name: "google/gemini-3.1-flash-lite",
+          provider: "openrouter",
+        },
+      })
+    );
+    const globalConfig = await readFile(join(root, ".config", "topchester", "config.jsonc"), "utf8");
+    expect(globalConfig).not.toContain('"providers"');
+  });
+
+  it("lets an explicit root model override a resumed session model", async () => {
+    const fixture = await makeFixture();
+    const session = await seedSession(fixture.workspace, "runtime row");
+    await session.append({
+      kind: "runtime_config",
+      activeModel: { name: "older-model", provider: "openrouter" },
+      reasoningEffortByProvider: {},
+    });
+
+    const { stdout } = await runCli(
+      [
+        "--config",
+        fixture.config,
+        "--workspace",
+        fixture.workspace,
+        "--resume",
+        session.sessionId,
+        "--model",
+        "openrouter/google/gemini-3.1-flash-lite",
+      ],
+      fixture.root
+    );
+
+    expect(stdout).toContain("google/gemini-3.1-flash-lite [openrouter]");
+    expect(stdout).not.toContain("older-model [openrouter]");
+  });
+
+  it("lets an explicit run model override the resumed session model", async () => {
+    const fixture = await makeFixture();
+    const session = await seedSession(fixture.workspace, "runtime run row");
+    await session.append({
+      kind: "runtime_config",
+      activeModel: { name: "older-model", provider: "openrouter" },
+      reasoningEffortByProvider: { openrouter: "high" },
+    });
+
+    await runCli(
+      [
+        "--config",
+        fixture.config,
+        "--workspace",
+        fixture.workspace,
+        "--resume",
+        session.sessionId,
+        "run",
+        "--model",
+        "openrouter/google/gemini-3.1-flash-lite",
+        "/kb",
+        "status",
+      ],
+      fixture.root
+    );
+
+    const events = (await readSessionEvents(fixture.workspace, session.sessionId))
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(events.findLast((event) => event.kind === "runtime_config")).toMatchObject({
+      kind: "runtime_config",
+      activeModel: {
+        name: "google/gemini-3.1-flash-lite",
+        provider: "openrouter",
+      },
+      reasoningEffortByProvider: { openrouter: "high" },
+    });
   });
 
   it("records the dangerous auto-approve flag in run JSON metadata", async () => {

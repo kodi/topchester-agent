@@ -8,7 +8,7 @@ import { type ConversationTurn } from "../agent/conversation.js";
 import { type AgentRuntimeEvent } from "../agent/events.js";
 import { TopchesterAgentRuntime } from "../agent/runtime/index.js";
 import { formatTaskPlanNotice } from "../agent/task-plan.js";
-import { type AppContext } from "../app/context.js";
+import { restoreRuntimeConfigOverrides, setRuntimeModelReference, type AppContext } from "../app/context.js";
 import { createHerdrAgentReporter } from "../integrations/herdr.js";
 import { createStartupTranscriptEntry } from "../chat/index.js";
 import {
@@ -42,7 +42,14 @@ interface RunJsonEvent {
 
 export async function executeRunCommand(context: AppContext, options: RunCommandOptions): Promise<void> {
   const runId = randomUUID();
-  const runContext = withRunContext(withModelOverride(context, options.model), runId);
+  if (options.resume) {
+    const loaded = await loadSession(context.workspaceRoot, options.resume);
+    restoreRuntimeConfigOverrides(context, rehydrateSession(loaded.events).runtimeConfigOverrides);
+  }
+  if (options.model) {
+    setRuntimeModelReference(context, options.model);
+  }
+  const runContext = withRunContext(context, runId);
   const runtime = new TopchesterAgentRuntime(runContext);
   const jsonEvents: RunJsonEvent[] = [];
   const session = await resolveRunSession(runContext.workspaceRoot, options.resume);
@@ -83,6 +90,9 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
     await herdrReporter.report({ state: "working", sessionId: session.sessionId });
     if (!options.resume) {
       await persistStartupMessages(session, runContext);
+    }
+    if (options.model) {
+      await persistRuntimeConfig(session, runContext);
     }
 
     await applyRuntimeEvents({
@@ -168,17 +178,6 @@ function withRunContext(context: AppContext, runId: string): AppContext {
   };
 }
 
-function withModelOverride(context: AppContext, model: string | undefined): AppContext {
-  if (!model) {
-    return context;
-  }
-
-  return {
-    ...context,
-    modelGateway: context.modelGateway.withModelOverride(model),
-  };
-}
-
 async function resolveRunSession(workspaceRoot: string, resume: string | undefined): Promise<SessionHandle> {
   if (!resume) {
     return createSession(workspaceRoot);
@@ -218,6 +217,16 @@ async function persistStartupMessages(session: SessionHandle, context: AppContex
   if (payload) {
     await session.append(payload);
   }
+}
+
+async function persistRuntimeConfig(session: SessionHandle, context: AppContext): Promise<void> {
+  await session.append({
+    kind: "runtime_config",
+    ...(context.runtimeConfigOverrides.activeModel === undefined
+      ? {}
+      : { activeModel: context.runtimeConfigOverrides.activeModel }),
+    reasoningEffortByProvider: { ...context.runtimeConfigOverrides.reasoningEffortByProvider },
+  });
 }
 
 async function applyRuntimeEvents(options: {

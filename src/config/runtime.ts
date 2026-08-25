@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  hasConfiguredOrKnownModelProvider,
+  materializeKnownModelProvider,
   modelChoiceAssignmentSchema,
   reasoningEffortSchema,
   topchesterConfigSchema,
@@ -39,20 +41,24 @@ export function applyRuntimeConfigOverrides(
   const config = structuredClone(baseConfig);
 
   if (overrides.activeModel) {
-    requireProvider(config, overrides.activeModel.provider, "model");
+    const configWithProvider = materializeKnownModelProvider(config, overrides.activeModel.provider);
+    requireProvider(configWithProvider, overrides.activeModel.provider, "model");
     const assignment = { ...overrides.activeModel };
-    config.models = {
-      ...config.models,
+    configWithProvider.models = {
+      ...configWithProvider.models,
       assignments: {
-        ...config.models?.assignments,
+        ...configWithProvider.models?.assignments,
         "agent.primary": assignment,
         "fallback": assignment,
       },
     };
+    Object.assign(config, configWithProvider);
   }
 
   for (const [providerId, effort] of Object.entries(overrides.reasoningEffortByProvider)) {
-    const provider = requireProvider(config, providerId, "reasoning effort");
+    const configWithProvider = materializeKnownModelProvider(config, providerId);
+    const provider = requireProvider(configWithProvider, providerId, "reasoning effort");
+    Object.assign(config, configWithProvider);
     config.providers = {
       ...config.providers,
       [providerId]: { ...provider, reasoningEffort: effort },
@@ -71,7 +77,7 @@ export function validateRuntimeConfigOverrides(
   const overrides = emptyRuntimeConfigOverrides();
 
   if (requested.activeModel) {
-    if (hasProvider(baseConfig, requested.activeModel.provider)) {
+    if (hasConfiguredOrKnownModelProvider(baseConfig, requested.activeModel.provider)) {
       overrides.activeModel = { ...requested.activeModel };
     } else {
       warnings.push(`Runtime model provider "${requested.activeModel.provider}" is no longer configured.`);
@@ -79,7 +85,7 @@ export function validateRuntimeConfigOverrides(
   }
 
   for (const [providerId, effort] of Object.entries(requested.reasoningEffortByProvider)) {
-    if (hasProvider(baseConfig, providerId)) {
+    if (hasConfiguredOrKnownModelProvider(baseConfig, providerId)) {
       overrides.reasoningEffortByProvider[providerId] = effort;
     } else {
       warnings.push(`Runtime reasoning provider "${providerId}" is no longer configured.`);
@@ -87,11 +93,6 @@ export function validateRuntimeConfigOverrides(
   }
 
   return { overrides, warnings };
-}
-
-function hasProvider(config: TopchesterConfig, providerId: string): boolean {
-  const provider = config.providers?.[providerId];
-  return typeof provider === "object" && provider !== null;
 }
 
 function requireProvider(

@@ -10,7 +10,16 @@ public: true
 
 ## Model config is missing
 
-Run `/connect openrouter` and then `/model` in the TUI, or edit `~/.config/topchester/config.jsonc` directly.
+If `OPENROUTER_API_KEY` is set, start without config:
+
+```sh
+topchester -m openrouter/google/gemini-3.1-flash-lite
+```
+
+Inside the TUI, `/model openrouter/google/gemini-3.1-flash-lite` makes the same
+session-only selection. Run `/connect openrouter` when you want saved choices,
+or edit `~/.config/topchester/config.jsonc` for a durable default. Custom
+providers must be defined in config.
 
 For Codex ChatGPT models, run:
 

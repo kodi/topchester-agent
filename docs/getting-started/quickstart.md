@@ -28,27 +28,7 @@ Then check the command:
 topchester --version
 ```
 
-## Configure a model
-
-Topchester reads personal model config from `~/.config/topchester/config.jsonc`. On first startup, Topchester creates this file with the smallest OpenRouter setup commented out:
-
-```jsonc
-// {
-//   "models": {
-//     "default": "openrouter/google/gemini-3.1-flash-lite",
-//   },
-// }
-```
-
-Uncomment it when you want to use the default OpenRouter setup:
-
-```jsonc
-{
-  "models": {
-    "default": "openrouter/google/gemini-3.1-flash-lite",
-  },
-}
-```
+## Choose a model
 
 Set the API key in your shell:
 
@@ -56,11 +36,22 @@ Set the API key in your shell:
 export OPENROUTER_API_KEY=...
 ```
 
-You can also start the TUI and run `/connect` to provision a user provider and model choices, then `/model` to select a model for the current session. Edit JSONC when you want a durable default.
+Pass a full `provider/model` reference when you start the TUI:
+
+```sh
+topchester -m openrouter/google/gemini-3.1-flash-lite
+```
+
+This works on a fresh install without model config. Topchester recognizes the
+built-in OpenRouter provider, and the selection stays with the session without
+editing JSONC. Use `/model openrouter/another-model` to switch directly.
+
+Run `/connect openrouter` when you want to save provider setup and starter model
+choices. Edit JSONC when you want a durable default or custom provider.
 
 ## Start a project
 
-From a project directory, run:
+If you already selected a durable default, start from a project directory with:
 
 ```sh
 topchester

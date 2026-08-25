@@ -181,6 +181,7 @@ Runs one prompt without opening the TUI.
 Common examples:
 
 ```sh
+topchester -m openrouter/google/gemini-3.1-flash-lite
 topchester run "Read data.txt and summarize it."
 topchester run --json "Edit greeting.txt and change Hello to Goodbye."
 topchester run --output-json /tmp/topchester-events.jsonl "Run /kb status"
@@ -193,7 +194,7 @@ topchester run "/skill code-review review this diff"
 
 Options:
 
-- `--model <model>` — override the `agent.primary` model for this run.
+- `-m, --model <provider/model>` — select the model for this run using the same reference rules as the TUI.
 - `--timeout <ms>` — stop the run after this many milliseconds.
 - `--json` — write JSONL run events to stdout.
 - `--output-json <path>` — write JSONL run events to a file.

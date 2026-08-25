@@ -15,9 +15,18 @@ npm install -g topchester-ai
 
 The installed command is `topchester`.
 
-## 2. Add A Minimal Model Config
+## 2. Set Your API Key
 
-In the project you want Topchester to work on, create `topchester.jsonc`:
+Set your API key in the shell that will run Topchester:
+
+```sh
+export OPENROUTER_API_KEY=...
+```
+
+Do not put API keys in committed config files. Use environment variables, user config, or `.topchester/config.local.jsonc` for local-only settings.
+
+You do not need model config for your first session. When you want a durable
+default, create `topchester.jsonc` in the project:
 
 ```jsonc
 {
@@ -40,14 +49,6 @@ Or use a stronger model for chat and the same Gemini model for KB summaries:
 }
 ```
 
-Then set your API key in the shell that will run Topchester:
-
-```sh
-export OPENROUTER_API_KEY=...
-```
-
-Do not put API keys in committed config files. Use environment variables, user config, or `.topchester/config.local.jsonc` for local-only settings.
-
 Topchester reads config in this order, with later entries overriding earlier ones:
 
 1. `topchester.jsonc`
@@ -57,30 +58,28 @@ Topchester reads config in this order, with later entries overriding earlier one
 
 On first startup, Topchester creates `~/.config/topchester/config.jsonc` with a commented minimal example. Uncomment it to set your personal default model, or keep shared project policy in `topchester.jsonc`.
 
-## 3. Build The Project Knowledge Base
+## 3. Start The Agent
 
-From the project root:
-
-```sh
-topchester kb init
-topchester kb sync
-```
-
-`kb init` creates the local Topchester folders. `kb sync` builds `topchester-kb/`, which is the project knowledge base the agent uses for normal work.
-
-For a cheap preview before compiling:
+From the project root, pass the model as `provider/model`:
 
 ```sh
-topchester kb dry-run
+topchester -m openrouter/google/gemini-3.1-flash-lite
 ```
 
-## 4. Start The Agent
+This opens the terminal chat UI without writing model config. Type a request and press `Enter`.
 
-```sh
-topchester
+## 4. Build The Project Knowledge Base
+
+Inside the TUI:
+
+```text
+/kb init
+/kb sync
 ```
 
-This opens the terminal chat UI. Type a request and press `Enter`.
+`/kb init` creates the local Topchester folders. `/kb sync` builds `topchester-kb/`, which is the project knowledge base the agent uses for normal work. The selected session model is also available as the fallback for this work.
+
+For a cheap preview before compiling, run `topchester kb dry-run` in another shell.
 
 Useful first commands inside the TUI:
 
@@ -99,10 +98,18 @@ ready · my-project · google/gemini-3.1-flash-lite [openrouter] · ✅ kb: read
 
 ## 5. Continue Later
 
-Plain `topchester` starts a fresh project-local session. To continue the newest saved session:
+With a durable default, plain `topchester` starts a fresh project-local session.
+To continue the newest saved session:
 
 ```sh
 topchester --resume latest
+```
+
+The model selection is part of the saved session. An explicit `-m` on resume
+wins when you want to change it:
+
+```sh
+topchester --resume latest -m openrouter/anthropic/claude-sonnet-4.5
 ```
 
 Sessions are stored under `.agents/topchester/sessions/` and should stay out of git.
@@ -112,12 +119,12 @@ Sessions are stored under `.agents/topchester/sessions/` and should stay out of 
 Use this loop for normal work:
 
 ```sh
-topchester kb status
-topchester kb sync
-topchester
+topchester -m openrouter/google/gemini-3.1-flash-lite
 ```
 
-`kb status` is cheap and shows files that are not current in the KB. `kb sync` updates only those non-clean files.
+Then use `/kb status` and `/kb sync` in the TUI. Status is cheap and shows
+files that are not current in the KB. Sync updates only those non-clean files.
+With a durable model default, the standalone `topchester kb` commands work too.
 
 ## If Something Fails
 

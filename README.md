@@ -20,34 +20,25 @@ Install the CLI:
 npm install -g topchester-ai
 ```
 
-From the project you want Topchester to work on, create `topchester.jsonc`:
-
-```jsonc
-{
-  "$schema": "https://topchester.com/schemas/config.v1.json",
-  "models": {
-    "default": "openrouter/google/gemini-3.1-flash-lite",
-  },
-}
-```
-
 Set your API key:
 
 ```sh
 export OPENROUTER_API_KEY=...
 ```
 
-Build the project knowledge base:
+Start the agent with a model reference:
 
 ```sh
-topchester kb init
-topchester kb sync
+topchester -m openrouter/google/gemini-3.1-flash-lite
 ```
 
-Start the agent:
+No model config is needed for this command. Topchester recognizes the built-in
+OpenRouter provider and keeps the selection in the session without editing JSONC.
+Inside the TUI, initialize and build the project knowledge base:
 
-```sh
-topchester
+```text
+/kb init
+/kb sync
 ```
 
 For the short setup guide, see [onboarding.md](onboarding.md).
@@ -67,8 +58,9 @@ Session folders, caches, and logs are local machine state and should not be comm
 
 ```sh
 topchester
+topchester -m openrouter/google/gemini-3.1-flash-lite
 topchester --resume latest
-topchester run "Summarize this project."
+topchester run -m openrouter/google/gemini-3.1-flash-lite "Summarize this project."
 
 topchester kb status
 topchester kb sync
@@ -90,6 +82,10 @@ Useful TUI slash commands:
 `topchester kb status` is the cheap check. It shows files that are not current in the knowledge base. `topchester kb sync` builds the KB when it is empty and updates only non-clean files afterward. Use `topchester kb sync --full` to rebuild every in-scope file and remove orphaned L1 entries.
 
 ## Configuration
+
+Use `-m provider/model` for a one-session selection. Add JSONC when you want a
+durable default, shared project policy, custom providers, or a separate model
+for knowledge-base summaries.
 
 The smallest config uses one OpenRouter model for all Topchester work:
 

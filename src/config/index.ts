@@ -478,6 +478,50 @@ export const codexProviderDefaults = {
   toolProtocol: "text-json" as const,
 };
 
+export function getKnownModelProviderConfig(
+  providerId: string
+): Exclude<NonNullable<TopchesterConfig["providers"]>[string], string> | undefined {
+  if (providerId === "openrouter") {
+    return {
+      ...openRouterProviderDefaults,
+      headers: { ...openRouterProviderDefaults.headers },
+    };
+  }
+
+  if (providerId === "codex") {
+    return { ...codexProviderDefaults };
+  }
+
+  return undefined;
+}
+
+export function materializeKnownModelProvider(config: TopchesterConfig, providerId: string): TopchesterConfig {
+  const configured = config.providers?.[providerId];
+  if (typeof configured === "object" && configured !== null) {
+    return config;
+  }
+
+  const knownProvider = getKnownModelProviderConfig(providerId);
+  if (!knownProvider) {
+    return config;
+  }
+
+  return topchesterConfigSchema.parse({
+    ...config,
+    providers: {
+      ...config.providers,
+      [providerId]: knownProvider,
+    },
+  });
+}
+
+export function hasConfiguredOrKnownModelProvider(config: TopchesterConfig, providerId: string): boolean {
+  const configured = config.providers?.[providerId];
+  return (
+    (typeof configured === "object" && configured !== null) || getKnownModelProviderConfig(providerId) !== undefined
+  );
+}
+
 export const codexStarterModelChoices = [
   "codex/gpt-5.5",
   "codex/gpt-5.4",
@@ -609,12 +653,15 @@ export function resolveModelChoice(config: TopchesterConfig, modelRef: string): 
     getKnownModelProviders(providers)
   );
 
-  if (!normalized?.provider || !normalized.model) {
+  if (!normalized?.provider) {
     throw new Error(`Could not resolve a provider for model "${modelRef}".`);
   }
 
-  const provider = providers[normalized.provider];
-  if (typeof provider !== "object" || provider === null) {
+  if (!normalized.model) {
+    throw new Error(`Model reference "${modelRef}" must include a model id after the provider.`);
+  }
+
+  if (!hasConfiguredOrKnownModelProvider(config, normalized.provider)) {
     throw new Error(`No provider configured for model provider "${normalized.provider}".`);
   }
 

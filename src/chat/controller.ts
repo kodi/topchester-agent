@@ -479,6 +479,12 @@ export class TopchesterTuiController implements TuiController {
         const backpressure = this.persistPayloadWithWarning(transcriptEntryToSessionPayload(entry));
         if (backpressure) await backpressure;
       }
+      if (
+        this.context.runtimeConfigOverrides.activeModel !== undefined ||
+        Object.keys(this.context.runtimeConfigOverrides.reasoningEffortByProvider).length > 0
+      ) {
+        await this.persistRuntimeConfigWithWarning();
+      }
     }
     await this.appendStartupRuntimeEvents(
       (await this.runtime.runSessionStartHooks?.(this.session, { isResumed })) ?? []
@@ -1081,16 +1087,24 @@ export class TopchesterTuiController implements TuiController {
     }
     const query = args.join(" ");
     const choices = getConfiguredModelChoices(this.context.config);
-    if (choices.length === 0) {
-      this.view.addEntry(systemTranscriptEntry("No model choices are set yet. Run /connect openrouter first."));
-      return;
-    }
     const exact = choices.find((choice) => formatModelRef(choice) === query);
     if (exact) {
       await this.selectModelChoice(formatModelRef(exact));
-    } else {
-      this.showModelPicker(query);
+      return;
     }
+    if (query.includes("/")) {
+      await this.selectModelChoice(query);
+      return;
+    }
+    if (choices.length === 0) {
+      this.view.addEntry(
+        systemTranscriptEntry(
+          "No saved model choices. Enter /model provider/model, use /model all, or run /connect openrouter."
+        )
+      );
+      return;
+    }
+    this.showModelPicker(query);
   }
 
   private async submitReasoningEffortCommand(command: string): Promise<void> {

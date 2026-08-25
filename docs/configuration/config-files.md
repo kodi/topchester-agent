@@ -23,7 +23,10 @@ Use `topchester.jsonc` for shared project policy. Use `~/.config/topchester/conf
 
 `.topchester/` is for state, sessions, and caches. It is not a config layer.
 
-Config files are immutable inputs while the TUI is running. Model and reasoning changes made with slash commands are session runtime overrides, not config writes. Edit the intended JSONC file when you want a durable default.
+Config files are immutable inputs while the TUI is running. Model and reasoning
+changes made with `-m`, `/model`, or reasoning commands are session runtime
+overrides, not config writes. Edit the intended JSONC file when you want a
+durable default.
 
 ## Minimal user config
 
@@ -36,6 +39,16 @@ Config files are immutable inputs while the TUI is running. Model and reasoning 
 ```
 
 Topchester automatically reads `OPENROUTER_API_KEY` for OpenRouter shorthand models.
+
+You can skip model config for a temporary OpenRouter selection:
+
+```sh
+OPENROUTER_API_KEY=... topchester -m openrouter/google/gemini-3.1-flash-lite
+```
+
+The same full reference works with `/model` and `topchester run -m`. Built-in
+OpenRouter and Codex provider defaults exist only in memory unless you explicitly
+save provider config. Other provider IDs must be configured in JSONC.
 
 On first startup, Topchester creates `~/.config/topchester/config.jsonc` if it does not exist. The file contains this minimal config as comments:
 

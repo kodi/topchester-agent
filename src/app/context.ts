@@ -2,6 +2,7 @@ import { ModelGateway, type ModelGatewayConfig } from "../model/index.js";
 import {
   ensureGlobalTopchesterConfigFile,
   loadTopchesterConfigFromSpec,
+  resolveModelChoice,
   resolveConfigLoadSpec,
   type ConfigLoadSpec,
   type ModelChoiceConfig,
@@ -81,6 +82,10 @@ export function setRuntimeActiveModel(context: AppContext, activeModel: ModelCho
     ...remainingOverrides,
     ...(activeModel === undefined ? {} : { activeModel }),
   });
+}
+
+export function setRuntimeModelReference(context: AppContext, modelRef: string): void {
+  setRuntimeActiveModel(context, resolveModelChoice(context.baseConfig, modelRef));
 }
 
 export function setRuntimeReasoningEffort(

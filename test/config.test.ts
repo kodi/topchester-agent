@@ -10,6 +10,7 @@ import {
   configureOpenRouterGlobalProvider,
   getTopchesterConfigSources,
   loadTopchesterConfig,
+  resolveModelChoice,
 } from "../src/config/index.js";
 
 const envKeys = ["HOME", "TOPCHESTER_CONFIG", "TOPCHESTER_LOG_LEVEL"] as const;
@@ -33,6 +34,25 @@ afterEach(() => {
 });
 
 describe("Topchester config loading", () => {
+  it("resolves a nested OpenRouter model ref without loaded provider config", () => {
+    expect(resolveModelChoice({}, "openrouter/google/gemini-3.1-flash-lite")).toEqual({
+      provider: "openrouter",
+      name: "google/gemini-3.1-flash-lite",
+    });
+  });
+
+  it("requires config for providers outside the built-in registry", () => {
+    expect(() => resolveModelChoice({}, "custom/model-a")).toThrow(
+      'No provider configured for model provider "custom".'
+    );
+  });
+
+  it("rejects a provider-qualified ref without a provider-native model id", () => {
+    expect(() => resolveModelChoice({}, "openrouter/")).toThrow(
+      'Model reference "openrouter/" must include a model id after the provider.'
+    );
+  });
+
   it("creates the global config directory when app context starts", async () => {
     const root = await mkdtemp(join(tmpdir(), "topchester-config-"));
     const home = join(root, "home");

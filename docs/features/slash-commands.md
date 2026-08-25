@@ -12,7 +12,8 @@ Slash commands run inside the TUI before a message is sent to the model.
 
 Common commands:
 
-- `/model` chooses a model for the current session from configured choices.
+- `/model` chooses a model for the current session from saved choices.
+- `/model <provider/model>` selects an exact model directly, even if it is not in saved choices.
 - `/model all [search]` browses OpenRouter models, adds one to the global choices catalog, and selects it for the current session.
 - `/connect` connects a model provider.
 - `/effort` shows the current reasoning effort and accepted values.
@@ -33,6 +34,12 @@ Common commands:
 - `/kb sync --full` processes all in-scope project files.
 - `/kb init` creates Topchester project knowledge folders.
 - `/kb reset` deletes the local knowledge base and cache.
+
+The first slash in a direct model reference separates the provider from the full
+model ID. For example, `/model openrouter/google/gemini-3.1-flash-lite` selects
+provider `openrouter` and model `google/gemini-3.1-flash-lite`. Built-in
+OpenRouter and Codex references do not need saved provider config. Custom
+providers still do.
 
 `none` is an explicit reasoning effort value. Use `clear` or `default` when you want to remove the session override instead. Model and effort overrides survive resume, restore, and fork; `/new` returns to JSONC defaults.
 

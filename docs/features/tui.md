@@ -69,4 +69,7 @@ This only affects interactive chat turns. The thinking text is not saved in sess
 
 ## Startup checks
 
-Interactive startup checks the configured `agent.fast` model and knowledge-base path health. If model config is missing, the TUI points you to `/connect openrouter`, `/model`, or direct config edits.
+Interactive startup checks the configured `agent.fast` model and knowledge-base
+path health. If model config is missing, start with `-m provider/model`, enter
+`/model provider/model`, run `/connect openrouter`, or edit JSONC. A CLI or direct
+slash-command selection is kept in the session and does not write config.

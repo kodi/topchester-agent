@@ -9,6 +9,7 @@ import {
   restoreRuntimeConfigOverrides,
   setRuntimeActiveModel,
   setRuntimeConfigOverrides,
+  setRuntimeModelReference,
   setRuntimeReasoningEffort,
 } from "../src/app/context.js";
 import { topchesterConfigSchema } from "../src/config/index.js";
@@ -64,6 +65,61 @@ describe("config runtime overrides", () => {
     expect(effective.providers?.local).toMatchObject({ reasoningEffort: "max" });
     expect(baseConfig.models?.assignments?.["agent.primary"]?.name).toBe("base");
     expect(baseConfig.providers?.local).toMatchObject({ reasoningEffort: "low" });
+  });
+
+  it("materializes a known provider for a zero-config runtime model", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-runtime-known-provider-"));
+    const context = createAppContext({ workspaceRoot: workspace });
+
+    setRuntimeActiveModel(context, {
+      name: "google/gemini-3.1-flash-lite",
+      provider: "openrouter",
+    });
+
+    expect(context.baseConfig.providers).toBeUndefined();
+    expect(context.config.providers?.openrouter).toMatchObject({
+      baseURL: "https://openrouter.ai/api/v1",
+      apiKeyEnv: "OPENROUTER_API_KEY",
+    });
+    expect(context.modelGateway.resolveModel()).toMatchObject({
+      providerId: "openrouter",
+      modelId: "google/gemini-3.1-flash-lite",
+    });
+  });
+
+  it("resolves a fully qualified runtime model ref through the shared app boundary", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-runtime-model-ref-"));
+    const context = createAppContext({ workspaceRoot: workspace });
+
+    setRuntimeModelReference(context, "openrouter/google/gemini-3.1-flash-lite");
+
+    expect(context.runtimeConfigOverrides.activeModel).toEqual({
+      name: "google/gemini-3.1-flash-lite",
+      provider: "openrouter",
+    });
+    expect(context.modelGateway.resolveModel()).toMatchObject({
+      providerId: "openrouter",
+      modelId: "google/gemini-3.1-flash-lite",
+    });
+  });
+
+  it("restores known-provider model and effort overrides without provider config", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-runtime-known-restore-"));
+    const context = createAppContext({ workspaceRoot: workspace });
+    const warnings = restoreRuntimeConfigOverrides(context, {
+      activeModel: { name: "google/gemini-3.1-flash-lite", provider: "openrouter" },
+      reasoningEffortByProvider: { openrouter: "high" },
+    });
+
+    expect(warnings).toEqual([]);
+    expect(context.config.providers?.openrouter).toMatchObject({
+      apiKeyEnv: "OPENROUTER_API_KEY",
+      reasoningEffort: "high",
+    });
+    expect(context.modelGateway.resolveModel()).toMatchObject({
+      providerId: "openrouter",
+      modelId: "google/gemini-3.1-flash-lite",
+    });
   });
 
   it("retains a CLI-only provider across reloads and clears to loaded defaults", async () => {

@@ -8,6 +8,19 @@ public: true
 
 # Models and providers
 
+Model references use `provider/model-id`. The first slash separates the provider,
+so nested model IDs such as `openrouter/google/gemini-3.1-flash-lite` work as-is.
+
+For a temporary selection, no model config is needed:
+
+```sh
+OPENROUTER_API_KEY=... topchester -m openrouter/google/gemini-3.1-flash-lite
+```
+
+OpenRouter and Codex are built-in providers. Topchester can materialize their
+provider defaults in memory when a CLI or slash-command reference uses them.
+Custom provider IDs must be defined under `providers` in JSONC.
+
 Topchester has three user-facing model slots:
 
 - `default` runs the main agent and fills in unspecified model work.
@@ -63,9 +76,18 @@ Prefer `apiKeyEnv` over `apiKey` so secrets stay out of config files.
 
 ## Interactive selection
 
-`/model` and `/models` select the primary model for the current session. `/effort` and `/reasoning` set a provider-level effort override for the current session. These controls work with providers loaded from workspace, user, `TOPCHESTER_CONFIG`, or `--config` profiles and never write the effective merged config back to disk.
+`/model provider/model-id` selects that exact model for the current session,
+even when it is not in `models.choices`. Bare `/model` and `/models` open the
+saved choices picker. `/model all [search]` browses the OpenRouter catalog and
+can add a choice. `/effort` and `/reasoning` set a provider-level effort override
+for the current session. These controls never write the effective merged config
+back to disk.
 
-Session model and effort selections survive `--resume`, `/restore`, and `/fork`. `/new` starts from the loaded JSONC defaults. For durable defaults, edit `models.default` or the provider's `reasoningEffort` in the intended JSONC file.
+The root `-m, --model` option and `topchester run -m, --model` use the same
+reference rules. Session model and effort selections survive `--resume`,
+`/restore`, and `/fork`; an explicit CLI model wins over the restored model.
+`/new` starts from the loaded JSONC defaults. For durable defaults, edit
+`models.default` or the provider's `reasoningEffort` in the intended JSONC file.
 
 For a local OpenAI-compatible proxy, including VibeProxy, a selected profile can contain:
 

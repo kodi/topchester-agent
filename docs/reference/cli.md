@@ -12,6 +12,7 @@ Common commands:
 
 ```sh
 topchester
+topchester -m openrouter/google/gemini-3.1-flash-lite
 topchester info
 topchester session debug latest
 topchester session debug 019e9029 --json
@@ -41,6 +42,7 @@ topchester kb reset
 ## Global options
 
 - `-c, --config <path>` selects an explicit profile after workspace and user config. It shadows `TOPCHESTER_CONFIG` rather than stacking with it.
+- `-m, --model <provider/model>` selects a model for this TUI session. Built-in OpenRouter and Codex references do not require saved provider config.
 - `--workspace <path>` uses this workspace root. Defaults to the current working directory.
 - `--resume <session>` resumes a project-local session from `.agents/topchester/sessions/`. Use `latest` or an exact lowercase session ID.
 - `--dev <flag>` enables a development-only UI or runtime flag. Can be repeated.
@@ -161,7 +163,7 @@ topchester run /kb status
 
 Options:
 
-- `--model <model>` overrides the `agent.primary` model for this run.
+- `-m, --model <provider/model>` selects the model for this run using the same reference rules as the TUI.
 - `--timeout <ms>` stops the run after this many milliseconds.
 - `--json` writes JSONL run events to stdout.
 - `--output-json <path>` writes JSONL run events to a file.

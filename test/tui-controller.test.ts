@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { agentEvent } from "../src/agent/events.js";
 import { type AgentRuntime } from "../src/agent/runtime/index.js";
+import { setRuntimeModelReference } from "../src/app/context.js";
 import { TopchesterTuiController } from "../src/chat/controller.js";
 import { type TuiTransientScheduler } from "../src/chat/controller-state.js";
 import { type TopchesterConfig } from "../src/config/index.js";
@@ -810,6 +811,48 @@ describe("framework-neutral TUI controller", () => {
     expect(context.runtimeConfigOverrides.reasoningEffortByProvider).toEqual({ fake: "max" });
     expect(controller.getSnapshot().modelLabel).toContain("model-b [fake]");
     expect(controller.getSnapshot().modelLabel).toContain("effort max");
+    await controller.dispose();
+  });
+
+  it("accepts a direct built-in provider/model ref without saved choices", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-direct-model-"));
+    const context = createTestContext(workspace);
+    const controller = await TopchesterTuiController.create(context, createControllerRuntime());
+
+    controller.submitCommand("/model openrouter/google/gemini-3.1-flash-lite");
+    await controller.waitForIdle();
+
+    expect(context.runtimeConfigOverrides.activeModel).toEqual({
+      name: "google/gemini-3.1-flash-lite",
+      provider: "openrouter",
+    });
+    expect(context.config.providers?.openrouter).toMatchObject({ apiKeyEnv: "OPENROUTER_API_KEY" });
+    expect(controller.getSnapshot().transcript.at(-1)).toMatchObject({
+      kind: "system",
+      text: "Model set to openrouter/google/gemini-3.1-flash-lite for this session.",
+    });
+    await controller.dispose();
+  });
+
+  it("persists an initial CLI-style model override in a new TUI session", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-initial-model-"));
+    const context = createTestContext(workspace);
+    setRuntimeModelReference(context, "openrouter/google/gemini-3.1-flash-lite");
+    const controller = await TopchesterTuiController.create(context, createControllerRuntime());
+    const sessionId = controller.getSnapshot().sessionId;
+
+    await controller.waitForIdle();
+    const loaded = await loadSession(workspace, sessionId);
+
+    expect(loaded.events).toContainEqual(
+      expect.objectContaining({
+        kind: "runtime_config",
+        activeModel: {
+          name: "google/gemini-3.1-flash-lite",
+          provider: "openrouter",
+        },
+      })
+    );
     await controller.dispose();
   });
 

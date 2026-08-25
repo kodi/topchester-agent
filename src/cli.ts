@@ -4,7 +4,7 @@ import { Command } from "commander";
 import { parseBenchmarkProfile, type BenchmarkProfile } from "./agent/benchmark-profile.js";
 import { exchangeCodexAuthorizationCode, pollCodexDeviceAuthorization, requestCodexDeviceCode } from "./auth/codex.js";
 import { getAuthStoreStatus, setAuthProvider } from "./auth/store.js";
-import { createAppContext, restoreRuntimeConfigOverrides } from "./app/context.js";
+import { createAppContext, restoreRuntimeConfigOverrides, setRuntimeModelReference } from "./app/context.js";
 import { ui } from "./cli/ui.js";
 import { type L1FileScanStatus } from "./knowledge/compiler/l1-entry.js";
 import {
@@ -78,11 +78,12 @@ function createTopchesterProgram(): Command {
     .option("-c, --config <path>", "explicit config file path")
     .option("--workspace <path>", "workspace root", cwd())
     .option("--resume <session>", "resume a project session: latest or an exact session id")
+    .option("-m, --model <model>", "use a provider/model for this session")
     .option("--dev <flag>", "enable a development flag", collectDevFlag, []);
 
   program.action(async () => {
     const context = createContextFromOptions(program);
-    const options = program.opts<{ resume?: string }>();
+    const options = program.opts<{ resume?: string; model?: string }>();
 
     try {
       if (options.resume) {
@@ -90,6 +91,14 @@ function createTopchesterProgram(): Command {
         const session = await loadSessionForAppend(context.workspaceRoot, loaded.sessionId);
         const rehydrated = rehydrateSession(loaded.events);
         const runtimeConfigWarnings = restoreRuntimeConfigOverrides(context, rehydrated.runtimeConfigOverrides);
+        if (options.model) {
+          setRuntimeModelReference(context, options.model);
+          await session.append({
+            kind: "runtime_config",
+            activeModel: context.runtimeConfigOverrides.activeModel,
+            reasoningEffortByProvider: { ...context.runtimeConfigOverrides.reasoningEffortByProvider },
+          });
+        }
 
         await runOpenTui(context, undefined, {
           session,
@@ -100,6 +109,9 @@ function createTopchesterProgram(): Command {
         return;
       }
 
+      if (options.model) {
+        setRuntimeModelReference(context, options.model);
+      }
       await runOpenTui(context);
     } catch (error) {
       console.error(formatStartupError(error));
@@ -240,7 +252,7 @@ function createTopchesterProgram(): Command {
     .command("run")
     .description("run one prompt or slash command without opening the TUI")
     .argument("<prompt...>", "prompt text or slash command")
-    .option("--model <model>", "override the agent.primary model for this run")
+    .option("-m, --model <model>", "use a provider/model for this run")
     .option("--timeout <ms>", "timeout for the run in milliseconds", parsePositiveInteger)
     .option("--json", "write JSONL run events to stdout")
     .option("--output-json <path>", "write JSONL run events to a file")
@@ -259,12 +271,12 @@ function createTopchesterProgram(): Command {
         }
       ) => {
         const context = createContextFromOptions(program);
-        const globalOptions = program.opts<{ resume?: string }>();
+        const globalOptions = program.opts<{ resume?: string; model?: string }>();
 
         try {
           await executeRunCommand(context, {
             prompt: promptParts.join(" "),
-            model: options.model,
+            model: options.model ?? globalOptions.model,
             timeoutMs: options.timeout,
             json: options.json,
             outputJson: options.outputJson,
