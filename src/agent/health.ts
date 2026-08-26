@@ -26,7 +26,7 @@ export async function checkAgentReady(
 
     return result.text.trim().toLowerCase().includes("ready") ? "ready" : "not-ready";
   } catch (error) {
-    if (timedOut && isAbortError(error)) {
+    if (timedOut) {
       return "timed-out";
     }
 
@@ -35,12 +35,4 @@ export async function checkAgentReady(
     clearTimeout(timeout);
     abortSignal?.removeEventListener("abort", abort);
   }
-}
-
-function isAbortError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  return error.name === "AbortError" || error.message.toLowerCase().includes("aborted");
 }

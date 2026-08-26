@@ -35,6 +35,31 @@ function createControllerRuntime(overrides: Partial<AgentRuntime> = {}): AgentRu
 }
 
 describe("framework-neutral TUI controller", () => {
+  it("continues to ready and checks the knowledge base when the startup agent check fails", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-agent-check-failure-"));
+    const checkKnowledgeBase = vi.fn(async () => [agentEvent.systemMessage("KB checked")]);
+    const runtime = createControllerRuntime({
+      async checkAgent() {
+        throw new Error("temporary provider failure");
+      },
+      checkKnowledgeBase,
+    });
+    const controller = await TopchesterTuiController.create(createTestContext(workspace), runtime);
+
+    controller.start();
+    await controller.waitForIdle();
+
+    expect(controller.getSnapshot()).toMatchObject({ status: "ready" });
+    expect(controller.getSnapshot().transcript).toContainEqual(
+      expect.objectContaining({ kind: "system", text: "Agent check failed: temporary provider failure" })
+    );
+    expect(controller.getSnapshot().transcript).toContainEqual(
+      expect.objectContaining({ kind: "system", text: "KB checked" })
+    );
+    expect(checkKnowledgeBase).toHaveBeenCalledOnce();
+    await controller.dispose();
+  });
+
   it("rejects /compact visibly while a turn is active instead of queueing it", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-compact-busy-"));
     let release!: () => void;

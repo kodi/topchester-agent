@@ -582,7 +582,7 @@ export class TopchesterTuiController implements TuiController {
           this.view.addEntry(
             systemTranscriptEntry(`Agent check failed: ${message}${setupHint ? `\n${setupHint}` : ""}`)
           );
-          this.view.setStatus("agent check failed");
+          this.view.setStatus("ready");
         });
       }
     } finally {
