@@ -120,6 +120,18 @@ async function testAppSurface(): Promise<void> {
     assert.ok(statusRow.trimEnd().endsWith("⚠ kb: missing"), statusRow);
     assert.ok((statusRow?.length ?? 0) - (statusRow?.trimEnd().length ?? 0) <= 1);
 
+    controller.setNoticeLine("press Ctrl-C again to exit.");
+    await setup.flush();
+    const noticeRow = setup
+      .captureCharFrame()
+      .split("\n")
+      .find((row) => row.includes("press Ctrl-C again to exit."));
+    assert.ok(noticeRow, setup.captureCharFrame());
+    assert.match(noticeRow, /^ ● ready · press Ctrl-C again to exit\./u);
+    assert.doesNotMatch(noticeRow, /session|ctx|kb:/u);
+    controller.setNoticeLine(undefined);
+    await setup.flush();
+
     const singleLineHeight = composer.height;
     await setup.mockInput.typeText("first line");
     assert.equal(composer.newLine(), true);
