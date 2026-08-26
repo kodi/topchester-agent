@@ -5,6 +5,7 @@ import {
   CliRenderEvents,
   RGBA,
   SyntaxStyle,
+  TextAttributes,
   type CliRendererExternalOutputEvent,
   type TextareaRenderable,
 } from "@opentui/core";
@@ -397,18 +398,22 @@ async function testTranscriptWriter(): Promise<void> {
     let keywordColor: number[] | undefined;
     let keywordBackground: number[] | undefined;
     let cssPropertyColor: number[] | undefined;
+    let headingColor: number[] | undefined;
+    let headingAttributes: number | undefined;
+    let strongColor: number[] | undefined;
+    let strongAttributes: number | undefined;
     const captureHighlight = (event: CliRendererExternalOutputEvent) => {
-      const keyword = event.snapshot
-        .getSpanLines()
-        .flatMap((line) => line.spans)
-        .find((span) => span.text === "const");
+      const spans = event.snapshot.getSpanLines().flatMap((line) => line.spans);
+      const keyword = spans.find((span) => span.text === "const");
       keywordColor = keyword?.fg.toInts();
       keywordBackground = keyword?.bg.toInts();
-      cssPropertyColor = event.snapshot
-        .getSpanLines()
-        .flatMap((line) => line.spans)
-        .find((span) => span.text === "color")
-        ?.fg.toInts();
+      cssPropertyColor = spans.find((span) => span.text === "color")?.fg.toInts();
+      const heading = spans.find((span) => span.text === "YAML");
+      headingColor = heading?.fg.toInts();
+      headingAttributes = heading?.attributes;
+      const strong = spans.find((span) => span.text === "color variants");
+      strongColor = strong?.fg.toInts();
+      strongAttributes = strong?.attributes;
     };
     setup.renderer.on(CliRenderEvents.EXTERNAL_OUTPUT, captureHighlight);
     try {
@@ -417,7 +422,10 @@ async function testTranscriptWriter(): Promise<void> {
           kind: "assistant",
           persistence: "session",
           text: [
+            "Use **color variants** to override one item.",
+            "",
             "### YAML",
+            "Define the server configuration:",
             "",
             "```yaml",
             "server:",
@@ -425,6 +433,7 @@ async function testTranscriptWriter(): Promise<void> {
             "```",
             "",
             "### TSX",
+            "Pass the variants to the component:",
             "",
             "```tsx",
             'import { Gantt } from "@antiflux/gantt";',
@@ -433,12 +442,14 @@ async function testTranscriptWriter(): Promise<void> {
             "```",
             "",
             "### CSS",
+            "Style the custom chart:",
             "",
             "```css",
             ".custom-gantt { color: #ffffff; }",
             "```",
             "",
             "### Go",
+            "Keep the final example separate:",
             "",
             "```go",
             "package main",
@@ -474,6 +485,15 @@ async function testTranscriptWriter(): Promise<void> {
     }
     assert.doesNotMatch(markdownText, /```|###/u);
     assert.match(markdownText, /^const answer: number = 42;[ \t]*$/mu);
+    const markdownLines = markdownText.split("\n");
+    assertCodeBlockPadding(markdownLines, "server:", "  port: 8080");
+    assertCodeBlockPadding(markdownLines, 'import { Gantt } from "@antiflux/gantt";', "<Gantt theme={customTheme} />");
+    assertCodeBlockPadding(markdownLines, ".custom-gantt { color: #ffffff; }", ".custom-gantt { color: #ffffff; }");
+    assertCodeBlockPadding(markdownLines, "package main", "package main");
+    assert.deepEqual(headingColor, RGBA.fromHex(theme.accent).toInts());
+    assert.ok(((headingAttributes ?? 0) & TextAttributes.BOLD) !== 0);
+    assert.deepEqual(strongColor, RGBA.fromHex(theme.emphasis).toInts());
+    assert.ok(((strongAttributes ?? 0) & TextAttributes.BOLD) !== 0);
     assert.deepEqual(keywordColor, RGBA.fromHex(theme.accent).toInts());
     assert.deepEqual(keywordBackground, RGBA.fromHex(theme.surface).toInts());
     assert.deepEqual(cssPropertyColor, RGBA.fromHex(theme.warning).toInts());
@@ -572,6 +592,15 @@ async function testTranscriptWriter(): Promise<void> {
     setup.renderer.destroy();
     syntaxStyle.destroy();
   }
+}
+
+function assertCodeBlockPadding(lines: readonly string[], firstLine: string, lastLine: string): void {
+  const start = lines.findIndex((line) => line.trimEnd() === firstLine);
+  const end = lines.findIndex((line, index) => index >= start && line.trimEnd() === lastLine);
+  assert.ok(start > 0, `missing code block start: ${firstLine}`);
+  assert.ok(end >= start && end + 1 < lines.length, `missing code block end: ${lastLine}`);
+  assert.equal(lines[start - 1]?.trim(), "", `code block must have a blank row above: ${firstLine}`);
+  assert.equal(lines[end + 1]?.trim(), "", `code block must have a blank row below: ${lastLine}`);
 }
 
 async function testThreadEntryVariants(): Promise<void> {

@@ -110,8 +110,44 @@ function KnowledgeStatusResult(props: { text: string; theme: TopchesterTheme }) 
   );
 }
 
-function createFencedCodeRenderer(theme: TopchesterTheme): MarkdownOptions["renderNode"] {
+interface MarkdownInlineToken {
+  type: string;
+  text?: string;
+  href?: string;
+  tokens?: readonly MarkdownInlineToken[];
+}
+
+interface MarkdownInlineStyle {
+  fg: string;
+  attributes: number;
+  link?: { url: string };
+}
+
+function createMarkdownNodeRenderer(theme: TopchesterTheme): MarkdownOptions["renderNode"] {
   return (token, context) => {
+    if (token.type === "heading" || token.type === "paragraph" || token.type === "text") {
+      const defaultText = context.defaultRender();
+      if (!defaultText) {
+        return;
+      }
+      const heading = token.type === "heading";
+      const tokens = token.tokens?.length
+        ? token.tokens
+        : [{ type: "text", text: "text" in token ? token.text : "" } satisfies MarkdownInlineToken];
+      return new TextRenderable(defaultText.ctx, {
+        width: "100%",
+        content: new StyledText(
+          renderMarkdownInlineTokens(tokens, theme, {
+            fg: heading ? theme.accent : theme.text,
+            attributes: heading ? TextAttributes.BOLD : TextAttributes.NONE,
+          })
+        ),
+        fg: heading ? theme.accent : theme.text,
+        selectable: true,
+        wrapMode: "word",
+      });
+    }
+
     if (token.type !== "code") {
       return;
     }
@@ -139,14 +175,130 @@ function createFencedCodeRenderer(theme: TopchesterTheme): MarkdownOptions["rend
     } else {
       code.bg = theme.surface;
     }
-    const container = new BoxRenderable(renderContext, {
+    const surface = new BoxRenderable(renderContext, {
       width: "100%",
       flexShrink: 0,
       backgroundColor: theme.surface,
     });
-    container.add(renderedCode);
+    surface.add(renderedCode);
+    const container = new BoxRenderable(renderContext, {
+      width: "100%",
+      flexDirection: "column",
+      flexShrink: 0,
+      marginTop: 1,
+    });
+    container.add(surface);
+    container.add(
+      new BoxRenderable(renderContext, {
+        width: "100%",
+        height: 1,
+        flexShrink: 0,
+      })
+    );
     return container;
   };
+}
+
+function renderMarkdownInlineTokens(
+  tokens: readonly MarkdownInlineToken[] | undefined,
+  theme: TopchesterTheme,
+  inherited: MarkdownInlineStyle
+): TextChunk[] {
+  if (!tokens?.length) {
+    return [];
+  }
+
+  const chunks: TextChunk[] = [];
+  const append = (text: string, style: MarkdownInlineStyle) => {
+    if (!text) return;
+    chunks.push({
+      __isChunk: true,
+      text,
+      fg: RGBA.fromHex(style.fg),
+      attributes: style.attributes,
+      ...(style.link ? { link: style.link } : {}),
+    });
+  };
+
+  for (const token of tokens) {
+    if (token.type === "text" || token.type === "escape") {
+      append(token.text ?? "", inherited);
+      continue;
+    }
+    if (token.type === "codespan") {
+      append(token.text ?? "", { ...inherited, fg: theme.success });
+      continue;
+    }
+    if (token.type === "strong") {
+      chunks.push(
+        ...renderMarkdownInlineTokens(token.tokens, theme, {
+          ...inherited,
+          fg: theme.emphasis,
+          attributes: inherited.attributes | TextAttributes.BOLD,
+        })
+      );
+      continue;
+    }
+    if (token.type === "em") {
+      chunks.push(
+        ...renderMarkdownInlineTokens(token.tokens, theme, {
+          ...inherited,
+          attributes: inherited.attributes | TextAttributes.ITALIC,
+        })
+      );
+      continue;
+    }
+    if (token.type === "del") {
+      chunks.push(
+        ...renderMarkdownInlineTokens(token.tokens, theme, {
+          ...inherited,
+          fg: theme.muted,
+          attributes: inherited.attributes | TextAttributes.STRIKETHROUGH,
+        })
+      );
+      continue;
+    }
+    if (token.type === "link") {
+      const link = token.href ? { url: token.href } : inherited.link;
+      chunks.push(
+        ...renderMarkdownInlineTokens(token.tokens, theme, {
+          ...inherited,
+          fg: theme.info,
+          attributes: inherited.attributes | TextAttributes.UNDERLINE,
+          ...(link ? { link } : {}),
+        })
+      );
+      if (token.href) {
+        append(` (${token.href})`, {
+          ...inherited,
+          fg: theme.info,
+          attributes: inherited.attributes | TextAttributes.UNDERLINE,
+          link: { url: token.href },
+        });
+      }
+      continue;
+    }
+    if (token.type === "image") {
+      append(token.text || "image", {
+        ...inherited,
+        fg: theme.info,
+        attributes: inherited.attributes | TextAttributes.UNDERLINE,
+        ...(token.href ? { link: { url: token.href } } : {}),
+      });
+      continue;
+    }
+    if (token.type === "br") {
+      append("\n", inherited);
+      continue;
+    }
+    if (token.tokens?.length) {
+      chunks.push(...renderMarkdownInlineTokens(token.tokens, theme, inherited));
+    } else {
+      append(token.text ?? "", inherited);
+    }
+  }
+
+  return chunks;
 }
 
 function highlightCode(code: string, language: string, theme: TopchesterTheme): StyledText | undefined {
@@ -251,7 +403,8 @@ export function ThreadEntry(props: ThreadEntryProps) {
             streaming
             fg={props.theme.text}
             tableOptions={{ widthMode: "content" }}
-            renderNode={createFencedCodeRenderer(props.theme)}
+            internalBlockMode="top-level"
+            renderNode={createMarkdownNodeRenderer(props.theme)}
           />
           {entry.meta ? <text fg={props.theme.muted}>↳ {entry.meta}</text> : null}
         </box>

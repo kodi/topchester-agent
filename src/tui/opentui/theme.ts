@@ -102,6 +102,28 @@ export function createTopchesterSyntaxStyle(theme: TopchesterTheme): SyntaxStyle
     { scope: ["constant", "number", "boolean"], style: { foreground: theme.warning } },
     { scope: ["variable", "property"], style: { foreground: theme.text } },
     { scope: ["punctuation"], style: { foreground: theme.muted } },
+    {
+      scope: [
+        "markup.heading",
+        "markup.heading.1",
+        "markup.heading.2",
+        "markup.heading.3",
+        "markup.heading.4",
+        "markup.heading.5",
+        "markup.heading.6",
+      ],
+      style: { foreground: theme.accent, bold: true },
+    },
+    { scope: ["markup.bold", "markup.strong"], style: { foreground: theme.emphasis, bold: true } },
+    { scope: ["markup.italic"], style: { foreground: theme.text, italic: true } },
+    { scope: ["markup.list"], style: { foreground: theme.accent } },
+    { scope: ["markup.quote"], style: { foreground: theme.muted, italic: true } },
+    { scope: ["markup.raw", "markup.raw.block", "markup.raw.inline"], style: { foreground: theme.success } },
+    {
+      scope: ["markup.link", "markup.link.label", "markup.link.url"],
+      style: { foreground: theme.info, underline: true },
+    },
+    { scope: ["conceal"], style: { foreground: theme.muted } },
   ];
   return SyntaxStyle.fromTheme(tokens);
 }
