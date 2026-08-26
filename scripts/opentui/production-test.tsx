@@ -402,6 +402,8 @@ async function testTranscriptWriter(): Promise<void> {
     let headingAttributes: number | undefined;
     let strongColor: number[] | undefined;
     let strongAttributes: number | undefined;
+    let listStrongColor: number[] | undefined;
+    let listStrongAttributes: number | undefined;
     const captureHighlight = (event: CliRendererExternalOutputEvent) => {
       const spans = event.snapshot.getSpanLines().flatMap((line) => line.spans);
       const keyword = spans.find((span) => span.text === "const");
@@ -414,6 +416,9 @@ async function testTranscriptWriter(): Promise<void> {
       const strong = spans.find((span) => span.text === "color variants");
       strongColor = strong?.fg.toInts();
       strongAttributes = strong?.attributes;
+      const listStrong = spans.find((span) => span.text === "Core React & Typescript API:");
+      listStrongColor = listStrong?.fg.toInts();
+      listStrongAttributes = listStrong?.attributes;
     };
     setup.renderer.on(CliRenderEvents.EXTERNAL_OUTPUT, captureHighlight);
     try {
@@ -423,6 +428,8 @@ async function testTranscriptWriter(): Promise<void> {
           persistence: "session",
           text: [
             "Use **color variants** to override one item.",
+            "",
+            "* **Core React & Typescript API:** Components, hooks, custom slots...",
             "",
             "### YAML",
             "Define the server configuration:",
@@ -494,6 +501,8 @@ async function testTranscriptWriter(): Promise<void> {
     assert.ok(((headingAttributes ?? 0) & TextAttributes.BOLD) !== 0);
     assert.deepEqual(strongColor, RGBA.fromHex(theme.emphasis).toInts());
     assert.ok(((strongAttributes ?? 0) & TextAttributes.BOLD) !== 0);
+    assert.deepEqual(listStrongColor, RGBA.fromHex(theme.emphasis).toInts());
+    assert.ok(((listStrongAttributes ?? 0) & TextAttributes.BOLD) !== 0);
     assert.deepEqual(keywordColor, RGBA.fromHex(theme.accent).toInts());
     assert.deepEqual(keywordBackground, RGBA.fromHex(theme.surface).toInts());
     assert.deepEqual(cssPropertyColor, RGBA.fromHex(theme.warning).toInts());
