@@ -368,6 +368,27 @@ describe("session store", () => {
     expect(metadata.updatedAt).toBe(appended.at(-1)!.ts);
   });
 
+  it("rejects a stale concurrent writer before it duplicates an event ID", async () => {
+    const workspace = await tempWorkspace();
+    const first = await createSession(workspace);
+    const second = await loadSessionForAppend(workspace, first.sessionId);
+
+    const outcomes = await Promise.allSettled([
+      first.append({ kind: "status", status: "first writer" }),
+      second.append({ kind: "status", status: "second writer" }),
+    ]);
+
+    expect(outcomes.map((outcome) => outcome.status).sort()).toEqual(["fulfilled", "rejected"]);
+    const rejected = outcomes.find((outcome) => outcome.status === "rejected");
+    expect(rejected).toMatchObject({
+      reason: expect.objectContaining({ message: expect.stringContaining("Session changed") }),
+    });
+    const loaded = await loadSession(workspace, first.sessionId);
+    expect(loaded.events).toHaveLength(1);
+    expect(loaded.events[0]).toMatchObject({ id: 1, kind: "status" });
+    expect(loaded.metadata.lastEventId).toBe(1);
+  });
+
   it("continues accepting appends after a queued append fails", async () => {
     const workspace = await tempWorkspace();
     const session = await createSession(workspace);

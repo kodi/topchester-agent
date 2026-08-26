@@ -32,6 +32,8 @@ Use `/fork` in the TUI to clone the active session into a fresh top-level sessio
 
 Events are append-only JSONL. They include user messages, assistant messages, tool calls, runtime events, task-plan state, runtime model/effort snapshots, context usage, replayable compaction snapshots, and child-session lifecycle events. Runtime config events contain only model references and effort enum values; provider definitions, headers, API keys, and auth records stay out of session logs.
 
+Topchester serializes session writes across processes. If two processes open the same session, a stale writer stops before it can append a duplicate event ID. Close the other process, then resume the session again.
+
 Compaction never deletes transcript events. A `context_compaction` event stores the authoritative model-facing projection separately: its structured summary, retained transcript references, and any inline current-turn tool/continuation state needed after restart. Resume, restore, fork, and `topchester run --resume` use the latest projection rather than rebuilding model context from the full visible transcript. Old sessions without context events keep full-transcript behavior. `/new` and `/clear` start without a compaction snapshot.
 
 `-m, --model`, `--kb-model`, `/model`, `/models`, `/kb-model`, `/effort`, and

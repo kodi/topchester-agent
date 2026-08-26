@@ -34,6 +34,9 @@ import {
 
 const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const SESSION_TITLE_MAX_LENGTH = 72;
+const SESSION_WRITE_LOCK_DIR = ".events-write-lock";
+const SESSION_WRITE_LOCK_RETRY_MS = 10;
+const SESSION_WRITE_LOCK_TIMEOUT_MS = 2_000;
 
 export interface SessionHandle {
   sessionId: string;
@@ -613,37 +616,48 @@ function buildHandle(sessionDir: string, metadata: SessionMetadata, profile?: Se
     pending = [];
     writing = (async () => {
       let previousEventFileSize: number | undefined;
+      let batchCommitted = false;
       try {
-        previousEventFileSize = (await stat(handle.eventsPath)).size;
-        let nextMetadata = handle.metadata;
-        for (const { event } of batch) {
-          const title =
-            nextMetadata.title === undefined &&
-            event.kind === "message" &&
-            event.role === "user" &&
-            !isVisibleOnlySlashCommandMessage(event.meta)
-              ? deriveSessionTitle(event.text)
-              : nextMetadata.title;
-          nextMetadata = {
-            ...nextMetadata,
-            updatedAt: event.ts,
-            lastEventId: event.id,
-            ...(title === undefined ? {} : { title }),
-          };
-        }
-        await writeFile(handle.eventsPath, batch.map(({ event }) => `${JSON.stringify(event)}\n`).join(""), {
-          flag: "a",
+        await withSessionWriteLock(sessionDir, async () => {
+          const persistedMetadata = await readMetadata(handle.metadataPath);
+          if (persistedMetadata.lastEventId !== durableEventId) {
+            throw new Error(
+              "Session changed while this process was running. Close any other Topchester process, then resume again."
+            );
+          }
+
+          previousEventFileSize = (await stat(handle.eventsPath)).size;
+          let nextMetadata = handle.metadata;
+          for (const { event } of batch) {
+            const title =
+              nextMetadata.title === undefined &&
+              event.kind === "message" &&
+              event.role === "user" &&
+              !isVisibleOnlySlashCommandMessage(event.meta)
+                ? deriveSessionTitle(event.text)
+                : nextMetadata.title;
+            nextMetadata = {
+              ...nextMetadata,
+              updatedAt: event.ts,
+              lastEventId: event.id,
+              ...(title === undefined ? {} : { title }),
+            };
+          }
+          await writeFile(handle.eventsPath, batch.map(({ event }) => `${JSON.stringify(event)}\n`).join(""), {
+            flag: "a",
+          });
+          if (profile) profile.jsonlWriteBatches += 1;
+          await writeMetadata(handle.metadataPath, nextMetadata);
+          if (profile) profile.metadataWrites += 1;
+          handle.metadata = nextMetadata;
+          durableEventId = batch.at(-1)?.event.id ?? durableEventId;
+          outstanding -= batch.length;
+          if (profile) profile.sessionEvents += batch.length;
+          batchCommitted = true;
         });
-        if (profile) profile.jsonlWriteBatches += 1;
-        await writeMetadata(handle.metadataPath, nextMetadata);
-        if (profile) profile.metadataWrites += 1;
-        handle.metadata = nextMetadata;
-        durableEventId = batch.at(-1)?.event.id ?? durableEventId;
-        outstanding -= batch.length;
-        if (profile) profile.sessionEvents += batch.length;
       } catch (error) {
         // A failed batch is terminal: callers must create/load a new handle rather than retrying into uncertain state.
-        if (previousEventFileSize === undefined) {
+        if (batchCommitted || previousEventFileSize === undefined) {
           terminalError = error;
         } else {
           try {
@@ -718,6 +732,30 @@ function buildHandle(sessionDir: string, metadata: SessionMetadata, profile?: Se
   };
 
   return handle;
+}
+
+async function withSessionWriteLock<T>(sessionDir: string, work: () => Promise<T>): Promise<T> {
+  const lockPath = join(sessionDir, SESSION_WRITE_LOCK_DIR);
+  const deadline = Date.now() + SESSION_WRITE_LOCK_TIMEOUT_MS;
+
+  for (;;) {
+    try {
+      await mkdir(lockPath);
+      break;
+    } catch (error) {
+      if (!isFileExistsError(error)) throw error;
+      if (Date.now() >= deadline) {
+        throw new Error("Session is being written by another Topchester process. Close it, then resume again.");
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, SESSION_WRITE_LOCK_RETRY_MS));
+    }
+  }
+
+  try {
+    return await work();
+  } finally {
+    await rm(lockPath, { recursive: true, force: true });
+  }
 }
 
 async function writeMetadata(path: string, metadata: SessionMetadata): Promise<void> {
