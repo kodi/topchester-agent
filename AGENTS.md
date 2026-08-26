@@ -1,94 +1,63 @@
 # Topchester Agent
 
-## Writing Standards
+## Rules
 
-- When writing documentation, plans, commit messages, or explanations, use **ASD-STE100 Simplified Technical English (STE)**.
-- Keep sentences short, declarative, and clear. Avoid passive voice and long noun clusters.
+- Use ASD-STE100 Simplified Technical English for docs, plans, commits, and explanations. Use short, active, declarative sentences. Avoid long noun clusters.
+- Use plain folk speech in user-facing text. Prefer wording an average developer understands, such as `KB is missing`, over `missing canonical KB`.
+- Never expose a full home-directory path in user-facing docs, examples, comments, or responses. Use `~`.
+- If `AGENTS.override.md` exists, read it after this file.
+- Use the fff MCP tools for all file searches.
+- Use only `mise` tasks for repository checks and automation. Never run `pnpm` tasks directly. `mise run local-ci` must always pass.
 
-## Testing
+## Product and source material
 
-Main test command that must ALWAYS pass `mise run local-ci`
+Topchester is a terminal-native TUI coding agent coupled to a committed project knowledge base (KB). The agent and KB are one system. No normal coding path may bypass `.agents/topchester-kb/`.
 
-## About
+Read the relevant source before a change:
 
-Topchester is a terminal-native TUI coding agent tightly coupled to a committed project knowledge base.
+- `docs/README.md`: public-docs entry point and website source.
+- `docs/getting-started/`, `configuration/`, `features/`, `hooks/`, `mcp/`, `reference/`: public docs. These paths are under `docs/`.
+- `docs/reference/cli.md`: CLI inventory and behavior.
+- `docs/features/tui.md`: TUI layout, controls, slash commands, and status.
+- `docs/features/knowledge-base.md`: user-facing KB behavior.
+- `docs/features/sessions.md`: project-local session storage.
+- `docs/ARCHITECTURE.md`: product/runtime architecture and TUI boundaries.
+- `docs/KNOWLEDGE.md`: KB architecture, compiler, drift, storage, and APIs.
 
-Read these first:
+Update docs in the same change as behavior:
 
-- `docs/README.md` — public docs entrypoint and source for the website docs build.
-- `docs/getting-started/`, `docs/configuration/`, `docs/features/`, `docs/hooks/`, `docs/mcp/`, and `docs/reference/` — public docs pages.
-- `docs/reference/cli.md` — CLI command inventory and behavior notes.
-- `docs/features/tui.md` — interactive TUI layout, controls, slash commands, and status behavior.
-- `docs/features/knowledge-base.md` — user-facing knowledge-base behavior.
-- `docs/features/sessions.md` — project-local session storage behavior.
-- `docs/ARCHITECTURE.md` — internal product/runtime architecture and TUI/runtime boundaries.
-- `docs/KNOWLEDGE.md` — internal KB architecture, Knowledge Compiler, drift model, storage/API decisions.
+- CLI change: update `docs/reference/cli.md`.
+- TUI change: update `docs/features/tui.md` or `docs/features/slash-commands.md`.
+- Other behavior change: update the nearest public page and relevant reference page.
+- Keep config paths, commands, hook events, MCP fields, and model slots exact.
 
-If `AGENTS.override.md` exists, read it after this file for local-only instructions.
+## Public docs
 
-Core invariant: Agent and KB are one system. Do not design or implement a normal coding path that bypasses `.agents/topchester-kb/`.
+`docs/` is the authoring source. The sibling `topchester-web` repo renders it. Do not commit generated website output here.
 
-CLI modifications should update `docs/reference/cli.md` in the same change so command behavior stays tracked. TUI behavior changes should update `docs/features/tui.md` or `docs/features/slash-commands.md`.
+Public pages live in the six public directories listed above. Each needs frontmatter fields `title`, `description`, `section`, `order`, and `public: true`. Put internal notes in legacy top-level docs or `docs/internals/`. Mark them public only when intentionally promoted. `docs/plans/` is private and must never enter the public build.
 
-## Docs maintenance
-
-`docs/` remains the authoring source for public Topchester docs. The public website renders these files from the sibling `topchester-web` repo, and `topchester-agent` must not commit generated website output.
-
-Public docs deployment is inter-repo: commit and push doc source changes to `topchester-agent` `main` first, then trigger the website deploy from `topchester-web` `main` because Vercel builds that repo and clones `topchester-agent/docs` during the build. There is no GitHub Actions docs deploy workflow to trigger.
-
-To redeploy the public website/docs after a docs-only `topchester-agent` push, run this from the sibling `topchester-web` repo:
+Deployment is cross-repository. First commit and push docs to this repo's `main`. Then, from `topchester-web` `main`, trigger the Vercel build, which clones `topchester-agent/docs`:
 
 ```sh
 git commit --allow-empty -m "chore: trigger docs deployment"
 git push origin main
 ```
 
-Only use a Vercel dashboard redeploy if the user explicitly asks for it or the empty-commit push is unavailable.
+There is no GitHub Actions docs-deploy workflow. Use a Vercel dashboard redeploy only if the user asks or the empty-commit push is unavailable.
 
-Public docs pages must have frontmatter with `title`, `description`, `section`, `order`, and `public: true`. Public pages live under:
+## Debugging
 
-- `docs/getting-started/`
-- `docs/configuration/`
-- `docs/features/`
-- `docs/hooks/`
-- `docs/mcp/`
-- `docs/reference/`
+Inspect runtime artifacts before inferring behavior from the UI:
 
-Internal implementation notes may live under top-level legacy docs or `docs/internals/`, but they should not use `public: true` unless they are intentionally promoted. `docs/plans/` is private implementation handoff material and must not be published in the public docs build.
+- Log: `.agents/topchester/logs/topchester.log`. Use the newest log. Search for `tool_call`, `tool_result`, `tool_result_content`, `model_prompt`, `model_response_text`, `project_instructions_resolved`, or a tool name such as `skill_view` or `read_file`.
+- Session: `.agents/topchester/sessions/<session-id>/{metadata.json,events.jsonl}`. The newest `metadata.json` usually identifies the latest session. `events.jsonl` records ordered messages, tools, plans, replies, and ready/status events.
+- To prove a tool result reached the model, find its call in `events.jsonl`. Then inspect the next `model_prompt` in the log for the matching `Tool result from ...` block.
+- For tool bugs, use events for order and the raw log for full results, model I/O, policy decisions, and timing.
+- For TUI/session bugs, also inspect `docs/features/{tui,sessions}.md` and relevant `src/{tui,session}/*` files.
 
-When behavior changes, update the nearest public docs page and the relevant reference page in the same change. Keep examples exact: config paths, command names, hook event names, MCP field names, and model slot names should match the current implementation.
+## Vite+
 
-## Debugging Topchester
+Vite+ (`vp`) wraps Vite, Rolldown, Vitest, tsdown, Oxlint, Oxfmt, and Vite Task. It is distinct from Vite; use `vp dev` and `vp build`. See `node_modules/vite-plus/docs`, <https://viteplus.dev/guide/>, `vp help`, or `vp <command> --help`.
 
-When debugging what the agent actually did, inspect the runtime artifacts before guessing from the UI:
-
-- Main log: `.agents/topchester/logs/topchester.log`. Use the newest file and search for `tool_call`, `tool_result`, `tool_result_content`, `model_prompt`, `model_response_text`, `project_instructions_resolved`, and any specific tool name such as `skill_view` or `read_file`.
-- Sessions: `.agents/topchester/sessions/<session-id>/metadata.json` and `events.jsonl`. The latest session is usually the newest `metadata.json`; `events.jsonl` gives the ordered user messages, tool calls, task plan updates, assistant replies, and ready/status events.
-- To confirm whether a tool result was actually used, find the tool call in `events.jsonl`, then check `topchester.log` for the following `model_prompt` after that tool result. The prompt should include the `Tool result from ...` block that the model saw.
-- For tool behavior bugs, compare the compact session events with the raw log. The session proves the high-level order; `topchester.log` shows raw tool result content, model inputs, model outputs, policy decisions, and timing.
-- For TUI or session issues, include `docs/features/tui.md`, `docs/features/sessions.md`, and the relevant `src/tui/*` or `src/session/*` files in the investigation.
-
-Use PLAIN FOLK SPEAK in user-facing text, even for highly technical product concepts; for example, write something an average developer understands instead of phrasing like `missing canonical KB`.
-
-Never expose a user's full home directory path in user-facing docs, examples, comments, or responses. Use `~` for home-relative paths.
-
-Use ONLY mise tasks for repo checks and automation; never run pnpm tasks directly. Eg never run `pnpm exec oxfmt` use mise tasks.
-
-Use the fff MCP tools for all file search operations instead of default tools.
-
-<!--VITE PLUS START-->
-
-# Using Vite+, the Unified Toolchain for the Web
-
-This project is using Vite+, a unified toolchain built on top of Vite, Rolldown, Vitest, tsdown, Oxlint, Oxfmt, and Vite Task. Vite+ wraps runtime management, package management, and frontend tooling in a single global CLI called `vp`. Vite+ is distinct from Vite, and it invokes Vite through `vp dev` and `vp build`. Run `vp help` to print a list of commands and `vp <command> --help` for information about a specific command.
-
-Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.dev/guide/.
-
-## Review Checklist
-
-- [ ] Run `vp install` after pulling remote changes and before getting started.
-- [ ] Run `vp check` and `vp test` to format, lint, type check and test changes.
-- [ ] Check if there are `vite.config.ts` tasks or `package.json` scripts necessary for validation, run via `vp run <script>`.
-- [ ] If setup, runtime, or package-manager behavior looks wrong, run `vp env doctor` and include its output when asking for help.
-
-<!--VITE PLUS END-->
+After pulling remote changes, run `vp install`. Use the applicable `mise` validation tasks; inspect `.mise.toml` and `package.json` for extra tasks. If environment or package-manager behavior fails, run `vp env doctor` and include its output when requesting help.
