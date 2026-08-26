@@ -37,9 +37,9 @@ export interface BashToolResult extends ToolResult<"bash"> {
 export const bashTool = defineTool({
   name: "bash",
   description:
-    "Run an approval-gated shell command inside the workspace. Use for user-requested commands, shell syntax, package managers, scripts, builds, tests, lint, type checks, and other verification. Treat failed exits as evidence and inspect their output.",
+    'Run an approval-gated shell command. Keep workdir inside the workspace. If the user names or clearly authorizes an absolute path outside the workspace, keep workdir as "." and put that path in command so Topchester can ask for approval in the same turn. Do not wait for a separate request to escalate. Use for user-requested commands, shell syntax, package managers, scripts, builds, tests, lint, type checks, and other verification. Treat failed exits as evidence and inspect their output.',
   prompt:
-    'bash: run an approval-gated shell command inside the workspace for tests, lint, typecheck, builds, smoke checks, package-manager commands, scripts, pipelines, redirects, chaining, and other terminal work. Failed command exits are useful evidence: inspect stdout and stderr, fix in-scope failures, and rerun the narrowest useful check. To use it, reply with only JSON: {"tool":"bash","args":{"command":"pnpm test","workdir":".","timeout_ms":120000,"description":"run the test suite"}}',
+    'bash: run an approval-gated shell command. Keep workdir inside the workspace. If the user names or clearly authorizes an absolute path outside the workspace, keep workdir as "." and put that path in command so Topchester can ask for approval in the same turn; do not wait for a separate request to escalate. Use bash for tests, lint, typecheck, builds, smoke checks, package-manager commands, scripts, pipelines, redirects, chaining, and other terminal work. Failed command exits are useful evidence: inspect stdout and stderr, fix in-scope failures, and rerun the narrowest useful check. To use it, reply with only JSON: {"tool":"bash","args":{"command":"pnpm test","workdir":".","timeout_ms":120000,"description":"run the test suite"}}',
   argsSchema: bashArgsSchema,
   requiresExclusiveWorkspace: true,
   execute: async (context, args) =>

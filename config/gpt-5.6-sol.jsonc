@@ -12,6 +12,13 @@
       "type": "openai-compatible",
       "baseURL": "http://localhost:8317/v1",
       "apiKey": "dummy-not-used",
+      "modelLimits": {
+        "gpt-5.6-sol(medium)": {
+          "contextWindow": 1050000,
+          "maxInputTokens": 922000,
+          "maxOutputTokens": 128000,
+        },
+      },
     },
   },
 }

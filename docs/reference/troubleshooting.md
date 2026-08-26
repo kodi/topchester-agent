@@ -58,6 +58,10 @@ Then use `/kb status` and `/kb sync` to refresh project knowledge.
 
 Add a narrow project rule under `tools.bash.allowExact` or `tools.bash.allow` in `topchester.jsonc`. Use `allowExact` for a complete command string and `allow` for argv prefixes.
 
+## Topchester cannot read a path outside the workspace
+
+The file tools stay inside the current workspace. If you name or clearly authorize an absolute external path, Topchester can use `bash` to inspect it. The command keeps its working directory inside the workspace and passes the external path as a command argument. Topchester asks for any required command approval in the same turn. You do not need to ask it to escalate in a second message.
+
 ## An MCP server exposes too much
 
 Add `enabledTools` to the server config. If `enabledTools` is omitted, Topchester applies a V0 exposure cap and omits servers that exceed it.
