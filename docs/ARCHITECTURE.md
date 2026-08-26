@@ -31,17 +31,17 @@ If no KB exists for a code project, Topchester should compile one before enterin
 
 ## Runtime Decision
 
-Topchester is a TypeScript CLI whose supported runtime is Bun `>=1.3`.
+Topchester is a TypeScript CLI whose supported source runtime is Bun `>=1.4`.
 
 Rationale:
 
 - OpenTUI's native renderer has a direct, supported Bun path.
 - Bun runs the interactive CLI, noninteractive commands, the production bundle, and packed-artifact smoke tests.
 - pnpm remains the repository package manager; choosing Bun as the runtime does not require changing package managers.
-- npm remains a supported distribution channel. The installed `topchester` bin uses `#!/usr/bin/env bun`.
+- npm remains a supported distribution channel. The installed `topchester` command is a standalone executable and does not require Bun.
 - Node 24 remains a contributor tool for existing repository scripts, but it is not the packaged CLI runtime.
 
-The repository pins Bun 1.3, Node 24, and pnpm 11 through mise. Bun builds and runs the shipped CLI. Node and pnpm remain contributor tooling for repository scripts, tests, and package management.
+The repository pins Bun 1.4, Node 24, and pnpm 11 through mise. Bun builds and runs the source CLI and standalone executables. Node and pnpm remain contributor tooling for repository scripts, tests, and package management.
 
 OpenCode comparison:
 
@@ -323,7 +323,7 @@ The agent can still use direct file reads, search, and tests. The constraint is 
 
 Resolved for V0:
 
-- Runtime: TypeScript on Bun `>=1.3`.
+- Source runtime: TypeScript on Bun `>=1.4`.
 - Command: `topchester` for the interactive agent.
 - Install shape: curl installer and npm global package.
 - TUI foundation: OpenTUI Solid in append-only split-footer mode.

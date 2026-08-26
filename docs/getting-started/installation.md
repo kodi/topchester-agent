@@ -22,7 +22,7 @@ npm install -g topchester-ai
 topchester --version
 ```
 
-Use npm for the supported standalone installation path. Bun `>=1.3` is required only when running or building Topchester from source.
+Use npm for the supported standalone installation path. Bun `>=1.4` is required only when running or building Topchester from source.
 
 ## Update
 

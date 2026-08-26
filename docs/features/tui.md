@@ -19,7 +19,7 @@ The TUI has a thread area, a visible plan block when the agent is working throug
 
 The lower status row shows active context on the right when a model request has established a snapshot. Wide terminals show used capacity, percentage, and safe remaining space; narrower terminals collapse detail before wrapping. Estimated values use `~`, and unknown route capacity renders as `ctx ~used/?` without a fabricated percentage. Warning and limit text accompany semantic color, so `NO_COLOR` remains actionable. `/context` opens the complete route and provenance diagnostic.
 
-The packaged CLI runs on Bun `>=1.3` and renders with OpenTUI Solid. It uses split-footer mode: completed transcript entries are appended to ordinary terminal scrollback exactly once, while the composer, suggestions, plan, live status, and dialogs repaint in a bounded footer.
+The source CLI runs on Bun `>=1.4` and renders with OpenTUI Solid. It uses split-footer mode: completed transcript entries are appended to ordinary terminal scrollback exactly once, while the composer, suggestions, plan, live status, and dialogs repaint in a bounded footer.
 
 Assistant fenced code blocks use the fence language, such as `ts`, `tsx`, or
 `css`, for syntax highlighting. Code stays selectable in terminal scrollback;

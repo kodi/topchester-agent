@@ -4,7 +4,7 @@ This is the shortest path to a working Topchester agent in a project.
 
 ## Requirements
 
-- Bun `>=1.3`
+- Bun `>=1.4`
 - A model provider key. The examples below use OpenRouter through `OPENROUTER_API_KEY`.
 
 ## 1. Install Topchester
