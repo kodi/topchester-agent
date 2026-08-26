@@ -18,7 +18,7 @@ import {
   type ToolProtocolAttempt,
   type ToolProtocolOverride,
 } from "../agent/tools/types.js";
-import { type ReasoningEffort } from "../config/index.js";
+import { openRouterProviderDefaults, type ReasoningEffort } from "../config/index.js";
 import { createCodexProviderFetch, isCodexProvider, type CodexProviderFetchOptions } from "./codex.js";
 import {
   getProviderModelCapacity,
@@ -199,7 +199,8 @@ export class ModelGateway {
   }
 
   async discoverModelCapacity(
-    purpose: ModelPurpose = "agent.primary"
+    purpose: ModelPurpose = "agent.primary",
+    abortSignal?: AbortSignal
   ): Promise<{ route: ContextRoute; capacity: ContextCapacity } | undefined> {
     const resolved = this.resolveModel(purpose);
     const route = {
@@ -209,7 +210,9 @@ export class ModelGateway {
     };
     const retained = getProviderModelCapacity(route);
     if (retained) return { route, capacity: retained };
-    if (resolved.providerConfig.discoverModelLimits !== true) return undefined;
+    if (resolved.providerConfig.discoverModelLimits !== true && !isDirectOpenRouterRoute(resolved.providerConfig)) {
+      return undefined;
+    }
     const key = `${resolved.providerId}\u0000${resolved.providerConfig.baseURL}\u0000${resolved.modelId}`;
     if (this.#capacityDiscoveryAttempts.has(key)) return undefined;
     this.#capacityDiscoveryAttempts.add(key);
@@ -217,7 +220,7 @@ export class ModelGateway {
     const headers: Record<string, string> = { ...resolved.providerConfig.headers };
     const apiKey = resolveApiKey(resolved.providerConfig);
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-    const response = await fetch(url, { headers });
+    const response = await fetch(url, { headers, ...(abortSignal ? { signal: abortSignal } : {}) });
     if (!response.ok) return undefined;
     const body = (await response.json()) as unknown;
     const entries =
@@ -795,6 +798,22 @@ function shouldApplyOpenRouterRoutingOptions(providerId: string, config: OpenAIC
 
 function isOpenRouterProvider(providerId: string, config: OpenAICompatibleProviderConfig): boolean {
   return providerId.toLowerCase().includes("openrouter") || config.baseURL.toLowerCase().includes("openrouter.ai");
+}
+
+function isDirectOpenRouterRoute(config: OpenAICompatibleProviderConfig): boolean {
+  return normalizeProviderBaseURL(config.baseURL) === normalizeProviderBaseURL(openRouterProviderDefaults.baseURL);
+}
+
+function normalizeProviderBaseURL(baseURL: string): string | undefined {
+  try {
+    const url = new URL(baseURL);
+    url.hash = "";
+    url.search = "";
+    url.pathname = url.pathname.replace(/\/+$/u, "") || "/";
+    return url.toString().replace(/\/$/u, "");
+  } catch {
+    return undefined;
+  }
 }
 
 function hasOpenRouterRoutingOptions(providerOptions: ProviderOptions, providerId: string): boolean {

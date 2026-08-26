@@ -72,6 +72,66 @@ describe("runtime event queue", () => {
   });
 });
 
+describe("agent startup capacity discovery", () => {
+  it("discovers and persists the active primary route during the readiness check", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-startup-capacity-"));
+    const context = createTestContext(workspace);
+    const persisted: unknown[] = [];
+    const calls: string[] = [];
+    context.contextCapacityRegistry = {
+      set(route: unknown, capacity: unknown) {
+        persisted.push({ route, capacity });
+      },
+    } as unknown as NonNullable<AppContext["contextCapacityRegistry"]>;
+    context.modelGateway = {
+      async discoverModelCapacity(purpose: string, abortSignal?: AbortSignal) {
+        calls.push(`discover:${purpose}`);
+        expect(abortSignal).toBeInstanceOf(AbortSignal);
+        return {
+          route: {
+            providerId: "openrouter",
+            baseURL: "https://openrouter.ai/api/v1",
+            modelId: "google/gemini-3.7-flash",
+          },
+          capacity: {
+            contextWindow: 1_048_576,
+            source: "provider" as const,
+            confidence: "reported" as const,
+          },
+        };
+      },
+      async generateText() {
+        calls.push("health");
+        return {
+          text: "ready",
+          providerId: "openrouter",
+          modelId: "google/gemini-3.1-flash-lite",
+          purpose: "agent.fast" as const,
+        };
+      },
+    } as unknown as AppContext["modelGateway"];
+
+    const events = await new TopchesterAgentRuntime(context).checkAgent();
+
+    expect(events).toEqual([{ type: "status", status: "ready" }]);
+    expect(calls).toEqual(expect.arrayContaining(["discover:agent.primary", "health"]));
+    expect(persisted).toEqual([
+      {
+        route: {
+          providerId: "openrouter",
+          baseURL: "https://openrouter.ai/api/v1",
+          modelId: "google/gemini-3.7-flash",
+        },
+        capacity: {
+          contextWindow: 1_048_576,
+          source: "provider",
+          confidence: "reported",
+        },
+      },
+    ]);
+  });
+});
+
 describe("agent runtime project instructions", () => {
   it("logs session-scoped turn, model, and setup timing records", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-agent-runtime-"));

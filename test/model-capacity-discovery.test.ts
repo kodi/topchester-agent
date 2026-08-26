@@ -44,6 +44,37 @@ describe("provider model capacity discovery", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("automatically discovers capacity for the trusted direct OpenRouter route", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ data: [{ id: "fixture-model", context_length: 1_048_576 }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = createGateway("https://openrouter.ai/api/v1", false, "openrouter");
+
+    await expect(gateway.discoverModelCapacity()).resolves.toMatchObject({
+      route: {
+        providerId: "openrouter",
+        baseURL: "https://openrouter.ai/api/v1",
+        modelId: "fixture-model",
+      },
+      capacity: { contextWindow: 1_048_576, source: "provider" },
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("does not trust an OpenRouter-named provider on a custom route", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = createGateway("https://openrouter-proxy.test/v1", false, "openrouter-custom");
+
+    await expect(gateway.discoverModelCapacity()).resolves.toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("uses only the exact model entry from an opted-in VibeProxy-like models response", async () => {
     const fetchMock = vi.fn(
       async (_input: URL | RequestInfo, _init?: RequestInit) =>
@@ -76,13 +107,13 @@ describe("provider model capacity discovery", () => {
   });
 });
 
-function createGateway(baseURL: string, discoverModelLimits: boolean): ModelGateway {
+function createGateway(baseURL: string, discoverModelLimits: boolean, providerId = "proxy"): ModelGateway {
   return new ModelGateway({
     defaultPurpose: "agent.primary",
-    defaultProvider: "proxy",
-    models: { "agent.primary": { provider: "proxy", name: "fixture-model" } },
+    defaultProvider: providerId,
+    models: { "agent.primary": { provider: providerId, name: "fixture-model" } },
     providers: {
-      proxy: {
+      [providerId]: {
         type: "openai-compatible",
         baseURL,
         apiKey: "fixture-key",

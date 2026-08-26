@@ -969,6 +969,39 @@ Optional live checks, recorded separately from deterministic tests:
 
 Dependencies: Slices 1 through 8.
 
+### Slice 9.1: Startup Discovery For CLI Model Overrides
+
+Status: `[x]` Completed on 2026-08-26
+
+Goal: Resolve trusted OpenRouter capacity when the active primary model is selected directly with `-m` or `--model`, without requiring `/model all` first.
+
+Why here: Slice 9 retained metadata fetched by the picker, but a CLI model override can bypass that catalog path and leave a known direct OpenRouter route at `ctx used/?`.
+
+This slice should implement:
+
+- Start capacity discovery for the exact active `agent.primary` route in parallel with the startup readiness check.
+- Automatically allow discovery only for the exact built-in OpenRouter base URL; keep custom OpenAI-compatible and OpenRouter-named proxy routes behind `discoverModelLimits: true`.
+- Bound and cancel the startup metadata request, persist successful route metadata in the existing workspace registry, and keep discovery failure non-fatal.
+- Retain the existing pre-model-call discovery as a fallback.
+- Add focused route-trust and startup-persistence tests.
+
+Expected output:
+
+- A direct OpenRouter model selected by `-m` or `--model` gets a known denominator before normal agent work when OpenRouter reports `context_length`.
+- Custom routes preserve the safe unknown-capacity default unless explicitly opted in.
+
+Verification:
+
+```sh
+mise exec -- vp test run test/model-capacity-discovery.test.ts test/agent-runtime.test.ts
+mise exec -- vp check --no-fmt --no-lint
+mise run local-ci
+```
+
+Passed on 2026-08-26. The broader focused pass also included `test/openrouter-models.test.ts`, `test/agent-health.test.ts`, and `test/tui-controller.test.ts` (5 files, 69 tests).
+
+Dependencies: Slice 9.
+
 ### Slice 10: Enablement, Documentation, Smoke Coverage, And Cleanup
 
 Status: `[x]` Completed on 2026-08-26
@@ -1153,4 +1186,5 @@ Record exact passed commands and dates in this plan. Keep deterministic fake-pro
 - 2026-08-26: `mise run test` passed (50 files, 748 tests) and ran the OpenTUI production renderer. `mise run local-ci` passed separately. `mise run native-package-check` passed the packed native install and PTY smoke after status-bar priority was corrected so an actionable Ctrl-C notice suppresses context detail instead of being clipped.
 - 2026-08-26: `mise run smoke` passed all 20 deterministic fake-provider scenarios. The final report is `/var/folders/vk/lg6zbk2n68723vt8jkkkmpj80000gn/T/topchester-smoke-1787731711714/report.json`.
 - 2026-08-26: Optional live VibeProxy metadata checks were not run. Deterministic fake-provider coverage proves configured, discovered, learned, and unknown-capacity contracts without claiming live proxy compatibility.
+- 2026-08-26: Follow-up Slice 9.1 closed the CLI override discovery gap. Startup now discovers and persists capacity for the exact built-in OpenRouter route in parallel with the existing readiness call, while custom routes remain opt-in. `mise exec -- vp test run test/model-capacity-discovery.test.ts test/openrouter-models.test.ts test/agent-health.test.ts test/agent-runtime.test.ts test/tui-controller.test.ts` passed (5 files, 69 tests), and `mise run local-ci` passed.
 - 2026-08-26: Minor-release run `32946586042` stopped before publication because the Linux PTY stream never emitted the complete Ctrl-C notice contiguously after the status-bar layout changed. The actionable notice now replaces all diagnostic status content as one keyed row; OpenTUI production rendering and the packed native PTY lifecycle gate pass with that release fix.

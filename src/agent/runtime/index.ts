@@ -116,6 +116,7 @@ const PLAN_TODO_MODE_ENV = "TOPCHESTER_PLAN_TODO_MODE";
 const MAX_PLAN_TODO_UPDATES_PER_TURN_ENV = "TOPCHESTER_MAX_PLAN_TODO_UPDATES_PER_TURN";
 const DEFAULT_COMPACT_MAX_PLAN_TODO_UPDATES_PER_TURN = 3;
 const DEFAULT_TASK_CONCURRENCY = 3;
+const STARTUP_CAPACITY_DISCOVERY_TIMEOUT_MS = 30_000;
 
 type PlanTodoMode = "normal" | "compact";
 
@@ -434,7 +435,10 @@ export class TopchesterAgentRuntime implements AgentRuntime {
    * user can continue.
    */
   async checkAgent(abortSignal?: AbortSignal): Promise<AgentRuntimeEvent[]> {
-    const result = await checkAgentReady(this.context.modelGateway, abortSignal);
+    const [result] = await Promise.all([
+      checkAgentReady(this.context.modelGateway, abortSignal),
+      this.discoverStartupModelCapacity(abortSignal),
+    ]);
 
     if (result === "ready") {
       return [agentEvent.status("ready")];
@@ -448,6 +452,24 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     }
 
     return [agentEvent.systemMessage("Agent did not say it was ready."), agentEvent.status("ready")];
+  }
+
+  private async discoverStartupModelCapacity(abortSignal?: AbortSignal): Promise<void> {
+    const timeoutSignal = AbortSignal.timeout(STARTUP_CAPACITY_DISCOVERY_TIMEOUT_MS);
+    const signal = abortSignal ? AbortSignal.any([abortSignal, timeoutSignal]) : timeoutSignal;
+
+    try {
+      const discovered = await this.context.modelGateway.discoverModelCapacity?.("agent.primary", signal);
+      if (discovered) this.context.contextCapacityRegistry?.set(discovered.route, discovered.capacity);
+    } catch (error) {
+      this.context.logger.debug(
+        {
+          event: "startup_context_capacity_discovery_failed",
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "startup context capacity discovery failed"
+      );
+    }
   }
 
   /**

@@ -43,7 +43,7 @@ Each provider supports:
 
 `modelLimits` is provider-owned and route-aware. `contextWindow` describes a shared window, while `maxInputTokens` and `maxOutputTokens` describe separate provider ceilings when available. At least `contextWindow` or `maxInputTokens` is required. Positive integers only. Add `assumed: true` to label an explicit policy assumption instead of authoritative config.
 
-`discoverModelLimits` defaults to `false`. When opted in, Topchester reads only allowlisted context fields from the exact route's `/models` response. OpenRouter catalog metadata already fetched for the picker is retained for the matching OpenRouter route.
+`discoverModelLimits` defaults to `false` for generic OpenAI-compatible routes. When opted in, Topchester reads only allowlisted context fields from the exact route's `/models` response. The built-in direct OpenRouter route discovers the active primary model during the startup agent check, including models selected with `-m` or `--model`. OpenRouter catalog metadata already fetched for the picker is also retained for the matching route. Custom routes remain opt-in even when their provider id contains `openrouter`.
 
 Top-level compaction policy defaults to:
 
