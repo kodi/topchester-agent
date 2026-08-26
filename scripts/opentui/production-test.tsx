@@ -470,6 +470,11 @@ async function testTranscriptWriter(): Promise<void> {
       sessionEpoch: 1,
       transcript: [{ kind: "user", persistence: "session", text: "restored prompt" }],
     });
+    let terminalClearCount = 0;
+    setup.renderer.resetSplitFooterForReplay = (options) => {
+      terminalClearCount += 1;
+      assert.deepEqual(options, { clearSavedLines: true });
+    };
     writer.sync(setup.renderer, restoredSnapshot, theme, syntaxStyle);
     writer.sync(setup.renderer, restoredSnapshot, theme, syntaxStyle);
     await writer.idle();
@@ -478,6 +483,24 @@ async function testTranscriptWriter(): Promise<void> {
     assert.equal(replay.length, 2);
     assert.match(replay.map((entry) => entry.text).join("\n"), /session restored/u);
     assert.match(replay.map((entry) => entry.text).join("\n"), /restored prompt/u);
+
+    assert.equal(terminalClearCount, 0);
+
+    const clearedSnapshot = resetTranscriptSnapshot(restoredSnapshot, {
+      sessionId: "cleared-session",
+      sessionEpoch: 2,
+      transcript: [{ kind: "user", persistence: "session", text: "fresh after clear" }],
+      clearTerminal: true,
+    });
+    writer.sync(setup.renderer, clearedSnapshot, theme, syntaxStyle);
+    writer.sync(setup.renderer, clearedSnapshot, theme, syntaxStyle);
+    await writer.idle();
+    await setup.flush();
+    const clearedOutput = setup.externalOutput.take();
+    assert.equal(terminalClearCount, 1);
+    assert.equal(clearedOutput.length, 2);
+    assert.match(clearedOutput.map((entry) => entry.text).join("\n"), /session cleared/u);
+    assert.match(clearedOutput.map((entry) => entry.text).join("\n"), /fresh after clear/u);
 
     const pendingWriter = new TranscriptWriter();
     const staleSnapshot = resetTranscriptSnapshot(restoredSnapshot, {
@@ -956,13 +979,19 @@ function appendTranscriptSnapshot(snapshot: TuiViewState, entries: readonly Tran
 
 function resetTranscriptSnapshot(
   snapshot: TuiViewState,
-  options: { sessionId: string; sessionEpoch: number; transcript: readonly TranscriptEntry[] }
+  options: {
+    sessionId: string;
+    sessionEpoch: number;
+    transcript: readonly TranscriptEntry[];
+    clearTerminal?: boolean;
+  }
 ): TuiViewState {
   const records = options.transcript.map((entry, id) => ({ sessionEpoch: options.sessionEpoch, id, entry }));
   return {
     ...snapshot,
     sessionId: options.sessionId,
     sessionEpoch: options.sessionEpoch,
+    ...(options.clearTerminal ? { clearTerminalEpoch: options.sessionEpoch } : { clearTerminalEpoch: undefined }),
     transcript: [...options.transcript],
     transcriptRecords: records,
     transcriptChange: { kind: "reset", sessionEpoch: options.sessionEpoch, records },

@@ -24,7 +24,7 @@ describe("slash commands", () => {
 
   it("reports unknown commands", async () => {
     await expect(executeSlashCommand("/nope", { workspaceRoot: "/repo" })).resolves.toEqual({
-      messages: ["Unknown command: /nope", "Try /kb status, /new, /fork, or /restore."],
+      messages: ["Unknown command: /nope", "Try /kb status, /new, /clear, /fork, or /restore."],
     });
   });
 
@@ -127,6 +127,10 @@ describe("slash commands", () => {
         description: "start a fresh session",
       },
       {
+        value: "/clear",
+        description: "start a fresh session and clear terminal output",
+      },
+      {
         value: "/fork",
         description: "fork the current session",
       },
@@ -149,6 +153,16 @@ describe("slash commands", () => {
       {
         value: "/connect",
         description: "connect a model provider",
+      },
+      {
+        value: "/clear",
+        description: "start a fresh session and clear terminal output",
+      },
+    ]);
+    expect(getSlashCommandSuggestions("/cl")).toEqual([
+      {
+        value: "/clear",
+        description: "start a fresh session and clear terminal output",
       },
     ]);
     expect(getSlashCommandSuggestions("/e")).toEqual([
@@ -374,6 +388,12 @@ describe("slash commands", () => {
   it("reports that /new is an interactive TUI command outside the TUI", async () => {
     await expect(executeSlashCommand("/new", { workspaceRoot: "/repo" })).resolves.toEqual({
       messages: ["/new starts a fresh session in the interactive TUI."],
+    });
+  });
+
+  it("reports that /clear is an interactive TUI command outside the TUI", async () => {
+    await expect(executeSlashCommand("/clear", { workspaceRoot: "/repo" })).resolves.toEqual({
+      messages: ["/clear starts a fresh session and clears terminal output in the interactive TUI."],
     });
   });
 

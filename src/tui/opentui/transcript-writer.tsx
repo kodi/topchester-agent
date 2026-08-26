@@ -68,6 +68,7 @@ export class TranscriptWriter {
   private failure: { error: unknown } | undefined;
   private readonly cursor: TranscriptAppendCursor;
   private sessionEpoch = -1;
+  private clearTerminalEpoch = -1;
   private disposed = false;
 
   constructor(
@@ -84,6 +85,10 @@ export class TranscriptWriter {
 
     const update = this.cursor.sync(snapshot);
     this.sessionEpoch = update.sessionEpoch;
+    if (snapshot.clearTerminalEpoch === update.sessionEpoch && this.clearTerminalEpoch !== update.sessionEpoch) {
+      this.clearTerminalEpoch = update.sessionEpoch;
+      this.scheduleTerminalClear(renderer, update.sessionEpoch);
+    }
     if (update.sessionChanged) {
       this.scheduleCommit(
         renderer,
@@ -117,6 +122,21 @@ export class TranscriptWriter {
 
   dispose(): void {
     this.disposed = true;
+  }
+
+  private scheduleTerminalClear(renderer: CliRenderer, sessionEpoch: number): void {
+    this.pending = this.pending.then(() => {
+      if (this.disposed || this.failure || sessionEpoch !== this.sessionEpoch) {
+        return;
+      }
+      try {
+        renderer.resetSplitFooterForReplay({ clearSavedLines: true });
+      } catch (error) {
+        if (!this.disposed && sessionEpoch === this.sessionEpoch) {
+          this.reportFailure(error);
+        }
+      }
+    });
   }
 
   private scheduleCommit(

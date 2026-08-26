@@ -24,7 +24,8 @@ Common commands:
 - `/effort <none|minimal|low|medium|high|xhigh|max>` sets a session override for the active model provider.
 - `/effort clear` or `/effort default` removes the session override so the configured effort or provider default applies.
 - `/reasoning` is an alias for `/effort`.
-- `/new` clears the terminal and starts a fresh project-local session.
+- `/new` starts a fresh project-local session and keeps existing terminal history.
+- `/clear` works like `/new`, then clears the visible terminal and saved scrollback.
 - `/fork` clones the current session into a new project-local session and switches to it.
 - `/queue <prompt>` queues a follow-up prompt, or starts it immediately when idle.
 - `/q <prompt>` is a short alias for `/queue`.
@@ -47,8 +48,8 @@ provider `openrouter` and model `google/gemini-3.1-flash-lite`. Built-in
 OpenRouter and Codex references do not need saved provider config. Custom
 providers still do.
 
-`none` is an explicit reasoning effort value. Use `clear` or `default` when you want to remove the session override instead. Chat model, KB model, and effort overrides survive resume, restore, and fork; `/new` returns to JSONC defaults.
+`none` is an explicit reasoning effort value. Use `clear` or `default` when you want to remove the session override instead. Chat model, KB model, and effort overrides survive resume, restore, and fork; `/new` and `/clear` return to JSONC defaults.
 
 Type `/effort ` or `/reasoning ` with a trailing space to list all accepted effort values in the suggestion panel. Continue typing to narrow the list, then press `Tab` to complete the selected value.
 
-`/model`, `/kb-model`, `/connect`, `/effort`, `/reasoning`, `/new`, `/fork`, `/restore`, `/queue`, `/q`, and `/steer` are TUI-only. In `topchester run`, Topchester prints a short message that says to use the interactive TUI. Use the `--kb-model` run option instead.
+`/model`, `/kb-model`, `/connect`, `/effort`, `/reasoning`, `/new`, `/clear`, `/fork`, `/restore`, `/queue`, `/q`, and `/steer` are TUI-only. In `topchester run`, Topchester prints a short message that says to use the interactive TUI. Use the `--kb-model` run option instead.

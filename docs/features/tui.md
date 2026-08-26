@@ -54,7 +54,7 @@ status does not walk the project to count every possible input file.
 - `Escape` dismisses the active suggestion/dialog or cancels active work when cancellation is available.
 - During active work, `Ctrl-C` stops the command or response. Otherwise, `Ctrl-C` once asks for confirmation and `Ctrl-C` again exits.
 
-Topchester does not use the terminal alternate screen and leaves mouse reporting disabled, so terminal-native selection and scrollback remain available. New, forked, and restored sessions append a visible session boundary; they do not clear unrelated terminal history.
+Topchester does not use the terminal alternate screen and leaves mouse reporting disabled, so terminal-native selection and scrollback remain available. New, forked, and restored sessions append a visible session boundary; they do not clear unrelated terminal history. Use `/clear` when you want a fresh session and also want to erase the visible terminal and saved scrollback.
 
 When Topchester runs inside a Herdr pane, it reports its native lifecycle automatically. Herdr shows the pane as `topchester`, marks model and tool work as working, marks a bash approval prompt as blocked, returns to idle when Topchester is ready, and releases the report when Topchester exits. The integration is a no-op outside Herdr and does not require a Topchester hook configuration.
 
@@ -79,7 +79,7 @@ Use `/queue <prompt>` to explicitly queue a follow-up. When the agent is idle, `
 
 Use `/steer <prompt>` to send best-effort guidance to the active turn. If the runtime reaches a safe tool-result checkpoint, the guidance is folded into the next model prompt without creating a visible user message. If it is not consumed before the active turn completes, Topchester queues it as a follow-up so the text is not lost.
 
-V0 queues are not persisted across restarts, cannot be edited or removed from a queue-management view, and do not have a configurable busy input mode. Switching sessions with `/new`, `/fork`, or `/restore` drops queued follow-ups and pending steering with a visible notice.
+V0 queues are not persisted across restarts, cannot be edited or removed from a queue-management view, and do not have a configurable busy input mode. Switching sessions with `/new`, `/clear`, `/fork`, or `/restore` drops queued follow-ups and pending steering with a visible notice.
 
 The TUI shows reasoning text exposed by the provider by default. Set `TOPCHESTER_STREAM_REASONING=0` to hide it. Recent thinking updates appear as separate dim rows, with Markdown-style bold headings shown as plain status text instead of raw `**` markers. The spinner and stop hint stay beside the newest update. Providers that do not expose reasoning keep the normal spinner text.
 

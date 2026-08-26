@@ -30,6 +30,7 @@ export type TuiTranscriptChange =
 export interface TuiViewState {
   sessionId: string;
   sessionEpoch: number;
+  clearTerminalEpoch?: number;
   workspaceLabel: string;
   transcript: readonly TranscriptEntry[];
   transcriptRecords: readonly TuiTranscriptRecord[];
@@ -246,6 +247,7 @@ export class TuiViewStore {
     taskPlan?: TaskPlanState;
     status?: string;
     startupHint?: string;
+    clearTerminal?: boolean;
   }): void {
     if (this.batchDepth > 0) this.batchTemporaryLineUpdate = { temporaryLine: undefined };
     else this.clearTemporaryLineTimer();
@@ -256,6 +258,7 @@ export class TuiViewStore {
     this.replaceState({
       sessionId: options.sessionId,
       sessionEpoch,
+      ...(options.clearTerminal ? { clearTerminalEpoch: sessionEpoch } : {}),
       workspaceLabel: this.state.workspaceLabel,
       transcript,
       transcriptRecords,

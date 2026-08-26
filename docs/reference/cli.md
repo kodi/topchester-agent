@@ -159,6 +159,8 @@ The fork gets a fresh top-level session ID, opens through the normal resume hydr
 
 Runs one prompt or slash command without opening the TUI.
 
+Session controls such as `/new`, `/clear`, `/fork`, and `/restore` need the interactive TUI. When passed to `topchester run`, they print a short TUI-only explanation instead of changing sessions or terminal output.
+
 ```sh
 topchester run "Read data.txt and summarize it."
 topchester run --json "Edit greeting.txt and change Hello to Goodbye."

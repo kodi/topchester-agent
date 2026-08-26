@@ -61,6 +61,7 @@ import {
   getModelLabel,
   getSlashCommandActivities,
   getSlashCommandArgs,
+  isClearSessionCommand,
   isConnectCommand,
   isForkSessionCommand,
   isKbModelCommand,
@@ -828,6 +829,10 @@ export class TopchesterTuiController implements TuiController {
       await this.startNewSession();
       return;
     }
+    if (isClearSessionCommand(command)) {
+      await this.startNewSession({ clearTerminal: true });
+      return;
+    }
     if (isForkSessionCommand(command)) {
       await this.forkCurrentSession();
       return;
@@ -1000,6 +1005,7 @@ export class TopchesterTuiController implements TuiController {
       name === "skills" ||
       name === "kb" ||
       isNewSessionCommand(command) ||
+      isClearSessionCommand(command) ||
       isConnectCommand(command) ||
       isModelCommand(command) ||
       isKbModelCommand(command) ||
@@ -1446,7 +1452,7 @@ export class TopchesterTuiController implements TuiController {
     }
   }
 
-  private async startNewSession(): Promise<void> {
+  private async startNewSession(options: { clearTerminal?: boolean } = {}): Promise<void> {
     const previousSession = this.session;
     this.persistenceBlockedSessions.add(previousSession);
     this.cancelPending?.();
@@ -1476,6 +1482,7 @@ export class TopchesterTuiController implements TuiController {
         transcript,
         modelLabel: getModelLabel(this.context),
         startupHint: STARTUP_PROMPT_HINT,
+        clearTerminal: options.clearTerminal,
       });
       await this.checkAgent();
     } finally {

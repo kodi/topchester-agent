@@ -37,7 +37,7 @@ Events are append-only JSONL. They include user messages, assistant messages, to
 `/restore` apply the latest valid snapshot before rendering or sending a model
 request. An explicit chat or KB CLI model wins over the restored choice for that
 slot. A fork inherits its source snapshot and can then diverge independently.
-`/new` starts with empty overrides and the currently loaded JSONC defaults. Old
+`/new` and `/clear` start with empty overrides and the currently loaded JSONC defaults. `/clear` uses the same fresh-session lifecycle as `/new`, then clears the visible terminal and saved scrollback. Old
 sessions with `activeModel` runtime events restore that value as the chat model;
 sessions without runtime config events continue to load with empty overrides.
 

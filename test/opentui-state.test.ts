@@ -253,6 +253,21 @@ describe("OpenTUI local UI state", () => {
         records: [expect.objectContaining({ id: 0, sessionEpoch: 1 })],
       },
     });
+    expect(view.getSnapshot().clearTerminalEpoch).toBeUndefined();
+
+    view.reset({
+      sessionId: "third",
+      transcript: [{ kind: "system", persistence: "session", text: "cleared" }],
+      modelLabel: "fixture",
+      clearTerminal: true,
+    });
+    expect(view.getSnapshot()).toMatchObject({ sessionEpoch: 2, clearTerminalEpoch: 2 });
+
+    view.setStatus("ready");
+    expect(view.getSnapshot()).toMatchObject({ sessionEpoch: 2, clearTerminalEpoch: 2 });
+
+    view.reset({ sessionId: "fourth", transcript: [], modelLabel: "fixture" });
+    expect(view.getSnapshot().clearTerminalEpoch).toBeUndefined();
   });
 
   it("previews large pastes and expands them exactly at submission", () => {

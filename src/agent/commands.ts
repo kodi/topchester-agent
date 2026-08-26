@@ -151,6 +151,10 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
     description: "start a fresh session",
   },
   {
+    value: "/clear",
+    description: "start a fresh session and clear terminal output",
+  },
+  {
     value: "/fork",
     description: "fork the current session",
   },
@@ -222,6 +226,11 @@ export const slashCommands: SlashCommand[] = [
     execute: executeNewCommand,
   },
   {
+    name: "clear",
+    description: "start a fresh interactive TUI session and clear terminal output",
+    execute: executeClearCommand,
+  },
+  {
     name: "fork",
     description: "fork the current interactive TUI session",
     execute: executeForkCommand,
@@ -283,7 +292,7 @@ export async function executeSlashCommand(input: string, context: SlashCommandCo
       return shortcutResult;
     }
 
-    return { messages: [`Unknown command: /${parsed.name}`, "Try /kb status, /new, /fork, or /restore."] };
+    return { messages: [`Unknown command: /${parsed.name}`, "Try /kb status, /new, /clear, /fork, or /restore."] };
   }
 
   return command.execute(parsed.args, context);
@@ -558,6 +567,12 @@ function formatConfiguredModelRef(config: TopchesterConfig | undefined, purpose:
 function executeNewCommand(): SlashCommandResult {
   return {
     messages: ["/new starts a fresh session in the interactive TUI."],
+  };
+}
+
+function executeClearCommand(): SlashCommandResult {
+  return {
+    messages: ["/clear starts a fresh session and clears terminal output in the interactive TUI."],
   };
 }
 

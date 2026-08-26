@@ -71,6 +71,10 @@ export function isNewSessionCommand(command: string): boolean {
   return command.trim() === "/new";
 }
 
+export function isClearSessionCommand(command: string): boolean {
+  return command.trim() === "/clear";
+}
+
 export function isForkSessionCommand(command: string): boolean {
   return command.trim() === "/fork";
 }

@@ -427,6 +427,28 @@ describe("framework-neutral TUI controller", () => {
     await controller.dispose();
   });
 
+  it("starts a fresh session for /clear and marks only that session for terminal clearing", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-clear-"));
+    const controller = await TopchesterTuiController.create(createTestContext(workspace), createControllerRuntime());
+    const initialSessionId = controller.getSnapshot().sessionId;
+
+    controller.submitCommand("/new");
+    await controller.waitForIdle();
+    const afterNew = controller.getSnapshot();
+    expect(afterNew).toMatchObject({ sessionEpoch: 1 });
+    expect(afterNew.sessionId).not.toBe(initialSessionId);
+    expect(afterNew.clearTerminalEpoch).toBeUndefined();
+
+    controller.submitCommand("/clear");
+    await controller.waitForIdle();
+    const afterClear = controller.getSnapshot();
+    expect(afterClear).toMatchObject({ sessionEpoch: 2, clearTerminalEpoch: 2 });
+    expect(afterClear.sessionId).not.toBe(afterNew.sessionId);
+    expect(JSON.stringify(afterClear.transcript)).not.toContain("/clear");
+
+    await controller.dispose();
+  });
+
   it("exposes typed managed dialogs and resolves them through semantic actions", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-dialog-"));
     const controller = await TopchesterTuiController.create(createTestContext(workspace), createControllerRuntime());
