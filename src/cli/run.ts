@@ -15,6 +15,7 @@ import {
   loadSession,
   loadSessionForAppend,
   rehydrateSession,
+  type RehydratedSession,
   type SessionHandle,
 } from "../session/store.js";
 import { runtimeEventToSessionPayload as runtimeEventToSessionPayloadFromSession } from "../session/runtime-payloads.js";
@@ -41,9 +42,11 @@ interface RunJsonEvent {
 
 export async function executeRunCommand(context: AppContext, options: RunCommandOptions): Promise<void> {
   const runId = randomUUID();
+  let resumed: RehydratedSession | undefined;
   if (options.resume) {
     const loaded = await loadSession(context.workspaceRoot, options.resume);
-    restoreRuntimeConfigOverrides(context, rehydrateSession(loaded.events).runtimeConfigOverrides);
+    resumed = rehydrateSession(loaded.events);
+    restoreRuntimeConfigOverrides(context, resumed.runtimeConfigOverrides);
   }
   if (options.model) {
     setRuntimeModelReference(context, options.model);
@@ -55,8 +58,9 @@ export async function executeRunCommand(context: AppContext, options: RunCommand
   const runtime = new TopchesterAgentRuntime(runContext);
   const jsonEvents: RunJsonEvent[] = [];
   const session = await resolveRunSession(runContext.workspaceRoot, options.resume);
+  runtime.restoreContextStatus(resumed?.contextStatus, session);
   const herdrReporter = createHerdrAgentReporter();
-  const conversation = options.resume ? await loadConversation(runContext.workspaceRoot, options.resume) : [];
+  const conversation = resumed ? conversationFromRehydratedSession(resumed) : [];
   const startedAt = Date.now();
   const timeoutMs = options.timeoutMs;
   const abortController = new AbortController();
@@ -186,9 +190,10 @@ async function resolveRunSession(workspaceRoot: string, resume: string | undefin
   return loadSessionForAppend(workspaceRoot, loaded.sessionId);
 }
 
-async function loadConversation(workspaceRoot: string, resume: string): Promise<ConversationTurn[]> {
-  const loaded = await loadSession(workspaceRoot, resume);
-  const rehydrated = rehydrateSession(loaded.events);
+function conversationFromRehydratedSession(rehydrated: RehydratedSession): ConversationTurn[] {
+  if (rehydrated.modelContextTurns) {
+    return [...rehydrated.modelContextTurns];
+  }
 
   return rehydrated.transcript.flatMap((entry): ConversationTurn[] => {
     switch (entry.kind) {

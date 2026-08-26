@@ -16,6 +16,23 @@ const openRouterAttributionHeaders = {
   "X-Title": "Topchester",
 };
 
+const modelLimitSchema = z
+  .object({
+    contextWindow: z.number().int().positive().optional(),
+    maxInputTokens: z.number().int().positive().optional(),
+    maxOutputTokens: z.number().int().positive().optional(),
+    assumed: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.contextWindow === undefined && value.maxInputTokens === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "A model limit must define contextWindow or maxInputTokens.",
+      });
+    }
+  });
+
 const providerSchema = z.object({
   type: z.literal("openai-compatible"),
   baseURL: z.string().url(),
@@ -29,7 +46,31 @@ const providerSchema = z.object({
   toolProtocol: toolProtocolSchema.optional(),
   openRouterToolRouting: z.enum(["auto", "force", "off"]).optional(),
   reasoningEffort: reasoningEffortSchema.optional(),
+  discoverModelLimits: z.boolean().optional(),
+  modelLimits: z.record(z.string().min(1), modelLimitSchema).optional(),
 });
+
+export const compactionConfigSchema = z
+  .object({
+    enabled: z.boolean().optional().default(true),
+    thresholdPercent: z.number().int().min(1).max(100).optional().default(85),
+    targetPercent: z.number().int().min(1).max(100).optional().default(40),
+    reserveTokens: z.number().int().positive().optional(),
+    keepRecentTokens: z.number().int().positive().optional().default(16_000),
+    maxCompactionsPerTurn: z.number().int().positive().max(10).optional().default(2),
+    learnProviderLimits: z.boolean().optional().default(true),
+    assumedContextWindow: z.number().int().positive().optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.targetPercent >= value.thresholdPercent) {
+      context.addIssue({
+        code: "custom",
+        path: ["targetPercent"],
+        message: "targetPercent must be lower than thresholdPercent.",
+      });
+    }
+  });
 
 const modelAssignmentSchema = z.object({
   name: z.string(),
@@ -299,6 +340,7 @@ export const topchesterConfigSchema = z.object({
   mcp: mcpConfigSchema.optional(),
   hooks: canonicalHooksConfigSchema.optional(),
   instructions: instructionsConfigSchema.optional(),
+  compaction: compactionConfigSchema.optional(),
 });
 
 const rawTopchesterConfigSchema = z.object({
@@ -324,6 +366,7 @@ const rawTopchesterConfigSchema = z.object({
   mcp: rawMcpConfigSchema.optional(),
   hooks: rawHooksConfigSchema.optional(),
   instructions: instructionsConfigSchema.optional(),
+  compaction: compactionConfigSchema.optional(),
 });
 
 const topchesterConfigFileSchema = topchesterConfigSchema.extend({

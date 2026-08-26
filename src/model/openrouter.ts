@@ -1,4 +1,5 @@
 import { openRouterProviderDefaults } from "../config/index.js";
+import { recordProviderModelCapacity, parseProviderModelCapacity } from "../agent/context/provider-metadata.js";
 
 export interface OpenRouterModel {
   id: string;
@@ -77,7 +78,17 @@ export async function fetchOpenRouterModels(options: FetchOpenRouterModelsOption
     throw new Error("OpenRouter models response did not include a data list.");
   }
 
-  return body.data.filter(isOpenRouterTextModel);
+  const models = body.data.filter(isOpenRouterTextModel);
+  for (const model of models) {
+    const capacity = parseProviderModelCapacity(model);
+    if (capacity) {
+      recordProviderModelCapacity(
+        { providerId: "openrouter", baseURL: openRouterProviderDefaults.baseURL, modelId: model.id },
+        capacity
+      );
+    }
+  }
+  return models;
 }
 
 export function selectOpenRouterStarterChoices(

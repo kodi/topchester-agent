@@ -90,6 +90,14 @@ export function runtimeEventToSessionPayload(event: AgentRuntimeEvent): SessionE
         parentToolCallId: event.parentToolCallId,
         error: event.error,
       };
+    case "context_usage":
+      return { kind: "context_usage", status: event.status };
+    case "context_compaction":
+      return {
+        kind: "context_compaction",
+        ...event.snapshot,
+        status: event.status,
+      };
     case "status":
       return {
         kind: "status",

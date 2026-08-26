@@ -387,7 +387,7 @@ Supported events:
 - `PreToolUse` — before a tool runs.
 - `PostToolUse` — after a tool returns.
 - `PermissionRequest` / `UserActionRequired` — the agent needs approval or another user action. `UserActionRequired` is an alias.
-- `PreCompact` — before context compaction. The hook is supported, but V0 has no automatic compaction path yet.
+- `PreCompact` — before manual, threshold, overflow-recovery, or model-switch compaction mutates model context.
 - `Stop` / `TaskComplete` — the turn finishes. `TaskComplete` is an alias.
 
 Command hook example:

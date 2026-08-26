@@ -9,6 +9,34 @@ import { clearSyncedSessionOverlayFile } from "../../knowledge/session-overlay.j
 import { executeSlashCommand, parseSlashCommand } from "../commands.js";
 import { type ConversationTurn, buildConversationPrompt } from "../conversation.js";
 import {
+  configuredCapacityForRoute,
+  contextPolicyFromConfig,
+  contextRouteKey,
+  deriveContextBudget,
+  resolveContextCapacity,
+} from "../context/capacity.js";
+import {
+  compactConversationDeterministically,
+  isEffectiveCompaction,
+  prunePromptSegments,
+} from "../context/compaction.js";
+import {
+  estimateTextTokens,
+  fingerprintProviderRequest,
+  reconcilePromptUsage,
+  type RequestEstimateInput,
+} from "../context/estimate.js";
+import { classifyContextOverflow } from "../context/overflow.js";
+import {
+  conversationTurnsToProjection,
+  projectionToConversationTurns,
+  type ContextCompactionSnapshot,
+  type InlineProjectionSegment,
+  type ModelContextProjection,
+} from "../context/projection.js";
+import { renderPromptSegments, type PromptSegment } from "../context/prompt.js";
+import { type ContextCapacity, type ContextStatus, type ContextUsageSnapshot } from "../context/types.js";
+import {
   ABORT_CHOICE_VALUE,
   agentEvent,
   choiceAction,
@@ -37,7 +65,7 @@ import { getChatSystemPrompt } from "../prompts.js";
 import { SubagentManager } from "../subagents.js";
 import { createTaskPlanController, hasOpenTaskPlan, type TaskPlanState } from "../task-plan.js";
 import { type SessionHandle } from "../../session/store.js";
-import { type ModelPurpose, type ModelReasoningSink } from "../../model/index.js";
+import { type ModelAgentResult, type ModelPurpose, type ModelReasoningSink } from "../../model/index.js";
 import {
   createSkillsService,
   formatSkillActivationPrompt,
@@ -99,9 +127,15 @@ export interface AgentRuntime {
     session?: SessionHandle,
     options?: { isResumed?: boolean; abortSignal?: AbortSignal }
   ): Promise<AgentRuntimeEvent[]>;
-  runPreCompactHooks?(
-    session?: SessionHandle,
-    options?: { reason?: string; abortSignal?: AbortSignal }
+  restoreContextStatus?(status: ContextStatus | undefined, session: SessionHandle): void;
+  compactConversation?(
+    conversation: ConversationTurn[],
+    options?: {
+      focus?: string;
+      reason?: "manual" | "model-switch";
+      session?: SessionHandle;
+      abortSignal?: AbortSignal;
+    }
   ): Promise<AgentRuntimeEvent[]>;
   submitMessageStream(
     conversation: ConversationTurn[],
@@ -204,12 +238,148 @@ function createSessionTurnTiming(logger: AppContext["logger"], session: SessionH
   };
 }
 
+function replacePromptPrefix(prompt: string, previous: string, next: string): string {
+  if (prompt === previous) return next;
+  if (prompt.startsWith(`${previous}\n\n`)) return `${next}${prompt.slice(previous.length)}`;
+  const index = prompt.indexOf(previous);
+  return index < 0 ? prompt : `${prompt.slice(0, index)}${next}${prompt.slice(index + previous.length)}`;
+}
+
+function replaceConversationInPromptSegments(segments: PromptSegment[], previous: string, next: string): void {
+  const conversation = segments.find((segment) => segment.kind === "conversation");
+  if (conversation) conversation.text = replacePromptPrefix(conversation.text, previous, next);
+}
+
+function appendToolContinuationSegments(
+  segments: PromptSegment[],
+  options: {
+    calls: readonly ToolCall[];
+    results: readonly ToolExecutionResult<ToolResult>[];
+    modelCall: number;
+    continuation: string;
+    hookContexts: string[];
+    steering: RuntimeSteeringBuffer | undefined;
+  }
+): void {
+  const associationId = `model-call-${options.modelCall}:${options.calls.map((call) => call.tool).join("+")}`;
+  const resultText = options.results.map((result) => formatToolResultForPrompt(result)).join("\n\n");
+  const replaceable = options.results.every(
+    (result) => !isToolErrorResult(result) && ["read_file", "grep", "list_files", "web_fetch"].includes(result.tool)
+  );
+  const firstCall = options.calls[0];
+  const firstArgs = firstCall?.args as { path?: unknown; command?: unknown } | undefined;
+  segments.push({
+    kind: "tool_result",
+    text: resultText,
+    retention: replaceable ? "replaceable" : "required",
+    associationId,
+    metadata: {
+      toolName: options.calls.map((call) => call.tool).join("+"),
+      ...(typeof firstArgs?.path === "string" ? { path: firstArgs.path } : {}),
+      ...(typeof firstArgs?.command === "string" ? { command: firstArgs.command } : {}),
+      error: options.results.some((result) => isToolErrorResult(result)),
+    },
+  });
+  segments.push({
+    kind: "continuation",
+    text: options.continuation,
+    retention: "required",
+    associationId,
+  });
+  const hookContext = formatHookContextsForPrompt("PostToolUse", options.hookContexts);
+  if (hookContext) segments.push({ kind: "hook_context", text: hookContext, retention: "required" });
+  const steering = options.steering?.drain()?.trim();
+  if (steering) {
+    segments.push({ kind: "steering", text: formatRuntimeSteeringPrompt(steering), retention: "required" });
+  }
+}
+
+function projectionWithRuntimeSegments(
+  projection: ModelContextProjection,
+  promptSegments: readonly PromptSegment[]
+): ModelContextProjection {
+  const prefix = promptSegments.flatMap((segment): InlineProjectionSegment[] =>
+    segment.kind === "knowledge" ? [{ kind: "inline", segmentKind: "knowledge", text: segment.text }] : []
+  );
+  const inline = promptSegments.flatMap((segment): InlineProjectionSegment[] => {
+    if (segment.kind === "conversation" || segment.kind === "current_user" || segment.kind === "knowledge") return [];
+    const segmentKind =
+      segment.kind === "tool_result"
+        ? "tool_result"
+        : segment.kind === "hook_context"
+          ? "hook_context"
+          : segment.kind === "steering"
+            ? "steering"
+            : "continuation";
+    return [
+      {
+        kind: "inline",
+        segmentKind,
+        text: segment.text,
+        ...(segment.associationId ? { toolAssociationId: segment.associationId } : {}),
+      },
+    ];
+  });
+  return { ...projection, segments: [...prefix, ...projection.segments, ...inline] };
+}
+
+function formatCompactionGuidance(promptSegments: readonly PromptSegment[], hookContexts: readonly string[]): string {
+  return [
+    ...hookContexts,
+    ...promptSegments
+      .filter((segment) => segment.kind === "knowledge")
+      .map((segment) => `Retain relevant knowledge-pack facts:\n${segment.text}`),
+  ]
+    .filter((value) => value.trim())
+    .join("\n\n");
+}
+
+function chunkConversationTurns(turns: readonly ConversationTurn[], maxTokens: number): ConversationTurn[][] {
+  const chunks: ConversationTurn[][] = [];
+  let current: ConversationTurn[] = [];
+  let currentTokens = 0;
+  for (const turn of turns) {
+    const tokens = estimateTextTokens(turn.text);
+    if (current.length > 0 && currentTokens + tokens > maxTokens) {
+      chunks.push(current);
+      current = [];
+      currentTokens = 0;
+    }
+    current.push(turn);
+    currentTokens += tokens;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
+function chunkTexts(texts: readonly string[], maxTokens: number): string[][] {
+  const chunks: string[][] = [];
+  let current: string[] = [];
+  let currentTokens = 0;
+  for (const value of texts) {
+    const tokens = estimateTextTokens(value);
+    if (current.length > 0 && currentTokens + tokens > maxTokens) {
+      chunks.push(current);
+      current = [];
+      currentTokens = 0;
+    }
+    current.push(value);
+    currentTokens += tokens;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
 export class TopchesterAgentRuntime implements AgentRuntime {
   private readonly taskPlan = createTaskPlanController();
   private readonly approvedBashCommands = new Set<string>();
   private readonly startedHookSessionKeys = new Set<string>();
   private activeTurnId: string | undefined;
   private readonly liveL1Scheduler: LiveL1Scheduler;
+  private readonly contextUsageBySession = new Map<string, ContextUsageSnapshot>();
+  private readonly contextRequestBySession = new Map<string, RequestEstimateInput>();
+  private readonly contextCompactionsBySession = new Map<string, number>();
+  private readonly learnedCapacityByRoute = new Map<string, ContextCapacity>();
 
   /**
    * Holds the shared application context for one runtime instance.
@@ -231,6 +401,21 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         onSynced: (event) => clearSyncedSessionOverlayFile(context.workspaceRoot, event.path, event.hash),
       });
     if (context.config.knowledge?.live) this.liveL1Scheduler.start();
+  }
+
+  restoreContextStatus(status: ContextStatus | undefined, session: SessionHandle): void {
+    const key = session.sessionId;
+    this.contextRequestBySession.delete(key);
+    if (!status) {
+      this.contextUsageBySession.delete(key);
+      this.contextCompactionsBySession.delete(key);
+      return;
+    }
+    this.contextUsageBySession.set(key, status.usage);
+    this.contextCompactionsBySession.set(key, status.compactionsThisSession);
+    if (status.budget.capacity.source === "error-reported" || status.budget.capacity.source === "error-inferred") {
+      this.learnedCapacityByRoute.set(contextRouteKey(status.route), status.budget.capacity);
+    }
   }
 
   getKnowledgeLiveSnapshot(): LiveL1SchedulerSnapshot {
@@ -315,25 +500,89 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     return [...startedEvents, ...this.hookResultToEvents(result)];
   }
 
-  async runPreCompactHooks(
-    session?: SessionHandle,
-    options: { reason?: string; abortSignal?: AbortSignal } = {}
+  async compactConversation(
+    conversation: ConversationTurn[],
+    options: {
+      focus?: string;
+      reason?: "manual" | "model-switch";
+      session?: SessionHandle;
+      abortSignal?: AbortSignal;
+    } = {}
   ): Promise<AgentRuntimeEvent[]> {
-    const startedEvents: AgentRuntimeEvent[] = [];
-    const result = await this.runHookEvent(
-      "PreCompact",
-      this.createBaseHookPayload("PreCompact", session, {
-        reason: options.reason ?? "Compaction is about to start.",
-      }),
-      {
-        abortSignal: options.abortSignal,
-        onHookStart: (status) => {
-          startedEvents.push(agentEvent.hookStatus(status.event, status.statusMessage));
-        },
-      }
-    );
+    const session = options.session ?? this.options.session;
+    const profile = this.options.profile ?? PRIMARY_AGENT_PROFILE;
+    const permissions = createToolPermissionView(profile, {
+      deniedTools: this.options.parentPermissions?.deniedTools ?? [],
+    });
+    const instructions = await this.resolveBaseProjectInstructions();
+    const system = this.buildSystemPromptWithProjectInstructions({ profile, permissions }, instructions);
+    const tools = createProfileToolCatalog(permissions, []).definitions();
+    const status = this.createContextStatus({
+      system,
+      prompt: buildConversationPrompt(
+        conversation,
+        conversation.at(-1)?.role === "user" ? conversation.at(-1)!.text : ""
+      ),
+      tools,
+      session,
+      modelCall: 0,
+    });
+    if (!status)
+      return [agentEvent.systemMessage("Context is unavailable because no active model route is configured.")];
+    if (
+      conversation.length <= 4 ||
+      (conversation.length <= 5 && conversation[0]?.text.startsWith("[Compacted context]\n"))
+    ) {
+      return [agentEvent.systemMessage("Context checkpoint is already compact; nothing needed to be summarized.")];
+    }
 
-    return [...startedEvents, ...this.hookResultToEvents(result)];
+    const reason = options.reason ?? "manual";
+    const hook = await this.runStructuredPreCompactHook(status, reason, options.focus, session, options.abortSignal);
+    if (hook.result.blocked || hook.result.stopped) {
+      return [
+        ...hook.events,
+        ...(hook.result.messages.length === 0
+          ? [agentEvent.systemMessage((hook.result.blocked ?? hook.result.stopped)!.message)]
+          : []),
+      ];
+    }
+    const compacted = await this.summarizeConversationProjection(conversation, {
+      focus: [options.focus, ...hook.result.contexts].filter(Boolean).join("\n"),
+      abortSignal: options.abortSignal,
+    });
+    const count = this.incrementSessionCompactions(session);
+    const compactedTurns = projectionToConversationTurns(compacted.projection, []);
+    const prompt = buildConversationPrompt(
+      compactedTurns,
+      compactedTurns.at(-1)?.role === "user" ? compactedTurns.at(-1)!.text : ""
+    );
+    const nextStatus = this.createContextStatus({
+      system,
+      prompt,
+      tools,
+      session,
+      modelCall: 0,
+      forceEstimate: true,
+    })!;
+    nextStatus.compactionsThisSession = count;
+    nextStatus.compactionsThisTurn = 1;
+    const snapshot: ContextCompactionSnapshot = {
+      projectionVersion: 1,
+      reason,
+      ...(options.focus?.trim() ? { focus: options.focus.trim() } : {}),
+      projection: compacted.projection,
+      beforeTokens: status.budget.usedTokens,
+      afterEstimatedTokens: nextStatus.budget.usedTokens,
+      route: nextStatus.route,
+      capacity: nextStatus.budget.capacity,
+    };
+    return [
+      ...hook.events,
+      agentEvent.contextCompaction(snapshot, nextStatus),
+      agentEvent.systemMessage(
+        `Context compacted: ~${snapshot.beforeTokens.toLocaleString()} → ~${snapshot.afterEstimatedTokens.toLocaleString()} tokens.`
+      ),
+    ];
   }
 
   /**
@@ -419,11 +668,17 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     );
     const modelMessage =
       skillMentionActivations.length > 0 ? formatSkillActivationPrompt(skillMentionActivations) : message;
-    const prompt = this.appendHookContextsToPrompt(
-      await this.buildPromptWithKnowledgeContext(buildConversationPrompt(conversation, modelMessage), message),
-      "UserPromptSubmit",
-      userPromptHook.contexts
-    );
+    let activeConversation = [...conversation];
+    if (activeConversation.at(-1)?.role !== "user" || activeConversation.at(-1)?.text !== modelMessage) {
+      activeConversation.push({ role: "user", text: modelMessage });
+    }
+    let conversationPrompt = buildConversationPrompt(activeConversation, modelMessage);
+    const promptSegments = await this.buildPromptSegmentsWithKnowledgeContext(conversationPrompt, message);
+    const userPromptHookContext = formatHookContextsForPrompt("UserPromptSubmit", userPromptHook.contexts);
+    if (userPromptHookContext) {
+      promptSegments.push({ kind: "hook_context", text: userPromptHookContext, retention: "required" });
+    }
+    const prompt = renderPromptSegments(promptSegments);
     timing?.record("setup", "prompt_setup", promptSetupStartedAt);
     let nextPrompt = prompt;
     let totalDurationMs = 0;
@@ -463,6 +718,11 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     const projectInstructionToolState = { shownSourceKeys: new Set<string>() };
     const persistedProjectInstructionKeys = new Set<string>();
     const readFileCache = createReadFileCache();
+    let contextModelCall = 0;
+    let compactionsThisTurn = 0;
+    let ineffectiveCompactions = 0;
+    let compactionLimitNoticeShown = false;
+    let overflowRetryUsed = false;
 
     try {
       for (let toolCalls = 0; toolCalls <= maxToolCallsPerTurn; toolCalls += 1) {
@@ -477,7 +737,179 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           yield event;
         }
         const system = this.buildSystemPromptWithProjectInstructions({ profile, permissions }, projectInstructions);
+        try {
+          const discovered = await this.context.modelGateway.discoverModelCapacity?.("agent.primary");
+          if (discovered) this.context.contextCapacityRegistry?.set(discovered.route, discovered.capacity);
+        } catch (error) {
+          turnLogger.debug(
+            {
+              event: "context_capacity_discovery_failed",
+              error: error instanceof Error ? error.message : String(error),
+            },
+            "context capacity discovery failed"
+          );
+        }
         const modelRequestMetadata = this.resolveModelMetadata("agent.primary");
+        contextModelCall += 1;
+        let contextStatus = this.createContextStatus({
+          system,
+          prompt: nextPrompt,
+          tools,
+          session,
+          modelCall: contextModelCall,
+          providerOptions: { toolProtocolOverride },
+        });
+        const contextPolicy = contextPolicyFromConfig(this.context.config);
+        if (
+          contextStatus?.budget.compactAtTokens !== undefined &&
+          contextStatus.budget.targetTokens !== undefined &&
+          contextPolicy.enabled &&
+          contextStatus.budget.usedTokens >= contextStatus.budget.compactAtTokens &&
+          compactionsThisTurn < contextPolicy.maxCompactionsPerTurn &&
+          ineffectiveCompactions < 2
+        ) {
+          const hook = await this.runStructuredPreCompactHook(
+            contextStatus,
+            "threshold",
+            undefined,
+            session,
+            abortSignal
+          );
+          for (const event of hook.events) yield event;
+          if (hook.result.stopped) {
+            if (hook.result.messages.length === 0) yield agentEvent.systemMessage(hook.result.stopped.message);
+            yield agentEvent.status("ready");
+            return;
+          }
+          if (hook.result.blocked) {
+            if (
+              contextStatus.budget.hardPromptBudget !== undefined &&
+              contextStatus.budget.usedTokens >= contextStatus.budget.hardPromptBudget
+            ) {
+              throw new Error(
+                "PreCompact blocked compaction while the request is above its hard prompt budget. Run /compact or /new."
+              );
+            }
+          } else {
+            const beforeTokens = contextStatus.budget.usedTokens;
+            const fixedRequestTokens = Math.max(0, beforeTokens - estimateTextTokens(nextPrompt));
+            const pruning = prunePromptSegments(promptSegments, {
+              targetTokens: Math.max(1, contextStatus.budget.targetTokens - fixedRequestTokens),
+              keepRecentTokens: contextPolicy.keepRecentTokens,
+            });
+            let projection = conversationTurnsToProjection(activeConversation);
+            let changed = false;
+            if (pruning.afterTokens < pruning.beforeTokens) {
+              changed = true;
+              promptSegments.splice(0, promptSegments.length, ...pruning.segments);
+              nextPrompt = renderPromptSegments(promptSegments);
+              contextStatus = this.createContextStatus({
+                system,
+                prompt: nextPrompt,
+                tools,
+                session,
+                modelCall: contextModelCall,
+                providerOptions: { toolProtocolOverride },
+                forceEstimate: true,
+              });
+              turnLogger.debug(
+                {
+                  event: "context_prompt_pruned",
+                  beforeTokens: pruning.beforeTokens,
+                  afterTokens: pruning.afterTokens,
+                  savingsPercent: pruning.savingsPercent,
+                  prunedAssociations: pruning.prunedAssociations,
+                },
+                "replaceable prompt segments pruned"
+              );
+            }
+            if (
+              contextStatus &&
+              contextStatus.budget.usedTokens >= (contextStatus.budget.compactAtTokens ?? Number.POSITIVE_INFINITY) &&
+              activeConversation.length > 4
+            ) {
+              const compacted = await this.summarizeConversationProjection(activeConversation, {
+                focus: formatCompactionGuidance(promptSegments, hook.result.contexts),
+                abortSignal,
+              });
+              const compactedTurns = projectionToConversationTurns(compacted.projection, []);
+              const nextConversationPrompt = buildConversationPrompt(compactedTurns, modelMessage);
+              replaceConversationInPromptSegments(promptSegments, conversationPrompt, nextConversationPrompt);
+              nextPrompt = renderPromptSegments(promptSegments);
+              conversationPrompt = nextConversationPrompt;
+              activeConversation = compactedTurns;
+              projection = compacted.projection;
+              changed = true;
+              contextStatus = this.createContextStatus({
+                system,
+                prompt: nextPrompt,
+                tools,
+                session,
+                modelCall: contextModelCall,
+                providerOptions: { toolProtocolOverride },
+                forceEstimate: true,
+              });
+            }
+            if (changed && contextStatus) {
+              compactionsThisTurn += 1;
+              if (!isEffectiveCompaction(beforeTokens, contextStatus.budget.usedTokens)) ineffectiveCompactions += 1;
+              const count = this.incrementSessionCompactions(session);
+              contextStatus = this.createContextStatus({
+                system,
+                prompt: nextPrompt,
+                tools,
+                session,
+                modelCall: contextModelCall,
+                providerOptions: { toolProtocolOverride },
+                forceEstimate: true,
+              });
+              if (contextStatus) {
+                contextStatus.compactionsThisSession = count;
+                contextStatus.compactionsThisTurn = compactionsThisTurn;
+                yield agentEvent.contextCompaction(
+                  {
+                    projectionVersion: 1,
+                    reason: "threshold",
+                    projection: projectionWithRuntimeSegments(projection, promptSegments),
+                    beforeTokens,
+                    afterEstimatedTokens: contextStatus.budget.usedTokens,
+                    route: contextStatus.route,
+                    capacity: contextStatus.budget.capacity,
+                  },
+                  contextStatus
+                );
+                if (
+                  contextStatus.budget.hardPromptBudget !== undefined &&
+                  contextStatus.budget.usedTokens >= contextStatus.budget.hardPromptBudget
+                ) {
+                  throw new Error(
+                    "Compaction could not reduce the request below its hard prompt budget. Run /compact <focus> or /new."
+                  );
+                }
+              }
+            }
+          }
+        }
+        if (
+          contextStatus?.budget.compactAtTokens !== undefined &&
+          contextStatus.budget.usedTokens >= contextStatus.budget.compactAtTokens &&
+          (ineffectiveCompactions >= 2 || compactionsThisTurn >= contextPolicy.maxCompactionsPerTurn) &&
+          !compactionLimitNoticeShown
+        ) {
+          compactionLimitNoticeShown = true;
+          yield agentEvent.systemMessage(
+            "Automatic compaction stopped after reaching its bounded attempt limit. Run /compact <focus> or /new if more space is needed."
+          );
+        }
+        if (
+          contextStatus?.budget.hardPromptBudget !== undefined &&
+          contextStatus.budget.usedTokens >= contextStatus.budget.hardPromptBudget
+        ) {
+          throw new Error(
+            "The request is above its hard prompt budget and cannot be sent safely. Run /compact <focus> or /new."
+          );
+        }
+        if (contextStatus) yield agentEvent.contextUsage(contextStatus);
         turnLogger.debug(
           {
             event: "model_prompt",
@@ -497,17 +929,134 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           afterTool ? "model prompt after tool" : "model prompt"
         );
         const modelStartedAt = Date.now();
-        const result = await generateAgentStep(this.context, {
-          purpose: "agent.primary",
-          system,
-          prompt: nextPrompt,
-          sessionId: session?.metadata.rootSessionId ?? session?.sessionId,
-          abortSignal,
-          toolProtocol: toolProtocolOverride,
-          onReasoning: options.onReasoning,
-          tools,
-          toolCatalog,
-        });
+        const callModel = () =>
+          generateAgentStep(this.context, {
+            purpose: "agent.primary",
+            system,
+            prompt: nextPrompt,
+            sessionId: session?.metadata.rootSessionId ?? session?.sessionId,
+            abortSignal,
+            toolProtocol: toolProtocolOverride,
+            onReasoning: options.onReasoning,
+            tools,
+            toolCatalog,
+          });
+        let result: ModelAgentResult;
+        try {
+          result = await callModel();
+        } catch (error) {
+          const overflow = classifyContextOverflow(error);
+          if (!overflow.overflow || overflowRetryUsed) throw error;
+          if (compactionsThisTurn >= contextPolicy.maxCompactionsPerTurn) {
+            throw new Error(
+              "The provider rejected the request for context overflow after the turn reached its compaction attempt limit. Run /compact <focus> or /new."
+            );
+          }
+          overflowRetryUsed = true;
+          if (contextStatus && overflow.maximumTokens && contextPolicy.learnProviderLimits) {
+            const learned: ContextCapacity = {
+              maxInputTokens: overflow.maximumTokens,
+              source: overflow.source === "reported" ? "error-reported" : "error-inferred",
+              confidence: overflow.source === "reported" ? "reported" : "inferred",
+              observedAt: new Date().toISOString(),
+            };
+            this.learnedCapacityByRoute.set(contextRouteKey(contextStatus.route), learned);
+            this.context.contextCapacityRegistry?.set(contextStatus.route, learned);
+          }
+          let refreshed =
+            this.createContextStatus({
+              system,
+              prompt: nextPrompt,
+              tools,
+              session,
+              modelCall: contextModelCall,
+              providerOptions: { toolProtocolOverride },
+              forceEstimate: true,
+            }) ?? contextStatus;
+          if (!refreshed) throw error;
+          const hook = await this.runStructuredPreCompactHook(refreshed, "overflow", undefined, session, abortSignal);
+          for (const event of hook.events) yield event;
+          if (hook.result.blocked || hook.result.stopped) {
+            throw new Error(
+              `${(hook.result.blocked ?? hook.result.stopped)!.message} The provider rejected the request for context overflow.`
+            );
+          }
+          const beforeRetryTokens = refreshed.budget.usedTokens;
+          const pruning = prunePromptSegments(promptSegments, {
+            targetTokens:
+              refreshed.budget.targetTokens ?? Math.max(1_024, Math.floor(estimateTextTokens(nextPrompt) * 0.6)),
+            keepRecentTokens: contextPolicy.keepRecentTokens,
+          });
+          if (pruning.afterTokens < pruning.beforeTokens) {
+            promptSegments.splice(0, promptSegments.length, ...pruning.segments);
+            nextPrompt = renderPromptSegments(promptSegments);
+            refreshed =
+              this.createContextStatus({
+                system,
+                prompt: nextPrompt,
+                tools,
+                session,
+                modelCall: contextModelCall,
+                providerOptions: { toolProtocolOverride },
+                forceEstimate: true,
+              }) ?? refreshed;
+          }
+          const compacted =
+            activeConversation.length > 4
+              ? await this.summarizeConversationProjection(activeConversation, {
+                  focus: formatCompactionGuidance(promptSegments, hook.result.contexts),
+                  abortSignal,
+                })
+              : compactConversationDeterministically(activeConversation, {
+                  keepRecentTokens: contextPolicy.keepRecentTokens,
+                });
+          const compactedTurns = projectionToConversationTurns(compacted.projection, []);
+          const nextConversationPrompt = buildConversationPrompt(compactedTurns, modelMessage);
+          replaceConversationInPromptSegments(promptSegments, conversationPrompt, nextConversationPrompt);
+          nextPrompt = renderPromptSegments(promptSegments);
+          conversationPrompt = nextConversationPrompt;
+          activeConversation = compactedTurns;
+          compactionsThisTurn += 1;
+          const count = this.incrementSessionCompactions(session);
+          const retryStatus = this.createContextStatus({
+            system,
+            prompt: nextPrompt,
+            tools,
+            session,
+            modelCall: contextModelCall,
+            providerOptions: { toolProtocolOverride },
+            forceEstimate: true,
+          })!;
+          retryStatus.compactionsThisSession = count;
+          retryStatus.compactionsThisTurn = compactionsThisTurn;
+          const prunedAnyPromptContent = pruning.afterTokens < pruning.beforeTokens;
+          if (!prunedAnyPromptContent && !isEffectiveCompaction(beforeRetryTokens, retryStatus.budget.usedTokens)) {
+            throw new Error(
+              "Context overflow recovery could not reduce the prompt enough. Run /compact <focus> or /new."
+            );
+          }
+          if (
+            retryStatus.budget.hardPromptBudget !== undefined &&
+            retryStatus.budget.usedTokens >= retryStatus.budget.hardPromptBudget
+          ) {
+            throw new Error(
+              "Context overflow recovery remains above the hard prompt budget. Run /compact <focus> or /new."
+            );
+          }
+          yield agentEvent.contextCompaction(
+            {
+              projectionVersion: 1,
+              reason: "overflow",
+              projection: projectionWithRuntimeSegments(compacted.projection, promptSegments),
+              beforeTokens: beforeRetryTokens,
+              afterEstimatedTokens: retryStatus.budget.usedTokens,
+              route: retryStatus.route,
+              capacity: retryStatus.budget.capacity,
+            },
+            retryStatus
+          );
+          result = await callModel();
+        }
         const modelDurationMs = Date.now() - modelStartedAt;
         const durationMs = Date.now() - startedAt;
         const modelToolCalls = getExecutableModelToolCalls(result, toolCatalog);
@@ -515,6 +1064,19 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         totalDurationMs += durationMs;
         lastModelId = result.modelId;
         addTokenUsageTotals(tokenUsageTotals, result.usage);
+        const providerStatus = this.createContextStatus({
+          system,
+          prompt: nextPrompt,
+          tools,
+          session,
+          modelCall: contextModelCall,
+          providerOptions: { toolProtocolOverride },
+          providerPromptTokens: result.usage?.inputTokens,
+        });
+        if (providerStatus) {
+          providerStatus.compactionsThisTurn = compactionsThisTurn;
+          yield agentEvent.contextUsage(providerStatus);
+        }
 
         turnLogger.debug(
           {
@@ -585,7 +1147,12 @@ export class TopchesterAgentRuntime implements AgentRuntime {
               },
               "invalid text tool call"
             );
-            nextPrompt = `${nextPrompt}\n\n${formatInvalidToolCallRepairInstruction(rejectedToolCall)}`;
+            promptSegments.push({
+              kind: "repair",
+              text: formatInvalidToolCallRepairInstruction(rejectedToolCall),
+              retention: "required",
+            });
+            nextPrompt = renderPromptSegments(promptSegments);
             continue;
           }
 
@@ -595,7 +1162,12 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           if (planTodoMode === "normal" && hasOpenTaskPlan(plan)) {
             if (!requestedPlanClosure) {
               requestedPlanClosure = true;
-              nextPrompt = `${nextPrompt}\n\n${formatOpenPlanClosureInstruction(finalText, result.toolProtocol)}`;
+              promptSegments.push({
+                kind: "repair",
+                text: formatOpenPlanClosureInstruction(finalText, result.toolProtocol),
+                retention: "required",
+              });
+              nextPrompt = renderPromptSegments(promptSegments);
               continue;
             }
 
@@ -753,21 +1325,20 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           }
 
           afterTool = "task";
-          nextPrompt = this.appendRuntimeSteeringToContinuationPrompt(
-            this.appendHookContextsToPrompt(
-              `${nextPrompt}\n\n${taskResults
-                .map((toolResult) => formatToolResultForPrompt(toolResult!))
-                .join("\n\n")}\n\n${formatContinuationInstruction(
-                result.toolProtocol,
-                taskResults.at(-1)!,
-                isToolAllowed(permissions, "plan_todo"),
-                planTodoMode
-              )}`,
-              "PostToolUse",
-              postHookContexts
+          appendToolContinuationSegments(promptSegments, {
+            calls: taskCalls,
+            results: taskResults as ToolExecutionResult<ToolResult>[],
+            modelCall: contextModelCall,
+            continuation: formatContinuationInstruction(
+              result.toolProtocol,
+              taskResults.at(-1)!,
+              isToolAllowed(permissions, "plan_todo"),
+              planTodoMode
             ),
-            options.steering
-          );
+            hookContexts: postHookContexts,
+            steering: options.steering,
+          });
+          nextPrompt = renderPromptSegments(promptSegments);
           continue;
         }
 
@@ -876,21 +1447,20 @@ export class TopchesterAgentRuntime implements AgentRuntime {
           }
 
           afterTool = parallelCalls.at(-1)?.tool;
-          nextPrompt = this.appendRuntimeSteeringToContinuationPrompt(
-            this.appendHookContextsToPrompt(
-              `${nextPrompt}\n\n${parallelResults
-                .map((toolResult) => formatToolResultForPrompt(toolResult!))
-                .join("\n\n")}\n\n${formatContinuationInstruction(
-                result.toolProtocol,
-                parallelResults.at(-1)!,
-                isToolAllowed(permissions, "plan_todo"),
-                planTodoMode
-              )}`,
-              "PostToolUse",
-              postHookContexts
+          appendToolContinuationSegments(promptSegments, {
+            calls: parallelCalls,
+            results: parallelResults as ToolExecutionResult<ToolResult>[],
+            modelCall: contextModelCall,
+            continuation: formatContinuationInstruction(
+              result.toolProtocol,
+              parallelResults.at(-1)!,
+              isToolAllowed(permissions, "plan_todo"),
+              planTodoMode
             ),
-            options.steering
-          );
+            hookContexts: postHookContexts,
+            steering: options.steering,
+          });
+          nextPrompt = renderPromptSegments(promptSegments);
           continue;
         }
 
@@ -1045,19 +1615,20 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         }
 
         afterTool = executableToolCall.tool;
-        nextPrompt = this.appendRuntimeSteeringToContinuationPrompt(
-          this.appendHookContextsToPrompt(
-            `${nextPrompt}\n\n${formatToolResultForPrompt(toolResult)}\n\n${formatContinuationInstruction(
-              result.toolProtocol,
-              toolResult,
-              isToolAllowed(permissions, "plan_todo"),
-              planTodoMode
-            )}`,
-            "PostToolUse",
-            postHook.contexts
+        appendToolContinuationSegments(promptSegments, {
+          calls: [executableToolCall],
+          results: [toolResult],
+          modelCall: contextModelCall,
+          continuation: formatContinuationInstruction(
+            result.toolProtocol,
+            toolResult,
+            isToolAllowed(permissions, "plan_todo"),
+            planTodoMode
           ),
-          options.steering
-        );
+          hookContexts: postHook.contexts,
+          steering: options.steering,
+        });
+        nextPrompt = renderPromptSegments(promptSegments);
       }
 
       const finalMessage = "I stopped because the tool loop ended unexpectedly.";
@@ -1285,6 +1856,220 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     };
   }
 
+  private createContextStatus(options: {
+    system: string;
+    prompt: string;
+    tools: readonly RuntimeToolDefinition[];
+    session?: SessionHandle;
+    modelCall: number;
+    providerPromptTokens?: number;
+    forceEstimate?: boolean;
+    providerOptions?: unknown;
+  }): ContextStatus | undefined {
+    const resolved = this.resolveModelMetadata("agent.primary");
+    if (!resolved) return undefined;
+    const route = {
+      providerId: resolved.providerId,
+      baseURL: resolved.providerConfig.baseURL,
+      modelId: resolved.modelId,
+    };
+    const key = contextRouteKey(route);
+    const policy = contextPolicyFromConfig(this.context.config);
+    const configured = configuredCapacityForRoute(this.context.config, route);
+    const stored = this.context.contextCapacityRegistry?.get(route) ?? this.learnedCapacityByRoute.get(key);
+    const capacity = resolveContextCapacity({
+      ...(configured.source === "unknown"
+        ? {}
+        : configured.source === "config"
+          ? { config: configured }
+          : { assumed: configured }),
+      ...(stored?.source === "provider" ? { provider: stored } : {}),
+      ...(stored?.source === "catalog" ? { catalog: stored } : {}),
+      ...(stored?.source === "error-reported" || stored?.source === "error-inferred" ? { learned: stored } : {}),
+    });
+    const request: RequestEstimateInput = {
+      route,
+      system: options.system,
+      prompt: options.prompt,
+      toolDefinitions: options.tools,
+      providerOptions: {
+        reasoningEffort: resolved.providerConfig.reasoningEffort ?? null,
+        serviceTier: resolved.providerConfig.service_tier ?? null,
+        toolProtocol: resolved.modelConfig.toolProtocol ?? resolved.providerConfig.toolProtocol ?? null,
+        promptCaching: resolved.providerConfig.promptCaching ?? null,
+        structuredOutputs: resolved.providerConfig.supportsStructuredOutputs ?? null,
+        openRouterToolRouting: resolved.providerConfig.openRouterToolRouting ?? null,
+        request: options.providerOptions ?? null,
+      },
+    };
+    const sessionKey = options.session?.sessionId ?? `workspace:${this.context.workspaceRoot}`;
+    const previous = options.forceEstimate ? undefined : this.contextUsageBySession.get(sessionKey);
+    const previousRequest = options.forceEstimate ? undefined : this.contextRequestBySession.get(sessionKey);
+    const appendedToProviderSnapshot =
+      previous?.source === "provider" &&
+      previousRequest !== undefined &&
+      request.prompt.startsWith(previousRequest.prompt) &&
+      fingerprintProviderRequest({ ...request, prompt: previousRequest.prompt }) === previous.requestBaseFingerprint;
+    const accountingRequest = appendedToProviderSnapshot ? previousRequest : request;
+    const usage = reconcilePromptUsage({
+      request: accountingRequest,
+      prior: previous,
+      ...(options.providerPromptTokens === undefined ? {} : { providerPromptTokens: options.providerPromptTokens }),
+      ...(appendedToProviderSnapshot ? { trailingText: request.prompt.slice(previousRequest.prompt.length) } : {}),
+      modelCall: options.modelCall,
+    });
+    this.contextUsageBySession.set(sessionKey, usage);
+    if (options.providerPromptTokens !== undefined) this.contextRequestBySession.set(sessionKey, request);
+    const usedTokens = usage.promptTokens + usage.trailingEstimatedTokens;
+    const budget = deriveContextBudget(capacity, usedTokens, policy, {
+      providerSnapshot: usage.source === "provider",
+    });
+    const status: ContextStatus = {
+      route,
+      usage,
+      budget,
+      compactionsThisSession: this.contextCompactionsBySession.get(sessionKey) ?? 0,
+      compactionsThisTurn: 0,
+    };
+    this.context.logger.debug(
+      {
+        event: "context_accounting",
+        providerId: route.providerId,
+        modelId: route.modelId,
+        capacitySource: capacity.source,
+        usageSource: usage.source,
+        estimated: usage.estimated,
+        usedTokens,
+        hardPromptBudget: budget.hardPromptBudget,
+        compactAtTokens: budget.compactAtTokens,
+      },
+      "context accounting"
+    );
+    return status;
+  }
+
+  private incrementSessionCompactions(session: SessionHandle | undefined): number {
+    const key = session?.sessionId ?? `workspace:${this.context.workspaceRoot}`;
+    const next = (this.contextCompactionsBySession.get(key) ?? 0) + 1;
+    this.contextCompactionsBySession.set(key, next);
+    return next;
+  }
+
+  private async runStructuredPreCompactHook(
+    status: ContextStatus,
+    reason: "manual" | "threshold" | "overflow" | "model-switch",
+    focus: string | undefined,
+    session: SessionHandle | undefined,
+    abortSignal: AbortSignal | undefined
+  ): Promise<{ events: AgentRuntimeEvent[]; result: HookRunResult }> {
+    const events: AgentRuntimeEvent[] = [];
+    const result = await this.runHookEvent(
+      "PreCompact",
+      this.createBaseHookPayload("PreCompact", session, {
+        reason,
+        mode: reason === "manual" ? "manual" : "automatic",
+        ...(focus?.trim() ? { focus: focus.trim() } : {}),
+        route: status.route,
+        usage: {
+          usedTokens: status.budget.usedTokens,
+          estimated: status.usage.estimated,
+        },
+        budget: {
+          contextWindow: status.budget.capacity.contextWindow,
+          hardPromptBudget: status.budget.hardPromptBudget,
+          compactAtTokens: status.budget.compactAtTokens,
+          targetTokens: status.budget.targetTokens,
+          capacitySource: status.budget.capacity.source,
+        },
+      }),
+      {
+        abortSignal,
+        onHookStart: (hookStatus) => {
+          events.push(agentEvent.hookStatus(hookStatus.event, hookStatus.statusMessage));
+        },
+      }
+    );
+    events.push(...this.hookResultToEvents(result));
+    return { events, result };
+  }
+
+  private async summarizeConversationProjection(
+    conversation: readonly ConversationTurn[],
+    options: { focus?: string; abortSignal?: AbortSignal }
+  ): Promise<ReturnType<typeof compactConversationDeterministically>> {
+    const policy = contextPolicyFromConfig(this.context.config);
+    const compacted = compactConversationDeterministically(conversation, {
+      keepRecentTokens: policy.keepRecentTokens,
+      ...(options.focus?.trim() ? { focus: options.focus.trim() } : {}),
+    });
+    if (conversation.length <= 4 || !compacted.projection.summary) return compacted;
+    const recentCount = compacted.projection.segments.filter(
+      (segment) => segment.kind === "inline" && segment.segmentKind === "turn"
+    ).length;
+    const older = conversation.slice(0, Math.max(0, conversation.length - recentCount));
+    const chunks = chunkConversationTurns(older, 18_000);
+    let summaries: string[] = [];
+    const summarySystem =
+      "Create a compact, factual handoff. Use headings: Goal; User constraints and preferences; Decisions and rationale; Completed work; Current work and blockers; Files read or changed; Exact identifiers, commands, errors, and verification results; Settled tool outcomes and continuation state; Next steps. Preserve exact identifiers, paths, commands, errors, mutations, validation results, constraints, and next steps. Do not invent facts.";
+    try {
+      for (const chunk of chunks) {
+        const result = await this.context.modelGateway.generateText({
+          purpose: "agent.primary",
+          system: summarySystem,
+          prompt: [
+            options.focus?.trim() ? `Compaction focus:\n${options.focus.trim()}` : "",
+            "Conversation to compact:",
+            chunk.map((turn) => `${turn.role === "user" ? "User" : "Assistant"}: ${turn.text}`).join("\n\n"),
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+          abortSignal: options.abortSignal,
+        });
+        if (result.text.trim()) summaries.push(result.text.trim());
+      }
+      for (
+        let foldPass = 0;
+        summaries.length > 1 && estimateTextTokens(summaries.join("\n\n")) > 18_000 && foldPass < 3;
+        foldPass += 1
+      ) {
+        const folded: string[] = [];
+        for (const group of chunkTexts(summaries, 18_000)) {
+          const result = await this.context.modelGateway.generateText({
+            purpose: "agent.primary",
+            system: summarySystem,
+            prompt: [
+              options.focus?.trim() ? `Compaction focus:\n${options.focus.trim()}` : "",
+              "Partial handoffs to merge without losing exact evidence:",
+              group.join("\n\n--- partial handoff ---\n\n"),
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
+            abortSignal: options.abortSignal,
+          });
+          if (result.text.trim()) folded.push(result.text.trim());
+        }
+        if (folded.length === 0 || folded.join("\n\n") === summaries.join("\n\n")) break;
+        summaries = folded;
+      }
+      if (summaries.length > 0) compacted.projection.summary = summaries.join("\n\n");
+    } catch (error) {
+      this.context.logger.warn(
+        {
+          event: "context_summary_fallback",
+          error: error instanceof Error ? error.message : String(error),
+          chunkCount: chunks.length,
+        },
+        "context summary generation failed; using deterministic handoff"
+      );
+    }
+    compacted.afterTokens = estimateTextTokens(
+      `${compacted.projection.summary ?? ""}\n\n${projectionToConversationTurns(compacted.projection, [])
+        .map((turn) => `${turn.role}: ${turn.text}`)
+        .join("\n\n")}`
+    );
+    return compacted;
+  }
+
   private resolveModelMetadata(
     purpose: ModelPurpose
   ): ReturnType<AppContext["modelGateway"]["resolveModel"]> | undefined {
@@ -1331,12 +2116,6 @@ export class TopchesterAgentRuntime implements AgentRuntime {
 
   private hookResultToEvents(result: HookRunResult): AgentRuntimeEvent[] {
     return result.messages.map((message) => agentEvent.systemMessage(message));
-  }
-
-  private appendHookContextsToPrompt(prompt: string, event: HookRunPayload["event"], contexts: string[]): string {
-    const hookContext = formatHookContextsForPrompt(event, contexts);
-
-    return hookContext ? `${prompt}\n\n${hookContext}` : prompt;
   }
 
   private async resolveBaseProjectInstructions(): Promise<ProjectInstructionContext> {
@@ -1546,26 +2325,14 @@ export class TopchesterAgentRuntime implements AgentRuntime {
     return { ...status, nonCleanFileCount: result.files.length };
   }
 
-  private appendRuntimeSteeringToContinuationPrompt(
-    prompt: string,
-    steering: RuntimeSteeringBuffer | undefined
-  ): string {
-    const text = steering?.drain()?.trim();
-
-    if (!text) {
-      return prompt;
-    }
-
-    return `${prompt}\n\n${formatRuntimeSteeringPrompt(text)}`;
-  }
-
   /**
    * Adds relevant L1 knowledge context to the conversation prompt when the
    * compiled KB is present and ready. Search failures are logged and then
    * ignored on purpose: stale or broken KB search should not prevent the
    * user's chat turn from reaching the model.
    */
-  private async buildPromptWithKnowledgeContext(prompt: string, message: string): Promise<string> {
+  private async buildPromptSegmentsWithKnowledgeContext(prompt: string, message: string): Promise<PromptSegment[]> {
+    const conversation = (): PromptSegment[] => [{ kind: "conversation", text: prompt, retention: "required" }];
     if (this.options.disableL1Context ?? isL1ContextDisabledByEnv()) {
       this.context.logger.debug(
         {
@@ -1575,13 +2342,13 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         "kb context pack skipped"
       );
 
-      return prompt;
+      return conversation();
     }
 
     const status = getKnowledgeStatus(this.context.workspaceRoot);
 
     if (!status.kbExists || !status.kbIsDirectory || status.kbContentState !== "ready") {
-      return prompt;
+      return conversation();
     }
 
     try {
@@ -1607,10 +2374,17 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       );
 
       if (contextPack.relevantFiles.length === 0) {
-        return prompt;
+        return conversation();
       }
 
-      return `${formatL1ContextPackForPrompt(contextPack)}\n\nConversation:\n${prompt}`;
+      return [
+        {
+          kind: "knowledge",
+          text: `${formatL1ContextPackForPrompt(contextPack)}\n\nConversation:`,
+          retention: "required",
+        },
+        { kind: "conversation", text: prompt, retention: "required", separatorBefore: "\n" },
+      ];
     } catch (error) {
       this.context.logger.debug(
         {
@@ -1620,7 +2394,7 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         "kb context pack failed"
       );
 
-      return prompt;
+      return conversation();
     }
   }
 }

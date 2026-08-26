@@ -47,6 +47,30 @@ Session fields are present when a session handle is available. Model fields are 
 
 `PostToolUse` includes the same tool metadata plus `result`. `PermissionRequest` includes the pending approval context. During `topchester run --dangerously-auto-approve`, pending prompts that will be auto-approved include `approval_mode: "auto_allow"` and `auto_approved: true`. `Stop` includes turn completion status.
 
+`PreCompact` adds structured policy state:
+
+```json
+{
+  "reason": "threshold",
+  "mode": "automatic",
+  "route": {
+    "providerId": "vibeproxy",
+    "baseURL": "http://127.0.0.1:8317/v1",
+    "modelId": "gpt-5.4"
+  },
+  "usage": { "usedTokens": 104000, "estimated": true },
+  "budget": {
+    "contextWindow": 128000,
+    "hardPromptBudget": 111616,
+    "compactAtTokens": 90800,
+    "targetTokens": 44646,
+    "capacitySource": "config"
+  }
+}
+```
+
+`reason` is `manual`, `threshold`, `overflow`, or `model-switch`. Returned `context` strings guide the summary. `block` cancels compaction; if the request is already above its hard prompt budget, Topchester does not send it. `stop` ends the active turn.
+
 ## Responses
 
 Empty stdout means continue. A hook may write JSON to stdout:

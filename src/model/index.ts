@@ -20,6 +20,12 @@ import {
 } from "../agent/tools/types.js";
 import { type ReasoningEffort } from "../config/index.js";
 import { createCodexProviderFetch, isCodexProvider, type CodexProviderFetchOptions } from "./codex.js";
+import {
+  getProviderModelCapacity,
+  parseProviderModelCapacity,
+  recordProviderModelCapacity,
+} from "../agent/context/provider-metadata.js";
+import { type ContextCapacity, type ContextRoute } from "../agent/context/types.js";
 
 export type ModelPurpose = "agent.primary" | "agent.fast" | "kb.summarize" | "fallback";
 
@@ -36,6 +42,16 @@ export interface OpenAICompatibleProviderConfig {
   toolProtocol?: ToolProtocolOverride;
   openRouterToolRouting?: "auto" | "force" | "off";
   reasoningEffort?: ReasoningEffort;
+  discoverModelLimits?: boolean;
+  modelLimits?: Record<
+    string,
+    {
+      contextWindow?: number;
+      maxInputTokens?: number;
+      maxOutputTokens?: number;
+      assumed?: boolean;
+    }
+  >;
 }
 
 export interface ModelConfig {
@@ -105,6 +121,7 @@ type NativeAiToolSet = ReturnType<typeof toAiSdkToolSet>;
 
 export class ModelGateway {
   readonly #config: ModelGatewayConfig;
+  readonly #capacityDiscoveryAttempts = new Set<string>();
 
   constructor(config: ModelGatewayConfig) {
     this.#config = config;
@@ -179,6 +196,41 @@ export class ModelGateway {
       providerConfig,
       modelConfig,
     };
+  }
+
+  async discoverModelCapacity(
+    purpose: ModelPurpose = "agent.primary"
+  ): Promise<{ route: ContextRoute; capacity: ContextCapacity } | undefined> {
+    const resolved = this.resolveModel(purpose);
+    const route = {
+      providerId: resolved.providerId,
+      baseURL: resolved.providerConfig.baseURL,
+      modelId: resolved.modelId,
+    };
+    const retained = getProviderModelCapacity(route);
+    if (retained) return { route, capacity: retained };
+    if (resolved.providerConfig.discoverModelLimits !== true) return undefined;
+    const key = `${resolved.providerId}\u0000${resolved.providerConfig.baseURL}\u0000${resolved.modelId}`;
+    if (this.#capacityDiscoveryAttempts.has(key)) return undefined;
+    this.#capacityDiscoveryAttempts.add(key);
+    const url = new URL(`${resolved.providerConfig.baseURL.replace(/\/+$/u, "")}/models`);
+    const headers: Record<string, string> = { ...resolved.providerConfig.headers };
+    const apiKey = resolveApiKey(resolved.providerConfig);
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+    const response = await fetch(url, { headers });
+    if (!response.ok) return undefined;
+    const body = (await response.json()) as unknown;
+    const entries =
+      body && typeof body === "object" && Array.isArray((body as { data?: unknown }).data)
+        ? (body as { data: unknown[] }).data
+        : [];
+    const model = entries.find(
+      (entry) => entry && typeof entry === "object" && (entry as { id?: unknown }).id === resolved.modelId
+    );
+    const capacity = parseProviderModelCapacity(model);
+    if (!capacity) return undefined;
+    recordProviderModelCapacity(route, capacity);
+    return { route, capacity };
   }
 
   async generateText(request: ModelRequest): Promise<ModelTextResult> {

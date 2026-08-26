@@ -12,6 +12,8 @@ Slash commands run inside the TUI before a message is sent to the model.
 
 Common commands:
 
+- `/context` shows the exact route, active prompt estimate or provider snapshot, capacity provenance, reserve, trigger, safe remaining space, and compaction counts.
+- `/compact [focus]` forces an idle model-context checkpoint while keeping the visible transcript complete. Optional focus text guides the summary and is stored in the local compaction event, not replayed as a user claim.
 - `/model` chooses a model for the current session from saved choices.
 - `/model <provider/model>` selects an exact model directly, even if it is not in saved choices.
 - `/model all [search]` browses OpenRouter models, adds one to the global choices catalog, and selects it for the current session.
@@ -52,4 +54,4 @@ providers still do.
 
 Type `/effort ` or `/reasoning ` with a trailing space to list all accepted effort values in the suggestion panel. Continue typing to narrow the list, then press `Tab` to complete the selected value.
 
-`/model`, `/kb-model`, `/connect`, `/effort`, `/reasoning`, `/new`, `/clear`, `/fork`, `/restore`, `/queue`, `/q`, and `/steer` are TUI-only. In `topchester run`, Topchester prints a short message that says to use the interactive TUI. Use the `--kb-model` run option instead.
+`/context`, `/compact`, `/model`, `/kb-model`, `/connect`, `/effort`, `/reasoning`, `/new`, `/clear`, `/fork`, `/restore`, `/queue`, `/q`, and `/steer` are TUI-only. `/compact` is rejected visibly while a turn or another operation is active; it is not queued and does not cancel the turn. In `topchester run`, Topchester prints a short message that says to use the interactive TUI. Use the `--kb-model` run option instead.

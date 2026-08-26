@@ -1,4 +1,4 @@
-import { ABORT_CHOICE_VALUE, type AgentRuntimeEvent } from "../agent/events.js";
+import { ABORT_CHOICE_VALUE, agentEvent, type AgentRuntimeEvent } from "../agent/events.js";
 import {
   MutableRuntimeSteeringBuffer,
   TopchesterAgentRuntime,
@@ -34,6 +34,15 @@ import { getKnowledgeStatus } from "../knowledge/status.js";
 import { fallbackOpenRouterStarterChoices, selectOpenRouterStarterChoices } from "../model/openrouter.js";
 import { createHerdrAgentReporter, type HerdrAgentReporter, type HerdrAgentState } from "../integrations/herdr.js";
 import { type SessionEventPayload } from "../session/events.js";
+import { projectionToConversationTurns } from "../agent/context/projection.js";
+import { type ContextStatus } from "../agent/context/types.js";
+import { formatContextDiagnostics } from "./context-status.js";
+import {
+  configuredCapacityForRoute,
+  contextPolicyFromConfig,
+  deriveContextBudget,
+  resolveContextCapacity,
+} from "../agent/context/capacity.js";
 import { basename } from "node:path";
 import { runtimeEventToSessionPayload } from "../session/runtime-payloads.js";
 import {
@@ -121,6 +130,14 @@ export const defaultTuiRuntimeDrainClock: TuiRuntimeDrainClock = () => performan
 export const defaultTuiRuntimeDrainScheduler: TuiRuntimeDrainScheduler = () =>
   new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+function isContextCommand(command: string): boolean {
+  return /^\/context\s*$/iu.test(command.trim());
+}
+
+function isCompactCommand(command: string): boolean {
+  return /^\/compact(?:\s+.*)?$/iu.test(command.trim());
+}
+
 interface RuntimeViewBatchState {
   clearTaskPlanNotice: boolean;
   latestHookStatus?: string;
@@ -130,6 +147,8 @@ export interface TuiControllerOptions {
   session?: SessionHandle;
   initialTranscript?: TranscriptEntry[];
   initialTaskPlan?: TaskPlanState;
+  initialModelContextTurns?: import("../agent/conversation.js").ConversationTurn[];
+  initialContextStatus?: ContextStatus;
   runtimeConfigWarnings?: string[];
   banner?: string;
   herdrReporter?: HerdrAgentReporter;
@@ -192,6 +211,8 @@ export class TopchesterTuiController implements TuiController {
       transcript,
       modelLabel: getModelLabel(context),
       taskPlan: options.initialTaskPlan,
+      modelContextTurns: options.initialModelContextTurns,
+      contextStatus: options.initialContextStatus,
       ...(options.session === undefined ? { startupHint: STARTUP_PROMPT_HINT } : {}),
       ...(options.transientScheduler === undefined ? {} : { transientScheduler: options.transientScheduler }),
     });
@@ -217,13 +238,9 @@ export class TopchesterTuiController implements TuiController {
     for (const warning of options.runtimeConfigWarnings ?? []) {
       transcript.push(systemTranscriptEntry(`Session config warning: ${warning}`));
     }
-    const controller = new TopchesterTuiController(
-      context,
-      runtime ?? new TopchesterAgentRuntime(context),
-      session,
-      transcript,
-      options
-    );
+    const activeRuntime = runtime ?? new TopchesterAgentRuntime(context);
+    activeRuntime.restoreContextStatus?.(options.initialContextStatus, session);
+    const controller = new TopchesterTuiController(context, activeRuntime, session, transcript, options);
     await controller.initialize(options.session !== undefined);
     controller.syncHerdrState();
     return controller;
@@ -263,6 +280,10 @@ export class TopchesterTuiController implements TuiController {
 
   submitCommand(command: string): "submitted" | "queued" {
     this.ensureActive();
+    if (isCompactCommand(command) && (this.chatRunning || !this.view.isReady())) {
+      this.view.addEntry(systemTranscriptEntry("Compaction unavailable while a turn is active."));
+      return "submitted";
+    }
     const queuedPrompt = parseQueueCommandPrompt(command);
     if (queuedPrompt !== undefined) {
       this.submitQueueCommand(queuedPrompt);
@@ -380,6 +401,11 @@ export class TopchesterTuiController implements TuiController {
   private reduceRuntimeEvent(event: AgentRuntimeEvent, state: RuntimeViewBatchState): void {
     if (event.type === "status") this.view.setStatus(event.status);
     if (event.type === "knowledge_status") this.view.setKnowledgeStatus(event.status);
+    if (event.type === "context_usage") this.view.setContextStatus(event.status);
+    if (event.type === "context_compaction") {
+      this.view.setContextStatus(event.status);
+      this.view.setModelContextTurns(projectionToConversationTurns(event.projection, []));
+    }
     if (event.type === "task_plan") {
       const change = this.view.setTaskPlan(event.plan);
       this.view.setTaskPlanNotice(formatTaskPlanNotice(change, event.plan));
@@ -812,6 +838,14 @@ export class TopchesterTuiController implements TuiController {
 
   private async dispatchSlashCommand(command: string): Promise<void> {
     const activeSession = this.session;
+    if (isContextCommand(command)) {
+      await this.submitContextCommand(command, activeSession);
+      return;
+    }
+    if (isCompactCommand(command)) {
+      await this.submitCompactCommand(command, activeSession);
+      return;
+    }
     const activation = await this.resolveSkillActivationCommand(command);
     if (this.session !== activeSession) return;
     if (activation) {
@@ -905,6 +939,57 @@ export class TopchesterTuiController implements TuiController {
         this.clearCancelPending(cancelRequest);
         busy.stop();
       });
+    }
+  }
+
+  private async submitContextCommand(command: string, activeSession: SessionHandle): Promise<void> {
+    await this.clearTaskPlanForNewTurn();
+    const commandBackpressure = this.persistPayloadWithWarning(
+      slashCommandToSessionPayload(command),
+      undefined,
+      activeSession
+    );
+    if (commandBackpressure) await commandBackpressure;
+    const status = this.view.getSnapshot().contextStatus;
+    await this.applyRuntimeEvents(
+      [
+        {
+          type: "message",
+          role: "system",
+          text: status
+            ? formatContextDiagnostics(status, this.context.config.compaction?.enabled ?? true)
+            : "No active context snapshot yet. Send a message first, then run /context again.",
+        },
+      ],
+      activeSession
+    );
+  }
+
+  private async submitCompactCommand(command: string, activeSession: SessionHandle): Promise<void> {
+    await this.clearTaskPlanForNewTurn();
+    const commandBackpressure = this.persistPayloadWithWarning(
+      slashCommandToSessionPayload(command),
+      undefined,
+      activeSession
+    );
+    if (commandBackpressure) await commandBackpressure;
+    this.view.setStatus("compacting context");
+    try {
+      const focus = command
+        .trim()
+        .replace(/^\/compact(?:\s+|$)/u, "")
+        .trim();
+      const conversation = this.view.getConversationTurns().slice(0, -1);
+      const events = await this.runtime.compactConversation?.(conversation, {
+        ...(focus ? { focus } : {}),
+        session: activeSession,
+      });
+      await this.applyRuntimeEvents(
+        events ?? [agentEvent.systemMessage("This runtime does not support context compaction.")],
+        activeSession
+      );
+    } finally {
+      if (this.session === activeSession) this.view.setStatus("ready");
     }
   }
 
@@ -1396,9 +1481,52 @@ export class TopchesterTuiController implements TuiController {
         await addGlobalModelChoices([modelRef], { prioritize: true });
         reloadAppBaseConfig(this.context);
       }
-      setRuntimeModelOverride(this.context, purpose, resolveModelChoice(this.context.config, modelRef));
+      const nextChoice = resolveModelChoice(this.context.config, modelRef);
+      if (purpose === "agent.primary") {
+        const providerId = nextChoice.provider ?? this.context.config.providers?.default;
+        const provider = providerId ? this.context.config.providers?.[providerId] : undefined;
+        const currentStatus = this.view.getSnapshot().contextStatus;
+        if (providerId && typeof provider === "object" && provider && currentStatus) {
+          const route = { providerId, baseURL: provider.baseURL, modelId: nextChoice.name };
+          const configured = configuredCapacityForRoute(this.context.config, route);
+          const stored = this.context.contextCapacityRegistry?.get(route);
+          const capacity = resolveContextCapacity({
+            ...(configured.source === "unknown"
+              ? {}
+              : configured.source === "config"
+                ? { config: configured }
+                : { assumed: configured }),
+            ...(stored?.source === "provider" ? { provider: stored } : {}),
+            ...(stored?.source === "catalog" ? { catalog: stored } : {}),
+            ...(stored?.source === "error-reported" || stored?.source === "error-inferred" ? { learned: stored } : {}),
+          });
+          const budget = deriveContextBudget(
+            capacity,
+            currentStatus.budget.usedTokens,
+            contextPolicyFromConfig(this.context.config)
+          );
+          if (
+            budget.hardPromptBudget !== undefined &&
+            currentStatus.budget.usedTokens >= (budget.compactAtTokens ?? budget.hardPromptBudget)
+          ) {
+            const compactionEvents = await this.runtime.compactConversation?.(this.view.getConversationTurns(), {
+              focus: `Prepare the active context for model switch to ${modelRef}.`,
+              reason: "model-switch",
+              session: this.session,
+            });
+            if (!compactionEvents?.some((event) => event.type === "context_compaction")) {
+              throw new Error(
+                "The current context does not fit the selected route and could not be compacted with the previous model. Run /compact or /new."
+              );
+            }
+            await this.applyRuntimeEvents(compactionEvents, this.session);
+          }
+        }
+      }
+      setRuntimeModelOverride(this.context, purpose, nextChoice);
       if (purpose === "agent.primary") {
         this.view.setModelLabel(getModelLabel(this.context));
+        this.view.setContextStatus(undefined);
       }
       await this.persistRuntimeConfigWithWarning();
       await this.refreshKnowledgeFooter();
@@ -1469,6 +1597,7 @@ export class TopchesterTuiController implements TuiController {
         transcript.push(systemTranscriptEntry(droppedNotice));
       }
       this.session = session;
+      this.runtime.restoreContextStatus?.(undefined, session);
       this.sessionStartedAt = Date.now();
       this.pendingSkillActivations = [];
       await this.persistInitialTranscript(transcript);
@@ -1483,6 +1612,8 @@ export class TopchesterTuiController implements TuiController {
         modelLabel: getModelLabel(this.context),
         startupHint: STARTUP_PROMPT_HINT,
         clearTerminal: options.clearTerminal,
+        modelContextTurns: undefined,
+        contextStatus: undefined,
       });
       await this.checkAgent();
     } finally {
@@ -1514,6 +1645,7 @@ export class TopchesterTuiController implements TuiController {
         ...(droppedNotice ? [systemTranscriptEntry(droppedNotice)] : []),
       ];
       this.session = fork;
+      this.runtime.restoreContextStatus?.(rehydrated.contextStatus, fork);
       this.sessionStartedAt = Date.now();
       this.pendingSkillActivations = [];
       const backpressure = this.persistPayloadWithWarning(
@@ -1529,6 +1661,8 @@ export class TopchesterTuiController implements TuiController {
         modelLabel: getModelLabel(this.context),
         taskPlan: rehydrated.taskPlan,
         status: rehydrated.status,
+        modelContextTurns: rehydrated.modelContextTurns,
+        contextStatus: rehydrated.contextStatus,
       });
     } finally {
       if (this.session === source) this.persistenceBlockedSessions.delete(source);
@@ -1570,6 +1704,7 @@ export class TopchesterTuiController implements TuiController {
         ...(droppedNotice ? [systemTranscriptEntry(droppedNotice)] : []),
       ];
       this.session = restoredSession;
+      this.runtime.restoreContextStatus?.(rehydrated.contextStatus, restoredSession);
       this.sessionStartedAt = Date.now();
       this.pendingSkillActivations = [];
       this.clearTaskPlanNoticeTimer();
@@ -1587,6 +1722,8 @@ export class TopchesterTuiController implements TuiController {
         modelLabel: getModelLabel(this.context),
         taskPlan: rehydrated.taskPlan,
         status: rehydrated.status,
+        modelContextTurns: rehydrated.modelContextTurns,
+        contextStatus: rehydrated.contextStatus,
       });
     } catch (error) {
       this.view.closeSessionPicker();

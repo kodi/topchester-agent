@@ -36,6 +36,16 @@ interface TopchesterConfig {
   };
   mcp?: Record<string, McpStdioServerConfig>;
   hooks?: Record<string, HookHandlerConfig[]>;
+  compaction?: {
+    enabled?: boolean;
+    thresholdPercent?: number;
+    targetPercent?: number;
+    reserveTokens?: number;
+    keepRecentTokens?: number;
+    maxCompactionsPerTurn?: number;
+    learnProviderLimits?: boolean;
+    assumedContextWindow?: number;
+  };
 }
 ```
 
@@ -57,8 +67,20 @@ interface ModelProviderConfig {
   toolProtocol?: "auto" | "native" | "text-json" | "text-xml";
   openRouterToolRouting?: "auto" | "force" | "off";
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  discoverModelLimits?: boolean;
+  modelLimits?: Record<
+    string,
+    {
+      contextWindow?: number;
+      maxInputTokens?: number;
+      maxOutputTokens?: number;
+      assumed?: boolean;
+    }
+  >;
 }
 ```
+
+Context limits are scoped by provider ID, normalized `baseURL`, and exact model ID. Unknown routes remain unknown. Automatic compaction defaults on with an 85% trigger and 40% target; set `compaction.enabled` to `false` for a durable opt-out.
 
 Workspace config and user config are followed by at most one selected profile. CLI `--config` takes precedence over `TOPCHESTER_CONFIG`; the two selectors do not create separate merge layers. Arrays concatenate only across the active layers.
 

@@ -55,6 +55,14 @@ export interface ParsedSlashCommand {
 
 export const slashCommandSuggestions: SlashCommandSuggestion[] = [
   {
+    value: "/context",
+    description: "show active prompt usage, route capacity, and provenance",
+  },
+  {
+    value: "/compact",
+    description: "compact older model context while keeping the transcript",
+  },
+  {
     value: "/model",
     description: "choose from configured model choices",
   },
@@ -165,6 +173,16 @@ export const slashCommandSuggestions: SlashCommandSuggestion[] = [
 ];
 
 export const slashCommands: SlashCommand[] = [
+  {
+    name: "context",
+    description: "show active context diagnostics",
+    execute: executeInteractiveOnlyCommand("/context"),
+  },
+  {
+    name: "compact",
+    description: "compact older model context",
+    execute: executeInteractiveOnlyCommand("/compact"),
+  },
   {
     name: "kb",
     description: "knowledge base commands",

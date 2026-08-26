@@ -5,6 +5,7 @@ import { createMemo, Show } from "solid-js";
 import { type TuiViewState } from "../../chat/controller-state.js";
 import { useController, useTheme } from "./context.js";
 import { type TopchesterTheme } from "./theme.js";
+import { formatContextStatusBar } from "../../chat/context-status.js";
 
 export function StatusBar() {
   const { snapshot } = useController();
@@ -15,6 +16,19 @@ export function StatusBar() {
   const queue = createMemo(() => {
     const count = snapshot().queuedFollowUpCount;
     return count > 0 ? ` · queued: ${count}` : "";
+  });
+  const context = createMemo(() => {
+    const status = snapshot().contextStatus;
+    return status ? formatContextStatusBar(status, dimensions().width) : undefined;
+  });
+  const contextTone = createMemo(() => {
+    const status = snapshot().contextStatus;
+    if (!status?.budget.hardPromptBudget) return theme.muted;
+    if (status.budget.usedTokens >= status.budget.hardPromptBudget) return theme.error;
+    if (status.budget.usedTokens >= (status.budget.compactAtTokens ?? status.budget.hardPromptBudget)) {
+      return theme.warning;
+    }
+    return theme.muted;
   });
 
   return (
@@ -32,9 +46,18 @@ export function StatusBar() {
           <span style={{ fg: theme.muted }}>{model().effort}</span>
         </Show>
         {queue()}
-        <Show when={dimensions().width >= 112}> · session {snapshot().sessionId.slice(0, 8)}</Show>
+        <Show when={dimensions().width >= 112 && !snapshot().noticeLine}>
+          {` · session ${snapshot().sessionId.slice(0, 8)}`}
+        </Show>
         {snapshot().noticeLine ? ` · ${snapshot().noticeLine}` : ""}
       </text>
+      <Show when={!snapshot().noticeLine && context()}>
+        {(label) => (
+          <text flexShrink={0} marginLeft={1} wrapMode="none" fg={contextTone()}>
+            {label()}
+          </text>
+        )}
+      </Show>
       <Show when={kb()}>
         {(status) => (
           <text flexShrink={0} marginLeft={1} wrapMode="none" fg={theme.text}>

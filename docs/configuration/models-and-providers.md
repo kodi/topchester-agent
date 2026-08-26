@@ -117,3 +117,41 @@ For a local OpenAI-compatible proxy, including VibeProxy, a selected profile can
 ```
 
 Start it with `topchester --config ./vibeproxy.jsonc`. A model-id effort suffix remains part of the model name; a Topchester `/effort` override is also shown separately in the status line, and proxy-specific precedence remains the proxy's responsibility.
+
+## Context capacity and compaction
+
+Context capacity belongs to the exact provider route, not just the model name. Configure limits under the provider that owns the route:
+
+```jsonc
+{
+  "providers": {
+    "vibeproxy": {
+      "type": "openai-compatible",
+      "baseURL": "http://127.0.0.1:8317/v1",
+      "discoverModelLimits": false,
+      "modelLimits": {
+        "gpt-5.4": {
+          "contextWindow": 272000,
+          "maxInputTokens": 240000,
+          "maxOutputTokens": 32000,
+        },
+      },
+    },
+  },
+  "compaction": {
+    "enabled": true,
+    "thresholdPercent": 85,
+    "targetPercent": 40,
+    "reserveTokens": 16384,
+    "keepRecentTokens": 16000,
+    "maxCompactionsPerTurn": 2,
+    "learnProviderLimits": true,
+  },
+}
+```
+
+`modelLimits` keys are exact provider model IDs. A direct Codex route and a VibeProxy route using `gpt-5.4` are separate capacities because their provider IDs and base URLs differ. `contextWindow` is a shared input/output window; `maxInputTokens` is a separate prompt ceiling and does not have the output reserve subtracted again. Set `assumed: true` only for an explicit policy assumption; Topchester labels it as assumed and uses a larger uncertainty margin.
+
+Generic OpenAI-compatible discovery is off by default. Set `discoverModelLimits: true` only when the endpoint's `/models` response is trusted. Topchester accepts a small allowlist of context/input/output fields, caches reported or overflow-learned limits under `.agents/topchester/context-routes.json`, and never writes them into JSONC. If a proxy reports no limit, `/context` shows `?` instead of inventing a denominator or percentage.
+
+Automatic compaction is enabled by default. Set `compaction.enabled: false` to opt out of proactive threshold compaction; manual `/compact` and one bounded overflow-recovery attempt remain available. Cumulative usage/cost metadata stays separate from the active prompt estimate.

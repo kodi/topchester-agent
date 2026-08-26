@@ -31,6 +31,14 @@ describe("slash commands", () => {
   it("suggests slash commands by typed prefix", () => {
     expect(getSlashCommandSuggestions("/")).toEqual([
       {
+        value: "/context",
+        description: "show active prompt usage, route capacity, and provenance",
+      },
+      {
+        value: "/compact",
+        description: "compact older model context while keeping the transcript",
+      },
+      {
         value: "/model",
         description: "choose from configured model choices",
       },
@@ -150,6 +158,14 @@ describe("slash commands", () => {
       },
     ]);
     expect(getSlashCommandSuggestions("/c")).toEqual([
+      {
+        value: "/context",
+        description: "show active prompt usage, route capacity, and provenance",
+      },
+      {
+        value: "/compact",
+        description: "compact older model context while keeping the transcript",
+      },
       {
         value: "/connect",
         description: "connect a model provider",

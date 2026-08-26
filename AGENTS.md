@@ -1,6 +1,7 @@
 # Topchester Agent
 
 ## Writing Standards
+
 - When writing documentation, plans, commit messages, or explanations, use **ASD-STE100 Simplified Technical English (STE)**.
 - Keep sentences short, declarative, and clear. Avoid passive voice and long noun clusters.
 

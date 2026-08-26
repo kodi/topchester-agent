@@ -139,8 +139,9 @@ async function testAppSurface(): Promise<void> {
     await setup.mockInput.typeText("/");
     await setup.flush();
     assert.ok(setup.renderer.footerHeight >= 10);
+    assert.match(setup.captureCharFrame(), /\/context/u);
+    assert.match(setup.captureCharFrame(), /\/compact/u);
     assert.match(setup.captureCharFrame(), /\/model all/u);
-    assert.match(setup.captureCharFrame(), /\/connect/u);
 
     await setup.mockInput.typeText("mo");
     await setup.flush();

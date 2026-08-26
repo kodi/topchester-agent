@@ -35,6 +35,178 @@ function createControllerRuntime(overrides: Partial<AgentRuntime> = {}): AgentRu
 }
 
 describe("framework-neutral TUI controller", () => {
+  it("rejects /compact visibly while a turn is active instead of queueing it", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-compact-busy-"));
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const compactConversation = vi.fn(async () => []);
+    const runtime = createControllerRuntime({
+      compactConversation,
+      async *submitMessageStream() {
+        await pending;
+        yield agentEvent.assistantMessage("finished", "model");
+      },
+    });
+    const controller = await TopchesterTuiController.create(createTestContext(workspace), runtime);
+
+    controller.submit("work");
+    expect(controller.submitCommand("/compact")).toBe("submitted");
+    expect(controller.getSnapshot().transcript).toContainEqual(
+      expect.objectContaining({ kind: "system", text: "Compaction unavailable while a turn is active." })
+    );
+    expect(compactConversation).not.toHaveBeenCalled();
+    release();
+    await controller.waitForIdle();
+    await controller.dispose();
+  });
+
+  it("runs idle /compact as a persisted projection checkpoint and uses it for the next turn", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-compact-"));
+    const route = { providerId: "proxy", baseURL: "https://proxy.test/v1", modelId: "model" };
+    const capacity = { contextWindow: 32_000, source: "config" as const, confidence: "authoritative" as const };
+    const status = {
+      route,
+      usage: {
+        promptTokens: 2_000,
+        trailingEstimatedTokens: 0,
+        source: "local-estimate" as const,
+        estimated: true,
+        route,
+        asOfModelCall: 1,
+        requestBaseFingerprint: "fixture",
+        observedAt: "2026-08-26T00:00:00.000Z",
+      },
+      budget: { capacity, usedTokens: 2_000, uncertaintyTokens: 2_000 },
+      compactionsThisSession: 1,
+      compactionsThisTurn: 1,
+    };
+    const projection = {
+      version: 1 as const,
+      summary: "Goal\nPreserve ABC-123.",
+      segments: [
+        { kind: "inline" as const, segmentKind: "turn" as const, role: "user" as const, text: "recent request" },
+        { kind: "inline" as const, segmentKind: "turn" as const, role: "assistant" as const, text: "recent answer" },
+      ],
+    };
+    const conversations: Array<Array<{ role: string; text: string }>> = [];
+    const runtime = createControllerRuntime({
+      async compactConversation() {
+        return [
+          agentEvent.contextCompaction(
+            {
+              projectionVersion: 1,
+              reason: "manual",
+              focus: "preserve identifier",
+              projection,
+              beforeTokens: 8_000,
+              afterEstimatedTokens: 2_000,
+              route,
+              capacity,
+            },
+            status
+          ),
+          agentEvent.systemMessage("Context compacted."),
+        ];
+      },
+      async *submitMessageStream(conversation) {
+        conversations.push(conversation);
+        yield agentEvent.assistantMessage("after compaction", "model");
+      },
+    });
+    const controller = await TopchesterTuiController.create(createTestContext(workspace), runtime, {
+      initialTranscript: [
+        { kind: "user", persistence: "session", text: "old request" },
+        { kind: "assistant", persistence: "session", text: "old answer" },
+      ],
+    });
+
+    controller.submitCommand("/compact preserve identifier");
+    await controller.waitForIdle();
+    expect(controller.getSnapshot().contextStatus).toEqual(status);
+    controller.submit("follow up");
+    await controller.waitForIdle();
+    expect(conversations[0]).toEqual([
+      { role: "assistant", text: "[Compacted context]\nGoal\nPreserve ABC-123." },
+      { role: "user", text: "recent request" },
+      { role: "assistant", text: "recent answer" },
+      { role: "user", text: "follow up" },
+    ]);
+    expect((await loadSession(workspace, controller.getSnapshot().sessionId)).events).toContainEqual(
+      expect.objectContaining({ kind: "context_compaction", focus: "preserve identifier" })
+    );
+    await controller.dispose();
+  });
+
+  it("compacts with the current route before committing a downshift to a smaller model", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-model-downshift-"));
+    const context = createTestContext(workspace);
+    const config = createModelDownshiftConfig();
+    context.baseConfig = config;
+    context.config = config;
+    const status = createModelDownshiftStatus(55_000);
+    const compactConversation = vi.fn(async (_conversation, _options) => [
+      agentEvent.contextCompaction(
+        {
+          projectionVersion: 1,
+          reason: "model-switch",
+          projection: { version: 1, summary: "Compacted for the smaller route.", segments: [] },
+          beforeTokens: 55_000,
+          afterEstimatedTokens: 10_000,
+          route: status.route,
+          capacity: status.budget.capacity,
+        },
+        createModelDownshiftStatus(10_000)
+      ),
+    ]);
+    const controller = await TopchesterTuiController.create(context, createControllerRuntime({ compactConversation }), {
+      initialContextStatus: status,
+      initialTranscript: [
+        { kind: "user", persistence: "session", text: "old request" },
+        { kind: "assistant", persistence: "session", text: "old answer" },
+      ],
+    });
+
+    controller.submitCommand("/model proxy/small");
+    await controller.waitForIdle();
+
+    expect(compactConversation).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({ reason: "model-switch", focus: expect.stringContaining("proxy/small") })
+    );
+    expect(context.runtimeConfigOverrides.modelOverrides["agent.primary"]).toMatchObject({
+      provider: "proxy",
+      name: "small",
+    });
+    await controller.dispose();
+  });
+
+  it("keeps the previous model selected when downshift compaction cannot create a checkpoint", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-model-downshift-failed-"));
+    const context = createTestContext(workspace);
+    const config = createModelDownshiftConfig();
+    context.baseConfig = config;
+    context.config = config;
+    const compactConversation = vi.fn(async () => [agentEvent.systemMessage("summary unavailable")]);
+    const controller = await TopchesterTuiController.create(context, createControllerRuntime({ compactConversation }), {
+      initialContextStatus: createModelDownshiftStatus(55_000),
+    });
+
+    controller.submitCommand("/model proxy/small");
+    await controller.waitForIdle();
+
+    expect(compactConversation).toHaveBeenCalledOnce();
+    expect(context.runtimeConfigOverrides.modelOverrides["agent.primary"]).toBeUndefined();
+    expect(controller.getSnapshot().transcript).toContainEqual(
+      expect.objectContaining({
+        kind: "system",
+        text: expect.stringContaining("previous model"),
+      })
+    );
+    await controller.dispose();
+  });
+
   it("reduces runtime events without awaiting routine session durability", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-nonblocking-persistence-"));
     const session = await createSession(workspace);
@@ -1092,6 +1264,53 @@ describe("framework-neutral TUI controller", () => {
     await controller.dispose();
   });
 });
+
+function createModelDownshiftConfig(): TopchesterConfig {
+  return {
+    models: {
+      assignments: {
+        "agent.primary": { provider: "proxy", name: "large" },
+        "fallback": { provider: "proxy", name: "large" },
+      },
+    },
+    providers: {
+      default: "proxy",
+      proxy: {
+        type: "openai-compatible",
+        baseURL: "https://proxy.test/v1",
+        modelLimits: { small: { contextWindow: 80_000 } },
+      },
+    } as unknown as NonNullable<TopchesterConfig["providers"]>,
+  };
+}
+
+function createModelDownshiftStatus(usedTokens: number) {
+  const route = { providerId: "proxy", baseURL: "https://proxy.test/v1", modelId: "large" };
+  const capacity = { contextWindow: 160_000, source: "config" as const, confidence: "authoritative" as const };
+  return {
+    route,
+    usage: {
+      promptTokens: usedTokens,
+      trailingEstimatedTokens: 0,
+      source: "local-estimate" as const,
+      estimated: true,
+      route,
+      asOfModelCall: 1,
+      requestBaseFingerprint: "fixture",
+      observedAt: "2026-08-26T00:00:00.000Z",
+    },
+    budget: {
+      capacity,
+      usedTokens,
+      hardPromptBudget: 143_616,
+      compactAtTokens: 118_000,
+      targetTokens: 57_000,
+      uncertaintyTokens: 6_400,
+    },
+    compactionsThisSession: 0,
+    compactionsThisTurn: 0,
+  };
+}
 
 class FakeTransientScheduler implements TuiTransientScheduler {
   private callback: (() => void) | undefined;

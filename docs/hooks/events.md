@@ -17,7 +17,7 @@ Supported events:
 | `PreToolUse`        | none                 | Before a model-requested tool runs.                                                               |
 | `PostToolUse`       | none                 | After a tool returns.                                                                             |
 | `PermissionRequest` | `UserActionRequired` | Before Topchester asks the user to approve or auto-approve an action, currently command approval. |
-| `PreCompact`        | none                 | Before context compaction. The hook is supported, but there is no automatic compaction path yet.  |
+| `PreCompact`        | none                 | Before manual, threshold, overflow-recovery, or model-switch compaction mutates model context.    |
 | `Stop`              | `TaskComplete`       | When the turn finishes, with completed or failed status.                                          |
 
 Aliases are accepted in config, but payloads use the canonical event name in `hook_event_name` and `event`.

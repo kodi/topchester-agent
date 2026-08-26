@@ -87,15 +87,15 @@ In practice:
 
 ## Supported Events
 
-| Event               | Alias                | When it runs                                                                                     |
-| ------------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
-| `SessionStart`      | `TaskStart`          | Once when a Topchester session starts or resumes for a workspace/session key.                    |
-| `UserPromptSubmit`  | `TaskAcknowledge`    | After the user prompt is accepted and before the agent starts model work.                        |
-| `PreToolUse`        | none                 | Before a model-requested tool runs.                                                              |
-| `PostToolUse`       | none                 | After a tool returns.                                                                            |
-| `PermissionRequest` | `UserActionRequired` | Before Topchester asks the user to approve an interactive action, currently command approval.    |
-| `PreCompact`        | none                 | Before context compaction. The hook is supported, but there is no automatic compaction path yet. |
-| `Stop`              | `TaskComplete`       | When the turn finishes, with completed or failed status.                                         |
+| Event               | Alias                | When it runs                                                                                  |
+| ------------------- | -------------------- | --------------------------------------------------------------------------------------------- |
+| `SessionStart`      | `TaskStart`          | Once when a Topchester session starts or resumes for a workspace/session key.                 |
+| `UserPromptSubmit`  | `TaskAcknowledge`    | After the user prompt is accepted and before the agent starts model work.                     |
+| `PreToolUse`        | none                 | Before a model-requested tool runs.                                                           |
+| `PostToolUse`       | none                 | After a tool returns.                                                                         |
+| `PermissionRequest` | `UserActionRequired` | Before Topchester asks the user to approve an interactive action, currently command approval. |
+| `PreCompact`        | none                 | Before manual or automatic context compaction mutates model context.                          |
+| `Stop`              | `TaskComplete`       | When the turn finishes, with completed or failed status.                                      |
 
 Aliases are accepted in config, but payloads use the canonical event name in `hook_event_name` and `event`.
 
@@ -267,9 +267,28 @@ Adds:
 
 ```json
 {
-  "reason": "Compaction is about to start."
+  "reason": "threshold",
+  "mode": "automatic",
+  "route": {
+    "providerId": "vibeproxy",
+    "baseURL": "http://127.0.0.1:8317/v1",
+    "modelId": "gpt-5.4"
+  },
+  "usage": {
+    "usedTokens": 104000,
+    "estimated": true
+  },
+  "budget": {
+    "contextWindow": 128000,
+    "hardPromptBudget": 111616,
+    "compactAtTokens": 88473,
+    "targetTokens": 44646,
+    "capacitySource": "config"
+  }
 }
 ```
+
+`reason` is `manual`, `threshold`, `overflow`, or `model-switch`. Manual `/compact <focus>` also includes `focus`. Returned `context` text guides the summary. `block` cancels compaction. `stop` ends an active automatic turn. Topchester does not send a request that is above the hard prompt budget when a hook blocks the required compaction.
 
 ### Stop
 

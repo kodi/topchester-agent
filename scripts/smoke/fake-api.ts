@@ -191,6 +191,25 @@ function parseFakeToolCall(content: string): { tool: string; args: Record<string
 }
 
 function chooseResponse(prompt: string): string {
+  if (prompt.includes("Conversation to compact:") && prompt.includes("CONTEXT_COMPACTION_SMOKE")) {
+    return [
+      "Goal",
+      "Complete the context compaction smoke scenario.",
+      "User constraints and preferences",
+      "Preserve exact identifier cobalt-nine and path src/context-marker.ts.",
+      "Next steps",
+      "Answer the latest question with cobalt-nine.",
+    ].join("\n");
+  }
+
+  if (prompt.includes("CONTEXT_COMPACTION_FINAL")) {
+    return "cobalt-nine";
+  }
+
+  if (prompt.includes("CONTEXT_COMPACTION_SMOKE")) {
+    return "Remembered cobalt-nine and src/context-marker.ts.";
+  }
+
   if (prompt.includes("Create an L1 file entry for this workspace-relative path.")) {
     return JSON.stringify({
       language: "typescript",

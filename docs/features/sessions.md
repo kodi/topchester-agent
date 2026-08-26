@@ -30,7 +30,9 @@ Use `/restore` in the TUI to pick a previous project-local session without leavi
 
 Use `/fork` in the TUI to clone the active session into a fresh top-level session and switch to it. Use `topchester fork --last` or `topchester fork <session-id>` to fork a saved project-local session before opening the fork. A fork keeps an explicit title when one is supplied; otherwise it inherits the source title or derives one from the copied first normal user prompt.
 
-Events are append-only JSONL. They include user messages, assistant messages, tool calls, runtime events, task-plan state, runtime model/effort snapshots, and child-session lifecycle events. Runtime config events contain only model references and effort enum values; provider definitions, URLs, headers, API keys, and auth records stay out of session logs.
+Events are append-only JSONL. They include user messages, assistant messages, tool calls, runtime events, task-plan state, runtime model/effort snapshots, context usage, replayable compaction snapshots, and child-session lifecycle events. Runtime config events contain only model references and effort enum values; provider definitions, headers, API keys, and auth records stay out of session logs.
+
+Compaction never deletes transcript events. A `context_compaction` event stores the authoritative model-facing projection separately: its structured summary, retained transcript references, and any inline current-turn tool/continuation state needed after restart. Resume, restore, fork, and `topchester run --resume` use the latest projection rather than rebuilding model context from the full visible transcript. Old sessions without context events keep full-transcript behavior. `/new` and `/clear` start without a compaction snapshot.
 
 `-m, --model`, `--kb-model`, `/model`, `/models`, `/kb-model`, `/effort`, and
 `/reasoning` update the current session's runtime snapshot. `--resume` and

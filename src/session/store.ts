@@ -15,6 +15,13 @@ import { emptyRuntimeConfigOverrides, type RuntimeConfigOverrides } from "../con
 import { type TaskPlanState } from "../agent/task-plan.js";
 import { type ToolCall } from "../agent/tools.js";
 import {
+  isRetainedRuntimeContextTurn,
+  projectionToConversationTurns,
+  type ModelContextProjection,
+} from "../agent/context/projection.js";
+import { type ContextStatus } from "../agent/context/types.js";
+import { type ConversationTurn } from "../agent/conversation.js";
+import {
   SESSION_EVENT_VERSION,
   SESSION_METADATA_VERSION,
   sessionEventPayload,
@@ -82,6 +89,9 @@ export interface RehydratedSession {
   status?: string;
   taskPlan?: TaskPlanState;
   runtimeConfigOverrides: RuntimeConfigOverrides;
+  modelContextTurns?: ConversationTurn[];
+  modelProjection?: ModelContextProjection;
+  contextStatus?: ContextStatus;
 }
 
 export interface CreateChildSessionOptions {
@@ -411,45 +421,45 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
   let taskPlan: TaskPlanState | undefined;
   let runtimeConfigOverrides = emptyRuntimeConfigOverrides();
   let visibleOnlyActionValues = new Set<string>();
+  const referencedMessages: Array<{ eventId: number; role: "user" | "assistant"; text: string }> = [];
+  let modelProjection: ModelContextProjection | undefined;
+  let modelContextTurns: ConversationTurn[] | undefined;
+  let contextStatus: ContextStatus | undefined;
 
   for (const event of events) {
     switch (event.kind) {
-      case "message":
+      case "message": {
         if (event.role === "assistant" && event.text === "ready" && event.meta === undefined) {
           break;
         }
+        const visibleOnly = isVisibleOnlyMessage(event.meta) || visibleOnlyActionValues.has(event.text);
         if (event.role === "system") {
           const startup = getStartupTranscriptEntry(event.meta);
-          transcript.push(
-            startup ??
-              systemTranscriptEntry(
-                event.text,
-                isVisibleOnlyMessage(event.meta) || visibleOnlyActionValues.has(event.text)
-                  ? { modelContext: false }
-                  : {}
-              )
-          );
+          transcript.push(startup ?? systemTranscriptEntry(event.text, visibleOnly ? { modelContext: false } : {}));
         } else if (event.role === "user") {
-          transcript.push(
-            userTranscriptEntry(
-              event.text,
-              isVisibleOnlyMessage(event.meta) || visibleOnlyActionValues.has(event.text) ? { modelContext: false } : {}
-            )
-          );
+          transcript.push(userTranscriptEntry(event.text, visibleOnly ? { modelContext: false } : {}));
         } else {
           transcript.push(
             assistantTranscriptEntry(event.text, {
               ...(typeof event.meta === "string" ? { meta: event.meta } : {}),
-              ...(isVisibleOnlyMessage(event.meta) || visibleOnlyActionValues.has(event.text)
-                ? { modelContext: false }
-                : {}),
+              ...(visibleOnly ? { modelContext: false } : {}),
             })
           );
         }
         if (event.role === "user") {
           visibleOnlyActionValues = new Set();
         }
+        if ((event.role === "user" || event.role === "assistant") && !visibleOnly) {
+          referencedMessages.push({ eventId: event.id, role: event.role, text: event.text });
+          if (modelContextTurns) {
+            if (event.role === "assistant" && modelContextTurns.some(isRetainedRuntimeContextTurn)) {
+              modelContextTurns = modelContextTurns.filter((turn) => !isRetainedRuntimeContextTurn(turn));
+            }
+            modelContextTurns.push({ role: event.role, text: event.text });
+          }
+        }
         break;
+      }
       case "permission_auto_approved":
         break;
       case "tool_call":
@@ -510,10 +520,26 @@ export function rehydrateSession(events: SessionEvent[]): RehydratedSession {
       case "status":
         status = event.status;
         break;
+      case "context_usage":
+        contextStatus = event.status as ContextStatus;
+        break;
+      case "context_compaction":
+        modelProjection = event.projection as ModelContextProjection;
+        modelContextTurns = projectionToConversationTurns(modelProjection, referencedMessages);
+        contextStatus = event.status as ContextStatus;
+        break;
     }
   }
 
-  return { transcript, status, ...(taskPlan === undefined ? {} : { taskPlan }), runtimeConfigOverrides };
+  return {
+    transcript,
+    status,
+    ...(taskPlan === undefined ? {} : { taskPlan }),
+    runtimeConfigOverrides,
+    ...(modelProjection === undefined ? {} : { modelProjection }),
+    ...(modelContextTurns === undefined ? {} : { modelContextTurns }),
+    ...(contextStatus === undefined ? {} : { contextStatus }),
+  };
 }
 
 function getStartupTranscriptEntry(meta: unknown): TranscriptEntry | undefined {

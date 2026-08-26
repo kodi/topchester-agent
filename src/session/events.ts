@@ -159,6 +159,96 @@ const subagentFailedPayloadSchema = subagentLifecycleBasePayloadSchema.extend({
   error: z.string(),
 });
 
+const contextRouteSchema = z.object({
+  providerId: z.string().min(1),
+  baseURL: z.string().min(1),
+  modelId: z.string().min(1),
+});
+
+const contextCapacitySchema = z.object({
+  contextWindow: z.number().int().positive().optional(),
+  maxInputTokens: z.number().int().positive().optional(),
+  maxOutputTokens: z.number().int().positive().optional(),
+  source: z.enum(["config", "provider", "catalog", "error-reported", "error-inferred", "assumed", "unknown"]),
+  confidence: z.enum(["authoritative", "reported", "catalog", "inferred", "assumed", "unknown"]),
+  observedAt: isoTimestampSchema.optional(),
+});
+
+const contextUsageSnapshotSchema = z.object({
+  promptTokens: z.number().int().nonnegative(),
+  trailingEstimatedTokens: z.number().int().nonnegative(),
+  source: z.enum(["provider", "local-estimate"]),
+  estimated: z.boolean(),
+  route: contextRouteSchema,
+  asOfModelCall: z.number().int().nonnegative(),
+  requestBaseFingerprint: z.string(),
+  observedAt: isoTimestampSchema,
+});
+
+const contextBudgetSchema = z.object({
+  capacity: contextCapacitySchema,
+  usedTokens: z.number().int().nonnegative(),
+  hardPromptBudget: z.number().int().positive().optional(),
+  compactAtTokens: z.number().int().positive().optional(),
+  targetTokens: z.number().int().positive().optional(),
+  reserveTokens: z.number().int().nonnegative().optional(),
+  rawRemainingTokens: z.number().int().nonnegative().optional(),
+  safeRemainingTokens: z.number().int().nonnegative().optional(),
+  uncertaintyTokens: z.number().int().nonnegative(),
+});
+
+const contextStatusSchema = z.object({
+  route: contextRouteSchema,
+  usage: contextUsageSnapshotSchema,
+  budget: contextBudgetSchema,
+  compactionsThisSession: z.number().int().nonnegative(),
+  compactionsThisTurn: z.number().int().nonnegative(),
+});
+
+const projectionSegmentSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("transcript_ref"), eventId: z.number().int().positive() }),
+  z.object({
+    kind: z.literal("inline"),
+    segmentKind: z.enum([
+      "current_user",
+      "knowledge",
+      "tool_result",
+      "hook_context",
+      "steering",
+      "continuation",
+      "turn",
+    ]),
+    text: z.string().min(1),
+    role: z.enum(["user", "assistant"]).optional(),
+    toolAssociationId: z.string().optional(),
+  }),
+]);
+
+const modelProjectionSchema = z.object({
+  version: z.literal(1),
+  summary: z.string().optional(),
+  segments: z.array(projectionSegmentSchema),
+});
+
+const contextUsagePayloadSchema = z.object({
+  kind: z.literal("context_usage"),
+  status: contextStatusSchema,
+});
+
+const contextCompactionPayloadSchema = z.object({
+  kind: z.literal("context_compaction"),
+  projectionVersion: z.literal(1),
+  reason: z.enum(["manual", "threshold", "overflow", "model-switch"]),
+  focus: z.string().optional(),
+  projection: modelProjectionSchema,
+  retainedFromEventId: z.number().int().positive().optional(),
+  beforeTokens: z.number().int().nonnegative(),
+  afterEstimatedTokens: z.number().int().nonnegative(),
+  route: contextRouteSchema,
+  capacity: contextCapacitySchema,
+  status: contextStatusSchema,
+});
+
 export const sessionEventPayloadSchema = z.discriminatedUnion("kind", [
   messagePayloadSchema,
   permissionAutoApprovedPayloadSchema,
@@ -174,6 +264,8 @@ export const sessionEventPayloadSchema = z.discriminatedUnion("kind", [
   subagentEventPayloadSchema,
   subagentCompletedPayloadSchema,
   subagentFailedPayloadSchema,
+  contextUsagePayloadSchema,
+  contextCompactionPayloadSchema,
 ]);
 
 export const sessionEventSchema = z.intersection(eventEnvelopeSchema, sessionEventPayloadSchema);

@@ -1,0 +1,14 @@
+{
+  "id": "21-context-compaction",
+  "name": "Context compaction continuity",
+  "description": "Forces automatic compaction on a known-capacity fake route and verifies an exact identifier survives resume.",
+  "timeoutMs": 30000,
+  "prompt": [
+    "CONTEXT_COMPACTION_SMOKE Remember the exact identifier cobalt-nine and exact path src/context-marker.ts. The following inert padding exists only to cross the deterministic context threshold: alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega.",
+    "CONTEXT_COMPACTION_SMOKE Continue retaining cobalt-nine and src/context-marker.ts. More inert padding: one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten.",
+    "CONTEXT_COMPACTION_FINAL What exact identifier must survive compaction? Reply with only the identifier.",
+    "CONTEXT_COMPACTION_FINAL After resuming the compacted session, reply again with only the retained identifier."
+  ],
+  "expectedOutputContains": ["cobalt-nine"],
+  "expectedContextCompaction": true
+}

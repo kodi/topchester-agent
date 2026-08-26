@@ -10,6 +10,18 @@ public: true
 
 Topchester changes grouped by day. This file is the source of truth for the public changelog.
 
+## 2026-08-26
+
+### Features
+
+- Added route-aware context capacity, active prompt accounting, responsive TUI context status, and `/context` diagnostics with explicit provenance and honest unknown-capacity output.
+- Added persisted `/compact [focus]`, default-on bounded threshold compaction, one-shot overflow recovery with route-scoped numeric limit learning, and safe model-downshift compaction.
+- Added replayable context projections across resume, restore, fork, CLI resume, and subagent session trees while keeping the visible transcript complete.
+
+### Validation
+
+- Added focused capacity, estimation, prompt, projection, pruning, overflow, runtime, controller, and status tests plus deterministic `21-context-compaction` smoke coverage.
+
 ## 2026-08-15
 
 ### Features

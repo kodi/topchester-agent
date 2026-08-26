@@ -18,6 +18,7 @@ import {
 } from "../config/runtime.js";
 import { createTopchesterLogger } from "../logging/index.js";
 import { type Logger } from "pino";
+import { ContextCapacityRegistry } from "../agent/context/registry.js";
 
 export interface AppContext {
   workspaceRoot: string;
@@ -29,6 +30,7 @@ export interface AppContext {
   devFlags: Set<string>;
   logger: Logger;
   logFilePath?: string;
+  contextCapacityRegistry?: ContextCapacityRegistry;
 }
 
 export interface CreateAppContextOptions {
@@ -57,6 +59,7 @@ export function createAppContext(options: CreateAppContextOptions): AppContext {
     devFlags: new Set(options.devFlags ?? []),
     logger: loggerInfo.logger,
     logFilePath: loggerInfo.logFilePath,
+    contextCapacityRegistry: new ContextCapacityRegistry(options.workspaceRoot),
   };
 }
 

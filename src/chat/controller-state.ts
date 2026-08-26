@@ -3,6 +3,8 @@ import { detectTaskPlanChange, type TaskPlanChangeKind, type TaskPlanState } fro
 import { type KnowledgeStatus } from "../knowledge/status.js";
 import { type SessionSummary } from "../session/store.js";
 import { type TranscriptEntry } from "./transcript.js";
+import { type ContextStatus } from "../agent/context/types.js";
+import { isRetainedRuntimeContextTurn } from "../agent/context/projection.js";
 
 export type { TaskPlanState } from "../agent/task-plan.js";
 
@@ -38,6 +40,7 @@ export interface TuiViewState {
   status: string;
   knowledgeStatus?: KnowledgeStatus;
   modelLabel: string;
+  contextStatus?: ContextStatus;
   taskPlan?: TaskPlanState;
   taskPlanNotice?: string;
   startupHint?: string;
@@ -110,6 +113,7 @@ export class TuiViewStore {
   private transientPending = false;
   private readonly transientScheduler: TuiTransientScheduler;
   private disposed = false;
+  private modelContextTurns: ConversationTurn[] | undefined;
 
   constructor(options: {
     sessionId: string;
@@ -118,10 +122,13 @@ export class TuiViewStore {
     modelLabel: string;
     taskPlan?: TaskPlanState;
     startupHint?: string;
+    modelContextTurns?: ConversationTurn[];
+    contextStatus?: ContextStatus;
     profile?: TuiViewProfile;
     transientScheduler?: TuiTransientScheduler;
   }) {
     this.profile = options.profile;
+    this.modelContextTurns = options.modelContextTurns ? [...options.modelContextTurns] : undefined;
     this.transientScheduler = options.transientScheduler ?? createTransientScheduler();
     const transcript = [...options.transcript];
     const transcriptRecords = this.createTranscriptRecords(transcript, 0);
@@ -139,6 +146,7 @@ export class TuiViewStore {
       managedDialog: false,
       ...(options.taskPlan === undefined ? {} : { taskPlan: options.taskPlan }),
       ...(options.startupHint === undefined ? {} : { startupHint: options.startupHint }),
+      ...(options.contextStatus === undefined ? {} : { contextStatus: options.contextStatus }),
     };
   }
 
@@ -210,6 +218,7 @@ export class TuiViewStore {
       transcriptRecords: [...this.state.transcriptRecords, record],
       transcriptChange: { kind: "append", sessionEpoch: this.state.sessionEpoch, records: [record] },
     });
+    this.appendModelContextEntry(entry);
   }
 
   addEntries(entries: readonly TranscriptEntry[]): void {
@@ -223,6 +232,7 @@ export class TuiViewStore {
       transcriptRecords: [...this.state.transcriptRecords, ...records],
       transcriptChange: { kind: "append", sessionEpoch: this.state.sessionEpoch, records },
     });
+    for (const entry of entries) this.appendModelContextEntry(entry);
   }
 
   removeActiveChoice(): void {
@@ -248,11 +258,14 @@ export class TuiViewStore {
     status?: string;
     startupHint?: string;
     clearTerminal?: boolean;
+    modelContextTurns?: ConversationTurn[];
+    contextStatus?: ContextStatus;
   }): void {
     if (this.batchDepth > 0) this.batchTemporaryLineUpdate = { temporaryLine: undefined };
     else this.clearTemporaryLineTimer();
     const sessionEpoch = this.state.sessionEpoch + 1;
     this.nextTranscriptRecordId = 0;
+    this.modelContextTurns = options.modelContextTurns ? [...options.modelContextTurns] : undefined;
     const transcript = [...options.transcript];
     const transcriptRecords = this.createTranscriptRecords(transcript, sessionEpoch);
     this.replaceState({
@@ -270,6 +283,7 @@ export class TuiViewStore {
       managedDialog: false,
       ...(options.taskPlan === undefined ? {} : { taskPlan: options.taskPlan }),
       ...(options.startupHint === undefined ? {} : { startupHint: options.startupHint }),
+      ...(options.contextStatus === undefined ? {} : { contextStatus: options.contextStatus }),
     });
   }
 
@@ -287,6 +301,14 @@ export class TuiViewStore {
 
   setModelLabel(modelLabel: string): void {
     this.patch({ modelLabel });
+  }
+
+  setContextStatus(contextStatus: ContextStatus | undefined): void {
+    this.patch({ contextStatus });
+  }
+
+  setModelContextTurns(turns: readonly ConversationTurn[] | undefined): void {
+    this.modelContextTurns = turns ? [...turns] : undefined;
   }
 
   setTaskPlan(taskPlan: TaskPlanState | undefined): TaskPlanChangeKind {
@@ -373,6 +395,7 @@ export class TuiViewStore {
   }
 
   getConversationTurns(): ConversationTurn[] {
+    if (this.modelContextTurns) return [...this.modelContextTurns];
     return this.state.transcript.flatMap((entry): ConversationTurn[] => {
       if (entry.kind === "user") {
         return entry.modelContext === false ? [] : [{ role: "user", text: entry.text }];
@@ -382,6 +405,18 @@ export class TuiViewStore {
       }
       return [];
     });
+  }
+
+  private appendModelContextEntry(entry: TranscriptEntry): void {
+    if (!this.modelContextTurns) return;
+    if (entry.kind === "user" && entry.modelContext !== false) {
+      this.modelContextTurns.push({ role: "user", text: entry.text });
+    } else if (entry.kind === "assistant" && entry.text !== "ready" && entry.modelContext !== false) {
+      if (this.modelContextTurns.some(isRetainedRuntimeContextTurn)) {
+        this.modelContextTurns = this.modelContextTurns.filter((turn) => !isRetainedRuntimeContextTurn(turn));
+      }
+      this.modelContextTurns.push({ role: "assistant", text: entry.text });
+    }
   }
 
   dispose(): void {

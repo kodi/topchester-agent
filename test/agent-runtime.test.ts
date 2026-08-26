@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 import { type AppContext } from "../src/app/context.js";
+import { type ModelAgentResult } from "../src/model/index.js";
 import { TopchesterAgentRuntime } from "../src/agent/runtime/index.js";
 import { createRuntimeEventQueue } from "../src/agent/runtime/event-queue.js";
 import { createSession } from "../src/session/store.js";
@@ -528,7 +529,284 @@ describe("agent runtime project instructions", () => {
       })
     );
   });
+
+  it("manually compacts older turns with the active primary route and emits a replayable snapshot", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-context-manual-"));
+    const context = createContextRuntimeFixture(workspace, { knownCapacity: 100_000 });
+    const runtime = new TopchesterAgentRuntime(context);
+    const turns = createLongConversation();
+
+    const events = await runtime.compactConversation(turns, { focus: "preserve ABC-123" });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "context_compaction",
+        snapshot: expect.objectContaining({ reason: "manual", focus: "preserve ABC-123" }),
+      })
+    );
+    const snapshot = events.find((event) => event.type === "context_compaction");
+    expect(snapshot?.type === "context_compaction" ? snapshot.projection.summary : "").toContain("ABC-123");
+  });
+
+  it("restores persisted session compaction counts without reusing a stale request fingerprint", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-context-restore-status-"));
+    const session = await createSession(workspace);
+    const context = createContextRuntimeFixture(workspace, { knownCapacity: 100_000 });
+    const firstRuntime = new TopchesterAgentRuntime(context);
+    const compacted = await firstRuntime.compactConversation(createLongConversation(), { session });
+    const snapshot = compacted.find((event) => event.type === "context_compaction");
+    expect(snapshot?.type).toBe("context_compaction");
+    if (snapshot?.type !== "context_compaction") throw new Error("missing compaction fixture");
+    const resumedRuntime = new TopchesterAgentRuntime(context);
+    resumedRuntime.restoreContextStatus(snapshot.status, session);
+
+    const events = await resumedRuntime.submitMessage([], "new request", undefined, undefined, { session });
+    const usage = events.filter((event) => event.type === "context_usage").at(-1);
+
+    expect(usage?.type === "context_usage" ? usage.status.compactionsThisSession : -1).toBe(1);
+    expect(usage?.type === "context_usage" ? usage.status.usage.requestBaseFingerprint : "").not.toBe(
+      snapshot.status.usage.requestBaseFingerprint
+    );
+  });
+
+  it("compacts proactively before a known-capacity request and reports active prompt usage separately", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-context-threshold-"));
+    const prompts: string[] = [];
+    const context = createContextRuntimeFixture(workspace, {
+      knownCapacity: 80_000,
+      onAgentPrompt: (prompt) => prompts.push(prompt),
+    });
+    const runtime = new TopchesterAgentRuntime(context);
+
+    const events = await runtime.submitMessage(createLongConversation(), "latest request");
+
+    expect(events.some((event) => event.type === "context_compaction" && event.snapshot.reason === "threshold")).toBe(
+      true
+    );
+    expect(events.some((event) => event.type === "context_usage")).toBe(true);
+    expect(prompts.at(-1)).toContain("[Compacted context]");
+  });
+
+  it("learns a numeric overflow ceiling, compacts, and retries the provider exactly once", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-context-overflow-"));
+    let calls = 0;
+    const context = createContextRuntimeFixture(workspace, {
+      onAgentStep() {
+        calls += 1;
+        if (calls === 1) {
+          throw Object.assign(new Error("Maximum context length is 80,000 tokens; you sent 90,000 tokens."), {
+            code: "context_length_exceeded",
+          });
+        }
+      },
+    });
+    const runtime = new TopchesterAgentRuntime(context);
+
+    const events = await runtime.submitMessage(createLongConversation(), "latest request");
+
+    expect(calls).toBe(2);
+    expect(events.some((event) => event.type === "context_compaction" && event.snapshot.reason === "overflow")).toBe(
+      true
+    );
+  });
+
+  it("prunes a large settled tool result, persists its continuation, and retries one mid-turn overflow", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-context-mid-tool-overflow-"));
+    await writeFile(join(workspace, "large.txt"), "large tool output ".repeat(8_000));
+    const context = createContextRuntimeFixture(workspace);
+    let calls = 0;
+    context.modelGateway.generateAgentStep = async (): Promise<ModelAgentResult> => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          text: "",
+          providerId: "proxy",
+          modelId: "fixture-model",
+          purpose: "agent.primary" as const,
+          toolCalls: [{ id: "call-read", tool: "read_file", args: { path: "large.txt" }, source: "native" as const }],
+          toolProtocol: "native-openai-compatible" as const,
+          protocolAttempts: [{ protocol: "native-openai-compatible" as const, status: "used" as const }],
+          providerRejectedTools: false,
+          warnings: [],
+          openRouterRoutingApplied: false,
+        };
+      }
+      if (calls === 2) throw new Error("Prompt is too long for this context window");
+      return {
+        text: "Recovered after pruning.",
+        providerId: "proxy",
+        modelId: "fixture-model",
+        purpose: "agent.primary" as const,
+        toolCalls: [],
+        toolProtocol: "native-openai-compatible" as const,
+        protocolAttempts: [{ protocol: "native-openai-compatible" as const, status: "used" as const }],
+        providerRejectedTools: false,
+        warnings: [],
+        openRouterRoutingApplied: false,
+      };
+    };
+    const runtime = new TopchesterAgentRuntime(context);
+
+    const events = await runtime.submitMessage([], "read the large file");
+    const snapshot = events.find((event) => event.type === "context_compaction");
+
+    expect(calls).toBe(3);
+    expect(snapshot).toMatchObject({ type: "context_compaction", snapshot: { reason: "overflow" } });
+    expect(
+      snapshot?.type === "context_compaction"
+        ? snapshot.projection.segments.some(
+            (segment) =>
+              segment.kind === "inline" &&
+              segment.segmentKind === "tool_result" &&
+              segment.text.includes("output pruned")
+          )
+        : false
+    ).toBe(true);
+    expect(
+      snapshot?.type === "context_compaction"
+        ? snapshot.projection.segments.some(
+            (segment) => segment.kind === "inline" && segment.segmentKind === "continuation"
+          )
+        : false
+    ).toBe(true);
+  });
+
+  it("persists a prune-only threshold checkpoint before a tool continuation call", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-context-mid-tool-threshold-"));
+    await writeFile(join(workspace, "large.txt"), "large tool output ".repeat(8_000));
+    const context = createContextRuntimeFixture(workspace, { knownCapacity: 80_000 });
+    let calls = 0;
+    context.modelGateway.generateAgentStep = async (): Promise<ModelAgentResult> => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          text: "",
+          providerId: "proxy",
+          modelId: "fixture-model",
+          purpose: "agent.primary" as const,
+          toolCalls: [{ id: "call-read", tool: "read_file", args: { path: "large.txt" }, source: "native" as const }],
+          toolProtocol: "native-openai-compatible" as const,
+          protocolAttempts: [{ protocol: "native-openai-compatible" as const, status: "used" as const }],
+          providerRejectedTools: false,
+          warnings: [],
+          openRouterRoutingApplied: false,
+        };
+      }
+      return {
+        text: "Continued after proactive pruning.",
+        providerId: "proxy",
+        modelId: "fixture-model",
+        purpose: "agent.primary" as const,
+        toolCalls: [],
+        toolProtocol: "native-openai-compatible" as const,
+        protocolAttempts: [{ protocol: "native-openai-compatible" as const, status: "used" as const }],
+        providerRejectedTools: false,
+        warnings: [],
+        openRouterRoutingApplied: false,
+      };
+    };
+    const runtime = new TopchesterAgentRuntime(context);
+
+    const events = await runtime.submitMessage([], "read the large file");
+    const snapshot = events.find(
+      (event) => event.type === "context_compaction" && event.snapshot.reason === "threshold"
+    );
+
+    expect(calls).toBe(2);
+    expect(snapshot).toBeDefined();
+    expect(
+      snapshot?.type === "context_compaction"
+        ? snapshot.projection.segments.some(
+            (segment) =>
+              segment.kind === "inline" &&
+              segment.segmentKind === "tool_result" &&
+              segment.text.includes("output pruned")
+          )
+        : false
+    ).toBe(true);
+  });
 });
+
+function createLongConversation() {
+  return Array.from({ length: 8 }, (_, index) => ({
+    role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+    text: `${index === 0 ? "Constraint ABC-123. " : ""}${"context detail ".repeat(700)}`,
+  }));
+}
+
+function createContextRuntimeFixture(
+  workspaceRoot: string,
+  options: {
+    knownCapacity?: number;
+    onAgentPrompt?: (prompt: string) => void;
+    onAgentStep?: () => void;
+  } = {}
+): AppContext {
+  const provider = {
+    type: "openai-compatible" as const,
+    baseURL: "https://proxy.test/v1",
+    ...(options.knownCapacity ? { modelLimits: { "fixture-model": { contextWindow: options.knownCapacity } } } : {}),
+  };
+  const context = createTestContext(workspaceRoot);
+  context.config = {
+    models: {
+      assignments: {
+        "agent.primary": { provider: "proxy", name: "fixture-model" },
+        "fallback": { provider: "proxy", name: "fixture-model" },
+      },
+    },
+    providers: { default: "proxy", proxy: provider } as unknown as NonNullable<AppContext["config"]["providers"]>,
+    compaction: {
+      enabled: true,
+      thresholdPercent: 85,
+      targetPercent: 40,
+      keepRecentTokens: 100,
+      maxCompactionsPerTurn: 2,
+      learnProviderLimits: true,
+    },
+  };
+  context.baseConfig = context.config;
+  context.modelGateway = {
+    resolveModel() {
+      return {
+        model: {},
+        providerId: "proxy",
+        modelId: "fixture-model",
+        purpose: "agent.primary" as const,
+        providerConfig: provider,
+        modelConfig: { provider: "proxy", name: "fixture-model" },
+      };
+    },
+    async generateText(request: { system?: string }) {
+      return {
+        text: request.system?.startsWith("Create a compact")
+          ? "Goal\nPreserve constraint ABC-123.\n\nNext steps\nContinue the current request."
+          : "Done.",
+        providerId: "proxy",
+        modelId: "fixture-model",
+        purpose: "agent.primary" as const,
+      };
+    },
+    async generateAgentStep(request: { prompt: string }) {
+      options.onAgentStep?.();
+      options.onAgentPrompt?.(request.prompt);
+      return {
+        text: "Done.",
+        providerId: "proxy",
+        modelId: "fixture-model",
+        purpose: "agent.primary" as const,
+        usage: { inputTokens: 2_000, outputTokens: 10, totalTokens: 2_010 },
+        toolCalls: [],
+        toolProtocol: "text-json" as const,
+        protocolAttempts: [{ protocol: "text-json" as const, status: "used" as const }],
+        providerRejectedTools: false,
+        warnings: [],
+        openRouterRoutingApplied: false,
+      };
+    },
+  } as unknown as AppContext["modelGateway"];
+  return context;
+}
 
 function createTestContext(workspaceRoot: string): AppContext {
   return {

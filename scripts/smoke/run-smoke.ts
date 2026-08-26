@@ -74,6 +74,7 @@ const scenarioSchema = z.object({
       expectedChildMessagesContain: z.array(z.string()).optional().default([]),
     })
     .optional(),
+  expectedContextCompaction: z.boolean().optional(),
   expectedGit: z
     .object({
       stagedPaths: z.array(z.string()).optional(),
@@ -292,7 +293,7 @@ async function runTrial(
   await bootstrapGit(workspace, scenario.gitBootstrap);
 
   const configPath = fakeApiBaseURL
-    ? await writeFakeApiConfig(outputDir, fakeApiBaseURL, options.model, options.toolProtocol)
+    ? await writeFakeApiConfig(outputDir, fakeApiBaseURL, options.model, options.toolProtocol, scenario.id)
     : options.configPath;
   const timeoutMs = options.timeoutMs ?? scenario.timeoutMs;
   const prompts = Array.isArray(scenario.prompt) ? scenario.prompt : [scenario.prompt];
@@ -525,7 +526,20 @@ async function assertScenario(
 
   await expectTaskPlanState(outputDir, scenario.expectedTaskPlan, failures);
   await expectSubagentState(workspace, outputDir, scenario.expectedSubagent, failures);
+  await expectContextCompaction(outputDir, scenario.expectedContextCompaction, failures);
   await expectGitState(workspace, scenario.expectedGit, failures);
+}
+
+async function expectContextCompaction(
+  outputDir: string,
+  expected: boolean | undefined,
+  failures: string[]
+): Promise<void> {
+  if (expected === undefined) return;
+  const files = (await readdir(outputDir)).filter((file) => /^events-\d+\.jsonl$/u.test(file));
+  const events = (await Promise.all(files.map((file) => readJsonLines<JsonLine>(join(outputDir, file))))).flat();
+  const found = events.some((entry) => entry.event?.type === "context_compaction");
+  if (found !== expected) failures.push(`context compaction event was ${found ? "present" : "absent"}`);
 }
 
 async function expectTaskPlanState(
@@ -884,7 +898,8 @@ async function writeFakeApiConfig(
   outputDir: string,
   baseURL: string,
   model: string | undefined,
-  toolProtocol: CliOptions["toolProtocol"]
+  toolProtocol: CliOptions["toolProtocol"],
+  scenarioId: string
 ): Promise<string> {
   const configPath = join(outputDir, "topchester-smoke.config.jsonc");
   const modelId = model ?? "topchester-smoke-fake";
@@ -909,8 +924,22 @@ async function writeFakeApiConfig(
             baseURL,
             apiKey: "fake",
             ...(toolProtocol ? { toolProtocol } : {}),
+            ...(scenarioId === "21-context-compaction"
+              ? { modelLimits: { [modelId]: { contextWindow: 80_000 } } }
+              : {}),
           },
         },
+        ...(scenarioId === "21-context-compaction"
+          ? {
+              compaction: {
+                enabled: true,
+                thresholdPercent: 85,
+                targetPercent: 40,
+                keepRecentTokens: 100,
+                maxCompactionsPerTurn: 2,
+              },
+            }
+          : {}),
       },
       null,
       2

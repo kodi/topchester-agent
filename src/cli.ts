@@ -119,6 +119,8 @@ function createTopchesterProgram(): Command {
           session,
           initialTranscript: rehydrated.transcript,
           initialTaskPlan: rehydrated.taskPlan,
+          initialModelContextTurns: rehydrated.modelContextTurns,
+          initialContextStatus: rehydrated.contextStatus,
           runtimeConfigWarnings,
         });
         return;
@@ -745,6 +747,8 @@ async function openForkedSession(context: ReturnType<typeof createContextFromOpt
     session,
     initialTranscript: rehydrated.transcript,
     initialTaskPlan: rehydrated.taskPlan,
+    initialModelContextTurns: rehydrated.modelContextTurns,
+    initialContextStatus: rehydrated.contextStatus,
     runtimeConfigWarnings,
   });
 }

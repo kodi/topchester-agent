@@ -827,7 +827,126 @@ describe("agent hooks", () => {
     expect(events).toContainEqual({ type: "message", role: "system", text: "approval stopped by hook" });
     expect(events.at(-1)).toEqual({ type: "status", status: "ready" });
   });
+
+  it("sends structured PreCompact state and uses hook context as summary guidance", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-pre-compact-"));
+    const script = join(workspace, "pre-compact.cjs");
+    const capture = join(workspace, "pre-compact.json");
+    await writeFile(
+      script,
+      [
+        "const fs = require('node:fs');",
+        "let input = '';",
+        "process.stdin.setEncoding('utf8');",
+        "process.stdin.on('data', (chunk) => { input += chunk; });",
+        "process.stdin.on('end', () => {",
+        "  fs.writeFileSync(process.argv[2], input);",
+        "  process.stdout.write(JSON.stringify({ context: 'Preserve hook identifier HOOK-42.' }));",
+        "});",
+      ].join("\n")
+    );
+    const config = createCompactionHookConfig(`node ${shellQuote(script)} ${shellQuote(capture)}`);
+    const summaryPrompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createHookTestContext(workspace, config),
+      modelGateway: createCompactionModelGateway(summaryPrompts),
+    });
+
+    const events = await runtime.compactConversation(createCompactionTurns(), {
+      focus: "Keep user focus.",
+      reason: "manual",
+    });
+    const payload = JSON.parse(await readFile(capture, "utf8")) as Record<string, unknown>;
+
+    expect(payload).toMatchObject({
+      event: "PreCompact",
+      reason: "manual",
+      mode: "manual",
+      route: { providerId: "proxy", baseURL: "https://proxy.test/v1", modelId: "fixture-model" },
+      usage: { estimated: true },
+      budget: { contextWindow: 80_000, capacitySource: "config" },
+    });
+    expect(summaryPrompts[0]).toContain("Keep user focus.");
+    expect(summaryPrompts[0]).toContain("HOOK-42");
+    expect(events.some((event) => event.type === "context_compaction")).toBe(true);
+  });
+
+  it("honors a PreCompact block before summary generation or projection mutation", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-hooks-pre-compact-block-"));
+    const script = join(workspace, "pre-compact-block.cjs");
+    await writeFile(
+      script,
+      "process.stdout.write(JSON.stringify({ action: 'block', message: 'compaction blocked by hook' }));\n"
+    );
+    const summaryPrompts: string[] = [];
+    const runtime = new TopchesterAgentRuntime({
+      ...createHookTestContext(workspace, createCompactionHookConfig(`node ${shellQuote(script)}`)),
+      modelGateway: createCompactionModelGateway(summaryPrompts),
+    });
+
+    const events = await runtime.compactConversation(createCompactionTurns());
+
+    expect(summaryPrompts).toEqual([]);
+    expect(events.some((event) => event.type === "context_compaction")).toBe(false);
+    expect(events).toContainEqual({ type: "message", role: "system", text: "compaction blocked by hook" });
+  });
 });
+
+function createCompactionHookConfig(command: string): TopchesterConfig {
+  return {
+    models: {
+      assignments: {
+        "agent.primary": { provider: "proxy", name: "fixture-model" },
+        "fallback": { provider: "proxy", name: "fixture-model" },
+      },
+    },
+    providers: {
+      default: "proxy",
+      proxy: {
+        type: "openai-compatible",
+        baseURL: "https://proxy.test/v1",
+        modelLimits: { "fixture-model": { contextWindow: 80_000 } },
+      },
+    } as unknown as NonNullable<TopchesterConfig["providers"]>,
+    hooks: { PreCompact: [{ command }] },
+  };
+}
+
+function createCompactionModelGateway(summaryPrompts: string[]): AppContext["modelGateway"] {
+  const providerConfig = {
+    type: "openai-compatible" as const,
+    baseURL: "https://proxy.test/v1",
+    modelLimits: { "fixture-model": { contextWindow: 80_000 } },
+  };
+  return {
+    resolveModel() {
+      return {
+        model: {},
+        providerId: "proxy",
+        modelId: "fixture-model",
+        purpose: "agent.primary" as const,
+        providerConfig,
+        modelConfig: { provider: "proxy", name: "fixture-model" },
+      };
+    },
+    async generateText(request: { prompt: string }) {
+      summaryPrompts.push(request.prompt);
+      return {
+        text: "Goal\nPreserve HOOK-42 and continue.",
+        providerId: "proxy",
+        modelId: "fixture-model",
+        purpose: "agent.primary" as const,
+      };
+    },
+  } as unknown as AppContext["modelGateway"];
+}
+
+function createCompactionTurns() {
+  return Array.from({ length: 8 }, (_, index) => ({
+    role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+    text: `${index}: ${"context ".repeat(100)}`,
+  }));
+}
 
 function createHookTestContext(workspaceRoot: string, config: TopchesterConfig): AppContext {
   return {

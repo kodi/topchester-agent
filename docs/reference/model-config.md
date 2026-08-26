@@ -25,6 +25,14 @@ Each provider supports:
       "toolProtocol": "auto",
       "openRouterToolRouting": "auto",
       "reasoningEffort": "medium",
+      "discoverModelLimits": false,
+      "modelLimits": {
+        "model-id": {
+          "contextWindow": 128000,
+          "maxInputTokens": 112000,
+          "maxOutputTokens": 16000,
+        },
+      },
       "headers": {
         "X-Custom-Header": "value",
       },
@@ -32,6 +40,27 @@ Each provider supports:
   },
 }
 ```
+
+`modelLimits` is provider-owned and route-aware. `contextWindow` describes a shared window, while `maxInputTokens` and `maxOutputTokens` describe separate provider ceilings when available. At least `contextWindow` or `maxInputTokens` is required. Positive integers only. Add `assumed: true` to label an explicit policy assumption instead of authoritative config.
+
+`discoverModelLimits` defaults to `false`. When opted in, Topchester reads only allowlisted context fields from the exact route's `/models` response. OpenRouter catalog metadata already fetched for the picker is retained for the matching OpenRouter route.
+
+Top-level compaction policy defaults to:
+
+```jsonc
+{
+  "compaction": {
+    "enabled": true,
+    "thresholdPercent": 85,
+    "targetPercent": 40,
+    "keepRecentTokens": 16000,
+    "maxCompactionsPerTurn": 2,
+    "learnProviderLimits": true,
+  },
+}
+```
+
+`targetPercent` must be below `thresholdPercent`. `reserveTokens` optionally overrides the shared-window output reserve. `assumedContextWindow` supplies a visibly assumed fallback when route metadata is unavailable; omit it to keep unknown routes honest.
 
 `toolProtocol` values:
 

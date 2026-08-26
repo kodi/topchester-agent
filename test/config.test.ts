@@ -12,6 +12,7 @@ import {
   loadTopchesterConfig,
   resolveModelChoice,
   setGlobalKnowledgeLive,
+  topchesterConfigSchema,
 } from "../src/config/index.js";
 
 const envKeys = ["HOME", "TOPCHESTER_CONFIG", "TOPCHESTER_LOG_LEVEL"] as const;
@@ -35,6 +36,34 @@ afterEach(() => {
 });
 
 describe("Topchester config loading", () => {
+  it("validates provider-owned model limits and bounded compaction policy", () => {
+    expect(
+      topchesterConfigSchema.parse({
+        providers: {
+          proxy: {
+            type: "openai-compatible",
+            baseURL: "http://127.0.0.1:8317/v1",
+            discoverModelLimits: true,
+            modelLimits: {
+              "gpt-5.4": { contextWindow: 272_000, maxInputTokens: 240_000, maxOutputTokens: 32_000 },
+            },
+          },
+        },
+        compaction: { enabled: true, thresholdPercent: 85, targetPercent: 40 },
+      })
+    ).toMatchObject({
+      providers: { proxy: { discoverModelLimits: true, modelLimits: { "gpt-5.4": { contextWindow: 272_000 } } } },
+      compaction: { enabled: true, thresholdPercent: 85, targetPercent: 40 },
+    });
+    expect(() => topchesterConfigSchema.parse({ compaction: { thresholdPercent: 40, targetPercent: 85 } })).toThrow(
+      "targetPercent must be lower"
+    );
+    expect(() =>
+      topchesterConfigSchema.parse({
+        providers: { proxy: { type: "openai-compatible", baseURL: "https://proxy.test/v1", modelLimits: { m: {} } } },
+      })
+    ).toThrow("contextWindow or maxInputTokens");
+  });
   it("resolves a nested OpenRouter model ref without loaded provider config", () => {
     expect(resolveModelChoice({}, "openrouter/google/gemini-3.1-flash-lite")).toEqual({
       provider: "openrouter",

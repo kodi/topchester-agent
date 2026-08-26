@@ -5,6 +5,8 @@ import {
   rankOpenRouterModelChoices,
   selectOpenRouterStarterChoices,
 } from "../src/model/openrouter.js";
+import { getProviderModelCapacity } from "../src/agent/context/provider-metadata.js";
+import { openRouterProviderDefaults } from "../src/config/index.js";
 
 function requestUrl(input: URL | RequestInfo): string {
   return typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -43,6 +45,13 @@ describe("OpenRouter model catalog", () => {
         description: "262k ctx · $0.20/$0.80 per 1M",
       },
     ]);
+    expect(
+      getProviderModelCapacity({
+        providerId: "openrouter",
+        baseURL: openRouterProviderDefaults.baseURL,
+        modelId: "qwen/qwen3-coder",
+      })
+    ).toMatchObject({ contextWindow: 262_144, source: "provider", confidence: "reported" });
   });
 
   it("uses user-filtered OpenRouter models when an API key is present", async () => {

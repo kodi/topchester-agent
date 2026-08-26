@@ -640,7 +640,7 @@ Likely additions; keep the final module split small if neighboring responsibilit
 
 ### Slice 1: Route Capacity And Policy Contracts
 
-Status: `[ ]` Not started
+Status: `[x]` Completed on 2026-08-26
 
 Goal: Define route-aware capacity, provenance, and compaction policy as pure tested contracts without changing runtime behavior.
 
@@ -675,7 +675,7 @@ Dependencies: none.
 
 ### Slice 2: Active Prompt Accounting And Request Estimation
 
-Status: `[ ]` Not started
+Status: `[x]` Completed on 2026-08-26
 
 Goal: Produce a correct active-context snapshot at the provider boundary while retaining existing cumulative turn totals.
 
@@ -711,7 +711,7 @@ Dependencies: Slice 1.
 
 ### Slice 3: Honest Context Display And Diagnostics
 
-Status: `[ ]` Not started
+Status: `[x]` Completed on 2026-08-26
 
 Goal: Expose active context, safe remaining space, and provenance without enabling automatic compaction.
 
@@ -752,7 +752,7 @@ Dependencies: Slices 1 and 2.
 
 ### Slice 4: Canonical Prompt Segments And Byte-Parity Renderer
 
-Status: `[ ]` Not started
+Status: `[x]` Completed on 2026-08-26
 
 Goal: Replace opaque prompt concatenation with structured provider-bound segments without changing any request or user-visible behavior.
 
@@ -786,7 +786,7 @@ Dependencies: Slice 2.
 
 ### Slice 5: Replayable Model-Projection Persistence
 
-Status: `[ ]` Not started
+Status: `[x]` Completed on 2026-08-26
 
 Goal: Add the backward-compatible session schema and replay machinery required to persist a compacted projection exactly, without exposing compaction yet.
 
@@ -820,7 +820,7 @@ Dependencies: Slice 4.
 
 ### Slice 6: Deterministic Context Pruning
 
-Status: `[ ]` Not started
+Status: `[x]` Completed on 2026-08-26
 
 Goal: Add a cheap, non-LLM pruning operation over canonical prompt units while leaving runtime triggers disabled.
 
@@ -853,7 +853,7 @@ Dependencies: Slices 4 and 5.
 
 ### Slice 7: Manual Summary Compaction And Hooks
 
-Status: `[ ]` Not started
+Status: `[x]` Completed on 2026-08-26
 
 Goal: Deliver a complete persisted compaction operation behind idle-only `/compact [focus]` before enabling automatic triggers.
 
@@ -889,7 +889,7 @@ Dependencies: Slices 3, 5, and 6.
 
 ### Slice 8: Proactive Auto-Compaction And Reactive Overflow Retry
 
-Status: `[ ]` Not started
+Status: `[x]` Completed on 2026-08-26
 
 Goal: Orchestrate bounded automatic compaction before unsafe requests and recover once from provider overflow.
 
@@ -929,7 +929,7 @@ Dependencies: Slice 7.
 
 ### Slice 9: Provider Metadata Discovery And Learned Route Ceilings
 
-Status: `[ ]` Not started
+Status: `[x]` Completed on 2026-08-26
 
 Goal: Improve capacity resolution for OpenRouter, Codex, and explicitly opted-in OpenAI-compatible proxies without weakening provenance.
 
@@ -971,7 +971,7 @@ Dependencies: Slices 1 through 8.
 
 ### Slice 10: Enablement, Documentation, Smoke Coverage, And Cleanup
 
-Status: `[ ]` Not started
+Status: `[x]` Completed on 2026-08-26
 
 Goal: Enable automatic compaction by default only after the full contract is proven, document the model, and remove temporary rollout paths.
 
@@ -1144,3 +1144,12 @@ Record exact passed commands and dates in this plan. Keep deterministic fake-pro
 - 2026-08-26: Found that current completed-turn model context excludes persisted tool-call display rows, while current-turn tool results exist only inside mutable `nextPrompt`. Added byte-parity invariants and a replayable projection snapshot contract so mid-turn compaction cannot depend on unavailable process memory.
 - 2026-08-26: Tightened provider-usage reuse with request-base fingerprints, replaced ambiguous learned-lower-limit language with reported maxima/conservative ceilings, made budget reserve math executable for small and separate-input windows, and defined idle/manual/model-downshift boundaries.
 - 2026-08-26: Split the former prompt/pruning and manual/persistence slices into independently reviewable Slices 4 through 7. Expanded the plan to ten slices and made `mise run test` plus `mise run local-ci` separate required checkpoint gates.
+- 2026-08-26: Implemented route-aware config, capacity precedence, conservative complete-request estimation, provider snapshot reconciliation, structured prompt segments, deterministic tool-result pruning, replayable projection snapshots, manual and automatic compaction, one bounded overflow retry, exact-route learned capacity state, OpenRouter and opted-in generic metadata discovery, context commands, session restore/fork behavior, and responsive OpenTUI context state.
+- 2026-08-26: Persisted retained mid-turn tool results and continuation state inline. Restart replay now restores that provider-visible continuation and removes it after the final assistant turn becomes durable. Completed-turn tool display rows remain transcript-only.
+- 2026-08-26: Verified that the authenticated Codex response adapter exposes prompt usage but no route-capacity field. The implementation does not infer a Codex denominator from model names or generic fallbacks.
+- 2026-08-26: The stale-claim search found only explicit 128,000-token configuration and hook payload examples plus this plan's historical current-state text. It found no runtime percentage derived from `TurnTokenUsageTotals` and no unqualified 128k, 200k, or 256k fallback.
+- 2026-08-26: Focused verification passed with `mise exec -- vp test run test/config.test.ts test/context-capacity.test.ts test/context-estimate.test.ts test/context-status.test.ts test/context-prompt.test.ts test/context-projection.test.ts test/context-compaction.test.ts test/context-overflow.test.ts test/context-registry.test.ts test/model-capacity-discovery.test.ts test/agent-runtime.test.ts test/commands.test.ts test/hooks.test.ts test/session.test.ts test/tui-controller.test.ts test/opentui-state.test.ts test/model.test.ts test/codex-provider.test.ts test/openrouter-models.test.ts` (19 files, 311 tests).
+- 2026-08-26: `mise run opentui-test` passed. `mise run smoke-scenario 21-context-compaction 1` passed with one trial and 4 input, 4 output, and 8 total fake-provider tokens.
+- 2026-08-26: `mise run test` passed (50 files, 748 tests) and ran the OpenTUI production renderer. `mise run local-ci` passed separately. `mise run native-package-check` passed the packed native install and PTY smoke after status-bar priority was corrected so an actionable Ctrl-C notice suppresses context detail instead of being clipped.
+- 2026-08-26: `mise run smoke` passed all 20 deterministic fake-provider scenarios. The final report is `/var/folders/vk/lg6zbk2n68723vt8jkkkmpj80000gn/T/topchester-smoke-1787731711714/report.json`.
+- 2026-08-26: Optional live VibeProxy metadata checks were not run. Deterministic fake-provider coverage proves configured, discovered, learned, and unknown-capacity contracts without claiming live proxy compatibility.

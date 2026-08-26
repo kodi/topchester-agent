@@ -2,6 +2,8 @@ import { type KnowledgeStatus } from "../knowledge/status.js";
 import { type TaskPlanState } from "./task-plan.js";
 import { type ToolCall } from "./tools.js";
 import { type HookEventName } from "../config/index.js";
+import { type ContextCompactionSnapshot, type ModelContextProjection } from "./context/projection.js";
+import { type ContextStatus } from "./context/types.js";
 
 export type AgentRuntimeEvent =
   | AgentStatusEvent
@@ -16,7 +18,21 @@ export type AgentRuntimeEvent =
   | AgentSubagentStartedEvent
   | AgentSubagentEvent
   | AgentSubagentCompletedEvent
-  | AgentSubagentFailedEvent;
+  | AgentSubagentFailedEvent
+  | AgentContextUsageEvent
+  | AgentContextCompactionEvent;
+
+export interface AgentContextUsageEvent {
+  type: "context_usage";
+  status: ContextStatus;
+}
+
+export interface AgentContextCompactionEvent {
+  type: "context_compaction";
+  snapshot: ContextCompactionSnapshot;
+  projection: ModelContextProjection;
+  status: ContextStatus;
+}
 
 export interface AgentStatusEvent {
   type: "status";
@@ -175,6 +191,14 @@ export const agentEvent = {
     return meta === undefined
       ? { type: "message", role: "assistant", text }
       : { type: "message", role: "assistant", text, meta };
+  },
+
+  contextUsage(status: ContextStatus): AgentContextUsageEvent {
+    return { type: "context_usage", status };
+  },
+
+  contextCompaction(snapshot: ContextCompactionSnapshot, status: ContextStatus): AgentContextCompactionEvent {
+    return { type: "context_compaction", snapshot, projection: snapshot.projection, status };
   },
 
   permissionAutoApproved(options: AgentPermissionAutoApprovedOptions): AgentPermissionAutoApprovedEvent {

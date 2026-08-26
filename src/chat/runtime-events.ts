@@ -86,6 +86,8 @@ export function runtimeEventToTranscriptEntries(event: AgentRuntimeEvent): Trans
     case "task_plan":
     case "instruction_context":
     case "status":
+    case "context_usage":
+    case "context_compaction":
       return [];
   }
 }
