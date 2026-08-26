@@ -355,7 +355,7 @@ export function LiveFooter(props: { mentionProvider?: FileMentionProvider; onInt
         border={["top"]}
         borderColor={theme.focus}
         flexDirection="column"
-        minHeight={5}
+        minHeight={6}
         paddingLeft={1}
         paddingRight={1}
       >
@@ -464,7 +464,7 @@ function estimateFooterHeight(
   draft: string,
   terminalWidth: number
 ): number {
-  const base = 6 + Math.min(4, Math.max(0, draft.split("\n").length - 1));
+  const base = 7 + Math.min(4, Math.max(0, draft.split("\n").length - 1));
   const taskRows = Math.min(6, snapshot.taskPlan?.items.length ?? 0);
   const transientRows = [
     snapshot.startupHint,

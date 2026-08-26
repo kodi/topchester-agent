@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
 import { agentEvent } from "../../src/agent/events.js";
+import { type ContextStatus } from "../../src/agent/context/types.js";
 import { type AgentRuntime } from "../../src/agent/runtime/index.js";
 import { formatTuiSyncStatus } from "../../src/agent/runtime/knowledge.js";
 import { TopchesterTuiController } from "../../src/chat/controller.js";
@@ -83,7 +84,10 @@ async function testAppSurface(): Promise<void> {
     },
   };
   const controller = await TopchesterTuiController.create(context, createRuntime(submitted));
-  await controller.applyRuntimeEvents([agentEvent.knowledgeStatus(getKnowledgeStatus(workspace), "Run /kb init")]);
+  await controller.applyRuntimeEvents([
+    agentEvent.knowledgeStatus(getKnowledgeStatus(workspace), "Run /kb init"),
+    agentEvent.contextUsage(createContextStatus()),
+  ]);
   const syntaxStyle = SyntaxStyle.create();
   const theme = resolveTopchesterTheme();
   let interrupts = 0;
@@ -115,21 +119,31 @@ async function testAppSurface(): Promise<void> {
     assertPromptBorderSpansWidth(initialFrame, 80);
     assert.equal(initialRows[promptRow - 1]?.trim(), "");
     assert.equal(initialRows[promptRow + 1]?.trim(), "");
-    const statusRow = initialRows.find((row) => row.includes("● ready"));
+    const statusRowIndex = initialRows.findIndex((row) => row.includes("● ready"));
+    const statusRow = initialRows[statusRowIndex];
+    const detailRow = initialRows[statusRowIndex + 1];
     assert.ok(statusRow, initialFrame);
+    assert.ok(detailRow, initialFrame);
     assert.ok(statusRow.includes(" topchester-opentui-app-"), statusRow);
     assert.ok(statusRow.trimEnd().endsWith("⚠ kb: missing"), statusRow);
     assert.ok((statusRow?.length ?? 0) - (statusRow?.trimEnd().length ?? 0) <= 1);
+    assert.match(detailRow, new RegExp(`session ${controller.getSnapshot().sessionId.slice(0, 8)}`, "u"));
+    assert.ok(detailRow.trimEnd().endsWith("ctx 11%"), detailRow);
 
     controller.setNoticeLine("press Ctrl-C again to exit.");
     await setup.flush();
-    const noticeRow = setup
-      .captureCharFrame()
-      .split("\n")
-      .find((row) => row.includes("press Ctrl-C again to exit."));
-    assert.ok(noticeRow, setup.captureCharFrame());
+    const noticeFrame = setup.captureCharFrame();
+    const noticeRows = noticeFrame.split("\n");
+    const noticeRowIndex = noticeRows.findIndex((row) => row.includes("press Ctrl-C again to exit."));
+    const noticeRow = noticeRows[noticeRowIndex];
+    const noticeDetailRow = noticeRows[noticeRowIndex + 1];
+    assert.ok(noticeRow, noticeFrame);
+    assert.ok(noticeDetailRow, noticeFrame);
     assert.match(noticeRow, /^ ● ready · press Ctrl-C again to exit\./u);
-    assert.doesNotMatch(noticeRow, /session|ctx|kb:/u);
+    assert.ok(noticeRow.trimEnd().endsWith("⚠ kb: missing"), noticeRow);
+    assert.doesNotMatch(noticeRow, /session|ctx/u);
+    assert.match(noticeDetailRow, /session [0-9a-f]{8}/u);
+    assert.ok(noticeDetailRow.trimEnd().endsWith("ctx 11%"), noticeDetailRow);
     controller.setNoticeLine(undefined);
     await setup.flush();
 
@@ -233,12 +247,54 @@ async function testAppSurface(): Promise<void> {
       const resizedFrame = setup.captureCharFrame();
       assert.match(resizedFrame, /not set/u);
       assertPromptBorderSpansWidth(resizedFrame, width);
+      const resizedRows = resizedFrame.split("\n");
+      const resizedStatusRow = resizedRows.findIndex((row) => row.includes("● ready"));
+      assert.ok(resizedStatusRow >= 0, resizedFrame);
+      assert.ok(resizedRows[resizedStatusRow]?.trimEnd().endsWith("⚠ kb: missing"));
+      assert.match(resizedRows[resizedStatusRow + 1] ?? "", /session [0-9a-f]{8}/u);
+      if (width === 80) assert.match(resizedRows[resizedStatusRow + 1] ?? "", /ctx 11%\s*$/u);
+      if (width === 120) assert.match(resizedRows[resizedStatusRow + 1] ?? "", /ctx 14k\/128k · 11% · 98k safe\s*$/u);
+      if (width === 200) assert.match(resizedRows[resizedStatusRow + 1] ?? "", /ctx 14k\/128k · 11% · 98k safe\s*$/u);
     }
   } finally {
     await controller.dispose();
     setup.renderer.destroy();
     syntaxStyle.destroy();
   }
+}
+
+function createContextStatus(): ContextStatus {
+  const route = { providerId: "openrouter", baseURL: "https://openrouter.ai/api/v1", modelId: "fixture/model" };
+  return {
+    route,
+    usage: {
+      promptTokens: 14_000,
+      trailingEstimatedTokens: 0,
+      source: "provider",
+      estimated: false,
+      route,
+      asOfModelCall: 1,
+      requestBaseFingerprint: "fixture",
+      observedAt: "2026-01-01T00:00:00.000Z",
+    },
+    budget: {
+      capacity: {
+        contextWindow: 128_000,
+        source: "config",
+        confidence: "authoritative",
+      },
+      usedTokens: 14_000,
+      hardPromptBudget: 112_000,
+      compactAtTokens: 96_000,
+      targetTokens: 51_200,
+      reserveTokens: 16_000,
+      rawRemainingTokens: 114_000,
+      safeRemainingTokens: 98_000,
+      uncertaintyTokens: 0,
+    },
+    compactionsThisSession: 0,
+    compactionsThisTurn: 0,
+  };
 }
 
 function assertPromptBorderSpansWidth(frame: string, width: number): void {

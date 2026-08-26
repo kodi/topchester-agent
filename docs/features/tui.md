@@ -1,6 +1,6 @@
 ---
 title: TUI
-description: Use the interactive terminal UI, prompt box, status line, and startup checks.
+description: Use the interactive terminal UI, prompt box, status rows, and startup checks.
 section: Features
 order: 10
 public: true
@@ -15,9 +15,9 @@ topchester
 topchester --resume latest
 ```
 
-The TUI has a thread area, a visible plan block when the agent is working through a plan, a prompt box, and a status line. A full-width rule separates the prompt area from the content above it while prompt text stays inset for readability.
+The TUI has a thread area, a visible plan block when the agent is working through a plan, a prompt box, and two status rows. A full-width rule separates the prompt area from the content above it while prompt text stays inset for readability.
 
-The status line shows active context when a model request has established a snapshot. Wide terminals show used capacity, percentage, and safe remaining space; narrower terminals collapse detail before wrapping. Estimated values use `~`, and unknown route capacity renders as `ctx ~used/?` without a fabricated percentage. Warning and limit text accompany semantic color, so `NO_COLOR` remains actionable. `/context` opens the complete route and provenance diagnostic.
+The lower status row shows active context on the right when a model request has established a snapshot. Wide terminals show used capacity, percentage, and safe remaining space; narrower terminals collapse detail before wrapping. Estimated values use `~`, and unknown route capacity renders as `ctx ~used/?` without a fabricated percentage. Warning and limit text accompany semantic color, so `NO_COLOR` remains actionable. `/context` opens the complete route and provenance diagnostic.
 
 The packaged CLI runs on Bun `>=1.3` and renders with OpenTUI Solid. It uses split-footer mode: completed transcript entries are appended to ordinary terminal scrollback exactly once, while the composer, suggestions, plan, live status, and dialogs repaint in a bounded footer.
 
@@ -25,14 +25,15 @@ Assistant fenced code blocks use the fence language, such as `ts`, `tsx`, or
 `css`, for syntax highlighting. Code stays selectable in terminal scrollback;
 unknown languages remain readable as plain code.
 
-The status line shows readiness, folder name, active model, provider, and knowledge-base state:
+The upper status row shows readiness, folder name, active model, provider, and KB state. The lower row shows the queue and session on the left and context capacity on the right:
 
 ```text
-ready · my-project · qwen/qwen3-coder [openrouter] · kb: ready
+● ready · my-project · qwen/qwen3-coder [openrouter]      ✅ kb: ready
+session 01a03e57                              ctx 14k/128k · 11% · 98k safe
 ```
 
 When global KB live mode is on and the workspace has a knowledge folder, the
-right side shows `kb: live` and adds a syncing count while files are queued or
+upper-right side shows `kb: live` and adds a syncing count while files are queued or
 being summarized. These updates come from the in-memory live worker; Topchester
 does not repeatedly walk the project to refresh that count. Turn it on or off
 with `/kb live on` and `/kb live off`.
@@ -41,7 +42,7 @@ with `/kb live on` and `/kb live off`.
 exist. It does not run a full project sync. Files enter L1 as the agent reads or
 changes them.
 
-When the live worker is idle, the footer shows the cheap manifest-backed count,
+When the live worker is idle, the upper row shows the cheap manifest-backed count,
 for example `kb: live | 1 synced`. It does not show a percentage because live
 status does not walk the project to count every possible input file.
 
@@ -75,7 +76,7 @@ web_fetch: https://example.com/large-doc (200, truncated)
 
 ## Busy input
 
-While a chat turn is running, the prompt stays editable. Pressing `Enter` on normal text queues it as the next follow-up turn. The footer keeps the next waiting prompt visible on one truncated `[QUEUED] ...` line, while the status bar shows the total queued count. Queued prompts are local to the running TUI process and are not saved as user messages until they actually start.
+While a chat turn is running, the prompt stays editable. Pressing `Enter` on normal text queues it as the next follow-up turn. The footer keeps the next waiting prompt visible on one truncated `[QUEUED] ...` line, while the lower status row shows the total queued count before the session ID. Queued prompts are local to the running TUI process and are not saved as user messages until they actually start.
 
 Use `/queue <prompt>` to explicitly queue a follow-up. When the agent is idle, `/queue <prompt>` starts immediately like a normal prompt. While the agent is busy, the prompt waits behind the active turn and the TUI shows a compact queued follow-up count.
 

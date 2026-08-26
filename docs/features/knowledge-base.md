@@ -64,6 +64,6 @@ Missing or empty project knowledge does not add setup guidance or other KB text
 to the agent prompt. Live mode does not generate L2/L3 entries, rebuild the
 graph, remove orphan entries, or commit `topchester-kb/`.
 
-V0 treats every in-scope file content change as potentially semantic. Run `/kb status` or `topchester kb status` when you want to see files that are not current in the knowledge base. Status reports the live setting, current file count, and non-clean file count. The TUI footer shows the current synced count while live mode is idle and temporarily replaces it with the active syncing count while work runs.
+V0 treats every in-scope file content change as potentially semantic. Run `/kb status` or `topchester kb status` when you want to see files that are not current in the knowledge base. Status reports the live setting, current file count, and non-clean file count. The upper-right footer status shows the current synced count while live mode is idle and temporarily replaces it with the active syncing count while work runs.
 
 Automatic context retrieval searches the project KB when it is ready. `TOPCHESTER_DISABLE_L1_CONTEXT=1` disables automatic project-context injection without disabling explicit CLI search or skill activation. Questions about Topchester itself use the packaged static `topchester` skill instead of project knowledge.

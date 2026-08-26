@@ -15,7 +15,7 @@ export function StatusBar() {
   const kb = createMemo(() => formatKnowledgeStatus(snapshot().knowledgeStatus, theme));
   const queue = createMemo(() => {
     const count = snapshot().queuedFollowUpCount;
-    return count > 0 ? ` · queued: ${count}` : "";
+    return count > 0 ? `queued: ${count}` : undefined;
   });
   const context = createMemo(() => {
     const status = snapshot().contextStatus;
@@ -32,12 +32,12 @@ export function StatusBar() {
   });
 
   return (
-    <box width="100%" flexDirection="row">
-      <Show
-        when={snapshot().noticeLine}
-        keyed
-        fallback={
-          <>
+    <box width="100%" flexDirection="column">
+      <box width="100%" flexDirection="row">
+        <Show
+          when={snapshot().noticeLine}
+          keyed
+          fallback={
             <text flexGrow={1} flexShrink={1} wrapMode="none" fg={theme.text}>
               <span style={{ fg: snapshot().status === "ready" ? theme.success : theme.warning }}>
                 ● {snapshot().status}
@@ -52,41 +52,48 @@ export function StatusBar() {
               <Show when={model().effort}>
                 <span style={{ fg: theme.muted }}>{model().effort}</span>
               </Show>
-              {queue()}
-              <Show when={dimensions().width >= 112}>{` · session ${snapshot().sessionId.slice(0, 8)}`}</Show>
             </text>
-            <Show when={context()}>
-              {(label) => (
-                <text flexShrink={0} marginLeft={1} wrapMode="none" fg={contextTone()}>
-                  {label()}
-                </text>
-              )}
-            </Show>
-            <Show when={kb()}>
-              {(status) => (
-                <text flexShrink={0} marginLeft={1} wrapMode="none" fg={theme.text}>
-                  <span style={{ fg: status().tone }}>{status().icon}</span>
-                  <span> kb: </span>
-                  <span style={{ fg: status().tone }}>{status().label}</span>
-                  <Show when={status().syncLabel}>
-                    <span> | </span>
-                    <span style={{ fg: status().syncTone }}>{status().syncLabel}</span>
-                  </Show>
-                </text>
-              )}
-            </Show>
-          </>
-        }
-      >
-        {(notice) => (
-          <text flexGrow={1} wrapMode="none" fg={theme.text}>
-            <span style={{ fg: snapshot().status === "ready" ? theme.success : theme.warning }}>
-              ● {snapshot().status}
-            </span>
-            <span> · {notice}</span>
-          </text>
-        )}
-      </Show>
+          }
+        >
+          {(notice) => (
+            <text flexGrow={1} flexShrink={1} wrapMode="none" fg={theme.text}>
+              <span style={{ fg: snapshot().status === "ready" ? theme.success : theme.warning }}>
+                ● {snapshot().status}
+              </span>
+              <span> · {notice}</span>
+            </text>
+          )}
+        </Show>
+        <Show when={kb()}>
+          {(status) => (
+            <text flexShrink={0} marginLeft={1} wrapMode="none" fg={theme.text}>
+              <span style={{ fg: status().tone }}>{status().icon}</span>
+              <span> kb: </span>
+              <span style={{ fg: status().tone }}>{status().label}</span>
+              <Show when={status().syncLabel}>
+                <span> | </span>
+                <span style={{ fg: status().syncTone }}>{status().syncLabel}</span>
+              </Show>
+            </text>
+          )}
+        </Show>
+      </box>
+      <box width="100%" flexDirection="row">
+        <text flexGrow={1} flexShrink={1} wrapMode="none" fg={theme.muted}>
+          <Show when={queue()} keyed>
+            {(label) => <span style={{ fg: theme.warning }}>{label}</span>}
+          </Show>
+          <Show when={queue() && dimensions().width >= 64}> · </Show>
+          <Show when={dimensions().width >= 64}>session {snapshot().sessionId.slice(0, 8)}</Show>
+        </text>
+        <Show when={context()}>
+          {(label) => (
+            <text flexShrink={0} marginLeft={1} wrapMode="none" fg={contextTone()}>
+              {label()}
+            </text>
+          )}
+        </Show>
+      </box>
     </box>
   );
 }
