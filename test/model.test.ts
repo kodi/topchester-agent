@@ -359,7 +359,7 @@ describe("ModelGateway agent tool protocol", () => {
           type: "function",
           function: expect.objectContaining({
             name: "read_file",
-            description: "Read a UTF-8 file inside the workspace.",
+            description: expect.stringContaining("return its current hash"),
           }),
         }),
       ]);
@@ -629,6 +629,8 @@ describe("ModelGateway agent tool protocol", () => {
       }
 
       expect(body.tools).toBeUndefined();
+      expect(getSystemMessage(body)).toContain("output exactly one tool JSON object");
+      expect(getSystemMessage(body)).toContain("read_file: read a UTF-8 file inside the workspace");
       return {
         choices: [
           {
@@ -659,6 +661,41 @@ describe("ModelGateway agent tool protocol", () => {
     ]);
     expect(result.toolCalls).toEqual([
       { id: "text-json-0", tool: "read_file", args: { path: "README.md" }, source: "text-json" },
+    ]);
+  });
+
+  it("adds XML-only instructions when text XML is forced", async () => {
+    const api = await startChatApi((body) => {
+      expect(body.tools).toBeUndefined();
+      expect(getSystemMessage(body)).toContain("output exactly one XML tool call");
+      expect(getSystemMessage(body)).toContain('<tool_call>read_file {"path":"package.json"}</tool_call>');
+      expect(getSystemMessage(body)).not.toContain("reply with only JSON");
+
+      return {
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: '<tool_call>read_file {"path":"README.md"}</tool_call>',
+            },
+          },
+        ],
+      };
+    });
+    const gateway = createGateway(api.baseURL, "fake", { toolProtocol: "text-xml" });
+
+    const result = await gateway.generateAgentStep({
+      purpose: "agent.primary",
+      system: "system",
+      prompt: "read readme",
+      tools: [readFileTool],
+    });
+
+    expect(result.toolProtocol).toBe("text-xml");
+    expect(result.toolCalls).toEqual([
+      { id: "text-xml-0", tool: "read_file", args: { path: "README.md" }, source: "text-xml" },
     ]);
   });
 
@@ -986,6 +1023,20 @@ describe("ModelGateway agent tool protocol", () => {
     ]);
   });
 });
+
+function getSystemMessage(body: Record<string, unknown>): string {
+  const messages = body.messages;
+
+  if (!Array.isArray(messages)) {
+    return "";
+  }
+
+  const system = messages.find((message): message is { role: string; content: string } =>
+    Boolean(message && typeof message === "object" && "role" in message && message.role === "system")
+  );
+
+  return typeof system?.content === "string" ? system.content : "";
+}
 
 function createGateway(
   baseURL: string,

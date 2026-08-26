@@ -69,6 +69,8 @@ Top-level compaction policy defaults to:
 - `text-json`: ask the model to emit JSON tool calls in text.
 - `text-xml`: ask the model to emit XML-style tool calls in text.
 
+Native requests use the provider tool schemas and keep text-call syntax out of the system prompt. Text modes add the active tool catalog and only the syntax for the selected protocol. In `auto` mode, Topchester adds text JSON guidance only if the provider rejects native tools.
+
 `openRouterToolRouting` only matters for OpenRouter providers:
 
 - `auto`: let Topchester add routing hints when native tools are used.

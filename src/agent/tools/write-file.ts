@@ -59,7 +59,7 @@ export interface WriteWorkspaceFileOptions {
 export const writeFileTool = defineTool({
   name: "write_file",
   description:
-    "Create a new UTF-8 file inside the workspace, or explicitly replace one. For overwrite:true, expected_current_hash must be the current/pre-write hash from read_file, never a predicted post-write hash.",
+    "Create a new UTF-8 file inside the workspace. Use edit_file for targeted changes. Replace an existing file only with overwrite:true and the current pre-write hash from read_file; create parent folders only when the request includes them.",
   prompt:
     'write_file: create a new UTF-8 file inside the workspace by default; use edit_file for targeted changes to existing files; pass create_parent_dirs:true only when creating the folder path is intended. Replace an existing whole file only with overwrite:true and expected_current_hash set to the current/pre-write hash returned by the latest read_file for that file; never invent it or use a predicted after-write hash. To create a file, reply with only JSON: {"tool":"write_file","args":{"path":"test/example.test.ts","content":"import { it, expect } from \\"vitest\\";\\n\\nit(\\"works\\", () => {\\n  expect(true).toBe(true);\\n});\\n","create_parent_dirs":true}}',
   argsSchema: writeFileArgsSchema,

@@ -173,6 +173,7 @@ export {
   type ToolCallParseRejection,
 } from "./tools/parser.js";
 export { toAiSdkToolSet } from "./tools/ai-sdk-tools.js";
+export { withToolProtocolInstructions } from "./tools/protocol-prompt.js";
 export {
   createProfileToolCatalog,
   createStaticToolCatalog,

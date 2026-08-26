@@ -35,7 +35,8 @@ export interface InspectCommandOptions {
 
 export const inspectCommandTool = defineTool({
   name: "inspect_command",
-  description: "Run a narrowly validated read-only command for repository orientation.",
+  description:
+    "Run a narrowly validated read-only command for quick repository orientation. Prefer dedicated file and search tools for exact tasks. Do not use this tool for builds, tests, installs, network access, scripts, edits, or user-requested command output; use bash instead.",
   prompt:
     'inspect_command: run a safe read-only discovery command inside the workspace for quick repo orientation; prefer read_file, list_files, grep, and find_file for exact file tasks, and do not use it for builds, tests, installs, network, shell scripts, edits, or user-requested specific commands such as node --version, which node, or pnpm --version. To use it, reply with only JSON: {"tool":"inspect_command","args":{"command":"pwd && rg --files docs/plans | head -20","workdir":".","timeout_ms":10000}}',
   argsSchema: inspectCommandArgsSchema,

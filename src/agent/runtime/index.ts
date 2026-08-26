@@ -104,6 +104,7 @@ import {
   type RuntimeToolDefinition,
   type ToolResult,
   createProfileToolCatalog,
+  withToolProtocolInstructions,
 } from "../tools.js";
 import { validateBashPolicy, type BashApprovalCandidates } from "../tools/bash-policy.js";
 
@@ -537,8 +538,15 @@ export class TopchesterAgentRuntime implements AgentRuntime {
       deniedTools: this.options.parentPermissions?.deniedTools ?? [],
     });
     const instructions = await this.resolveBaseProjectInstructions();
-    const system = this.buildSystemPromptWithProjectInstructions({ profile, permissions }, instructions);
     const tools = createProfileToolCatalog(permissions, []).definitions();
+    const resolvedModel = this.resolveModelMetadata("agent.primary");
+    const promptToolProtocol =
+      resolvedModel?.modelConfig.toolProtocol ?? resolvedModel?.providerConfig.toolProtocol ?? "auto";
+    const system = withToolProtocolInstructions(
+      this.buildSystemPromptWithProjectInstructions({ profile, permissions }, instructions),
+      tools,
+      promptToolProtocol
+    );
     const status = this.createContextStatus({
       system,
       prompt: buildConversationPrompt(
@@ -758,7 +766,17 @@ export class TopchesterAgentRuntime implements AgentRuntime {
         )) {
           yield event;
         }
-        const system = this.buildSystemPromptWithProjectInstructions({ profile, permissions }, projectInstructions);
+        const modelRequestMetadata = this.resolveModelMetadata("agent.primary");
+        const promptToolProtocol =
+          toolProtocolOverride ??
+          modelRequestMetadata?.modelConfig.toolProtocol ??
+          modelRequestMetadata?.providerConfig.toolProtocol ??
+          "auto";
+        const system = withToolProtocolInstructions(
+          this.buildSystemPromptWithProjectInstructions({ profile, permissions }, projectInstructions),
+          tools,
+          promptToolProtocol
+        );
         try {
           const discovered = await this.context.modelGateway.discoverModelCapacity?.("agent.primary");
           if (discovered) this.context.contextCapacityRegistry?.set(discovered.route, discovered.capacity);
@@ -771,7 +789,6 @@ export class TopchesterAgentRuntime implements AgentRuntime {
             "context capacity discovery failed"
           );
         }
-        const modelRequestMetadata = this.resolveModelMetadata("agent.primary");
         contextModelCall += 1;
         let contextStatus = this.createContextStatus({
           system,

@@ -26,6 +26,7 @@ import {
   readWorkspaceFile,
   createReadFileCache,
   toAiSdkToolSet,
+  withToolProtocolInstructions,
   writeWorkspaceFile,
   createTaskPlanController,
   defineTool,
@@ -360,7 +361,7 @@ describe("agent tools", () => {
 
     expect(Object.keys(tools).sort()).toEqual(Object.keys(toolRegistry).sort());
     expect(tools.read_file).toMatchObject({
-      description: "Read a UTF-8 file inside the workspace.",
+      description: expect.stringContaining("return its current hash"),
       inputSchema: toolRegistry.read_file.argsSchema,
     });
   });
@@ -417,6 +418,12 @@ describe("agent tools", () => {
       tool: "mcp_fixture_echo",
       args: { message: "native" },
     });
+    expect(withToolProtocolInstructions("system", catalog.definitions(), "text-json")).toContain(
+      "mcp_fixture_echo: echo a dynamic MCP fixture value."
+    );
+    expect(withToolProtocolInstructions("system", catalog.definitions(), "text-xml")).toContain(
+      "mcp_fixture_echo: Echo a dynamic MCP fixture value."
+    );
 
     await expect(
       executeToolCall(workspace, { tool: "mcp_fixture_echo", args: { message: "run" } }, { toolCatalog: catalog })
@@ -750,8 +757,13 @@ describe("agent tools", () => {
   it("filters denied tools out of profile prompts and native tool schemas", () => {
     const profile = resolveAgentProfile("explore");
     const permissions = createToolPermissionView(profile);
-    const prompt = getChatSystemPrompt({ profile, permissions });
-    const nativeTools = toAiSdkToolSet(getProfileToolDefinitions(permissions));
+    const definitions = getProfileToolDefinitions(permissions);
+    const prompt = withToolProtocolInstructions(
+      getChatSystemPrompt({ profile, permissions }),
+      definitions,
+      "text-json"
+    );
+    const nativeTools = toAiSdkToolSet(definitions);
 
     expect(prompt).toContain("Agent profile: Explore (explore).");
     expect(prompt).not.toContain("plan_todo:");
@@ -890,12 +902,6 @@ describe("agent tools", () => {
     expect(toolRegistry).not.toHaveProperty("run_validator");
   });
 
-  it("tells the model to verify paths mentioned inside grep output", () => {
-    expect(getChatSystemPrompt()).toContain(
-      "If grep output mentions another path, treat that mentioned path as content until find_file or read_file confirms it exists."
-    );
-  });
-
   it("tells the model how to handle user-picked @ file mentions", () => {
     expect(getChatSystemPrompt()).toContain(
       "User-message tokens like @src/file.ts are workspace-relative paths the user picked deliberately"
@@ -909,65 +915,71 @@ describe("agent tools", () => {
   it("tells the model when to use plan_todo", () => {
     const prompt = getChatSystemPrompt();
 
-    expect(prompt).toContain("Use plan_todo for genuinely multi-step work");
-    expect(prompt).toContain("Batch plan_todo updates");
-    expect(prompt).toContain("Never call plan_todo twice in a row");
-    expect(prompt).toContain("Do not use plan_todo for simple one-step answers");
-    expect(prompt).toContain("Do not call plan_todo only to summarize completed work before a final answer");
+    expect(prompt).toContain("Use plan_todo only when a visible checklist helps");
+    expect(prompt).toContain("Update a visible plan only when milestones change");
+    expect(prompt).toContain("Do not call plan_todo twice in a row");
   });
 
-  it("tells the model how to use edit_file safely", () => {
+  it("keeps core behavior focused on intent, evidence, scope, and safety", () => {
     const prompt = getChatSystemPrompt();
 
-    expect(prompt).toContain("When using a tool, output exactly one tool JSON object and no prose");
-    expect(prompt).toContain("After the tool result, either output the next single tool JSON object");
-    expect(prompt).toContain("Use read_file before editing a file");
-    expect(prompt).toContain("use the current pre-edit/pre-write hash from the latest read_file result");
-    expect(prompt).toContain("Use edit_file for targeted edits to existing files");
-    expect(prompt).toContain("Keep edit_file old_text small but unique");
-    expect(prompt).toContain("Do not include line labels or grep prefixes in old_text");
+    expect(prompt).toContain("Answer, explain, review, or diagnose without editing unless the user asks for a change");
+    expect(prompt).toContain("Use injected Topchester KB context for orientation");
+    expect(prompt).toContain("Report unrelated problems instead of fixing them");
+    expect(prompt).toContain("Never expose, log, or commit secrets");
+    expect(prompt).toContain("the runtime will request user approval when required");
+    expect(prompt).not.toContain("Available tools:");
+    expect(prompt).not.toContain("reply with only JSON");
   });
 
-  it("tells the model how to use write_file safely", () => {
-    const prompt = getChatSystemPrompt();
-
-    expect(prompt).toContain("Use write_file to create new files by default");
-    expect(prompt).toContain("It fails when the file already exists");
-    expect(prompt).toContain("Pass write_file create_parent_dirs:true only when");
-    expect(prompt).toContain(
-      "the file already exists unless you are replacing the whole file with overwrite:true and expected_current_hash from read_file"
+  it("tells the model to preserve workspace and permission-generated changes", () => {
+    expect(getChatSystemPrompt()).toContain(
+      "Preserve existing, concurrent, and permission-generated changes, including updates to topchester.jsonc; do not revert them unless the user asks."
     );
-    expect(prompt).toContain("Do not use inspect_command for file creation or file mutation");
   });
 
-  it("tells the model to verify edits with bash", () => {
+  it("renders protocol-specific tool instructions", () => {
+    const definitions = getProfileToolDefinitions(createToolPermissionView(resolveAgentProfile("primary")));
+    const core = getChatSystemPrompt();
+    const nativePrompt = withToolProtocolInstructions(core, definitions, "native");
+    const jsonPrompt = withToolProtocolInstructions(nativePrompt, definitions, "text-json");
+    const xmlPrompt = withToolProtocolInstructions(jsonPrompt, definitions, "text-xml");
+
+    expect(nativePrompt).toContain("Use the provided native tool interface");
+    expect(nativePrompt).not.toContain("Available tools:");
+    expect(nativePrompt).not.toContain("reply with only JSON");
+    expect(jsonPrompt).toContain("output exactly one tool JSON object");
+    expect(jsonPrompt).toContain("read_file: read a UTF-8 file inside the workspace");
+    expect(xmlPrompt).toContain("output exactly one XML tool call");
+    expect(xmlPrompt).toContain('<tool_call>read_file {"path":"package.json"}</tool_call>');
+    expect(xmlPrompt).toContain('<tool_call>skill_view {"name":"code-review"}</tool_call>');
+    expect(xmlPrompt).not.toContain("reply with only JSON");
+    expect(xmlPrompt.match(/topchester-tool-protocol:start/g)).toHaveLength(1);
+  });
+
+  it("keeps detailed selection rules in native tool descriptions", () => {
+    const tools = toAiSdkToolSet(getProfileToolDefinitions(createToolPermissionView(resolveAgentProfile("primary"))));
+
+    expect(tools.grep?.description).toContain("not confirmed until find_file or read_file verifies it");
+    expect(tools.inspect_command?.description).toContain("Do not use this tool for builds, tests, installs");
+    expect(tools.bash?.description).toContain("user-requested commands");
+    expect(tools.edit_file?.description).toContain("keep old_text small but unique");
+    expect(tools.write_file?.description).toContain("Replace an existing file only with overwrite:true");
+  });
+
+  it("keeps concise cross-tool routing in the core prompt", () => {
     const prompt = getChatSystemPrompt();
 
-    expect(prompt).toContain("After code edits, use bash to run the narrowest relevant test");
+    expect(prompt).toContain("Verify changes with the narrowest relevant check");
     expect(prompt).toContain("Failed bash exits are evidence");
-    expect(prompt).toContain("Do not use inspect_command for tests, builds, lint, typecheck");
-    expect(prompt).toContain("When the user explicitly asks to run a command or asks for command output");
-    expect(prompt).toContain("bash is the approval-gated shell runner");
-    expect(prompt).toContain("let permission policy return the allowed, rejected, or approval result");
-    expect(prompt).toContain("Prefer dedicated tools for file reads, file writes, edits, Git inspection, and searches");
-    expect(prompt).toContain("Use bash for arbitrary shell syntax");
-    expect(prompt).toContain("Do not use bash for file reads, file writes, or Git inspection");
+    expect(prompt).toContain(
+      "Use bash for user-requested commands, shell syntax, package managers, scripts, and verification"
+    );
+    expect(prompt).toContain("Use inspect_command only for quick, safe, read-only orientation");
+    expect(prompt).toContain("Read a current file before editing it");
     expect(prompt).toContain("Use web_fetch, not bash curl or wget");
-    expect(prompt).not.toContain("run_validator");
-  });
-
-  it("tells the model inspect_command is only for read-only orientation", () => {
-    const prompt = getChatSystemPrompt();
-
-    expect(prompt).toContain("Use list_files, grep, find_file, and read_file for exact file listing");
-    expect(prompt).toContain("Use git_status, git_diff, and git_log for Git state");
     expect(prompt).toContain("Use git_add and git_commit only when the user explicitly asks");
-    expect(prompt).toContain("Use inspect_command only for quick read-only repo orientation");
-    expect(prompt).toContain("when the user did not ask to run a specific command");
-    expect(prompt).toContain("inspect_command is not a shell");
-    expect(prompt).toContain("Unsafe commands, shell expansion, scripts, installs, builds, tests, network access");
-    expect(prompt).toContain("Do not use inspect_command when the user asks to run a specific command");
-    expect(prompt).toContain("use bash instead");
+    expect(prompt).not.toContain("run_validator");
   });
 
   it("logs tool calls and result metadata without debug-level content", async () => {

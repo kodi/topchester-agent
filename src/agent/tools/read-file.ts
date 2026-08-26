@@ -30,7 +30,8 @@ export interface ReadFileToolResult extends ToolResult<"read_file"> {
 
 export const readFileTool = defineTool({
   name: "read_file",
-  description: "Read a UTF-8 file inside the workspace.",
+  description:
+    "Read a UTF-8 file inside the workspace and return its current hash. Use focused offset and limit values for large files, and read a file before editing it.",
   prompt:
     'read_file: read a UTF-8 file inside the workspace. For large files, use offset and limit to read a focused byte range. To use it, reply with only JSON: {"tool":"read_file","args":{"path":"package.json"}}',
   argsSchema: readFileArgsSchema,

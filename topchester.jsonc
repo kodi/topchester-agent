@@ -36,6 +36,8 @@
         "gh run view 32938079201 --json databaseId,url,status,conclusion,headBranch,displayTitle,event",
         "git push && gh workflow run publish-npm.yml --ref main -f release=minor && gh run list --workflow publish-npm.yml --event workflow_dispatch --limit 1 --json databaseId,url,status,conclusion,headBranch,createdAt,displayTitle",
         "gh run view 32938328401 --json databaseId,url,status,conclusion,headBranch,displayTitle,event",
+        "ls -la /Users/kodisha/data/prod_projects/gantempo",
+        "latest=$(find /Users/kodisha/data/prod_projects/gantempo/.agents/topchester/sessions -mindepth 1 -maxdepth 1 -type d -print0 | xargs -0 stat -f '%m %N' | sort -nr | head -1 | cut -d' ' -f2-); printf '%s\\n' \"$latest\"; ls -la \"$latest\"",
       ],
     },
   },

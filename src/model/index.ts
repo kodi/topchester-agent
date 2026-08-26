@@ -11,6 +11,7 @@ import {
 import { toAiSdkToolSet } from "../agent/tools/ai-sdk-tools.js";
 import { createToolCatalog } from "../agent/tools/catalog.js";
 import { parseNativeToolCall, parseToolCallWithSource } from "../agent/tools/parser.js";
+import { withToolProtocolInstructions } from "../agent/tools/protocol-prompt.js";
 import {
   type ModelToolCall,
   type ToolDefinition,
@@ -386,11 +387,17 @@ export class ModelGateway {
     providerRejectedTools: boolean,
     allowedSources: Array<"text-json" | "text-xml">
   ): Promise<ModelAgentResult> {
+    const defaultProtocol: ToolProtocol =
+      allowedSources.length === 1 && allowedSources[0] === "text-xml" ? "text-xml" : "text-json";
+    const textRequest: ModelAgentRequest = {
+      ...request,
+      system: withToolProtocolInstructions(request.system ?? "", request.tools, defaultProtocol),
+    };
     const result = request.onReasoning
-      ? await this.streamTextAgentStep(request, resolved)
+      ? await this.streamTextAgentStep(textRequest, resolved)
       : await generateText({
           model: resolved.model,
-          ...buildPromptInput(request, resolved.providerConfig),
+          ...buildPromptInput(textRequest, resolved.providerConfig),
           providerOptions: buildProviderOptions(resolved.providerId, resolved.providerConfig, request),
           abortSignal: request.abortSignal,
         });
@@ -401,8 +408,6 @@ export class ModelGateway {
       responseHeaders: result.response.headers,
     });
     const parsed = parseToolCallWithSource(result.text, allowedSources, createToolCatalog(request.tools));
-    const defaultProtocol: ToolProtocol =
-      allowedSources.length === 1 && allowedSources[0] === "text-xml" ? "text-xml" : "text-json";
     const toolProtocol: ToolProtocol =
       parsed?.source === "text-xml" ? "text-xml" : parsed ? "text-json" : defaultProtocol;
 

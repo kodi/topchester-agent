@@ -27,7 +27,8 @@ export interface GrepWorkspaceOptions {
 
 export const grepTool = defineTool({
   name: "grep",
-  description: "Search text inside the workspace.",
+  description:
+    "Search text inside workspace files. Output identifies matching files and lines; a path mentioned inside matched content is not confirmed until find_file or read_file verifies it.",
   prompt:
     'grep: search text inside file contents in the workspace; output lines are the files containing the matched text, and paths mentioned inside those lines are not confirmed files unless checked with find_file or read_file. To use it, reply with only JSON: {"tool":"grep","args":{"pattern":"function name","path":"src"}}',
   argsSchema: grepArgsSchema,

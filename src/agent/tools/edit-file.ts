@@ -54,7 +54,7 @@ export interface ApplyEditResult {
 export const editFileTool = defineTool({
   name: "edit_file",
   description:
-    "Edit an existing UTF-8 file inside the workspace with exact text replacements. Use expected_current_hash only as the current/pre-edit hash from read_file, never as a predicted post-edit hash.",
+    "Edit an existing UTF-8 file with exact text replacements. Read it first, keep old_text small but unique, and group disjoint replacements in one call. expected_current_hash must be the current pre-edit hash from read_file, never an invented or predicted hash.",
   prompt:
     'edit_file: edit an existing UTF-8 file inside the workspace with exact old_text/new_text replacements; read the file first, keep old_text small but unique, and make multiple disjoint edits for one file in one call. expected_current_hash is optional and must be the current/pre-edit hash returned by the latest read_file for that file; never invent it or use a predicted after-edit hash. To use it, reply with only JSON: {"tool":"edit_file","args":{"path":"src/example.ts","expected_current_hash":"sha256:current-file-hash-from-read_file","edits":[{"old_text":"const enabled = false;\\n","new_text":"const enabled = true;\\n"}]}}',
   argsSchema: editFileArgsSchema,

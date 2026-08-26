@@ -4,6 +4,7 @@ import { hasOpenTaskPlan, type TaskPlanState } from "../task-plan.js";
 import {
   createToolCatalog,
   parseToolCallWithSource,
+  withToolProtocolInstructions,
   type ModelToolCall,
   type RuntimeToolDefinition,
   type ToolCall,
@@ -42,7 +43,10 @@ export async function generateAgentStep(
     });
   }
 
-  const result = await context.modelGateway.generateText(request);
+  const result = await context.modelGateway.generateText({
+    ...request,
+    system: withToolProtocolInstructions(request.system, request.tools, "text-json"),
+  });
   const catalog = request.toolCatalog ?? createToolCatalog(request.tools);
   const parsed = parseToolCallWithSource(result.text, ["text-json", "text-xml"], catalog);
   const toolProtocol: ToolProtocol = parsed?.source === "text-xml" ? "text-xml" : "text-json";

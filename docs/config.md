@@ -261,6 +261,8 @@ Topchester adds default `HTTP-Referer` and `X-Title` headers for OpenRouter prov
 - `text-json`: ask the model to emit JSON tool calls in text.
 - `text-xml`: ask the model to emit XML-style tool calls in text.
 
+Native requests use provider tool schemas without text-call examples. Text modes add the active tool catalog and only the selected JSON or XML syntax. In `auto` mode, text JSON guidance is added only after native tools are rejected.
+
 `openRouterToolRouting` only matters for OpenRouter providers:
 
 - `auto`: let Topchester add routing hints when native tools are used.

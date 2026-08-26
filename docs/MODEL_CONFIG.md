@@ -149,6 +149,8 @@ Users do not configure tool schemas. Topchester owns the tool registry and build
 
 For agent turns, Topchester tries native OpenAI-compatible tool calls first. If a provider or model rejects native tools, Topchester falls back to text JSON tool calls. If a model emits a simple XML-style tool call, Topchester can parse that as a compatibility fallback. All paths validate tool args against the registered Zod schemas before any tool runs.
 
+Native requests rely on provider tool schemas and do not include text-call examples in the system prompt. Text modes add the active tool catalog and only the selected JSON or XML syntax. Automatic fallback adds text JSON guidance before the retry.
+
 OpenRouter requests that try native tools include internal routing hints so OpenRouter should pick an upstream that can accept tool parameters. This is automatic for providers named like `openrouter` or using an OpenRouter base URL.
 
 Topchester also adds default `HTTP-Referer` and `X-Title` attribution headers for OpenRouter providers unless the config sets those header names explicitly.
