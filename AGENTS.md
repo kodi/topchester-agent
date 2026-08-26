@@ -1,9 +1,11 @@
 # Topchester Agent
 
-## Testing 
-Main test command that must ALWAYS pass `mise run local-ci` 
+## Testing
+
+Main test command that must ALWAYS pass `mise run local-ci`
 
 ## About
+
 Topchester is a terminal-native TUI coding agent tightly coupled to a committed project knowledge base.
 
 Read these first:
@@ -68,7 +70,6 @@ Never expose a user's full home directory path in user-facing docs, examples, co
 Use ONLY mise tasks for repo checks and automation; never run pnpm tasks directly. Eg never run `pnpm exec oxfmt` use mise tasks.
 
 Use the fff MCP tools for all file search operations instead of default tools.
-
 
 <!--VITE PLUS START-->
 
