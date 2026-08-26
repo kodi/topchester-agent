@@ -6,6 +6,7 @@ import { agentEvent } from "../src/agent/events.js";
 import { type AgentRuntime } from "../src/agent/runtime/index.js";
 import { setRuntimeModelReference } from "../src/app/context.js";
 import { TopchesterTuiController } from "../src/chat/controller.js";
+import { isStreamReasoningEnabledByEnv } from "../src/chat/controller-helpers.js";
 import { type TuiTransientScheduler } from "../src/chat/controller-state.js";
 import { type TopchesterConfig } from "../src/config/index.js";
 import { type HerdrAgentReport, type HerdrAgentReporter } from "../src/integrations/herdr.js";
@@ -287,7 +288,7 @@ describe("framework-neutral TUI controller", () => {
   it("streams reasoning as display-only state and persists only conversation entries", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-controller-reasoning-"));
     const previous = process.env.TOPCHESTER_STREAM_REASONING;
-    process.env.TOPCHESTER_STREAM_REASONING = "1";
+    delete process.env.TOPCHESTER_STREAM_REASONING;
     const runtime = createControllerRuntime({
       async *submitMessageStream(_conversation, _message, _signal, options) {
         await options?.onReasoning?.({ type: "delta", text: "**Inspecting**" });
@@ -317,6 +318,23 @@ describe("framework-neutral TUI controller", () => {
         process.env.TOPCHESTER_STREAM_REASONING = previous;
       }
       await controller.dispose();
+    }
+  });
+
+  it("supports explicitly disabling streamed reasoning", () => {
+    const previous = process.env.TOPCHESTER_STREAM_REASONING;
+
+    try {
+      for (const value of ["0", "false", "no", "off"]) {
+        process.env.TOPCHESTER_STREAM_REASONING = value;
+        expect(isStreamReasoningEnabledByEnv()).toBe(false);
+      }
+    } finally {
+      if (previous === undefined) {
+        delete process.env.TOPCHESTER_STREAM_REASONING;
+      } else {
+        process.env.TOPCHESTER_STREAM_REASONING = previous;
+      }
     }
   });
 

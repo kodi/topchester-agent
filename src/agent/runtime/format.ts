@@ -525,7 +525,9 @@ function isProjectInstructionRetryResult(
 function shouldShowTokenUsageByEnv(): boolean {
   const value = process.env.TOPCHESTER_SHOW_TOKEN_USAGE?.trim().toLowerCase();
 
-  return value !== undefined && value !== "" && value !== "0" && value !== "false" && value !== "no" && value !== "off";
+  return (
+    value === undefined || value === "" || (value !== "0" && value !== "false" && value !== "no" && value !== "off")
+  );
 }
 
 function formatTokenUsage(usage: TurnTokenUsageTotals | undefined): string | undefined {

@@ -28,7 +28,7 @@ The status line uses this shape:
 ready · my-project · qwen/qwen3-coder [openrouter] · ✅ kb: ready
 ```
 
-Assistant replies show a muted compact metadata line with the model and elapsed time. Set `TOPCHESTER_SHOW_TOKEN_USAGE=1` to also show cumulative input, output, cache-read, and cache-write token counts for the full turn, including tool-loop model calls. If the model response includes cost data, the same metadata also shows the total USD cost for the turn.
+Assistant replies show a muted compact metadata line with the model, elapsed time, and cumulative input, output, cache-read, and cache-write token counts for the full turn, including tool-loop model calls. If the model response includes cost data, the same metadata also shows the total USD cost for the turn. Set `TOPCHESTER_SHOW_TOKEN_USAGE=0` to hide token and cost data.
 
 KB status labels:
 
@@ -186,7 +186,7 @@ The TUI shows temporary progress while work is running:
 - The prompt may show `press Esc to stop` while startup or runtime work is active.
 - Temporary thread lines can be set with an optional `expireAfterMs` timeout. Hook `statusMessage` feedback uses this path so busy spinner updates and model completion rows do not clear it before the timeout.
 
-Set `TOPCHESTER_STREAM_REASONING=1` before starting the interactive TUI to show provider-exposed reasoning text while the agent works. This is provider-dependent: models that stream reasoning show recent thinking updates as separate dim rows, models that only expose a final reasoning summary may show that summary, and unsupported providers keep the normal spinner text. Markdown-style bold headings are shown as plain status text instead of raw `**` markers. The spinner and stop hint stay beside the newest update. When the answer arrives, the thinking text stays visible above the final answer for that turn. It is not saved in session history, JSON run output, model conversation history, or KB data.
+The interactive TUI shows provider-exposed reasoning text by default while the agent works. Set `TOPCHESTER_STREAM_REASONING=0` to hide it. This is provider-dependent: models that stream reasoning show recent thinking updates as separate dim rows, models that only expose a final reasoning summary may show that summary, and unsupported providers keep the normal spinner text. Markdown-style bold headings are shown as plain status text instead of raw `**` markers. The spinner and stop hint stay beside the newest update. When the answer arrives, the thinking text stays visible above the final answer for that turn. It is not saved in session history, JSON run output, model conversation history, or KB data.
 
 This flag only affects interactive `topchester` chat turns. It does not make `topchester run` print reasoning, and it does not apply to startup checks or slash commands.
 

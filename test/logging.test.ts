@@ -8,13 +8,24 @@ import { executeToolCall, parseToolCall } from "../src/agent/tools.js";
 import { createTopchesterLogger } from "../src/logging/index.js";
 
 describe("logging", () => {
-  it("stays silent unless a log level is configured", async () => {
+  it("logs at debug level by default", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "topchester-logging-"));
 
     await withEnv({ TOPCHESTER_LOG_LEVEL: "", TOPCHESTER_LOG_FILE: "" }, async () => {
       const loggerInfo = createTopchesterLogger(workspace);
 
       loggerInfo.logger.debug({ event: "test" }, "test");
+
+      expect(loggerInfo.level).toBe("debug");
+      expect(loggerInfo.logFilePath).toBe(join(workspace, ".agents/topchester/logs/topchester.log"));
+    });
+  });
+
+  it("supports explicitly disabling logs", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "topchester-logging-"));
+
+    await withEnv({ TOPCHESTER_LOG_LEVEL: "off", TOPCHESTER_LOG_FILE: "" }, async () => {
+      const loggerInfo = createTopchesterLogger(workspace);
 
       expect(loggerInfo.level).toBe("silent");
       expect(loggerInfo.logFilePath).toBeUndefined();

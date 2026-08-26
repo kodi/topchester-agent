@@ -31,7 +31,9 @@ export function getModelLabel(context: AppContext): string {
 
 export function isStreamReasoningEnabledByEnv(): boolean {
   const value = process.env.TOPCHESTER_STREAM_REASONING?.trim().toLowerCase();
-  return value === "1" || value === "true" || value === "yes" || value === "on";
+  return (
+    value === undefined || value === "" || (value !== "0" && value !== "false" && value !== "no" && value !== "off")
+  );
 }
 
 export function formatAgentCheckSetupHint(message: string, context: AppContext): string | undefined {

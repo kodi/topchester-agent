@@ -45,7 +45,11 @@ export function createTopchesterLogger(workspaceRoot: string): TopchesterLoggerI
 function normalizeLogLevel(level: string | undefined): string {
   const normalized = level?.trim().toLowerCase();
 
-  if (!normalized || normalized === "off") {
+  if (!normalized) {
+    return "debug";
+  }
+
+  if (normalized === "off") {
     return "silent";
   }
 

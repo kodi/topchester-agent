@@ -81,7 +81,7 @@ Use `/steer <prompt>` to send best-effort guidance to the active turn. If the ru
 
 V0 queues are not persisted across restarts, cannot be edited or removed from a queue-management view, and do not have a configurable busy input mode. Switching sessions with `/new`, `/fork`, or `/restore` drops queued follow-ups and pending steering with a visible notice.
 
-Set `TOPCHESTER_STREAM_REASONING=1` before starting the TUI to show reasoning text exposed by the provider. Recent thinking updates appear as separate dim rows, with Markdown-style bold headings shown as plain status text instead of raw `**` markers. The spinner and stop hint stay beside the newest update. Providers that do not expose reasoning keep the normal spinner text.
+The TUI shows reasoning text exposed by the provider by default. Set `TOPCHESTER_STREAM_REASONING=0` to hide it. Recent thinking updates appear as separate dim rows, with Markdown-style bold headings shown as plain status text instead of raw `**` markers. The spinner and stop hint stay beside the newest update. Providers that do not expose reasoning keep the normal spinner text.
 
 This only affects interactive chat turns. The thinking text is not saved in session history, JSON run output, model conversation history, or knowledge-base data.
 

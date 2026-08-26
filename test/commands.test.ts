@@ -1047,9 +1047,9 @@ describe("slash commands", () => {
     expect(steering.hasPending()).toBe(false);
   });
 
-  it("shows cumulative model token usage in assistant metadata when enabled", async () => {
+  it("shows cumulative model token usage in assistant metadata by default", async () => {
     const previous = process.env.TOPCHESTER_SHOW_TOKEN_USAGE;
-    process.env.TOPCHESTER_SHOW_TOKEN_USAGE = "1";
+    delete process.env.TOPCHESTER_SHOW_TOKEN_USAGE;
 
     try {
       const workspace = await mkdtemp(join(tmpdir(), "topchester-commands-"));
@@ -1103,6 +1103,14 @@ describe("slash commands", () => {
           ),
         })
       );
+
+      process.env.TOPCHESTER_SHOW_TOKEN_USAGE = "0";
+      const hiddenUsageEvents = await runtime.submitMessage([], "read notes");
+      const hiddenUsageMessage = hiddenUsageEvents.find(
+        (event) => event.type === "message" && event.role === "assistant"
+      );
+
+      expect(hiddenUsageMessage).toEqual(expect.objectContaining({ meta: expect.not.stringContaining("tokens") }));
     } finally {
       if (previous === undefined) {
         delete process.env.TOPCHESTER_SHOW_TOKEN_USAGE;
