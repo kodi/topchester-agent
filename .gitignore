@@ -13,3 +13,5 @@ __pycache__/
 AGENTS.override.md
 test-foo.ts
 topchester-kb/
+config/custom/*.json
+config/custom/*.jsonc
