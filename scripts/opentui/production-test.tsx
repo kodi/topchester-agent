@@ -56,7 +56,25 @@ function createRuntime(submitted?: string[]): AgentRuntime {
   };
 }
 
+const REPORTED_REASONING_STREAM = [
+  'The user is asking "what is the advantage of OpenTUI?" — this is a question, not a change request.',
+  "I should answer/explain without editing.",
+  "I have the KB context pack with relevant files:",
+  "- `src/tui/opentui/index.ts`",
+  "- `src/tui/opentui/renderer.tsx`",
+  "- `src/tui/index.ts`",
+  "- `test/opentui-state.test.ts`",
+  "- `scripts/opentui/production-test.tsx`",
+  "- `src/tui/opentui/status-bar.tsx`",
+  "- `src/tui/opentui/transcript-writer.tsx`",
+  "But to answer what the advantage of OpenTUI is, I need to understand what OpenTUI is and why this repo uses it.",
+  "The KB gives orientation but for exact claims I should read current source.",
+  "Relevant places include the migration plan and package.json.",
+  "These reads are independent, so I can do them in parallel.",
+].join(" ");
+
 await testAppSurface();
+await testReasoningTailFollowsLatestRows();
 await testQueuedFollowUpPreview();
 await testTranscriptWriter();
 await testThreadEntryVariants();
@@ -257,6 +275,100 @@ async function testAppSurface(): Promise<void> {
       if (width === 200) assert.match(resizedRows[resizedStatusRow + 1] ?? "", /ctx 14k\/128k · 11% · 98k safe\s*$/u);
     }
   } finally {
+    await controller.dispose();
+    setup.renderer.destroy();
+    syntaxStyle.destroy();
+  }
+}
+
+async function testReasoningTailFollowsLatestRows(): Promise<void> {
+  const workspace = await mkdtemp(join(tmpdir(), "topchester-opentui-reasoning-tail-"));
+  let markFirstTailVisible: () => void = () => {};
+  let markReasoningVisible: () => void = () => {};
+  let releaseRemainingReasoning: () => void = () => {};
+  let releaseResponse: () => void = () => {};
+  const firstTailVisible = new Promise<void>((resolve) => {
+    markFirstTailVisible = resolve;
+  });
+  const reasoningVisible = new Promise<void>((resolve) => {
+    markReasoningVisible = resolve;
+  });
+  const remainingReasoningBlocked = new Promise<void>((resolve) => {
+    releaseRemainingReasoning = resolve;
+  });
+  const responseBlocked = new Promise<void>((resolve) => {
+    releaseResponse = resolve;
+  });
+  const runtime = createRuntime();
+  runtime.submitMessageStream = async function* (_conversation, _message, _signal, options) {
+    const firstTailEnd = REPORTED_REASONING_STREAM.indexOf("But to answer");
+    await options?.onReasoning?.({ type: "delta", text: REPORTED_REASONING_STREAM.slice(0, firstTailEnd) });
+    markFirstTailVisible();
+    await remainingReasoningBlocked;
+    for (let offset = firstTailEnd; offset < REPORTED_REASONING_STREAM.length; offset += 73) {
+      await options?.onReasoning?.({ type: "delta", text: REPORTED_REASONING_STREAM.slice(offset, offset + 73) });
+    }
+    markReasoningVisible();
+    await responseBlocked;
+    yield agentEvent.assistantMessage("OpenTUI keeps the renderer responsive.", "model");
+  };
+  const controller = await TopchesterTuiController.create(createTestContext(workspace), runtime);
+  const syntaxStyle = SyntaxStyle.create();
+  const theme = resolveTopchesterTheme();
+  const setup = await testRender(
+    () => (
+      <TopchesterApp
+        controller={controller}
+        initialSnapshot={controller.getSnapshot()}
+        theme={theme}
+        syntaxStyle={syntaxStyle}
+        onInterrupt={() => {}}
+      />
+    ),
+    { width: 80, height: 24, screenMode: "split-footer", footerHeight: 16, useMouse: false, exitOnCtrlC: false }
+  );
+
+  try {
+    assert.equal(controller.submit("What is the advantage of OpenTUI?"), "submitted");
+    await firstTailVisible;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await setup.flush();
+
+    const firstStreamingFrame = setup.captureCharFrame();
+    assert.doesNotMatch(firstStreamingFrame, /The user is asking/u);
+    assert.match(firstStreamingFrame, /transcript-writer\.tsx/u);
+
+    releaseRemainingReasoning();
+    await reasoningVisible;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await setup.flush();
+
+    const streamingFrame = setup.captureCharFrame();
+    assert.doesNotMatch(streamingFrame, /The user is asking/u);
+    assert.doesNotMatch(streamingFrame, /transcript-writer\.tsx/u);
+    assert.match(streamingFrame, /… .*Relevant places include the migration plan/u);
+    assert.match(streamingFrame, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] them in parallel\. · press Esc to stop/u);
+    const reasoningRows = streamingFrame
+      .split("\n")
+      .filter(
+        (row) =>
+          row.includes("Relevant places include") ||
+          row.includes("These reads are independent") ||
+          row.includes("migration plan and package.json")
+      );
+    assert.ok(reasoningRows.length <= 3, streamingFrame);
+
+    releaseResponse();
+    await controller.waitForIdle();
+    await setup.flush();
+
+    const committedReasoning = controller.getSnapshot().transcript.find((entry) => entry.kind === "reasoning");
+    assert.ok(committedReasoning?.text.startsWith('The user is asking "what is the advantage of OpenTUI?"'));
+    assert.ok(committedReasoning?.text.endsWith("These reads are independent, so I can do them in parallel."));
+    assert.equal(controller.getSnapshot().ephemeral, undefined);
+  } finally {
+    releaseRemainingReasoning();
+    releaseResponse();
     await controller.dispose();
     setup.renderer.destroy();
     syntaxStyle.destroy();

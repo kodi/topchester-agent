@@ -15,7 +15,7 @@ export class ControllerBusyIndicator {
   private timer: ReturnType<typeof setInterval> | undefined;
   private index = 0;
   private ticks = 0;
-  private activityOverride: { text: string; tone: "normal" | "muted" } | undefined;
+  private activityOverride: { text: string; tone: "normal" | "muted"; followTail: boolean } | undefined;
 
   constructor(
     private readonly view: TuiViewStore,
@@ -47,8 +47,8 @@ export class ControllerBusyIndicator {
     });
   }
 
-  setActivity(text: string, tone: "normal" | "muted" = "normal"): void {
-    this.activityOverride = { text, tone };
+  setActivity(text: string, tone: "normal" | "muted" = "normal", followTail = false): void {
+    this.activityOverride = { text, tone, followTail };
     this.render();
   }
 
@@ -68,8 +68,21 @@ export class ControllerBusyIndicator {
           this.options.activities[Math.floor((this.ticks * 80) / activityEveryMs) % this.options.activities.length] ??
           "",
         tone: "normal",
+        followTail: false,
       } as const);
     const hint = this.options.activityHint ? ` · ${this.options.activityHint}` : "";
+    if (activity.followTail) {
+      this.view.setTransientEphemeral({
+        text: activity.text,
+        tone: activity.tone,
+        tail: {
+          indicator: this.frames[this.index] ?? "",
+          ...(this.options.activityHint ? { hint: this.options.activityHint } : {}),
+          maxRows: 3,
+        },
+      });
+      return;
+    }
     const lines = activity.text.split("\n");
     const activeLineIndex = lines.length - 1;
     const text = lines
@@ -103,7 +116,7 @@ export function createControllerReasoningSink(
       }
       const text = event.type === "summary" ? buffer.replace(event.text ?? "") : buffer.append(event.text ?? "");
       if (text) {
-        busy.setActivity(text, "muted");
+        busy.setActivity(text, "muted", true);
       }
     },
   };

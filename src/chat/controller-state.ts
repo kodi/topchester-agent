@@ -11,6 +11,11 @@ export type { TaskPlanState } from "../agent/task-plan.js";
 export interface TuiEphemeralState {
   text: string;
   tone: "normal" | "muted";
+  tail?: {
+    indicator: string;
+    hint?: string;
+    maxRows: number;
+  };
 }
 
 export interface TuiSessionPickerState {

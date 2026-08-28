@@ -3,7 +3,7 @@
 import { type KeyEvent, type PasteEvent, type TextareaRenderable } from "@opentui/core";
 import { useKeyboard, usePaste, useRenderer, useTerminalDimensions } from "@opentui/solid";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
-import { type TuiViewState } from "../../chat/controller-state.js";
+import { type TuiEphemeralState, type TuiViewState } from "../../chat/controller-state.js";
 import { getSlashCommandSuggestions, type SlashCommandSuggestion } from "../../chat/suggestions.js";
 import { type ChoiceTranscriptEntry } from "../../chat/transcript.js";
 import { applyMentionCompletion, findActiveMention } from "../file-mentions.js";
@@ -20,6 +20,7 @@ type VisibleSuggestion =
   | { kind: "slash"; label: string; slash: SlashCommandSuggestion };
 
 const TASK_PLAN_RESERVED_TRANSIENT_ROWS = 4;
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export function LiveFooter(props: { mentionProvider?: FileMentionProvider; onInterrupt(): void }) {
   const { controller, snapshot } = useController();
@@ -70,6 +71,10 @@ export function LiveFooter(props: { mentionProvider?: FileMentionProvider; onInt
         }))
   );
   const hasOverlay = createMemo(() => activeChoice() !== undefined || snapshot().sessionPicker !== undefined);
+  const ephemeralText = createMemo(() => {
+    renderDimensions();
+    return formatEphemeralText(snapshot().ephemeral, Math.max(1, renderer.terminalWidth - 2));
+  });
   const selectionContext = createMemo(
     () =>
       `${activeChoice()?.title ?? ""}\0${snapshot().sessionPicker?.items.length ?? 0}\0${draft()}\0${visibleSuggestions()
@@ -325,7 +330,7 @@ export function LiveFooter(props: { mentionProvider?: FileMentionProvider; onInt
         <Show when={snapshot().ephemeral}>
           {(line) => (
             <text width="100%" wrapMode="word" fg={line().tone === "muted" ? theme.muted : theme.text}>
-              {line().text}
+              {ephemeralText()}
             </text>
           )}
         </Show>
@@ -468,7 +473,7 @@ function estimateFooterHeight(
   const taskRows = Math.min(6, snapshot.taskPlan?.items.length ?? 0);
   const transientRows = [
     snapshot.startupHint,
-    snapshot.ephemeral?.text,
+    formatEphemeralText(snapshot.ephemeral, Math.max(1, terminalWidth - 2)),
     snapshot.temporaryLine,
     snapshot.taskPlanNotice,
   ]
@@ -484,6 +489,129 @@ function estimateFooterHeight(
       : Math.min(6, suggestionCount);
   const queuedRows = snapshot.queuedFollowUpPreview ? 1 : 0;
   return base + taskRows + stableTransientRows + overlayRows + queuedRows;
+}
+
+export function formatEphemeralText(ephemeral: TuiEphemeralState | undefined, width: number): string | undefined {
+  if (!ephemeral?.tail) {
+    return ephemeral?.text;
+  }
+
+  const indicator = `${ephemeral.tail.indicator} `;
+  const hint = ephemeral.tail.hint ? ` · ${ephemeral.tail.hint}` : "";
+  const contentWidth = Math.max(1, Math.floor(width) - terminalCellWidth(indicator) - terminalCellWidth(hint));
+  const rows = wrapTextRows(ephemeral.text, contentWidth);
+  const maxRows = Math.max(1, Math.floor(ephemeral.tail.maxRows));
+  const visibleRows = rows.slice(-maxRows);
+
+  if (rows.length > visibleRows.length && visibleRows[0]) {
+    visibleRows[0] = `… ${takeEndByWidth(visibleRows[0], Math.max(1, contentWidth - 2))}`;
+  }
+
+  return visibleRows
+    .map((row, index) => (index === visibleRows.length - 1 ? `${indicator}${row}${hint}` : `  ${row}`))
+    .join("\n");
+}
+
+function wrapTextRows(text: string, width: number): string[] {
+  const logicalLines = text
+    .split(/\n+/u)
+    .map((line) => line.replace(/\s+/gu, " ").trim())
+    .filter(Boolean);
+  const rows = logicalLines.flatMap((line) => wrapTextLine(line, width));
+  return rows.length > 0 ? rows : [""];
+}
+
+function wrapTextLine(text: string, width: number): string[] {
+  const words = text.split(/\s+/u).filter(Boolean);
+  const rows: string[] = [];
+  let row = "";
+
+  for (const word of words) {
+    const candidate = row ? `${row} ${word}` : word;
+    if (terminalCellWidth(candidate) <= width) {
+      row = candidate;
+      continue;
+    }
+    if (row) {
+      rows.push(row);
+      row = "";
+    }
+    const chunks = splitByWidth(word, width);
+    rows.push(...chunks.slice(0, -1));
+    row = chunks.at(-1) ?? "";
+  }
+  if (row || rows.length === 0) {
+    rows.push(row);
+  }
+  return rows;
+}
+
+function splitByWidth(text: string, width: number): string[] {
+  const chunks: string[] = [];
+  let chunk = "";
+  for (const character of iterateGraphemes(text)) {
+    if (chunk && terminalCellWidth(chunk + character) > width) {
+      chunks.push(chunk);
+      chunk = character;
+    } else {
+      chunk += character;
+    }
+  }
+  if (chunk || chunks.length === 0) {
+    chunks.push(chunk);
+  }
+  return chunks;
+}
+
+function takeEndByWidth(text: string, width: number): string {
+  let result = "";
+  for (const character of Array.from(iterateGraphemes(text)).reverse()) {
+    if (terminalCellWidth(character + result) > width) {
+      break;
+    }
+    result = character + result;
+  }
+  return result.trimStart();
+}
+
+function terminalCellWidth(text: string): number {
+  const bunRuntime = (globalThis as { Bun?: { stringWidth(value: string): number } }).Bun;
+  if (bunRuntime) {
+    return bunRuntime.stringWidth(text);
+  }
+  let width = 0;
+  for (const character of iterateGraphemes(text)) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (/\p{Mark}/u.test(character) || codePoint === 0x200d || codePoint === 0xfe0f) {
+      continue;
+    }
+    width += isWideCodePoint(codePoint) ? 2 : 1;
+  }
+  return width;
+}
+
+function* iterateGraphemes(text: string): Iterable<string> {
+  for (const entry of graphemeSegmenter.segment(text)) {
+    yield entry.segment;
+  }
+}
+
+function isWideCodePoint(codePoint: number): boolean {
+  return (
+    codePoint >= 0x1100 &&
+    (codePoint <= 0x115f ||
+      codePoint === 0x2329 ||
+      codePoint === 0x232a ||
+      (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f) ||
+      (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+      (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+      (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+      (codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
+      (codePoint >= 0xff00 && codePoint <= 0xff60) ||
+      (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
+      (codePoint >= 0x1f300 && codePoint <= 0x1faff) ||
+      (codePoint >= 0x20000 && codePoint <= 0x3fffd))
+  );
 }
 
 export function formatQueuedFollowUpPreview(message: string, width: number): string {
